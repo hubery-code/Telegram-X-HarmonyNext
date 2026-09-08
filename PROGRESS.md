@@ -20,25 +20,29 @@
 
 ## 进行中（Implementing）
 
-| 工作包 | 负责人(AI) | 开始时间 | 说明 |
-|---|---|---|---|
-| GOV-004 | AI-Agent-A | 2026-09-08 | Feature/Parity Matrix 填充 P0/P1，Android 参考路径核对 |
-| GOV-005 | AI-Agent-B | 2026-09-08 | Android 核心行为结构化样本（事件说明；录屏/截图需真机后补） |
-| GOV-006 | AI-Agent-C | 2026-09-08 | CI 最小流水线（本地 gate 脚本串联 format/lint/typecheck/unit/build） |
-| QA-001 | AI-Agent-C | 2026-09-08 | ohosTest/Hypium 骨架验证，接入 check.sh |
-| SEC-001 | AI-Agent-D | 2026-09-08 | 威胁模型 v0（数据流、信任边界、风险表） |
-
-> ⚠️ 以上并行任务统一约定：**不要执行 git commit**，完成后报告文件清单，由主会话统一提交，避免索引冲突。允许修改的目录已写进各自任务说明，勿越界。
+（暂无 — Phase 0 已完成，下一批 TDN-001/002 待认领）
 
 ## 待认领（Backlog，按计划的 Phase 0 顺序）
 
 | 工作包 | 依赖 | 一句话 |
 |---|---|---|
 | GOV-004 | 无 | 建立 Feature/Parity Matrix（P0/P1/P2/P3 功能表，含 Android 参考） |
-| GOV-005 | GOV-004 | 采集 Android 核心行为脱敏样本（截图/录屏/事件说明） |
-| GOV-006 | GOV-001/002 | CI 最小流水线（lint/typecheck/unit/build wrapper） |
-| QA-001 | GOV-001 | Test Kit/Hypium 骨架 + 本地 ohosTest 可跑 |
-| SEC-001 | GOV-004 | 威胁模型 v0 |
+| GOV-005 | GOV-004 | ✅ 已完成（事件说明版；真机录屏待设备） |
+| GOV-006 | GOV-001/002 | ✅ 已完成 |
+| QA-001 | GOV-001 | ✅ 已完成 |
+| SEC-001 | GOV-004 | ✅ 已完成 |
+
+### 下一批（Phase 1，按依赖顺序；G0 已实质达成）
+
+| 工作包 | 依赖 | 一句话 |
+|---|---|---|
+| TDN-001 | GOV-002 | TDLib 依赖构建矩阵（依赖列表、来源、hash、ABI、许可证） |
+| TDN-002 | TDN-001 | 用 HarmonyOS NDK 构建 zlib/SQLite/crypto 最小依赖（arm64） |
+| TDN-003 | TDN-002 | TDLib arm64 Debug 构建（libtdjson），真机 getOption(version) |
+| BRG-001~005 | TDN-003 | Node-API module → create/send/execute → TSFN 接收线程 → 有界队列 → close 生命周期 |
+| GEN-001~004 | TDN-003 | 解析 td_api.tl 生成 ArkTS DTO/codec/validator/脱敏元数据 |
+
+> 认领规则：一次只认领一个工作包；认领时把行移到「进行中」并注明你的身份和计划开始的内容。禁止修改未授权目录。
 
 > 认领规则：一次只认领一个工作包；认领时把行移到「进行中」并注明你的身份和计划开始的内容。禁止修改未授权目录。
 
@@ -49,7 +53,12 @@
 | GOV-001 空工程 | 2026-09-08 | Debug/Release 构建均 BUILD SUCCESSFUL，产出 `entry/build/default/outputs/default/entry-default-unsigned.hap`（212 KB）；commit `7fe266b` |
 | GOV-002 工具链锁定 | 2026-09-08 | `tools/toolchain-versions.json` + `tools/ci/setup-check.sh` 退出码 0（SDK 26.0.0.105 / hvigor 6.26.4）；版本不匹配会明确失败 |
 | GOV-003 文档控制面 | 2026-09-08 | `docs/`（ARCHITECTURE、ADR-001/002、Feature/Parity、quality 五件、runbooks 三件）+ `work-items/templates/`（§17.1/17.2 原文模板） |
-| GOV-007 秘密管理 | 2026-09-08 | `.gitignore` 覆盖签名/p12/cer/local.properties/api_hash；secret scan 待 GOV-006 接入 CI |
+| GOV-007 秘密管理 | 2026-09-08 | `.gitignore` 覆盖签名/p12/cer/local_properties/api_hash；`tools/ci/secret-scan.sh` 已接入 ci.sh（PEM 私钥、api_hash 模式阳性 fixture 验证通过）；commit `7fe266b`+`b94e5a6` |
+| GOV-004 Feature/Parity Matrix | 2026-09-08 | FEATURE_MATRIX：7 项 P0 + 38 项 P1（含真实 Android 类级路径+行号、TDLib 方法）、P2/P3 一行表；PARITY_MATRIX 45 行对齐骨架；commit `b94e5a6` |
+| GOV-005 Android 行为样本 | 2026-09-08 | `docs/product/behavior-samples/` 5 份（登录/会话列表/发文本/通知/媒体）+ README，全部脱敏、含 TDLib 事件与 Harmony 验收观察点；截图/录屏待真机；commit `b94e5a6` |
+| GOV-006 CI 最小流水线 | 2026-09-08 | `tools/ci/ci.sh` 6 步全链路实测通过（工具链闸→secret scan→lint/typecheck→单测→debug→release 构建）；`.github/workflows/ci.yml` self-hosted 模板；commit `b94e5a6` |
+| QA-001 测试骨架 | 2026-09-08 | `hvigorw test` 真实执行通过：1 用例 Success（注意：本 hvigor 6.26.4 单测须放 `entry/src/test/*.test.ets`，ohosTest 壳留作设备测试）；commit `b94e5a6` |
+| SEC-001 威胁模型 v0 | 2026-09-08 | `docs/architecture/threat-model-v0.md`：数据流图+6 信任边界、9 资产、16 威胁（账号/消息/文件/Push/bridge/存储全覆盖）、7 秘密管理规则、§18 风险映射；commit `b94e5a6` |
 | 结构骨架 | 2026-09-08 | core×9 / platform×14 / feature×12 / native×3 / tools×4 / test×4 目录已建（仅 .gitkeep，未注册构建，符合 ADR-002） |
 
 已知工程要点（runbook 已记录）：hvigorw 为 shell/JS polyglot；离线构建依赖 `~/.hvigor/project_caches`；`DEVECO_SDK_HOME` 必须指向 `…/Contents/sdk`（wrapper 已内置）；签名/真机待用户提供。
