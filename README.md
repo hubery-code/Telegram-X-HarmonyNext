@@ -1,42 +1,85 @@
-# Telegram X → HarmonyOS NEXT（Phase 0 工程脚手架）
+# Telegram X · HarmonyOS NEXT（社区迁移版）
 
-本仓库是 Telegram X 迁移到 HarmonyOS NEXT（API 26）的 HarmonyOS 工程根。
-Android 参考实现不在本仓库：`/Users/mbjpeng-yu01/androidProjects/Telegram-X`。
+将 [Telegram X](https://github.com/TGX-Android/Telegram-X) 迁移到 HarmonyOS NEXT（纯血鸿蒙）的社区开源项目。
 
-> **先读 [`PROGRESS.md`](PROGRESS.md)** —— 多 AI 协作的单一协调入口
-> （工作包认领、状态机、环境基线、阻塞记录）。
-> 规则来源：`~/Downloads/Telegram-X-HarmonyOS-NEXT-迁移实施计划.md`。
+本项目**不包含任何 Android 代码**：UI、导航、状态管理、系统能力全部基于 ArkTS / ArkUI 重写，通信协议核心复用 [TDLib](https://core.telegram.org/tdlib)（C++），两者之间通过 HarmonyOS Node-API 建立窄接口。Telegram X 的 Android 实现仅作为**行为参考、差分测试基准（oracle）与资源来源**。
 
-## 快速开始
+> ⚠️ 本项目是社区驱动的非官方迁移，与 Telegram、Telegram X（TGX-Android）团队及华为均无隶属关系。Telegram 是 Telegram FZ-LLC 的注册商标。
 
-```bash
-./tools/ci/setup-check.sh     # 工具链闸（GOV-002，不匹配则非 0 退出）
-./tools/ci/build.sh debug     # Debug HAP → entry/build/default/outputs/default/entry-default-unsigned.hap
-./tools/ci/build.sh release   # Release HAP
-node hvigorw --version        # hvigor 6.26.4
+## 当前进展
+
+| 里程碑 | 状态 |
+|---|---|
+| Phase 0：工程脚手架、工具链锁定、CI 门禁、文档控制面、威胁模型 | ✅ 完成 |
+| TDLib 1.8.67 交叉编译（HarmonyOS NDK / arm64）+ Node-API 桥 | ✅ 完成（真机已验证） |
+| 授权登录、会话列表、消息收发（垂直切片） | 🔨 进行中 |
+| 媒体、推送、通话等 | 📋 规划中 |
+
+详细工作分配与验收状态见 **[PROGRESS.md](PROGRESS.md)**；功能范围与对齐矩阵见 [docs/product/](docs/product/)。
+
+## 架构速览
+
+```
+ArkUI 页面 → Feature ViewModel → UseCase → Repository Port
+     ↑                                        ↓
+Ordered Event Router ← TdGateway ← 生成的 TDLib DTO/Codec
+                                              ↓
+                                    Node-API 桥 (libtdcore_napi.so)
+                                              ↓
+                              TDLib C++ 核心 (libtdjson.so) → Telegram 网络
 ```
 
-## 目录速览
+- 依赖只允许从上向下；系统能力（Push、媒体、相机、存储等）一律经 Platform Port / Adapter 接入
+- TDLib 是消息数据的唯一权威来源，不建第二套消息数据库
+- 目录结构：`core/`（领域、gateway、生成的 TDLib 类型）、`platform/`（系统能力适配）、`feature/`（业务功能）、`native/`（TDLib/桥接/媒体原生库）、`entry/`（装配与 UI）
 
-| 目录 | 用途 |
-|---|---|
-| `AppScope/` `entry/` | 可构建最小集：单 Entry HAP（空壳页）+ 本地测试骨架 |
-| `core/*` `platform/*` `feature/*` `native/*` | Phase 1+ 模块骨架（**未注册进构建**，见 ADR-002） |
-| `docs/` | 控制文档面（GOV-003）：架构、ADR、产品矩阵、质量预算、runbooks |
-| `tools/` | 工具链锁定（`toolchain-versions.json`）+ CI 脚本（`tools/ci/`） |
-| `test/` | 测试支撑/fixture/契约/E2E 骨架 |
-| `work-items/` | 工作包 backlog/active/accepted + 模板（§17.1/17.2） |
+## 构建
 
-## 关键文档
+### 前置要求
 
-- `docs/architecture/ARCHITECTURE.md` — 分层与模块依赖规则（6+1 条）
-- `docs/architecture/adr/ADR-001-min-api-device-scope.md` — API 26 / Phone / arm64
-- `docs/architecture/adr/ADR-002-single-hap-har-modularity.md` — 单 HAP + HAR 策略
-- `docs/product/FEATURE_MATRIX.md` `PARITY_MATRIX.md` — 功能与对等矩阵
-- `docs/quality/` — Gates、测试矩阵、性能预算、安全基线、设备矩阵
-- `docs/runbooks/` — 构建 / 测试 / 发布 本机实测命令
+- macOS 或 Linux
+- [DevEco Studio](https://developer.harmonyos.com/)（内置 HarmonyOS SDK，API 26 工具链；工程 `compatibleSdkVersion` 为 `6.1.1(24)`，兼容 API 24+ 真机）
+- 约 1GB 磁盘（含预编译 TDLib 依赖源码）
 
-## 秘密管理（GOV-007）
+### 步骤
 
-签名材料、`local.properties`、任何含 `api_hash` 的文件均被 `.gitignore` 排除，永不入库。
-当前构建不需要任何秘密（产物为 unsigned hap；release 签名流程见 `docs/runbooks/release.md`）。
+```bash
+# 1. Telegram API 凭据（去 https://core.telegram.org/api/obtaining_api_id 申请），
+#    写入仓库根目录的 local.properties（已被 .gitignore 忽略）：
+echo "telegram.api_id=你的ID" >> local.properties
+echo "telegram.api_hash=你的HASH" >> local.properties
+
+# 2. 签名：用 DevEco 打开工程，File → Project Structure → Signing Configs
+#    勾选 Automatically generate signature 自动生成；
+#    或将自己的 p12/cer/p7b 放入 signing/ 并修改 build-profile.json5。
+#    （只想编出不签名的 hap：删除 product 里的 "signingConfig": "default" 一行）
+
+# 3. 构建（wrapper 会自动使用 DevEco 内置的 node / hvigor）
+./tools/ci/build.sh debug     # 或 release
+```
+
+### 其他常用命令
+
+```bash
+./tools/ci/ci.sh          # 完整门禁：工具链校验 → 秘密扫描 → lint/类型检查 → 单元测试 → Debug/Release 构建
+./tools/ci/setup-check.sh # 校验本机工具链版本与锁定清单一致
+```
+
+## 参与贡献
+
+这是一个大工程，**非常欢迎社区加入**，无论是代码、文档、测试还是真机验证。
+
+- **认领任务**：所有工作以「工作包」为单位登记在 [PROGRESS.md](PROGRESS.md)（多 AI / 多人协作的协调看板）。开工前先看 Backlog 和认领规则，一个工作包一个负责人
+- **工作包模板**：[work-items/templates/](work-items/templates/) 里有目标、验收标准、测试要求的标准格式；完成后按模板提交实现报告
+- **架构与契约**：动手前请先读 [docs/architecture/ARCHITECTURE.md](docs/architecture/ARCHITECTURE.md) 和 [docs/architecture/adr/](docs/architecture/adr/)，跨模块接口变更需要先过契约
+- **行为参考**：Android 侧对照实现位于 [TGX-Android/Telegram-X](https://github.com/TGX-Android/Telegram-X)，本仓库 [docs/product/](docs/product/) 有脱敏行为样本与 Feature/Parity 矩阵
+- **安全红线**：不要把 api_hash、验证码、手机号、token、聊天内容或任何签名材料提交进仓库（CI 有秘密扫描会拦）；日志按字段白名单输出
+
+建议的切入方向（由小到大）：单元测试与 fixture 回放 → 平台 adapter（存储/通知）→ 消息流功能切片 → TDLib 工具链。
+
+## 许可证
+
+- 本项目代码以 [GNU GPL v3](LICENSE) 发布（与上游 Telegram X 一致，衍生作品要求保持同许可）
+- TDLib 以 [Boost Software License 1.0](https://github.com/tdlib/td/blob/master/LICENSE_1_0.txt) 发布
+- OpenSSL 以 [Apache License 2.0](https://www.openssl.org/source/license.html) 发布
+- `native/tdcore/third_party/` 内的上游源码各自遵循其原始许可证

@@ -1,7 +1,7 @@
 # BRG-001/002 Evidence — tdcore_napi Node-API bridge
 
 Date: 2026-09-08. Device target: Phone arm64-v8a, HarmonyOS 6.1 (API 24),
-hdc target `6XE0225A27023538`.
+hdc target `<device-serial>`.
 
 ## 构建证据
 
@@ -35,7 +35,7 @@ hdc target `6XE0225A27023538`.
 
 ## 真机验证
 
-**STATUS: PASS（2026-09-08 19:34，设备 6XE0225A27023538 / VYG-AL00，
+**STATUS: PASS（2026-09-08 19:34，设备 <device-serial> / VYG-AL00，
 HarmonyOS 6.1 API 24）**
 
 ```bash

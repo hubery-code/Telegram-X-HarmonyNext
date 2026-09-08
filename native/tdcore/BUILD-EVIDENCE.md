@@ -102,7 +102,7 @@ $NDK/llvm/bin/clang --target=aarch64-linux-ohos --sysroot=$NDK/sysroot -O2 \
 <!-- DEVICE-SMOKE-RESULT -->
 
 **STATUS（2026-09-08 19:34）: PASS — 应用内路径真机验收完成。**
-BRG-001 验证页在真机（HarmonyOS 6.1, API 24, hdc 6XE0225A27023538）应用
+BRG-001 验证页在真机（HarmonyOS 6.1, API 24, hdc <device-serial>）应用
 进程内成功加载 libtdjson.so 并执行同步调用：
 
 ```

@@ -33,3 +33,4 @@ tdlib-credentials.json5
 *.log
 .test/
 **/.test/
+signing/
