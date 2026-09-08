@@ -1,43 +1,72 @@
 # Runbook：测试（Test）
 
-> Phase 0 状态：本地单元测试骨架（QA-001 部分）已就绪；设备测试待真机矩阵输入。
+> Phase 0 状态（2026-09-08 实测更新）：**本地单元测试已可通过 CLI 真实执行并出报告**；
+> 设备测试待真机矩阵输入。
 
-## 1. 本地测试（Hypium，ohosTest）
+## 1. 本地单元测试（Hypium，已实测 ✅）
 
-骨架位置：`entry/src/ohosTest/`（TestAbility + OpenHarmonyTestRunner + `ets/test/ListTest.ets`）。
+### 1.1 用例放哪里（重要）
+
+本 hvigor 版本（6.26.4，API 26）的本地单元测试约定与旧教程不同：
+
+- **本地单元测试用例放在 `entry/src/test/*.test.ets`**（如 `entry/src/test/List.test.ets`）。
+  hvigor 生成的测试入口页以 `../../../src/test/List.test` 的相对路径引用它——放在
+  `src/ohosTest/ets/test/` 会编译失败（`Could not resolve "../../../src/test/List.test"`，已实测）。
+- `entry/src/ohosTest/` 保留为**设备测试壳**：TestAbility + OpenHarmonyTestRunner +
+  testability 页面，供 on-device 测试使用（§3）。
+
+### 1.2 运行
 
 ```bash
 # 安装测试依赖（一次即可，需要网络）
 /Applications/DevEco-Studio.app/Contents/tools/ohpm/bin/ohpm install
 
-# 运行本地单元测试（构建 entry 测试目标并执行 ListTest 等用例）
+# 运行本地单元测试（真实执行 Hypium 用例）
 /Applications/DevEco-Studio.app/Contents/tools/node/bin/node hvigorw test \
   --mode module -p module=entry@default -p product=default --no-daemon
 ```
 
-> 说明：`test` 任务由 hvigor 自动注入测试默认参数（`unitTestMode=true` 等）。
-> 若本地 runner 在 CLI 下不可用（部分版本仅 DevEco 内可跑），以 DevEco
-> 「Run ListTest」为准；CI 门禁以 `tools/ci/check.sh`（ArkTS 类型检查 + 构建）兜底，
-> 完整 on-device 测试接入排期见 QA-001 后续。
+实测结果（2026-09-08）：`BUILD SUCCESSFUL`，用例真实执行：
 
-## 2. 质量检查（无真机时的 CI 替代）
-
-```bash
-./tools/ci/check.sh    # setup-check + codelinter（若存在）+ assembleHap（含 ArkTS 类型检查）
+```text
+# entry/.test/default/intermediates/test/coverage_data/test_result.txt
+class=ListTest
+test=assertContain
+result=Success
+Tests run: 1, Failure: 0, Error: 0, Pass: 1, Ignore: 0
 ```
 
-## 3. 设备测试（Hypium / DevEco Testing）
+HTML 报告：`entry/.test/default/outputs/test/reports/index.html`。
+新增用例 = 在 `entry/src/test/` 下加 `*.test.ets`（命名必须 `.test.ets` 后缀）。
 
-前置：DEVICE_MATRIX.md 中的真机与系统版本已冻结； hdc 可用：
+### 1.3 DevEco 内运行（等价方式）
+
+`entry/src/test/List.test.ets` 右键 → Run 'List.test'；或 Run 窗口选择测试配置。
+CLI 与 IDE 底层同为 hvigor `test` 任务，结果等价。
+
+## 2. CI 全链路
+
+```bash
+./tools/ci/ci.sh    # setup-check → secret-scan → check → 单测 → debug 构建 → release 构建
+```
+
+任何一步失败立即非 0 退出。GitHub Actions 模板见 `.github/workflows/ci.yml`
+（self-hosted macOS runner + DevEco 检测，无 DevEco 则跳过并注明）。
+
+## 3. 设备测试（Hypium / DevEco Testing，待启用）
+
+前置：DEVICE_MATRIX.md 真机冻结；hdc 可用：
 
 ```bash
 /Applications/DevEco-Studio.app/Contents/sdk/default/openharmony/toolchains/hdc list targets
 ```
 
-（G1 之后补充完整 on-device 测试命令与截图基线流程。）
+启用时验证 `hvigorw onDeviceTest`（ohosTest 壳的编译与执行路径），并补充截图基线流程。
 
 ## 4. 证据要求
 
 - 测试结果按 §17.2/§17.3 模板绑定 commit 入库。
 - 大体积产物放 CI 制品库，仓库只留清单与摘要。
 - 截图基线不得由实现 AI 无说明自动更新（§12.2-5）。
+- 注：`entry/.test/` 为测试构建产物（等价 build/ 输出），**应被 git 忽略**；
+  当前 `.gitignore` 尚未包含（GOV-007 所有者在下次修订时补 `.test/`）。

@@ -22,7 +22,13 @@
 
 | 工作包 | 负责人(AI) | 开始时间 | 说明 |
 |---|---|---|---|
-| GOV-001/GOV-002/GOV-003/GOV-007 | 本 AI（主会话） | 2026-09-08 | 空 HAP 脚手架 + 工具链锁定 + 文档控制面 + 秘密管理；完成后转入验证 |
+| GOV-004 | AI-Agent-A | 2026-09-08 | Feature/Parity Matrix 填充 P0/P1，Android 参考路径核对 |
+| GOV-005 | AI-Agent-B | 2026-09-08 | Android 核心行为结构化样本（事件说明；录屏/截图需真机后补） |
+| GOV-006 | AI-Agent-C | 2026-09-08 | CI 最小流水线（本地 gate 脚本串联 format/lint/typecheck/unit/build） |
+| QA-001 | AI-Agent-C | 2026-09-08 | ohosTest/Hypium 骨架验证，接入 check.sh |
+| SEC-001 | AI-Agent-D | 2026-09-08 | 威胁模型 v0（数据流、信任边界、风险表） |
+
+> ⚠️ 以上并行任务统一约定：**不要执行 git commit**，完成后报告文件清单，由主会话统一提交，避免索引冲突。允许修改的目录已写进各自任务说明，勿越界。
 
 ## 待认领（Backlog，按计划的 Phase 0 顺序）
 
@@ -38,7 +44,15 @@
 
 ## 已完成（Accepted 或有保留）
 
-（暂无）
+| 工作包 | 完成日期 | 证据 |
+|---|---|---|
+| GOV-001 空工程 | 2026-09-08 | Debug/Release 构建均 BUILD SUCCESSFUL，产出 `entry/build/default/outputs/default/entry-default-unsigned.hap`（212 KB）；commit `7fe266b` |
+| GOV-002 工具链锁定 | 2026-09-08 | `tools/toolchain-versions.json` + `tools/ci/setup-check.sh` 退出码 0（SDK 26.0.0.105 / hvigor 6.26.4）；版本不匹配会明确失败 |
+| GOV-003 文档控制面 | 2026-09-08 | `docs/`（ARCHITECTURE、ADR-001/002、Feature/Parity、quality 五件、runbooks 三件）+ `work-items/templates/`（§17.1/17.2 原文模板） |
+| GOV-007 秘密管理 | 2026-09-08 | `.gitignore` 覆盖签名/p12/cer/local.properties/api_hash；secret scan 待 GOV-006 接入 CI |
+| 结构骨架 | 2026-09-08 | core×9 / platform×14 / feature×12 / native×3 / tools×4 / test×4 目录已建（仅 .gitkeep，未注册构建，符合 ADR-002） |
+
+已知工程要点（runbook 已记录）：hvigorw 为 shell/JS polyglot；离线构建依赖 `~/.hvigor/project_caches`；`DEVECO_SDK_HOME` 必须指向 `…/Contents/sdk`（wrapper 已内置）；签名/真机待用户提供。
 
 ## 阻塞 / 风险记录
 

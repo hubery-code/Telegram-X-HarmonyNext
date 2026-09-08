@@ -61,7 +61,17 @@ DEVECO_SDK_HOME=/Applications/DevEco-Studio.app/Contents/sdk     # 不是 …/sd
 
 指向 `…/sdk/default/openharmony` 会报 `00303312 Cannot find the corresponding SDK version`。
 
-## 4. 常见问题
+## 4. CI 全链路（GOV-006）
+
+```bash
+./tools/ci/ci.sh    # setup-check → secret-scan → lint/typecheck → 单测 → debug 构建 → release 构建
+```
+
+任何一步失败立即非 0 退出；单步调试可直接调用 `tools/ci/` 下对应脚本。
+GitHub Actions 模板见 `.github/workflows/ci.yml`（self-hosted macOS runner，
+job 开头检测 DevEco 路径，不存在则跳过并注明——SDK 与签名均为本机特定）。
+
+## 5. 常见问题
 
 | 现象 | 原因 | 处理 |
 |---|---|---|
@@ -70,10 +80,11 @@ DEVECO_SDK_HOME=/Applications/DevEco-Studio.app/Contents/sdk     # 不是 …/sd
 | `modelVersion` 相关 schema 报错 | SDK/hvigor 升级后 modelVersion 未同步 | modelVersion = SDK platformVersion（当前 `26.0.0`），根 oh-package.json5 与 hvigor-config.json5 必须一致 |
 | 用了系统 node（v23/v24）跑 hvigor | 环境变量/手滑 | 统一用 `tools/ci/build.sh` 或 DevEco node 绝对路径 |
 | ArkTS 编译报缺 `@ohos/hypium` | oh_modules 未安装 | `…/tools/ohpm/bin/ohpm install`（需要一次网络） |
+| `hvigorw test` 报 `Could not resolve "../../../src/test/List.test"` | 本地单测用例放错位置 | 本 hvigor 版本要求 `entry/src/test/*.test.ets`，不是 `src/ohosTest/ets/test/`（见 runbooks/test.md §1.1） |
 
-## 5. 清理
+## 6. 清理
 
 ```bash
-rm -rf entry/build .hvigor           # 本工程构建产物
+rm -rf entry/build entry/.test .hvigor   # 本工程构建与测试产物
 # hvigor 工作区缓存（一般不用清）：rm -rf ~/.hvigor/project_caches/*
 ```

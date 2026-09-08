@@ -31,3 +31,5 @@ tdlib-credentials.json5
 
 # 工具临时
 *.log
+.test/
+**/.test/

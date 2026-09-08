@@ -1,0 +1,61 @@
+name: ci
+
+# GOV-006 最小流水线。重要：HarmonyOS SDK / hvigor / 构建 node 均为 DevEco Studio
+# 本机安装（见 tools/toolchain-versions.json），GitHub 托管 runner 上没有这些组件。
+# 本 workflow 是「装有 DevEco Studio 的 self-hosted macOS runner」模板：
+#   - runner 标签：self-hosted + macOS
+#   - 每台 job 开头检测 DevEco 路径，不存在则整 job 跳过（skip，不失败）
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  harmony-ci:
+    runs-on: [self-hosted, macOS]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Detect DevEco Studio toolchain
+        id: toolchain
+        run: |
+          DEVECO="/Applications/DevEco-Studio.app"
+          if [ -d "$DEVECO" ]; then
+            echo "deveco=true" >> "$GITHUB_OUTPUT"
+            echo "DevEco Studio found at $DEVECO"
+          else
+            echo "deveco=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::DevEco Studio not found at $DEVECO — skipping HarmonyOS CI on this runner."
+          fi
+
+      - name: Toolchain gate (GOV-002)
+        if: steps.toolchain.outputs.deveco == 'true'
+        run: ./tools/ci/setup-check.sh
+
+      - name: Secret scan (GOV-007)
+        if: steps.toolchain.outputs.deveco == 'true'
+        run: ./tools/ci/secret-scan.sh
+
+      - name: Lint + typecheck (GOV-006)
+        if: steps.toolchain.outputs.deveco == 'true'
+        run: ./tools/ci/check.sh
+
+      - name: Unit tests (QA-001)
+        if: steps.toolchain.outputs.deveco == 'true'
+        run: ./hvigorw test --mode module -p module=entry@default -p product=default --no-daemon
+
+      - name: Build debug HAP (GOV-001)
+        if: steps.toolchain.outputs.deveco == 'true'
+        run: ./tools/ci/build.sh debug
+
+      - name: Build release HAP (GOV-001)
+        if: steps.toolchain.outputs.deveco == 'true'
+        run: ./tools/ci/build.sh release
+
+      - name: Upload HAP artifact
+        if: steps.toolchain.outputs.deveco == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: entry-hap
+          path: entry/build/default/outputs/default/*.hap
+          if-no-files-found: warn
