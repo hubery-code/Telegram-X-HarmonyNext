@@ -1,0 +1,16 @@
+{
+  "string": [
+    {
+      "name": "module_desc",
+      "value": "Telegram X entry module"
+    },
+    {
+      "name": "EntryAbility_desc",
+      "value": "Telegram X main ability"
+    },
+    {
+      "name": "EntryAbility_label",
+      "value": "Telegram X"
+    }
+  ]
+}

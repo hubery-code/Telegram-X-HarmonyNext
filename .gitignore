@@ -1,0 +1,33 @@
+# HarmonyOS / 构建产物
+build/
+**/build/
+.hvigor/
+oh_modules/
+**/.cxx/
+*.har
+*.hap
+*.hsp
+*.app
+
+# 签名与秘密（GOV-007：材料绝不入库）
+*.p12
+*.cer
+*.csr
+*.p7b
+*.keystore
+.signing-config/
+local.properties
+
+# Telegram 秘密：任何可能包含 api_id/api_hash 的文件
+api-config.json5
+secrets.json5
+tdlib-credentials.json5
+
+# IDE / 系统
+.idea/
+.cxx/
+.DS_Store
+*.iml
+
+# 工具临时
+*.log

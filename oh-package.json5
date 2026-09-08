@@ -1,0 +1,11 @@
+{
+  "modelVersion": "26.0.0",
+  "name": "telegram-x-harmony",
+  "version": "0.1.0",
+  "description": "Telegram X client migrated to HarmonyOS NEXT (API 26). Root package of the HarmonyOS project.",
+  "main": "",
+  "author": "telegram-x",
+  "license": "GPL-3.0",
+  "dependencies": {},
+  "devDependencies": {}
+}

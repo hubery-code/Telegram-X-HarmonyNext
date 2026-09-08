@@ -1,0 +1,12 @@
+{
+  "name": "entry",
+  "version": "0.1.0",
+  "description": "Telegram X HarmonyOS entry HAP: assembly, lifecycle, routing root.",
+  "main": "",
+  "author": "telegram-x",
+  "license": "GPL-3.0",
+  "dependencies": {},
+  "devDependencies": {
+    "@ohos/hypium": "1.0.21"
+  }
+}

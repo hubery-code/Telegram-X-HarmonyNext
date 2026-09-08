@@ -1,0 +1,25 @@
+{
+  "modelVersion": "26.0.0",
+  // NOTE: no "dependencies" declared on purpose. The hvigor wrapper (see ../hvigorw)
+  // symlinks the DevEco-bundled hvigor 6.26.4 / hvigor-ohos-plugin 6.26.4 into the
+  // project workspace, so builds work fully offline. If a future hvigor upgrade
+  // requires declared dependencies, mirror the built-in versions exactly.
+  "dependencies": {},
+  "execution": {
+    // "analyze": "normal",
+    // "daemon": true,
+    // "incremental": true,
+    // "parallel": true,
+    // "typeCheck": false
+  },
+  "logging": {
+    // "level": "info"
+  },
+  "debugging": {
+    // "stacktrace": false
+  },
+  "nodeOptions": {
+    // "maxOldSpaceSize": 8192,
+    // "exposeGC": true
+  }
+}

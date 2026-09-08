@@ -1,0 +1,35 @@
+{
+  "description": "Locked toolchain for Telegram X HarmonyOS builds (GOV-002). tools/ci/setup-check.sh validates the local environment against this file; any mismatch fails the check with a non-zero exit code.",
+  "deveco": {
+    "path": "/Applications/DevEco-Studio.app",
+    "note": "DevEco Studio installation root; everything below is derived from it."
+  },
+  "sdk": {
+    "path": "/Applications/DevEco-Studio.app/Contents/sdk/default/openharmony",
+    "sdkHome": "/Applications/DevEco-Studio.app/Contents/sdk",
+    "sdkHomeNote": "hvigor's SDK scanner expects DEVECO_SDK_HOME to be the PARENT of the SDK instance dir (it scans <sdkHome>/<subdir>/sdk-pkg.json). hvigorw exports DEVECO_SDK_HOME=sdkHome, not sdk.path.",
+    "apiVersion": "26",
+    "platformVersion": "26.0.0",
+    "version": "26.0.0.105",
+    "runtimeOS": "HarmonyOS"
+  },
+  "ndk": {
+    "path": "/Applications/DevEco-Studio.app/Contents/sdk/default/openharmony/native",
+    "apiVersion": "26"
+  },
+  "hvigor": {
+    "version": "6.26.4",
+    "path": "/Applications/DevEco-Studio.app/Contents/tools/hvigor",
+    "note": "DevEco-bundled hvigor; project hvigorw is a thin wrapper around it."
+  },
+  "node": {
+    "path": "/Applications/DevEco-Studio.app/Contents/tools/node/bin/node",
+    "note": "Build node ONLY. Do not run hvigor with the system node (v23/v24)."
+  },
+  "ohpm": {
+    "path": "/Applications/DevEco-Studio.app/Contents/tools/ohpm/bin/ohpm"
+  },
+  "targetAbi": ["arm64-v8a"],
+  "emulatorAbi": ["x86_64"],
+  "abiNote": "Phone / arm64 first (ADR-001). x86_64 is emulator/CI only."
+}

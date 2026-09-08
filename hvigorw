@@ -1,0 +1,63 @@
+#!/bin/sh
+':' //; exec "/Applications/DevEco-Studio.app/Contents/tools/node/bin/node" "$0" "$@"
+/*
+ * Hvigor wrapper (Telegram X HarmonyOS scaffold, GOV-001).
+ *
+ * Polyglot script: usable BOTH as `./hvigorw` (shell) and
+ * `node hvigorw` (the acceptance check of Phase 0). In shell mode line 2
+ * re-executes this file with the DevEco-bundled node; in node mode the
+ * code below runs.
+ *
+ * Why not the standard hvigorw? The standard wrapper downloads the hvigor
+ * engine declared in hvigor/hvigor-config.json5 from the network, which
+ * fails offline or in restricted environments. This wrapper directly spawns
+ * the hvigor wrapper bundled with DevEco Studio
+ * (<DevEco>/Contents/tools/hvigor/bin/hvigorw.js, hvigor 6.26.4). Because
+ * hvigor/hvigor-config.json5 declares NO dependencies, that wrapper symlinks
+ * the built-in @ohos/hvigor and @ohos/hvigor-ohos-plugin into the project
+ * workspace (~/.hvigor/project_caches/<hash>), so builds run fully offline.
+ *
+ * Requirements:
+ *   - DevEco Studio at /Applications/DevEco-Studio.app (see tools/toolchain-versions.json)
+ *   - Build node: /Applications/DevEco-Studio.app/Contents/tools/node/bin/node
+ *     (do NOT run hvigor with the system node v23/v24)
+ */
+'use strict';
+
+const { spawnSync } = require('child_process');
+const fs = require('fs');
+
+const DEVECO_HOME = '/Applications/DevEco-Studio.app/Contents';
+const NODE = DEVECO_HOME + '/tools/node/bin/node';
+const WRAPPER_JS = DEVECO_HOME + '/tools/hvigor/bin/hvigorw.js';
+
+function die(msg) {
+  console.error('hvigorw: ERROR: ' + msg);
+  process.exit(1);
+}
+
+if (!fs.existsSync(NODE)) {
+  die('DevEco build node not found at ' + NODE + ' (see tools/toolchain-versions.json)');
+}
+if (!fs.existsSync(WRAPPER_JS)) {
+  die('bundled hvigor wrapper not found at ' + WRAPPER_JS);
+}
+
+// Tell hvigor where the HarmonyOS SDK lives. NOTE: hvigor's SDK scanner expects
+// DEVECO_SDK_HOME to be the PARENT of the SDK instance directory (it scans
+// <DEVECO_SDK_HOME>/<subdir>/sdk-pkg.json), so this points at .../sdk, not
+// .../sdk/default/openharmony. Overridable via environment.
+if (!process.env.DEVECO_SDK_HOME) {
+  process.env.DEVECO_SDK_HOME = DEVECO_HOME + '/sdk';
+}
+
+const result = spawnSync(NODE, [WRAPPER_JS].concat(process.argv.slice(2)), {
+  stdio: 'inherit',
+  env: process.env,
+  cwd: process.cwd()
+});
+
+if (result.error) {
+  die('failed to launch hvigor: ' + result.error.message);
+}
+process.exit(result.status === null ? 0 : result.status);

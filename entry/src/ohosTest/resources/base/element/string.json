@@ -1,0 +1,16 @@
+{
+  "string": [
+    {
+      "name": "module_test_desc",
+      "value": "Telegram X entry module test set"
+    },
+    {
+      "name": "TestAbility_desc",
+      "value": "Telegram X test ability"
+    },
+    {
+      "name": "TestAbility_label",
+      "value": "Telegram X Test"
+    }
+  ]
+}
