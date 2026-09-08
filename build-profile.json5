@@ -70,6 +70,42 @@
           ]
         }
       ]
+    },
+    {
+      "name": "platform_ports",
+      "srcPath": "./platform/ports",
+      "targets": [
+        {
+          "name": "default",
+          "applyToProducts": [
+            "default"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "core_navigation",
+      "srcPath": "./core/navigation",
+      "targets": [
+        {
+          "name": "default",
+          "applyToProducts": [
+            "default"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "core_td_api_generated",
+      "srcPath": "./core/td_api_generated",
+      "targets": [
+        {
+          "name": "default",
+          "applyToProducts": [
+            "default"
+          ]
+        }
+      ]
     }
   ]
 }

@@ -1,0 +1,14 @@
+{
+  "name": "@tgx/platform-ports",
+  "version": "0.1.0",
+  "description": "Telegram X HarmonyOS platform/ports: platform port contracts (Preferences, SecureKeyStore, NetworkState, AppFiles, MonotonicClock) + in-memory fakes + shared contract tests. Pure ArkTS, no Kit dependency (PLAT-001).",
+  "main": "./src/main/ets/Index.ets",
+  "author": "telegram-x",
+  "license": "GPL-3.0",
+  "dependencies": {
+    "@tgx/core-common": "file:../../core/common"
+  },
+  "devDependencies": {
+    "@ohos/hypium": "1.0.21"
+  }
+}

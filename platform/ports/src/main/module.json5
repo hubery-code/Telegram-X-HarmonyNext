@@ -1,0 +1,10 @@
+{
+  "module": {
+    "name": "platform_ports",
+    "type": "har",
+    "description": "platform/ports: 平台端口契约 + fakes + contract 测试（纯 ArkTS，无 Kit 依赖）",
+    "deviceTypes": [
+      "phone"
+    ]
+  }
+}
