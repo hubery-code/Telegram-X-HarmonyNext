@@ -57,6 +57,7 @@ cmake -S "$SRC" -B "$BUILD_DIR" "${GENERATOR[@]}" \
   -DOHOS_NDK_PATH="$OHOS_NDK" \
   -DTDX_DEPS_PREFIX="$DEPS_PREFIX" \
   -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+  -DCMAKE_SHARED_LINKER_FLAGS="-Wl,-soname,libtdjson.so" \
   -DTD_ENABLE_LTO=OFF \
   -DOPENSSL_ROOT_DIR="$DEPS_PREFIX" \
   -DZLIB_INCLUDE_DIR="$ZLIB_INCLUDE_DIR" \
@@ -66,5 +67,11 @@ cmake -S "$SRC" -B "$BUILD_DIR" "${GENERATOR[@]}" \
 log "building target tdjson ..."
 cmake --build "$BUILD_DIR" --target tdjson --parallel "$(sysctl -n hw.ncpu)"
 
+# Stripped copy for packaging (the HAP embeds this via the napibridge import;
+# full-symbol unstripped artifact stays above for TDN-004 symbol archival).
+mkdir -p "$BUILD_DIR/stripped"
+"$OHOS_NDK/llvm/bin/llvm-strip" --strip-debug \
+  "$BUILD_DIR/libtdjson.so" -o "$BUILD_DIR/stripped/libtdjson.so"
+
 log "artifacts:"
-ls -l "$BUILD_DIR"/td/libtdjson.so* 2>/dev/null || find "$BUILD_DIR" -name "libtdjson.so*" -exec ls -l {} \;
+ls -l "$BUILD_DIR"/libtdjson.so* "$BUILD_DIR/stripped/libtdjson.so" 2>/dev/null || find "$BUILD_DIR" -name "libtdjson.so*" -exec ls -l {} \;

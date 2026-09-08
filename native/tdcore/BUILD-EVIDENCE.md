@@ -91,18 +91,32 @@ $NDK/llvm/bin/clang --target=aarch64-linux-ohos --sysroot=$NDK/sysroot -O2 \
   -Wl,-rpath,/data/local/tmp/tdsmoke
 ```
 
-### Real-device result (VYG-AL00 / hdc target 6XE0225A27023538)
+## 真机验证（应用内路径，2026-09-08 更新）
+
+> 实测：真机（HarmonyOS 6.1, API 24）hdc shell 域被 SELinux 禁止 exec
+> 任意 ELF，`td_smoke` 可执行文件方案不可行。改为应用内验证：BRG-001
+> 的 Node-API 桥 + entry 验证页在应用进程内执行同样的同步调用。
+> 证据见 `native/tdcore/napibridge/EVIDENCE.md`（hap 已构建并验证打包
+> 内容；设备安装因设备断连 pending，重连后按 runbook 应用内路径节执行）。
 
 <!-- DEVICE-SMOKE-RESULT -->
 
-**STATUS: BLOCKED (device hardware disconnect) — everything up to and including
-push-ready artifacts is done; only the on-device execution is missing.**
-Timeline: `hdc list targets` succeeded at session start
-(17:30, target `6XE0225A27023538`); before the first `hdc shell` the USB device
-disappeared from the host (system_profiler shows no phone, hdc `[Empty]`).
-Polled for reconnection for 40+ minutes (two 20-minute rounds, 30 s interval) —
-device never came back. This is a physical disconnect, not an hdc software
-issue (`hdc kill/start`, server restart, and USB re-enumeration were tried).
+**STATUS（2026-09-08 19:34）: PASS — 应用内路径真机验收完成。**
+BRG-001 验证页在真机（HarmonyOS 6.1, API 24, hdc 6XE0225A27023538）应用
+进程内成功加载 libtdjson.so 并执行同步调用：
+
+```
+TDLib 版本: 1.8.67
+execute 结果: {"@type":"textEntities","entities":[{"@type":"textEntity","offset":6,"length":9,"type":{"@type":"textEntityTypeMention"}}]}
+createClient/send: clientId=1
+```
+
+截图证据：`native/tdcore/napibridge/tdx_verify_device.jpeg`；
+命令与验收映射：`native/tdcore/napibridge/EVIDENCE.md`、
+`docs/runbooks/tdlib-native-build.md`「应用内验证路径」。
+
+（旧 hdc shell `td_smoke` 方案遗留背景：17:30 设备连接成功，随后物理
+断连，轮询 40+ 分钟未恢复；该方案现已被应用内路径取代。）
 
 ```bash
 HDC=/Applications/DevEco-Studio.app/Contents/sdk/default/openharmony/toolchains/hdc

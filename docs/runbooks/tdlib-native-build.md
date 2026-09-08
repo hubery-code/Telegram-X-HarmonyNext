@@ -1,7 +1,11 @@
 # Runbook: TDLib native build & smoke (OHOS arm64)
 
-Scope: TDN-001/002. Produces `libtdjson.so` for arm64-v8a and verifies it on a
-real device. Full evidence: `native/tdcore/BUILD-EVIDENCE.md`.
+Scope: TDN-001/002 (+ BRG-001/002 应用内验证路径). Produces `libtdjson.so`
+for arm64-v8a and verifies it on a real device. Full evidence:
+`native/tdcore/BUILD-EVIDENCE.md`, `native/tdcore/napibridge/EVIDENCE.md`.
+
+> 实测结论：真机 hdc shell 域被 SELinux 禁止 exec 任意 ELF，smoke 必须在
+> 应用进程内运行（BRG-001 验证页 onPageShow 自动执行）。
 
 ## Prerequisites
 
@@ -51,6 +55,46 @@ $HDC shell "chmod +x /data/local/tmp/tdsmoke/td_smoke && \
 ```
 
 Expected final line: `SMOKE RESULT: PASS`.
+
+## 应用内验证路径（BRG-001/002，推荐）
+
+hdc shell 无法 exec ELF，改为：Node-API 桥 (`native/tdcore/napibridge`) +
+entry 验证页 (`Index.ets`，加载即自动执行 TDLib 检查)。
+
+```bash
+# 0) 前提：TDLib 构建产物存在（含 stripped/ 副本，soname 已修正）
+tools/native/build-tdlib.sh
+
+# 1) 构建并安装
+./tools/ci/build.sh debug
+HDC=/Applications/DevEco-Studio.app/Contents/sdk/default/openharmony/toolchains/hdc
+$HDC install -r entry/build/default/outputs/default/entry-default-signed.hap
+
+# 2) 启动应用（页面 onPageShow 自动执行验证）
+$HDC shell aa start -a EntryAbility -b org.telegram.x.harmony
+sleep 5
+
+# 3) 截屏取证
+$HDC shell snapshot_display -f /data/local/tmp/tdx_verify.jpeg
+$HDC file recv /data/local/tmp/tdx_verify.jpeg .
+
+# 4) 日志兜底（ArkTS 侧同一内容也会打 hilog）
+$HDC shell "hilog | grep -i -e telegram -e tdlib -e tdx | tail -30"
+```
+
+预期页面显示：`TDLib 版本: 1.8.67` + `execute 结果:
+{"@type":"textEntities",...}` + `createClient/send: clientId=0 ...`。
+
+### 打包要点（已踩过的坑）
+
+- hvigor 会把 CMake imported SHARED 库自动拷进 hap —— 不要再把这些
+  .so 放 `entry/libs/`（00306049 duplicated files）。
+- imported 路径必须指向**真实 versioned 文件名**（`libcrypto.so.3`，
+  不是 `libcrypto.so` 符号链接），否则打包后的文件名与 DT_NEEDED 的
+  soname 不匹配。
+- tdjson 上游不设 SONAME → 链接它的目标会记录绝对路径到 DT_NEEDED；
+  `build-tdlib.sh` 已用 `-Wl,-soname,libtdjson.so` 修正。
+- hvigor 对打包 .so 执行 DoNativeStrip；hap 内 tdjson ~32MB。
 
 ## Known issues
 

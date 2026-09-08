@@ -20,18 +20,21 @@ report() {
 
 echo "[secret-scan] scanning tracked sources under ${ROOT}"
 
-# 1. 私钥 PEM 块（任何被 git 跟踪的文件里都不允许）
-if git grep -n --no-color -I -E -e "-----BEGIN (RSA |EC |OPENSSH |PGP |ENCRYPTED )?PRIVATE KEY( BLOCK)?-----" -- . ; then
+# 上游源码自带的公开测试 PEM（OpenSSL apps/*.pem 等）不属于秘密，排除 third_party
+EXCLUDE=':!native/tdcore/third_party'
+
+# 1. 私钥 PEM 块（任何被 git 跟踪的文件里都不允许；上游 vendored 测试材料除外）
+if git grep -n --no-color -I -E -e "-----BEGIN (RSA |EC |OPENSSH |PGP |ENCRYPTED )?PRIVATE KEY( BLOCK)?-----" -- . "$EXCLUDE" ; then
   report "private key PEM block found in tracked files"
 fi
 
 # 2. api_hash 赋值形态：api_hash\s*[:=]\s*["'][0-9a-fA-F]{16,}["']
 #    以及通用变量名承载的 32 位十六进制 secret
-if git grep -n --no-color -I -iE -e "api[_-]?hash[\"' ]*[:=][\"' ]*[0-9a-f]{16,}[\"' ]*" -- . ; then
+if git grep -n --no-color -I -iE -e "api[_-]?hash[\"' ]*[:=][\"' ]*[0-9a-f]{16,}[\"' ]*" -- . "$EXCLUDE" ; then
   report "api_hash literal found in tracked files"
 fi
 # TDLib 常见初始化字段名
-if git grep -n --no-color -I -iE -e "(api_hash|apiHash)[\"' ]*[:=][\"' ]*[\"'][0-9a-f]{16,}" -- '*.ts' '*.ets' '*.json5' '*.json' '*.cpp' '*.h' '*.c' ; then
+if git grep -n --no-color -I -iE -e "(api_hash|apiHash)[\"' ]*[:=][\"' ]*[\"'][0-9a-f]{16,}" -- '*.ts' '*.ets' '*.json5' '*.json' '*.cpp' '*.h' '*.c' "$EXCLUDE" ; then
   report "api_hash-like field with hex value found"
 fi
 
