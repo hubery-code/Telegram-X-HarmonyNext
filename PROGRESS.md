@@ -60,7 +60,8 @@
 | QA-001 测试骨架 | 2026-09-08 | `hvigorw test` 真实执行通过：1 用例 Success（注意：本 hvigor 6.26.4 单测须放 `entry/src/test/*.test.ets`，ohosTest 壳留作设备测试）；commit `b94e5a6` |
 | SEC-001 威胁模型 v0 | 2026-09-08 | `docs/architecture/threat-model-v0.md`：数据流图+6 信任边界、9 资产、16 威胁（账号/消息/文件/Push/bridge/存储全覆盖）、7 秘密管理规则、§18 风险映射；commit `b94e5a6` |
 | TDN-001 依赖构建矩阵 | 2026-09-08 | `native/tdcore/README.md`：OpenSSL 3.5.8（必须，TD CMake 硬依赖）/ zlib 1.3.1（NDK sysroot）/ SQLite 3.31.0（TD 自带 amalgamation）/ TDLib d1085f9ce，各带版本、来源、hash、许可证；commit `0dd04ef` |
-| TDN-002 最小依赖构建 | 2026-09-08（smoke 转应用内验证） | OHOS NDK 交叉编译产出 `libtdjson.so`（arm64，strip 后 45.9MB，导出 td_create_client_id/td_send/td_receive/td_execute，build-id 7b9c054b）+ `libcrypto.so.3`；musl 补丁 0001；**实测发现 HarmonyOS 6.1 真机 hdc shell 域禁止 exec ELF**（runbook 已记录），真机 smoke 改走应用内 Node-API 验证（并入 BRG-001/002） |
+| TDN-002 最小依赖构建 | 2026-09-08 ✅ | OHOS NDK 交叉编译产出 `libtdjson.so`（arm64，strip 后 45.9MB，build-id 7b9c054b）+ `libcrypto.so.3`；musl 补丁 0001；**真机应用内 smoke PASS**：TDLib 1.8.67，execute(getTextEntities) 正常返回（hdc shell 域禁 exec ELF 的绕过方案见 runbook） |
+| BRG-001/002 Node-API 桥 | 2026-09-08 ✅ | `libtdcore_napi.so` 导出 getVersion/execute/createClient/send（契约对照 §5.2，错误安全）；真机验证：页面显示 `TDLib 版本: 1.8.67` + textEntities JSON；signed hap 42.4MB；证据 `native/tdcore/napibridge/EVIDENCE.md` + 设备截图；commit `a3bb61e` |
 | 结构骨架 | 2026-09-08 | core×9 / platform×14 / feature×12 / native×3 / tools×4 / test×4 目录已建（仅 .gitkeep，未注册构建，符合 ADR-002） |
 
 已知工程要点（runbook 已记录）：hvigorw 为 shell/JS polyglot；离线构建依赖 `~/.hvigor/project_caches`；`DEVECO_SDK_HOME` 必须指向 `…/Contents/sdk`（wrapper 已内置）；签名/真机待用户提供。
