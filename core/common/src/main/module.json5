@@ -1,0 +1,10 @@
+{
+  "module": {
+    "name": "core_common",
+    "type": "har",
+    "description": "core/common: Result、AppError、Clock、IdGenerator（纯 ArkTS，无 Kit 依赖）",
+    "deviceTypes": [
+      "phone"
+    ]
+  }
+}

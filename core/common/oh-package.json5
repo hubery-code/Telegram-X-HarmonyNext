@@ -1,0 +1,12 @@
+{
+  "name": "@tgx/core-common",
+  "version": "0.1.0",
+  "description": "Telegram X HarmonyOS core/common: Result, AppError, Clock, IdGenerator. Pure ArkTS, no Kit / TDLib / platform dependency (CORE-001).",
+  "main": "./src/main/ets/Index.ets",
+  "author": "telegram-x",
+  "license": "GPL-3.0",
+  "dependencies": {},
+  "devDependencies": {
+    "@ohos/hypium": "1.0.21"
+  }
+}

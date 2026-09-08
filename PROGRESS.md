@@ -20,7 +20,7 @@
 
 ## 进行中（Implementing）
 
-（暂无 — Phase 0 已完成，下一批 TDN-001/002 待认领）
+（暂无）
 
 ## 待认领（Backlog，按计划的 Phase 0 顺序）
 
@@ -63,8 +63,12 @@
 | TDN-002 最小依赖构建 | 2026-09-08 ✅ | OHOS NDK 交叉编译产出 `libtdjson.so`（arm64，strip 后 45.9MB，build-id 7b9c054b）+ `libcrypto.so.3`；musl 补丁 0001；**真机应用内 smoke PASS**：TDLib 1.8.67，execute(getTextEntities) 正常返回（hdc shell 域禁 exec ELF 的绕过方案见 runbook） |
 | BRG-001/002 Node-API 桥 | 2026-09-08 ✅ | `libtdcore_napi.so` 导出 getVersion/execute/createClient/send（契约对照 §5.2，错误安全）；真机验证：页面显示 `TDLib 版本: 1.8.67` + textEntities JSON；signed hap 42.4MB；证据 `native/tdcore/napibridge/EVIDENCE.md` + 设备截图；commit `a3bb61e` |
 | 结构骨架 | 2026-09-08 | core×9 / platform×14 / feature×12 / native×3 / tools×4 / test×4 目录已建（仅 .gitkeep，未注册构建，符合 ADR-002） |
+| GEN-001 schema IR | 2026-09-08 ✅ | AI-Agent-C：`tools/td_api_codegen/td_api_ir.py`（纯 python3 无依赖）解析 td_api.tl（16313 行）→ `core/td_api_generated/schema.ir.json` + golden 快照 `tools/td_api_codegen/snapshot/td_api.ir.json`；schemaHash `7fbae70a…c5929`（SHA-256，仅随 schema 内容变）；stats types=743 / constructors=3214（objects=2192+functions=1022）/ fields=6997；入口 `python3 tools/td_api_codegen/td_api_ir.py verify`（CI 用，不写文件）——重复运行字节级一致，故意改输入（加字段）verify/generate 均退出码 1、恢复后通过；README 含 GEN-002 交接说明 |
+| CORE-001 Result/AppError/Clock/Id | 2026-09-08 ✅ | AI-Agent-E：`core/common` 注册为 har 模块（build-profile.json5 modules 追加 `core_common`，未动 entry/signing）；Result 判别联合（map/flatMap/mapError/getOrElse/getOrNull/fold）+ AppError 七类稳定错误（含 fromTdlibError 稳定映射、toLogString 脱敏）+ Clock（System/Manual）+ IdGenerator（Random 可注入/Sequential fake）；纯单测 27 用例全 Success：`./hvigorw test --mode module -p module=core_common@default -p product=default --no-daemon`（全工程 `hvigorw test --no-daemon` 亦 BUILD SUCCESSFUL，entry 1 用例回归通过）；`assembleHar` BUILD SUCCESSFUL；交接说明见 `core/common/README.md`（单调时钟需 platform 注入） |
 
 已知工程要点（runbook 已记录）：hvigorw 为 shell/JS polyglot；离线构建依赖 `~/.hvigor/project_caches`；`DEVECO_SDK_HOME` 必须指向 `…/Contents/sdk`（wrapper 已内置）；签名/真机待用户提供。
+
+已知工程要点（CORE-001 实测）：① 后续 har 模块照 `core/common/` 模板注册：`hvigorfile.ts` 用 `harTasks`；模块自己的 `build-profile.json5`（`{"apiType":"stageMode","buildOption":{}}`）；`src/main/module.json5` 的 `type` 必须是 `"har"`（写 `"shared"` 会被当 HSP 导致 `PackageSignHar` 缺失）；oh-package.json5 的 `main` 指向 `./src/main/ets/Index.ets`。② har 模块单测入口固定为 `src/test/List.test.ets`（hvigor 生成 harness 硬编码 import 它，由它汇总其他 `*.test.ets`）。③ 模块本地单测需在 `<module>/oh_modules/@ohos/hypium` 建符号链接到根 `oh_modules/.ohpm/@ohos+hypium@1.0.21/...`（gitignored；照抄 entry 的做法）。
 
 ## 阻塞 / 风险记录
 
