@@ -1,0 +1,10 @@
+{
+  "module": {
+    "name": "core_navigation",
+    "type": "har",
+    "description": "core/navigation: typed routes、RouteRegistry、path/deep-link 编解码、NavigationStack（纯 ArkTS，无 ArkUI 依赖）",
+    "deviceTypes": [
+      "phone"
+    ]
+  }
+}

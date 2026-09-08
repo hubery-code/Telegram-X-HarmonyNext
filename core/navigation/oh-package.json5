@@ -1,0 +1,14 @@
+{
+  "name": "@tgx/core-navigation",
+  "version": "0.1.0",
+  "description": "Telegram X HarmonyOS core/navigation: typed route contract, RouteRegistry, path/deep-link codec, NavigationStack. Pure ArkTS, no ArkUI dependency (UI-002).",
+  "main": "./src/main/ets/Index.ets",
+  "author": "telegram-x",
+  "license": "GPL-3.0",
+  "dependencies": {
+    "@tgx/core-common": "file:../common"
+  },
+  "devDependencies": {
+    "@ohos/hypium": "1.0.21"
+  }
+}
