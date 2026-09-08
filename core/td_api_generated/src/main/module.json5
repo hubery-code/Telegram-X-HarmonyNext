@@ -1,0 +1,10 @@
+{
+  "module": {
+    "name": "core_td_api_generated",
+    "type": "har",
+    "description": "core/td_api_generated：TDLib ArkTS DTO/union/codec（生成产物，禁止手改）",
+    "deviceTypes": [
+      "phone"
+    ]
+  }
+}

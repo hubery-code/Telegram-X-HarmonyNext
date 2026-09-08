@@ -83,7 +83,19 @@ $HDC shell "hilog | grep -i -e telegram -e tdlib -e tdx | tail -30"
 ```
 
 预期页面显示：`TDLib 版本: 1.8.67` + `execute 结果:
-{"@type":"textEntities",...}` + `createClient/send: clientId=0 ...`。
+{"@type":"textEntities",...}` + 订阅区显示 `收到请求响应: clientId=... 
+sequence=... @type=option`（BRG-003 receive 线程 + TSFN 端到端）+
+指标行 `queue=0 overflowWait=0 dropped=0 forwarded=... subs=1
+running=true`。
+
+### 订阅/销毁验证（BRG-003/004）
+
+- 验证页 `aboutToAppear` 自动：subscribe → createClient → send
+  getOption(version, @extra.requestId=smoke-1) → 事件回调显示响应。
+- 「刷新指标 / 退订」按钮：退订后 `subs=0 running=false`（receive 线程
+  停止、TSFN 释放）；再次进入页面自动重建订阅，反复进出不崩溃即销毁
+  安全。也可用 `hdc shell aa force-stop org.telegram.x.harmony` 后重启
+  验证冷启动路径。
 
 ### 打包要点（已踩过的坑）
 

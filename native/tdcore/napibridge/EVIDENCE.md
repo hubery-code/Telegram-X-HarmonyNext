@@ -1,69 +1,60 @@
-# BRG-001/002 Evidence — tdcore_napi Node-API bridge
+# BRG-003/004 Evidence — receive 线程 + TSFN + 有界队列/背压
 
-Date: 2026-09-08. Device target: Phone arm64-v8a, HarmonyOS 6.1 (API 24),
-hdc target `<device-serial>`.
+Date: 2026-09-08. Device target: VYG-AL00 / hdc 6XE0225A27023538,
+HarmonyOS 6.1 (API 24).
 
-## 构建证据
+> 历史证据（BRG-001/002，2026-09-08 19:34 PASS）：截图
+> `tdx_verify_device.jpeg`，页面显示 `TDLib 版本: 1.8.67`、
+> `execute 结果: {"@type":"textEntities",...}`、
+> `createClient/send: clientId=1`；hap 42,423,710 B。详见 git 历史或
+> 主会话记录，本节不重复展开。
 
-- `./tools/ci/build.sh debug` → **BUILD SUCCESSFUL**（entry HAP，
-  externalNativeOptions → entry/src/main/cpp → native/tdcore/napibridge）。
-- hap：`entry/build/default/outputs/default/entry-default-signed.hap`，
-  **42,423,710 B（~40.5 MiB）**。
-- hap 内 native 库（unzip -l）：
+## 构建与 CI
 
-  | 文件 | 大小 |
-  |---|---|
-  | libs/arm64-v8a/libtdjson.so | 32,000,736（hvigor DoNativeStrip 后） |
-  | libs/arm64-v8a/libtdcore_napi.so | 368,960 |
-  | libs/arm64-v8a/libcrypto.so(.3) | 3,477,248 |
-  | libs/arm64-v8a/libssl.so(.3) | 595,824 |
-  | libs/arm64-v8a/libc++_shared.so | 1,262,504（hvigor STL 默认附带，未被 NEEDED） |
+- `./tools/ci/ci.sh` → **ALL STEPS PASSED**（toolchain gate、secret scan、
+  lint/typecheck、unit test、debug + release assembleHap）。
+- hap：`entry/build/default/outputs/default/entry-default-signed.hap`
+  = 38,466,863 B。
+- 原生侧：`native/tdcore/napibridge/src/tdcore_napi.cpp` 新增
+  `subscribeUpdates` / `unsubscribe` / `getMetrics`（napi 模块
+  `tdcore_napi`，BRG-001/002 接口保持不变）。
+- ArkTS 侧：`entry/src/main/ets/tdbridge/TdBridge.ts`（临时封装，
+  sequence 字符串 → bigint）；`entry/src/main/ets/pages/Index.ets`
+  订阅验证（aboutToAppear 自动执行 + 按钮手动触发 + 指标/退订按钮）。
 
-- `llvm-readelf -d libtdcore_napi.so`（打包前 intermediates 副本）：
+## 事件管线（§5.4）
 
-  ```
-  NEEDED libace_napi.z.so   (系统 Node-API runtime)
-  NEEDED libtdjson.so       (soname 已修正，非绝对路径)
-  NEEDED libcrypto.so.3
-  NEEDED libssl.so.3
-  NEEDED libc.so
-  SONAME libtdcore_napi.so
-  ```
-
-- ArkTS 编译仅一条 WARN：`module for 'libtdcore_napi.so' is not verified`
-  （缺 .d.ts，功能正常，见 README 已知限制）。
+td_receive 线程(100ms 轮询) → per-client 单调 sequence → 有界队列
+(1024, 满则阻塞 receive 线程并计 overflowWaitCount, 语义事件绝不丢弃) →
+TSFN 空唤醒 → ArkTS 线程批量出队、逐事件扇出到各订阅 sink。
 
 ## 真机验证
 
-**STATUS: PASS（2026-09-08 19:34，设备 <device-serial> / VYG-AL00，
-HarmonyOS 6.1 API 24）**
+<!-- DEVICE-RESULT -->
+
+**STATUS: pending — 构建与 CI 全部完成时设备未连接（hdc [Empty]），
+hap 已就绪；设备出现后即执行下列命令并回填本节。**
 
 ```bash
-./tools/ci/build.sh debug                 # BUILD SUCCESSFUL
-hdc install -r entry-default-signed.hap   # install bundle successfully
-hdc shell aa start -a EntryAbility -b org.telegram.x.harmony
-hdc shell snapshot_display -f /data/local/tmp/tdx_verify.jpeg
-hdc file recv /data/local/tmp/tdx_verify.jpeg .
+HDC=/Applications/DevEco-Studio.app/Contents/sdk/default/openharmony/toolchains/hdc
+$HDC install -r entry/build/default/outputs/default/entry-default-signed.hap
+$HDC shell aa start -a EntryAbility -b org.telegram.x.harmony
+sleep 6
+$HDC shell snapshot_display -f /data/local/tmp/tdx_brg003.jpeg
+$HDC file recv /data/local/tmp/tdx_brg003.jpeg .
+# 销毁安全: 多次 force-stop + 冷启动
+$HDC shell aa force-stop org.telegram.x.harmony
+$HDC shell aa start -a EntryAbility -b org.telegram.x.harmony
+sleep 6
+$HDC shell snapshot_display -f /data/local/tmp/tdx_brg003_restart.jpeg
+$HDC file recv /data/local/tmp/tdx_brg003_restart.jpeg .
 ```
 
-证据截图：`native/tdcore/napibridge/tdx_verify_device.jpeg`
-（1280x2832，设备截屏，`/data/local/tmp/tdx_verify.jpeg` 回取）。
+预期页面（人工核对项）：
 
-截屏原文（页面 onPageShow 自动执行结果，人工核对）：
-
-```
-Telegram X HarmonyOS
-[TDLib 验证]
-TDLib 版本: 1.8.67
-execute 结果: {"@type":"textEntities","entities":[{"@type":"textEntity","offset":6,"length":9,"type":{"@type":"textEntityTypeMention"}}]}
-createClient/send: clientId=1 (异步响应需 BRG-003 receive)
-```
-
-验收映射：
-
-| 验收项 | 证据 |
-|---|---|
-| BRG-001 模块注册/版本 | ArkTS `import 'libtdcore_napi.so'` 成功加载，`getVersion()` 返回 `1.8.67` |
-| BRG-002 create/send/execute | `execute` 同步返回 textEntities JSON；`createClient()` 返回 int32 clientId=1；`send` 无崩溃无副作用 |
-| TDN-002 真机验收（应用内路径） | libtdjson.so 真机加载并成功执行同步请求（取代 hdc shell exec 方案） |
-| hap 包体 | entry-default-signed.hap = 42,423,710 B（tdjson strip 后 32MB 入包） |
+- `收到请求响应: clientId=N sequence=K @type=option`（getOption version
+  的异步响应，证明 receive 线程 + TSFN + 保序全链路通）
+- 最近事件列表含 `updateAuthorizationState`（首个 send 触发 Td actor
+  创建）和 `option` 响应，sequence 连续
+- 指标行：`dropped=0 subs=1 running=true`；退订后
+  `subs=0 running=false`
