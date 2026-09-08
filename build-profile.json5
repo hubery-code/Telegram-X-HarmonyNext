@@ -58,6 +58,18 @@
           ]
         }
       ]
+    },
+    {
+      "name": "core_design_system",
+      "srcPath": "./core/design_system",
+      "targets": [
+        {
+          "name": "default",
+          "applyToProducts": [
+            "default"
+          ]
+        }
+      ]
     }
   ]
 }

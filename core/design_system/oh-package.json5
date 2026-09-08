@@ -1,0 +1,12 @@
+{
+  "name": "@tgx/core-design-system",
+  "version": "0.1.0",
+  "description": "Telegram X HarmonyOS core/design_system: design tokens (semantic colors light/dark, typography, spacing, radius, motion), Theme + token resolve entry, fontScale adaptation. Pure ArkTS, no Kit / entry dependency (UI-001).",
+  "main": "./src/main/ets/Index.ets",
+  "author": "telegram-x",
+  "license": "GPL-3.0",
+  "dependencies": {},
+  "devDependencies": {
+    "@ohos/hypium": "1.0.21"
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "module": {
+    "name": "core_design_system",
+    "type": "har",
+    "description": "core/design_system：design token（语义色/排版/间距/圆角/动画）、Theme、fontScale 适配（纯 ArkTS，无 Kit 依赖）",
+    "deviceTypes": [
+      "phone"
+    ]
+  }
+}

@@ -21,6 +21,9 @@
 ## 进行中（Implementing）
 
 （暂无）
+| PLAT-001 | AI-Agent-H（kimi-code session_74035529 子代理） | `platform/ports/` 平台端口契约（Preferences/SecureKeyStore/NetworkState/AppFiles/MonotonicClock）+ Fake 实现 + 同套 contract 测试 + 注册 har 模块 `platform_ports`，依赖 `@tgx/core-common` |
+| UI-002 Typed navigation | AI-Agent-I（kimi-code session_74035529 子代理） | `core/navigation` har（模块名 `core_navigation`）：强类型路由契约（discriminated union + 参数 schema）、RouteRegistry、parse/encode/deep link 编解码（错误返回不抛异常）、导航栈抽象（push/replace/pop/popToRoot/恢复序列化去重）、单测 + README；build-profile.json5 仅追加注册 |
+| GEN-002 ArkTS DTO/union 全量生成 | AI-Agent-F（kimi-code session_74035529 子代理） | 从 schema.ir.json 生成全量 ArkTS 判别联合 + JSON decode/encode + 运行时校验/前向兼容 fallback（未知 @type/未知字段不抛错）+ 请求返回类型映射；int64→string 保精度；注册 har 模块 `core_td_api_generated`，assembleHar + 单测（round-trip/未知 fallback/int64 精度）通过后提交 |
 
 ## 待认领（Backlog，按计划的 Phase 0 顺序）
 
@@ -65,6 +68,7 @@
 | 结构骨架 | 2026-09-08 | core×9 / platform×14 / feature×12 / native×3 / tools×4 / test×4 目录已建（仅 .gitkeep，未注册构建，符合 ADR-002） |
 | GEN-001 schema IR | 2026-09-08 ✅ | AI-Agent-C：`tools/td_api_codegen/td_api_ir.py`（纯 python3 无依赖）解析 td_api.tl（16313 行）→ `core/td_api_generated/schema.ir.json` + golden 快照 `tools/td_api_codegen/snapshot/td_api.ir.json`；schemaHash `7fbae70a…c5929`（SHA-256，仅随 schema 内容变）；stats types=743 / constructors=3214（objects=2192+functions=1022）/ fields=6997；入口 `python3 tools/td_api_codegen/td_api_ir.py verify`（CI 用，不写文件）——重复运行字节级一致，故意改输入（加字段）verify/generate 均退出码 1、恢复后通过；README 含 GEN-002 交接说明 |
 | CORE-001 Result/AppError/Clock/Id | 2026-09-08 ✅ | AI-Agent-E：`core/common` 注册为 har 模块（build-profile.json5 modules 追加 `core_common`，未动 entry/signing）；Result 判别联合（map/flatMap/mapError/getOrElse/getOrNull/fold）+ AppError 七类稳定错误（含 fromTdlibError 稳定映射、toLogString 脱敏）+ Clock（System/Manual）+ IdGenerator（Random 可注入/Sequential fake）；纯单测 27 用例全 Success：`./hvigorw test --mode module -p module=core_common@default -p product=default --no-daemon`（全工程 `hvigorw test --no-daemon` 亦 BUILD SUCCESSFUL，entry 1 用例回归通过）；`assembleHar` BUILD SUCCESSFUL；交接说明见 `core/common/README.md`（单调时钟需 platform 注入） |
+| UI-001 Design token/theme | 2026-09-08 ✅ | AI-Agent-G：`core/design_system` 注册为 har 模块（build-profile.json5 modules **仅追加** `core_design_system`）；19 个语义色 token 深浅两套（LightColors/DarkColors）+ 9 档字阶排版 + 间距/圆角/动画 token（曲线存贝塞尔控制点保持 Kit-free）；`Theme`/`createTheme(mode, fontScale)` + `resolveToken(theme, dottedName)` 五命名空间解析入口（未知名返回 undefined）；fontScale 适配 clamp [0.85,2.0] + 最小可读字号 11vp 下限；纯单测 25 用例全 Success（深浅色映射完整且互异、WCAG 对比度断言、fontScale 五边界、token 存在性/有序性）；`assembleHar` BUILD SUCCESSFUL；命名规范/加 token 流程/ArkUI 接入说明见 `core/design_system/README.md` |
 
 已知工程要点（runbook 已记录）：hvigorw 为 shell/JS polyglot；离线构建依赖 `~/.hvigor/project_caches`；`DEVECO_SDK_HOME` 必须指向 `…/Contents/sdk`（wrapper 已内置）；签名/真机待用户提供。
 
