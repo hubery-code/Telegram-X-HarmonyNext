@@ -67,4 +67,5 @@
 
 | 日期 | 事项 | 状态 |
 |---|---|---|
-| 2026-09-08 | 用户输入项（api_id/api_hash、真机、AGC/Push 配置）未提供 —— 阻塞 Phase 1 真机项，不阻塞 Phase 0 工程脚手架 | 记录 |
+| 2026-09-08 | 用户输入项（api_id/api_hash、真机、AGC/Push 配置）未提供 —— 阻塞 Phase 1 真机项，不阻塞 Phase 0 工程脚手架 | ✅ 已解决：api_id/api_hash 已放入 gitignored `local.properties`（取自 Android 工程）；VYG-AL00 真机已连（API 24 / 6.1.0.135），DevEco 自动签名已接入 |
+| 2026-09-08 | compatibleSdkVersion 26 与设备 API 24 不匹配 | ✅ 已修复为 `6.1.1(24)`（hvigor 映射表 6.1.1→24）；signed hap 已真机安装成功（bundle 校验通过），启动待解锁屏幕 |
