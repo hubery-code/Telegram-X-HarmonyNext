@@ -1,13 +1,28 @@
 {
   "app": {
-    "signingConfigs": [],
+    "signingConfigs": [
+      {
+        "name": "default",
+        "type": "HarmonyOS",
+        "material": {
+          "certpath": "/Users/mbjpeng-yu01/.ohos/config/default_Telegram-X-HarmonyNext_hqBU_pcj4WEi1CnIB9wyVDaTgiw5y0AWW6WZ5qqsu8Y=.cer",
+          "keyAlias": "debugKey",
+          "keyPassword": "0000001BC9D2EE975A8E5F390EF926592B9E7EF9BDEDF24A338629554F1D3E27E1A523FE104EF7A0913E6B",
+          "profile": "/Users/mbjpeng-yu01/.ohos/config/default_Telegram-X-HarmonyNext_hqBU_pcj4WEi1CnIB9wyVDaTgiw5y0AWW6WZ5qqsu8Y=.p7b",
+          "signAlg": "SHA256withECDSA",
+          "storeFile": "/Users/mbjpeng-yu01/.ohos/config/default_Telegram-X-HarmonyNext_hqBU_pcj4WEi1CnIB9wyVDaTgiw5y0AWW6WZ5qqsu8Y=.p12",
+          "storePassword": "0000001B63677BA4EBDD34EBB8598CBF8898D90EBAD20501CD81D04188270CA6F77FBAEC0F336089DC0197"
+        }
+      }
+    ],
     "products": [
       {
         "name": "default",
         "compileSdkVersion": "26.0.0",
-        "compatibleSdkVersion": "26.0.0",
-        "targetSdkVersion": "26.0.0",
-        "runtimeOS": "HarmonyOS"
+        "compatibleSdkVersion": "6.1.1(24)",
+        "targetSdkVersion": "6.1.1(24)",
+        "runtimeOS": "HarmonyOS",
+        "signingConfig": "default"
       }
     ],
     "buildModeSet": [

@@ -88,3 +88,17 @@ job 开头检测 DevEco 路径，不存在则跳过并注明——SDK 与签名�
 rm -rf entry/build entry/.test .hvigor   # 本工程构建与测试产物
 # hvigor 工作区缓存（一般不用清）：rm -rf ~/.hvigor/project_caches/*
 ```
+
+## 故障排除（实测）
+
+### “compatibleSdkVersion 和 releaseType 与设备不匹配”（2026-09-08 实测）
+- 设备 API 版本查询：`hdc shell "param get const.ohos.apiversion; param get const.ohos.releasetype"`
+- API 24 对应平台版本串是 `6.1.1(24)`（映射表在 hvigor 的 `hos-sdkmanager-common/build/res/hos-config.json`）；本工程已设 `compatibleSdkVersion/targetSdkVersion = "6.1.1(24)"`，`compileSdkVersion = "26.0.0"`。
+- HarmonyOS 工程 API 10–25 的 sdkVersion 必须写成 `平台版本(API)` 字符串格式，纯数字串会报 00306042。
+
+### 签名
+- 使用 DevEco 自动生成的 debug 签名（signingConfig `default`，证书在 `~/.ohos/config/`，不入库）；Release 同样产出 signed hap。
+- 真机安装：`hdc install entry/build/default/outputs/default/entry-default-signed.hap`。
+
+### Telegram API 凭据
+- 位于仓库根 `local.properties`（已 gitignore）：`telegram.api_id` / `telegram.api_hash`，值取自 Android 参考工程；TDLib 构建/桥接工作包从该文件读取，禁止写入其他文件或日志。
