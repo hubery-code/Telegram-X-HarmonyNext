@@ -1,0 +1,23 @@
+--- a/tdutils/td/utils/port/detail/ThreadPthread.cpp
++++ b/tdutils/td/utils/port/detail/ThreadPthread.cpp
+@@ -106,7 +106,10 @@
+ 
+ #if TD_HAVE_THREAD_AFFINITY
+ Status ThreadPthread::set_affinity_mask(id thread_id, uint64 mask) {
+-#if TD_LINUX || TD_FREEBSD
++// OHOS libc is musl-based: pthread_setaffinity_np / pthread_getaffinity_np
++// are glibc-only. Affinity pinning is a perf hint, not needed for
++// correctness, so report "Unsupported" on OHOS.
++#if (TD_LINUX || TD_FREEBSD) && !defined(__OHOS__)
+ #if TD_FREEBSD
+   cpuset_t cpuset;
+ #else
+@@ -154,7 +157,7 @@
+ }
+ 
+ uint64 ThreadPthread::get_affinity_mask(id thread_id) {
+-#if TD_LINUX || TD_FREEBSD
++#if (TD_LINUX || TD_FREEBSD) && !defined(__OHOS__)
+ #if TD_FREEBSD
+   cpuset_t cpuset;
+ #else
