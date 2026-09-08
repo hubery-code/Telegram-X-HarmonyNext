@@ -58,3 +58,9 @@ Expected final line: `SMOKE RESULT: PASS`.
   hdc start`), re-check the cable/unlock the device; `system_profiler
   SPUSBDataType` must list the phone.
 - CMake reconfigure with a changed toolchain: always `tools/native/build-tdlib.sh --clean`.
+
+## 真机限制（2026-09-08 实测，重要）
+
+**HarmonyOS 6.1（API 24）真机的 hdc shell（uid=shell）域被 SELinux 禁止直接 exec 任意 ELF**：`chmod 755` 后执行仍报 `Permission denied`（`/lib/ld-musl-aarch64.so.1` 同样被拒）。无 shebang 的脚本会由 shell 兜底解释执行，所以 shell 脚本可以跑、原生二进制不行。
+
+**结论**：native smoke / TDLib 验证必须**在应用进程内**进行——通过 Node-API 桥（见 BRG-001/002）在 debug HAP 里调用 `td_execute` 等接口，UI 展示结果后截图取证。`tools/native/smoke-on-device.sh` 保留仅作 push 工具。
