@@ -20,7 +20,12 @@
 
 ## 进行中（Implementing）
 
-（暂无）
+| 工作包 | 负责人(AI) | 开始时间 | 说明 |
+|---|---|---|---|
+| CORE-002 TdGateway+RequestRegistry | 主会话 | 2026-09-09 | request 注册表（@extra.requestId 关联 Promise/超时/取消/迟到响应）+ 有序事件流；区域：`core/td_gateway/` |
+| GEN-004 敏感字段元数据 | 主会话 | 2026-09-09 | 生成 redaction map + 日志脱敏 helper；区域：`tools/td_api_codegen/`、`core/observability/` |
+
+> ⚠️ 并行约定：**不要执行 git commit**，完成后报告文件清单由主会话统一提交。CORE-002 禁止 import ArkUI；GEN-004 不得手改生成物。
 
 ## 待认领（Backlog，按计划的 Phase 0 顺序）
 
@@ -62,7 +67,7 @@
 | TDN-001 依赖构建矩阵 | 2026-09-08 | `native/tdcore/README.md`：OpenSSL 3.5.8（必须，TD CMake 硬依赖）/ zlib 1.3.1（NDK sysroot）/ SQLite 3.31.0（TD 自带 amalgamation）/ TDLib d1085f9ce，各带版本、来源、hash、许可证；commit `0dd04ef` |
 | TDN-002 最小依赖构建 | 2026-09-08 ✅ | OHOS NDK 交叉编译产出 `libtdjson.so`（arm64，strip 后 45.9MB，build-id 7b9c054b）+ `libcrypto.so.3`；musl 补丁 0001；**真机应用内 smoke PASS**：TDLib 1.8.67，execute(getTextEntities) 正常返回（hdc shell 域禁 exec ELF 的绕过方案见 runbook） |
 | BRG-001/002 Node-API 桥 | 2026-09-08 ✅ | `libtdcore_napi.so` 导出 getVersion/execute/createClient/send（契约对照 §5.2，错误安全）；真机验证：页面显示 `TDLib 版本: 1.8.67` + textEntities JSON；证据 `native/tdcore/napibridge/EVIDENCE.md` + 设备截图；commit `c93ebd5` |
-| BRG-003/004 receive+队列 | 2026-09-08（真机验证待设备） | receive 线程（td_receive 100ms）→ 有界队列（1024，满则背压阻塞、语义事件零丢弃）→ TSFN → ArkTS；`subscribeUpdates/unsubscribe/getMetrics`（sequence 走十进制字符串保 64 位精度）；`entry/.../tdbridge/TdBridge.ts` 封装；CI 全绿；**端到端验证待真机**（预期页面显示 getOption 异步响应） |
+| BRG-003/004 receive+队列 | 2026-09-09 ✅ | receive 线程 → 有界队列 → TSFN → ArkTS 全管线；真机端到端 PASS：getOption 异步响应按序到达（seq #1-#4 单调），dropped=0，force-stop 重启无崩溃；证据 `napibridge/EVIDENCE.md` + 两张设备截图；commit `62b71a2` |
 | 结构骨架 | 2026-09-08 | core×9 / platform×14 / feature×12 / native×3 / tools×4 / test×4 目录已建（仅 .gitkeep，未注册构建，符合 ADR-002） |
 | GEN-001 schema IR | 2026-09-08 ✅ | AI-Agent-C：`tools/td_api_codegen/td_api_ir.py`（纯 python3 无依赖）解析 td_api.tl（16313 行）→ `core/td_api_generated/schema.ir.json` + golden 快照 `tools/td_api_codegen/snapshot/td_api.ir.json`；schemaHash `7fbae70a…c5929`（SHA-256，仅随 schema 内容变）；stats types=743 / constructors=3214（objects=2192+functions=1022）/ fields=6997；入口 `python3 tools/td_api_codegen/td_api_ir.py verify`（CI 用，不写文件）——重复运行字节级一致，故意改输入（加字段）verify/generate 均退出码 1、恢复后通过；README 含 GEN-002 交接说明 |
 | GEN-002 ArkTS DTO/union 全量生成 | 2026-09-09 ✅ | AI-Agent-F：`tools/td_api_codegen/td_api_arkts.py` 从 schema.ir.json 生成全量 ArkTS（classes=3205、unions=743、49 个 .ets）：每构造器一个类（判别属性 `type`、`@extra` 载体、int64→string）+ 每抽象类型判别联合（恒含 `TdUnknownObject`）+ decode/encode + `TdResponseMap` 请求返回映射 + `decodeTdObject`/`encodeTdObject`；decode 永不抛错（未知 `@type`→`TdUnknownObject` 保 raw 可回传、未知字段忽略、缺字段取默认）；命名规则/避让（`type_`/`extra_`、`DateValue`/`ErrorValue`/`ProxyValue`、`TdJsonRaw`）与 panda index 上限分块约束（`TdUnions_<A-Z>` + `TdEntries`）见 README；`generate`/`verify` 双入口、重复生成字节级一致（shasum 两次相同）；har 模块 `core_td_api_generated`（`@tgx/td-api-generated`）`assembleHar` BUILD SUCCESSFUL；单测 20 用例全 Success（codec round-trip/未知 `@type` 与未知字段 fallback/int64 精度/`@extra`/响应映射）`./hvigorw test --mode module -p module=core_td_api_generated@default -p product=default --no-daemon`；首版生成物曾被 BRG-003/004 的 commit `032cdfa` 顺带提交（CI 需要），本轮为重构后最终版 |
