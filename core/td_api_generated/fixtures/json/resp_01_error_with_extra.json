@@ -1,0 +1,6 @@
+{
+  "@type": "error",
+  "code": 400,
+  "message": "PHONE_NUMBER_INVALID",
+  "@extra": "req-42-007"
+}

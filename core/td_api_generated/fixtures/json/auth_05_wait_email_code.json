@@ -1,0 +1,17 @@
+{
+  "@type": "updateAuthorizationState",
+  "authorization_state": {
+    "@type": "authorizationStateWaitEmailCode",
+    "allow_apple_id": false,
+    "allow_google_id": false,
+    "code_info": {
+      "@type": "emailAddressAuthenticationCodeInfo",
+      "email_address_pattern": "4***@example.com",
+      "length": 6
+    },
+    "email_address_reset_state": {
+      "@type": "emailAddressResetStatePending",
+      "reset_in": 3600
+    }
+  }
+}

@@ -1,0 +1,60 @@
+{
+  "@type": "updateNewMessage",
+  "message": {
+    "@type": "message",
+    "id": 42420000000005,
+    "sender_id": {
+      "@type": "messageSenderUser",
+      "user_id": 4242005
+    },
+    "receiver_id": null,
+    "chat_id": 424246,
+    "sending_state": null,
+    "scheduling_state": null,
+    "is_outgoing": false,
+    "is_pinned": false,
+    "is_from_offline": false,
+    "can_be_saved": true,
+    "has_timestamped_media": false,
+    "is_channel_post": false,
+    "is_paid_star_suggested_post": false,
+    "is_paid_gram_suggested_post": false,
+    "contains_unread_mention": false,
+    "contains_unread_poll_votes": false,
+    "date": 1725734404,
+    "edit_date": 0,
+    "forward_info": null,
+    "import_info": null,
+    "interaction_info": null,
+    "unread_reactions": [],
+    "fact_check": null,
+    "suggested_post_info": null,
+    "reply_to": null,
+    "topic_id": null,
+    "self_destruct_type": null,
+    "self_destruct_in": 0,
+    "auto_delete_in": 0,
+    "via_bot_user_id": 0,
+    "guest_bot_caller_id": null,
+    "sender_business_bot_user_id": 0,
+    "sender_boost_count": 0,
+    "sender_tag": "",
+    "paid_message_star_count": 0,
+    "author_signature": "",
+    "media_album_id": "9223372036854775807",
+    "effect_id": "0",
+    "restriction_info": null,
+    "summary_language_code": "",
+    "content": {
+      "@type": "messageContentFromFuture",
+      "flags": [1, 2],
+      "meta": {
+        "x": "y"
+      }
+    },
+    "ephemeral_content": null,
+    "reply_markup": null,
+    "ephemeral_message_id": 0,
+    "chat_instance": "-10042424242424242"
+  }
+}

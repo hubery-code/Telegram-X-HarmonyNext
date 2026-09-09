@@ -1,0 +1,98 @@
+{
+  "@type": "updateNewMessage",
+  "message": {
+    "@type": "message",
+    "id": 42420000000003,
+    "sender_id": {
+      "@type": "messageSenderUser",
+      "user_id": 4242003
+    },
+    "receiver_id": null,
+    "chat_id": 424244,
+    "sending_state": null,
+    "scheduling_state": null,
+    "is_outgoing": false,
+    "is_pinned": false,
+    "is_from_offline": false,
+    "can_be_saved": true,
+    "has_timestamped_media": false,
+    "is_channel_post": false,
+    "is_paid_star_suggested_post": false,
+    "is_paid_gram_suggested_post": false,
+    "contains_unread_mention": false,
+    "contains_unread_poll_votes": false,
+    "date": 1725734402,
+    "edit_date": 0,
+    "forward_info": null,
+    "import_info": null,
+    "interaction_info": null,
+    "unread_reactions": [],
+    "fact_check": null,
+    "suggested_post_info": null,
+    "reply_to": null,
+    "topic_id": null,
+    "self_destruct_type": null,
+    "self_destruct_in": 0,
+    "auto_delete_in": 0,
+    "via_bot_user_id": 0,
+    "guest_bot_caller_id": null,
+    "sender_business_bot_user_id": 0,
+    "sender_boost_count": 0,
+    "sender_tag": "",
+    "paid_message_star_count": 0,
+    "author_signature": "",
+    "media_album_id": "9223372036854775807",
+    "effect_id": "0",
+    "restriction_info": null,
+    "summary_language_code": "",
+    "content": {
+      "@type": "messageSticker",
+      "sticker": {
+        "@type": "sticker",
+        "id": "4242000000000000042",
+        "set_id": "424242",
+        "width": 512,
+        "height": 512,
+        "emoji": "👍",
+        "format": {
+          "@type": "stickerFormatWebp"
+        },
+        "full_type": {
+          "@type": "stickerFullTypeRegular",
+          "premium_animation": null
+        },
+        "thumbnail": null,
+        "sticker": {
+          "@type": "file",
+          "id": 42420003,
+          "size": 1024,
+          "expected_size": 1024,
+          "local": {
+            "@type": "localFile",
+            "path": "",
+            "can_be_downloaded": true,
+            "can_be_deleted": false,
+            "is_downloading_active": false,
+            "is_downloading_completed": true,
+            "download_offset": 0,
+            "downloaded_prefix_size": 1024,
+            "downloaded_size": 1024
+          },
+          "remote": {
+            "@type": "remoteFile",
+            "id": "42424244",
+            "unique_id": "424242440001",
+            "is_uploading_active": false,
+            "is_uploading_completed": true,
+            "uploaded_size": 1024
+          }
+        }
+      },
+      "is_premium": false
+    },
+    "ephemeral_content": null,
+    "reply_markup": null,
+    "ephemeral_message_id": 0,
+    "chat_instance": "-10042424242424242"
+  }
+}

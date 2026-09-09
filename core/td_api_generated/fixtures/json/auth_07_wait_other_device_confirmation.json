@@ -1,0 +1,7 @@
+{
+  "@type": "updateAuthorizationState",
+  "authorization_state": {
+    "@type": "authorizationStateWaitOtherDeviceConfirmation",
+    "link": "tg://login?token=AQAAAAA42fake"
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "@type": "updateAuthorizationState",
+  "authorization_state": {
+    "@type": "authorizationStateWaitPremiumPurchase",
+    "store_product_id": "fake_premium_product_42",
+    "premium_day_count": 30,
+    "support_email_address": "",
+    "support_email_subject": ""
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "@type": "updateAuthorizationState",
+  "authorization_state": {
+    "@type": "authorizationStateWaitTdlibParameters"
+  }
+}

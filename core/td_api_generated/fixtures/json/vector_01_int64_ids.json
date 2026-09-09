@@ -1,0 +1,12 @@
+{
+  "@type": "updateInstalledStickerSets",
+  "sticker_type": {
+    "@type": "stickerTypeRegular"
+  },
+  "sticker_set_ids": [
+    "1",
+    "9007199254740993",
+    "9223372036854775807",
+    "-9223372036854775808"
+  ]
+}

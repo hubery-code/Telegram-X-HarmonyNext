@@ -1,0 +1,140 @@
+{
+  "@type": "updateNewMessage",
+  "message": {
+    "@type": "message",
+    "id": 42420000000002,
+    "sender_id": {
+      "@type": "messageSenderUser",
+      "user_id": 4242002
+    },
+    "receiver_id": null,
+    "chat_id": 424243,
+    "sending_state": null,
+    "scheduling_state": null,
+    "is_outgoing": false,
+    "is_pinned": false,
+    "is_from_offline": false,
+    "can_be_saved": true,
+    "has_timestamped_media": false,
+    "is_channel_post": false,
+    "is_paid_star_suggested_post": false,
+    "is_paid_gram_suggested_post": false,
+    "contains_unread_mention": false,
+    "contains_unread_poll_votes": false,
+    "date": 1725734401,
+    "edit_date": 0,
+    "forward_info": null,
+    "import_info": null,
+    "interaction_info": null,
+    "unread_reactions": [],
+    "fact_check": null,
+    "suggested_post_info": null,
+    "reply_to": null,
+    "topic_id": null,
+    "self_destruct_type": null,
+    "self_destruct_in": 0,
+    "auto_delete_in": 0,
+    "via_bot_user_id": 0,
+    "guest_bot_caller_id": null,
+    "sender_business_bot_user_id": 0,
+    "sender_boost_count": 0,
+    "sender_tag": "",
+    "paid_message_star_count": 0,
+    "author_signature": "",
+    "media_album_id": "9223372036854775807",
+    "effect_id": "0",
+    "restriction_info": null,
+    "summary_language_code": "",
+    "content": {
+      "@type": "messagePhoto",
+      "photo": {
+        "@type": "photo",
+        "has_stickers": false,
+        "minithumbnail": null,
+        "sizes": [
+          {
+            "@type": "photoSize",
+            "type": "m",
+            "photo": {
+              "@type": "file",
+              "id": 42420001,
+              "size": 2048,
+              "expected_size": 2048,
+              "local": {
+                "@type": "localFile",
+                "path": "",
+                "can_be_downloaded": true,
+                "can_be_deleted": false,
+                "is_downloading_active": false,
+                "is_downloading_completed": false,
+                "download_offset": 0,
+                "downloaded_prefix_size": 0,
+                "downloaded_size": 0
+              },
+              "remote": {
+                "@type": "remoteFile",
+                "id": "42424242",
+                "unique_id": "424242420001",
+                "is_uploading_active": false,
+                "is_uploading_completed": true,
+                "uploaded_size": 2048
+              }
+            },
+            "width": 320,
+            "height": 240,
+            "progressive_sizes": [80, 160]
+          }
+        ]
+      },
+      "video": {
+        "@type": "video",
+        "duration": 3,
+        "width": 640,
+        "height": 480,
+        "file_name": "synthetic_42.mp4",
+        "mime_type": "video/mp4",
+        "has_stickers": false,
+        "supports_streaming": true,
+        "minithumbnail": null,
+        "thumbnail": null,
+        "video": {
+          "@type": "file",
+          "id": 42420002,
+          "size": 4096,
+          "expected_size": 4096,
+          "local": {
+            "@type": "localFile",
+            "path": "",
+            "can_be_downloaded": true,
+            "can_be_deleted": false,
+            "is_downloading_active": false,
+            "is_downloading_completed": false,
+            "download_offset": 0,
+            "downloaded_prefix_size": 0,
+            "downloaded_size": 0
+          },
+          "remote": {
+            "@type": "remoteFile",
+            "id": "42424243",
+            "unique_id": "424242430001",
+            "is_uploading_active": false,
+            "is_uploading_completed": true,
+            "uploaded_size": 4096
+          }
+        }
+      },
+      "caption": {
+        "@type": "formattedText",
+        "text": "synthetic photo caption",
+        "entities": []
+      },
+      "show_caption_above_media": false,
+      "has_spoiler": true,
+      "is_secret": false
+    },
+    "ephemeral_content": null,
+    "reply_markup": null,
+    "ephemeral_message_id": 0,
+    "chat_instance": "-10042424242424242"
+  }
+}

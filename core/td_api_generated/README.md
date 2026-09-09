@@ -16,7 +16,8 @@
 | `src/main/ets/types/TdTypes_<A-Z>.ets` | 每个构造器一个类（判别属性 `type`、wire 名 `type_`/`extra_` 避让）+ 每类 `decode/encode` 函数，按类名字母分块（23 个） |
 | `src/main/ets/types/TdUnions_<A-Z>.ets` | 每个抽象类型一个判别联合（恒含 `TdUnknownObject` 成员）+ `decodeTd<T>/encodeTd<T>`，按联合名字母分块（23 个；单文件会超出 panda file index 上限 131072，见下） |
 | `src/main/ets/types/TdEntries.ets` | `TdObject`/`TdFunction` 联合、`decodeTdObject`/`encodeTdObject` 通用入口、`TdResponseMap` 请求返回类型映射 |
-| `src/test/*.test.ets` | hypium 单测：codec round-trip、未知 `@type`/未知字段 fallback、int64 精度、请求 wire shape/`@extra`/返回类型映射 |
+| `src/test/*.test.ets` | hypium 单测：codec round-trip、未知 `@type`/未知字段 fallback、int64 精度、请求 wire shape/`@extra`/返回类型映射、fixture round-trip（GEN-003） |
+| `fixtures/` | GEN-003 codec fixtures：全合成脱敏 TDLib JSON 样本（`json/` 为源，`sync_fixtures.py` 生成 `src/test/gen/FixtureData.ets`），详见 `fixtures/README.md` |
 
 ## 关键语义
 
@@ -36,4 +37,5 @@
   生成文件 49 个（Index + runtime + 23 类块 + 23 联合块 + TdEntries）；
   schemaHash `7fbae70a…c5929`。
 
-GEN-003/004 将在本目录追加 codec fixtures 与脱敏元数据，同样生成、同样禁止手改。
+GEN-003 的 fixture round-trip 测试已落在 `src/test/FixtureRoundTrip.test.ets`（数据见
+`fixtures/`）；GEN-004 将追加脱敏元数据，同样生成、同样禁止手改。

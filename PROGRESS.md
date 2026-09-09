@@ -56,6 +56,7 @@
 
 | 工作包 | 完成日期 | 证据 |
 |---|---|---|
+| GEN-003 codec fixture round-trip | 2026-09-09 ✅ | AI-Agent-J：22 个全合成脱敏 fixture（TDLib 官方仓库无静态 JSON 样本，字段结构派生自 td_api.tl；13 个授权状态机 + 4 个 updateNewMessage 内容类型 + error/ok `@extra` 关联 + vector&lt;int64&gt; 大数 + 2 个未知类型 raw 回传；来源/脱敏规则/加 fixture 流程见 `core/td_api_generated/fixtures/README.md`）；每 fixture 独立用例 `decodeTdObject→encodeTdObject→canonicalJson 语义等价→二次 decode 稳定`，未知类型断言 `TdUnknownObject` 无损；`FixtureData.ets` 由 `fixtures/sync_fixtures.py` 从 json 确定性生成；`./hvigorw test --mode module -p module=core_td_api_generated@default -p product=default --no-daemon` `Tests run: 48, Failure: 0, Error: 0, Pass: 48`（既有 20 例不回归）；期间定位并清除损坏的 533MB `init_coverage.json` 构建缓存（00308018 假错误，`.test/` 产物非源码） |
 | GOV-001 空工程 | 2026-09-08 | Debug/Release 构建均 BUILD SUCCESSFUL，产出 `entry/build/default/outputs/default/entry-default-unsigned.hap`（212 KB）；commit `7fe266b` |
 | GOV-002 工具链锁定 | 2026-09-08 | `tools/toolchain-versions.json` + `tools/ci/setup-check.sh` 退出码 0（SDK 26.0.0.105 / hvigor 6.26.4）；版本不匹配会明确失败 |
 | GOV-003 文档控制面 | 2026-09-08 | `docs/`（ARCHITECTURE、ADR-001/002、Feature/Parity、quality 五件、runbooks 三件）+ `work-items/templates/`（§17.1/17.2 原文模板） |

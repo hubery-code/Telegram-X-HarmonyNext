@@ -1,0 +1,19 @@
+{
+  "@type": "updateAuthorizationState",
+  "authorization_state": {
+    "@type": "authorizationStateWaitCode",
+    "code_info": {
+      "@type": "authenticationCodeInfo",
+      "phone_number": "+42420004242",
+      "type": {
+        "@type": "authenticationCodeTypeTelegramMessage",
+        "length": 5
+      },
+      "next_type": {
+        "@type": "authenticationCodeTypeSms",
+        "length": 5
+      },
+      "timeout": 60
+    }
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "@type": "updateAuthorizationState",
+  "authorization_state": {
+    "@type": "authorizationStateWaitRegistration",
+    "terms_of_service": {
+      "@type": "termsOfService",
+      "text": {
+        "@type": "formattedText",
+        "text": "Synthetic terms of service for fixture use only.",
+        "entities": []
+      },
+      "min_user_age": 16,
+      "show_popup": true
+    }
+  }
+}

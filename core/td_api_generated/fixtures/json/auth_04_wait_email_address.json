@@ -1,0 +1,8 @@
+{
+  "@type": "updateAuthorizationState",
+  "authorization_state": {
+    "@type": "authorizationStateWaitEmailAddress",
+    "allow_apple_id": false,
+    "allow_google_id": true
+  }
+}
