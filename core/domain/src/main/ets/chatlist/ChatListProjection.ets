@@ -118,9 +118,6 @@ export class ChatListProjection {
         this.isLoading = false;
         // 如果 TDLib 返回 404，表示到达列表末尾
         if (res.ok === false) {
-          // In a real app we might check the actual TDLib error code or kind
-          this.hasMore = false;
-        }
           this.hasMore = false;
         }
       }).catch(() => {
@@ -141,8 +138,9 @@ export class ChatListProjection {
       }
     } else if (update.type === 'updateChatPosition') {
       const posUpdate = update as UpdateChatPosition;
-      if (posUpdate.position && chatListEquals(posUpdate.position.list, this.chatList)) {
-        this.setChatPosition(posUpdate.chat_id, posUpdate.position);
+      const pos = posUpdate.position;
+      if (pos && chatListEquals(pos.list, this.chatList)) {
+        this.setChatPosition(posUpdate.chat_id, pos);
       } else {
         // 检查这个 updateChatPosition 是否把该 chat 移出了当前的 chatList
         const chat = this.registry.getChat(posUpdate.chat_id);
@@ -150,7 +148,8 @@ export class ChatListProjection {
           // TDLib 机制：UpdateChatPosition 包含了 list。
           // 如果 list 与当前不同，说明在那个 list 里的位置改变。但这不代表移出了当前 list。
           // 实际上如果移除，TDLib 会发 UpdateChatPosition，其中 list=当前list，order="0"。
-          if (posUpdate.position && chatListEquals(posUpdate.position.list, this.chatList)) {
+          const pos = posUpdate.position;
+      if (pos && chatListEquals(pos.list, this.chatList)) {
              // 上面已经处理
           }
         }
@@ -159,7 +158,7 @@ export class ChatListProjection {
   }
   
   private updateChatPositionFromChat(chat: Chat): void {
-    const position = chat.positions.find(p => chatListEquals(p.list, this.chatList));
+    const position = chat.positions.find((p: ChatPosition) => chatListEquals(p.list, this.chatList));
     if (position) {
       this.setChatPosition(chat.id, position);
     }
@@ -189,7 +188,7 @@ export class ChatListProjection {
       const otherChat = this.registry.getChat(otherId);
       if (!otherChat) continue; // 不该发生
       
-      const otherPos = otherChat.positions.find(p => chatListEquals(p.list, this.chatList));
+      const otherPos = otherChat.positions.find((p: ChatPosition) => chatListEquals(p.list, this.chatList));
       if (!otherPos) continue;
       
       if (compareChatOrder(position.order, chatId, otherPos.order, otherId) < 0) {
@@ -204,7 +203,7 @@ export class ChatListProjection {
     // 同步更新 Registry 中的 position 状态（UpdateChatPosition 不携带整个 Chat，需要手动 patch Registry 中的 Chat）
     const chat = this.registry.getChat(chatId);
     if (chat) {
-      const posIdx = chat.positions.findIndex(p => chatListEquals(p.list, this.chatList));
+      const posIdx = chat.positions.findIndex((p: ChatPosition) => chatListEquals(p.list, this.chatList));
       if (posIdx >= 0) {
         chat.positions[posIdx] = position;
       } else {
