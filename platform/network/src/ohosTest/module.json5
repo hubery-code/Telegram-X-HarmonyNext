@@ -1,0 +1,20 @@
+{
+  "module": {
+    "name": "platform_network_test",
+    "type": "feature",
+    "description": "platform/network 设备测试壳（PLAT-004 ohosTest 骨架）",
+    "mainElement": "TestAbility",
+    "deviceTypes": [
+      "phone"
+    ],
+    "deliveryWithInstall": true,
+    "installationFree": false,
+    "abilities": [
+      {
+        "name": "TestAbility",
+        "srcEntry": "./ets/testability/TestAbility.ets",
+        "exported": false
+      }
+    ]
+  }
+}

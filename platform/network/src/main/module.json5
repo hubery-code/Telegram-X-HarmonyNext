@@ -1,0 +1,15 @@
+{
+  "module": {
+    "name": "platform_network",
+    "type": "har",
+    "description": "platform/network: NetworkStatePort 生产 adapter（HarmonyOS Network Kit，PLAT-004）",
+    "deviceTypes": [
+      "phone"
+    ],
+    "requestPermissions": [
+      {
+        "name": "ohos.permission.GET_NETWORK_INFO"
+      }
+    ]
+  }
+}

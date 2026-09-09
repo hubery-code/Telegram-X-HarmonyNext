@@ -1,0 +1,15 @@
+{
+  "name": "@tgx/platform-network",
+  "version": "0.1.0",
+  "description": "Telegram X HarmonyOS platform/network: NetworkStatePort production adapter on HarmonyOS Network Kit (@ohos.net.connection). Pure mapping/dedup logic is Kit-free and unit-tested; Kit wiring is thin and covered by ohosTest device skeleton (PLAT-004).",
+  "main": "./src/main/ets/Index.ets",
+  "author": "telegram-x",
+  "license": "GPL-3.0",
+  "dependencies": {
+    "@tgx/core-common": "file:../../core/common",
+    "@tgx/platform-ports": "file:../ports"
+  },
+  "devDependencies": {
+    "@ohos/hypium": "1.0.21"
+  }
+}

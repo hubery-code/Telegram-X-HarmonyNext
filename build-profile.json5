@@ -118,6 +118,18 @@
           ]
         }
       ]
+    },
+    {
+      "name": "platform_network",
+      "srcPath": "./platform/network",
+      "targets": [
+        {
+          "name": "default",
+          "applyToProducts": [
+            "default"
+          ]
+        }
+      ]
     }
   ]
 }
