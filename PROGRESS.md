@@ -20,9 +20,11 @@
 
 ## 进行中（Implementing）
 
-（暂无 —— 下一步建议：CORE-003 AccountScope/Registry 或 AUTH-001+SPIKE-001 授权登录垂直切片，均需真机验证环节）
+| 工作包 | 负责人(AI) | 开始时间 | 说明 |
+|---|---|---|---|
+| CORE-003 AccountScope/Registry | 主会话 | 2026-09-09 | 账号作用域生命周期（创建/激活/休眠/销毁/恢复）+ 每账号独立 TdGateway；区域：`core/account/` |
 
-> ⚠️ 并行约定：**不要执行 git commit**，完成后报告文件清单由主会话统一提交。CORE-002 禁止 import ArkUI；GEN-004 不得手改生成物。
+> ⚠️ 并行约定：**不要执行 git commit**，完成后报告文件清单由主会话统一提交。core/account 禁止 import ArkUI/Kit。项目内有 `.agents/skills/harmony-next/` 离线参考（API 12-23 快照），编码遇 API 问题可查。
 
 ## 待认领（Backlog，按计划的 Phase 0 顺序）
 
