@@ -22,10 +22,8 @@
 
 | 工作包 | 负责人(AI) | 开始时间 | 说明 |
 |---|---|---|---|
-| CORE-003 AccountScope/Registry | 主会话 | 2026-09-09 | ✅ 已完成 |
-| CORE-005 授权状态机 reducer | 主会话 | 2026-09-09 | ✅ 已完成 |
-| BRG-006 生产桥 adapter | 主会话 | 2026-09-09 | ✅ 已完成 |
-| AUTH-001 授权页面壳与 Reducer 对接 | AI-Agent-Antigravity | 2026-09-09 | ✅ 已完成（36 用例全 Success + assembleHar BUILD SUCCESSFUL）；区域：`feature/auth/` |
+| SPIKE-001 真机授权登录垂直切片 | 主会话 | 2026-09-09 | 接通 EntryAbility→Bootstrap→AccountScope→AuthCoordinator→AuthRootPage 真机链路 |
+| CHATLIST-001 chat list domain projection | AI-Agent-Antigravity | 2026-09-09 | 区域：`core/domain/`
 
 > ⚠️ 并行约定：**不要执行 git commit**，完成后报告文件清单由主会话统一提交。core/account 禁止 import ArkUI/Kit。项目内有 `.agents/skills/harmony-next/` 离线参考（API 12-23 快照），编码遇 API 问题可查。
 

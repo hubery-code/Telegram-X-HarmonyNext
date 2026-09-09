@@ -1,0 +1,14 @@
+{
+  "name": "@tgx/core-domain",
+  "version": "1.0.0",
+  "description": "Domain Projections for Telegram X",
+  "main": "./src/main/ets/Index.ets",
+  "author": "",
+  "license": "",
+  "dependencies": {
+    "@tgx/core-common": "file:../common",
+    "@tgx/td-gateway": "file:../td_gateway",
+    "@tgx/core-account": "file:../account",
+    "@tgx/core-td-api-generated": "file:../td_api_generated"
+  }
+}

@@ -192,8 +192,32 @@
       ]
     },
     {
+      "name": "core_domain",
+      "srcPath": "./core/domain",
+      "targets": [
+        {
+          "name": "default",
+          "applyToProducts": [
+            "default"
+          ]
+        }
+      ]
+    },
+    {
       "name": "feature_auth",
       "srcPath": "./feature/auth",
+      "targets": [
+        {
+          "name": "default",
+          "applyToProducts": [
+            "default"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "platform_files",
+      "srcPath": "./platform/files",
       "targets": [
         {
           "name": "default",

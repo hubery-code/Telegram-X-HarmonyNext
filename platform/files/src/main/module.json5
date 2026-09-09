@@ -1,0 +1,10 @@
+{
+  "module": {
+    "name": "platform_files",
+    "type": "har",
+    "description": "platform/files: AppFilesPort 生产 adapter（HarmonyOS File Kit — @ohos.file.fs）",
+    "deviceTypes": [
+      "phone"
+    ]
+  }
+}

@@ -53,9 +53,11 @@ export { authReducer } from './reducer/AuthReducer';
 export { parseAuthEventFromWire } from './coordinator/AuthEventParser';
 export {
   AuthAccountScopeLike,
+  AuthSubscriptionLike,
   AuthUiStateListener,
   AuthCoordinatorDeps,
-  AuthCoordinator
+  AuthCoordinator,
+  TdlibParametersConfig
 } from './coordinator/AuthCoordinator';
 
 export { PhonePage } from './pages/PhonePage';

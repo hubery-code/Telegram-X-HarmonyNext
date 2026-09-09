@@ -7,10 +7,11 @@
  * - 订阅 AccountScope 的事件流，解析 updateAuthorizationState 并驱动内部状态
  */
 
-import { AppError, Result } from '@tgx/core-common';
+import { AppError, Result, err } from '@tgx/core-common';
 import {
   AuthState,
   AuthEvent,
+  AuthEffect as CoreAuthEffect,
   AuthReducerResult,
   authReducer,
   AuthorizationStateHolder
@@ -42,9 +43,21 @@ export interface AuthAccountScopeLike {
 
 export type AuthUiStateListener = (state: AuthUiState) => void;
 
+export interface TdlibParametersConfig {
+  readonly apiId: number;
+  readonly apiHash: string;
+  readonly databaseDirectory: string;
+  readonly filesDirectory: string;
+  readonly systemLanguageCode: string;
+  readonly deviceModel: string;
+  readonly applicationVersion: string;
+  readonly useTestDc: boolean;
+}
+
 export interface AuthCoordinatorDeps {
   readonly scope: AuthAccountScopeLike;
   readonly env: ReducerEnv;
+  readonly tdlibParameters: TdlibParametersConfig;
   readonly onNavigate?: (route: string) => void;
   readonly onToast?: (message: string) => void;
 }
@@ -61,9 +74,29 @@ function wireParam2(k1: string, v1: string, k2: string, v2: string): TdWireObjec
   return parsed as TdWireObject;
 }
 
+function buildSetTdlibParametersParams(config: TdlibParametersConfig): TdWireObject {
+  const obj: Record<string, Object> = {};
+  obj['database_directory'] = config.databaseDirectory;
+  obj['files_directory'] = config.filesDirectory;
+  obj['api_id'] = config.apiId;
+  obj['api_hash'] = config.apiHash;
+  obj['system_language_code'] = config.systemLanguageCode;
+  obj['device_model'] = config.deviceModel;
+  obj['application_version'] = config.applicationVersion;
+  obj['use_secret_chats'] = true;
+  obj['use_message_database'] = true;
+  obj['use_file_database'] = true;
+  obj['use_chat_info_database'] = true;
+  obj['use_test_dc'] = config.useTestDc;
+  const json: string = JSON.stringify(obj);
+  const parsed: Object = JSON.parse(json);
+  return parsed as TdWireObject;
+}
+
 export class AuthCoordinator {
   private readonly scope: AuthAccountScopeLike;
   private readonly env: ReducerEnv;
+  private readonly tdlibParameters: TdlibParametersConfig;
   private readonly onNavigate?: (route: string) => void;
   private readonly onToast?: (message: string) => void;
 
@@ -75,6 +108,7 @@ export class AuthCoordinator {
   constructor(deps: AuthCoordinatorDeps, initialState?: AuthUiState) {
     this.scope = deps.scope;
     this.env = deps.env;
+    this.tdlibParameters = deps.tdlibParameters;
     this.onNavigate = deps.onNavigate;
     this.onToast = deps.onToast;
     this.currentState = initialState !== undefined ? initialState : AuthUiState.initial();
@@ -155,8 +189,43 @@ export class AuthCoordinator {
     );
     this.scope.authorizationHolder.replace(authResult.state);
 
+    // 执行 core/account auth effects（setTdlibParameters / checkDbKey 等）
+    if (authResult.effects !== undefined && authResult.effects.length > 0) {
+      for (let i = 0; i < authResult.effects.length; i++) {
+        this.executeCoreAuthEffect(authResult.effects[i]);
+      }
+    }
+
     // 同步到 UI 状态
     this.dispatch(new OnAuthStateChanged(authResult.state));
+  }
+
+  private executeCoreAuthEffect(effect: CoreAuthEffect): void {
+    switch (effect.kind) {
+      case 'setTdlibParameters': {
+        const params: TdWireObject = buildSetTdlibParametersParams(this.tdlibParameters);
+        this.scope.request('setTdlibParameters', params).then((res: Result<TdWireObject, AppError>) => {
+          if (res.err) {
+            this.dispatch(new OnRequestError(res.error));
+          }
+        });
+        break;
+      }
+      case 'checkDbKey': {
+        const json: string = '{"@type":"checkDatabaseEncryptionKey","encryption_key":""}';
+        const parsed: Object = JSON.parse(json);
+        this.scope.request('checkDatabaseEncryptionKey', parsed as TdWireObject).then((res: Result<TdWireObject, AppError>) => {
+          if (res.err) {
+            this.dispatch(new OnRequestError(res.error));
+          }
+        });
+        break;
+      }
+      case 'none':
+        break;
+      default:
+        break;
+    }
   }
 
   private executeEffect(effect: AuthEffect): void {

@@ -1,0 +1,9 @@
+{
+  "module": {
+    "name": "core_domain",
+    "type": "har",
+    "deviceTypes": [
+      "default",
+    ]
+  }
+}

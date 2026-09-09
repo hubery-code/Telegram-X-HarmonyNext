@@ -1,42 +1,48 @@
 /**
- * entry — Bootstrap：最小装配骨架（BRG-006 entry 装配）。
+ * entry — Bootstrap：真机授权链路装配（SPIKE-001）。
  *
- * 链路：TdCoreBridge → AccountRegistry → create('default') → scope
+ * 链路：
+ *   HarmonyAppFilesAdapter → TdCoreBridge → AccountRegistry → create('default')
+ *   → ScopeAuthAdapter → AuthCoordinator
  *
- * TODO（真机集成，需 SPIKE-001 确认后启用）：
- * - AppFilesPort 当前用 FakeAppFiles 占位；生产需 platform/files 的
- *   HarmonyOS 文件 Kit adapter（context.filesDir → AppDirectory）
- * - EntryAbility.onCreate 调用 bootstrap() → registry.start() → registry.create('default')
- * - scope.gatewayInstance.start() 后 TDLib 会 emit authorizationStateWaitTdlibParameters
- * - AUTH-001 的 authReducer 驱动 scope.authorizationHolder.replace → UI 渲染
- * - AuthCoordinator 连接 scope 事件流 → authFeatureReducer → AuthRootPage 渲染
- * - 当前 entry/pages/Index.ets 用 fake AuthUiState.initial() 注入独立渲染，
- *   真机启用后替换为 AuthCoordinator（见 feature/auth README 架构图）
- *
- * 本文件编译通过但未被 EntryAbility 调用（不引入未经验证的启动链路）。
- * 真机调试时取消注释 onCreate 中的 bootstrap 调用即可。
+ * EntryAbility.onCreate 调用 bootstrap()，返回 AuthCoordinator 供 Index.ets 使用。
+ * scope.gatewayInstance.start() 已在 AccountScope.open(startActive=true) 中完成。
+ * TDLib 启动后 emit authorizationStateWaitTdlibParameters →
+ * AuthCoordinator.handleIncomingEvent → core authReducer emits setTdlibParameters effect →
+ * AuthCoordinator.executeCoreAuthEffect → scope.request('setTdlibParameters', params)。
  */
 
 import { TdCoreBridge } from '@tgx/platform-tdcore-bridge';
 import {
   AccountRegistry,
   AccountRegistryOptions,
-  AccountScope,
-  AuthState
+  AccountScope
 } from '@tgx/core-account';
 import { TdNativeBridgeLike } from '@tgx/td-gateway';
-import { AppFilesPort, FakeAppFiles } from '@tgx/platform-ports';
+import { HarmonyAppFilesAdapter } from '@tgx/platform-files';
+import { ManualClock, SequentialIdGenerator } from '@tgx/core-common';
+import { ReducerEnv } from '@tgx/feature-template';
+import {
+  AuthCoordinator,
+  AuthCoordinatorDeps,
+  TdlibParametersConfig
+} from '@tgx/feature-auth';
+import { ScopeAuthAdapter } from './ScopeAuthAdapter';
 
 export interface BootstrapResult {
-  readonly bridge: TdCoreBridge;
+  readonly coordinator: AuthCoordinator;
   readonly registry: AccountRegistry;
   readonly scope: AccountScope;
-  readonly authStateKind: string;
+  readonly bridge: TdCoreBridge;
 }
 
-export function bootstrap(): BootstrapResult {
+export function bootstrap(
+  filesDir: string,
+  cacheDir: string,
+  tdlibParams: TdlibParametersConfig
+): BootstrapResult {
   const bridge: TdCoreBridge = new TdCoreBridge();
-  const files: AppFilesPort = new FakeAppFiles();
+  const files: HarmonyAppFilesAdapter = new HarmonyAppFilesAdapter(filesDir, cacheDir);
   const options: AccountRegistryOptions = {
     bridge: bridge as TdNativeBridgeLike,
     files: files
@@ -48,11 +54,26 @@ export function bootstrap(): BootstrapResult {
     throw new Error(`bootstrap: failed to create default scope: ${created.error.kind}`);
   }
   const scope: AccountScope = created.value;
-  const authState: AuthState = scope.authorization;
+
+  const authScope: ScopeAuthAdapter = new ScopeAuthAdapter(scope);
+  const env: ReducerEnv = {
+    clock: new ManualClock(1000, 500),
+    ids: new SequentialIdGenerator('entry-')
+  };
+  const deps: AuthCoordinatorDeps = {
+    scope: authScope,
+    env: env,
+    tdlibParameters: tdlibParams,
+    onNavigate: (route: string) => {
+      // Navigation handled in Index.ets via state subscription
+    }
+  };
+  const coordinator: AuthCoordinator = new AuthCoordinator(deps);
+
   return {
-    bridge: bridge,
+    coordinator: coordinator,
     registry: registry,
     scope: scope,
-    authStateKind: authState.kind
+    bridge: bridge
   };
 }

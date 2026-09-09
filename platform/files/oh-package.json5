@@ -1,0 +1,15 @@
+{
+  "name": "@tgx/platform-files",
+  "version": "0.1.0",
+  "description": "Telegram X HarmonyOS platform/files: AppFilesPort production adapter on HarmonyOS File Kit (@ohos.file.fs). Atomic writes, path-safe resolution, stat/fs queries (PLAT-005).",
+  "main": "./src/main/ets/Index.ets",
+  "author": "telegram-x",
+  "license": "GPL-3.0",
+  "dependencies": {
+    "@tgx/core-common": "file:../../core/common",
+    "@tgx/platform-ports": "file:../ports"
+  },
+  "devDependencies": {
+    "@ohos/hypium": "1.0.21"
+  }
+}

@@ -1,0 +1,1 @@
+export { HarmonyAppFilesAdapter } from './HarmonyAppFilesAdapter';

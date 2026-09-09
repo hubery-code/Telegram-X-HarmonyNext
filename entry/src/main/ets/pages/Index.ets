@@ -1,70 +1,85 @@
 /**
- * entry — Index 页面：授权流程与（占位）会话列表路由（AUTH-001）。
+ * entry — Index 页面：真机授权流程 + 会话列表占位（SPIKE-001）。
  *
- * 未授权时渲染 AuthRootPage（手机号/验证码/2FA/注册）；
- * 授权完成后切换到占位会话列表。
- *
- * TODO（真机集成，需 SPIKE-001 确认后启用）：
- * - bootstrap() → scope.gatewayInstance.start() → 订阅 scope 事件流
- * - AuthCoordinator 驱动 authReducer + scope.authorizationHolder
- * - 当前用 fake AuthUiState.initial() 注入，页面可独立渲染
- * - 真机启动后取消下方 fake 标记，连接 AuthCoordinator
+ * EntryAbility.onCreate → bootstrap() → AuthCoordinator.start()
+ * 本页面从 AppStorage 读取 BootstrapResult，订阅 AuthCoordinator 状态变化，
+ * 将 intents 分发给 AuthCoordinator（真实 TDLib 请求）。
  */
 
 import { LightTheme } from '@tgx/core-design-system';
-import { ManualClock, SequentialIdGenerator } from '@tgx/core-common';
-import { ReducerEnv } from '@tgx/feature-template';
+import { hilog } from '@kit.PerformanceAnalysisKit';
 import {
   AuthRootPage,
   AuthUiState,
   AuthIntent,
-  authReducer,
-  NavigateToRoute
+  AuthCoordinator
 } from '@tgx/feature-auth';
+import { BootstrapResult } from '../Bootstrap';
 
 const T = LightTheme;
+const DOMAIN: number = 0x0000;
+const TAG: string = 'Index';
 
 @Entry
 @Component
 struct Index {
   @State uiState: AuthUiState = AuthUiState.initial();
   @State showChatList: boolean = false;
-  @State versionResult: string = '(未运行)';
+  @State bootstrapError: string | null = null;
 
-  private env: ReducerEnv = {
-    clock: new ManualClock(1000, 500),
-    ids: new SequentialIdGenerator('entry-')
-  };
+  private coordinator: AuthCoordinator | null = null;
+  private unsubscribeFn: (() => void) | null = null;
 
   aboutToAppear(): void {
-    // TODO(SPIKE-001): bootstrap() → scope → AuthCoordinator.start()
-    // 当前用 fake AuthUiState.initial() 注入，页面可独立渲染
+    const result: BootstrapResult | undefined = AppStorage.get<BootstrapResult>('bootstrapResult');
+    if (result === undefined || result === null) {
+      this.bootstrapError = 'Bootstrap failed — see logs';
+      hilog.error(DOMAIN, TAG, 'bootstrapResult not found in AppStorage');
+      return;
+    }
+
+    this.coordinator = result.coordinator;
+    this.unsubscribeFn = this.coordinator.subscribe((state: AuthUiState) => {
+      this.uiState = state;
+      if (state.step === 'ready') {
+        this.showChatList = true;
+      }
+    });
+  }
+
+  aboutToDisappear(): void {
+    if (this.unsubscribeFn !== null) {
+      this.unsubscribeFn();
+      this.unsubscribeFn = null;
+    }
   }
 
   private dispatch(intent: AuthIntent): void {
-    const result = authReducer(this.uiState, intent, this.env);
-    this.uiState = result.state;
-
-    // 处理 effects（本地简化版）
-    if (result.effects !== undefined && result.effects.length > 0) {
-      for (let i = 0; i < result.effects.length; i++) {
-        const effect = result.effects[i];
-        if (effect.kind === 'navigateToRoute') {
-          const nav = effect as NavigateToRoute;
-          if (nav.routeName === 'chat_list') {
-            this.showChatList = true;
-          }
-        }
-        // TODO(SPIKE-001): sendPhoneNumber / checkCode / checkPassword / registerUser
-        // → scope.request(...) 经 AuthCoordinator 执行
-      }
+    if (this.coordinator !== null) {
+      this.coordinator.dispatch(intent);
     }
   }
 
   build() {
     Column() {
-      if (this.showChatList) {
-        // 占位会话列表
+      if (this.bootstrapError !== null) {
+        Column() {
+          Text('Bootstrap Error')
+            .fontSize(T.typography.title.fontSize)
+            .fontWeight(T.typography.title.fontWeight)
+            .fontColor(T.colors.error)
+            .margin({ bottom: T.spacing.sm })
+
+          Text(this.bootstrapError)
+            .fontSize(T.typography.body.fontSize)
+            .fontColor(T.colors.textSecondary)
+        }
+        .width('100%')
+        .height('100%')
+        .justifyContent(FlexAlign.Center)
+        .alignItems(HorizontalAlign.Center)
+        .backgroundColor(T.colors.background)
+      } else if (this.showChatList) {
         Column() {
           Text('Telegram X')
             .fontSize(T.typography.largeTitle.fontSize)
