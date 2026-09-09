@@ -22,7 +22,10 @@
 
 | 工作包 | 负责人(AI) | 开始时间 | 说明 |
 |---|---|---|---|
-| CHATLIST-001 chat list domain projection | AI-Agent-Antigravity | 2026-09-09 | ✅ 已完成（assembleHar SUCCESSFUL，排序分页模型就绪）；区域：`core/domain/`
+| CHATLIST-001 chat list domain projection | AI-Agent-Antigravity | 2026-09-09 | ✅ 已完成（assembleHar SUCCESSFUL，排序分页模型就绪）；区域：`core/domain/` |
+| CHATLIST-002 chat list ArkUI | 主会话→子agent | 2026-09-09 | 会话列表 Lazy list UI，依赖 CHATLIST-001 + UI-001 |
+| PLAT-003 HUKS 安全密钥存储 | 主会话→子agent | 2026-09-09 | Asset Store/HUKS adapter，依赖 PLAT-001 |
+| BRG-005 TDLib close/shutdown 生命周期 | 主会话→子agent | 2026-09-09 | 重复 close、迟到回调、快速重建，依赖 BRG-003 |
 
 > ⚠️ 并行约定：**不要执行 git commit**，完成后报告文件清单由主会话统一提交。core/account 禁止 import ArkUI/Kit。项目内有 `.agents/skills/harmony-next/` 离线参考（API 12-23 快照），编码遇 API 问题可查。
 
