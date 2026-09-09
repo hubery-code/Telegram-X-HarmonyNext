@@ -1,0 +1,10 @@
+{
+  "module": {
+    "name": "core_account",
+    "type": "har",
+    "description": "core/account: AccountScope（每账号独占 TdGateway + 生命周期 + 取消域 + 目录描述）+ AccountRegistry（幂等创建/激活/休眠/关闭/冷启动恢复 + clientId 事件隔离），纯 ArkTS 无 Kit 依赖（CORE-003）",
+    "deviceTypes": [
+      "phone"
+    ]
+  }
+}

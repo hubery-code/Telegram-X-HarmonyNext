@@ -166,6 +166,18 @@
           ]
         }
       ]
+    },
+    {
+      "name": "core_account",
+      "srcPath": "./core/account",
+      "targets": [
+        {
+          "name": "default",
+          "applyToProducts": [
+            "default"
+          ]
+        }
+      ]
     }
   ]
 }

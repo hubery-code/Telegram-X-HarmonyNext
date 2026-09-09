@@ -1,0 +1,16 @@
+{
+  "name": "@tgx/core-account",
+  "version": "0.1.0",
+  "description": "Telegram X HarmonyOS core/account: AccountScope (per-account TdGateway, lifecycle active/hibernating/closed, cancellation owner, directory layout) + AccountRegistry (idempotent create/activate/hibernate/close/restoreAll, per-clientId event isolation, unknown-client accounting). Pure ArkTS, no Kit / ArkUI dependency (CORE-003).",
+  "main": "./src/main/ets/Index.ets",
+  "author": "telegram-x",
+  "license": "GPL-3.0",
+  "dependencies": {
+    "@tgx/core-common": "file:../common",
+    "@tgx/td-gateway": "file:../td_gateway",
+    "@tgx/platform-ports": "file:../../platform/ports"
+  },
+  "devDependencies": {
+    "@ohos/hypium": "1.0.21"
+  }
+}
