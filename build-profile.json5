@@ -216,8 +216,32 @@
       ]
     },
     {
+      "name": "feature_chat_list",
+      "srcPath": "./feature/chat_list",
+      "targets": [
+        {
+          "name": "default",
+          "applyToProducts": [
+            "default"
+          ]
+        }
+      ]
+    },
+    {
       "name": "platform_files",
       "srcPath": "./platform/files",
+      "targets": [
+        {
+          "name": "default",
+          "applyToProducts": [
+            "default"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "platform_keystore",
+      "srcPath": "./platform/keystore",
       "targets": [
         {
           "name": "default",

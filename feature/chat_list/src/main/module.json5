@@ -1,0 +1,10 @@
+{
+  "module": {
+    "name": "feature_chat_list",
+    "type": "har",
+    "deviceTypes": [
+      "default",
+      "tablet"
+    ]
+  }
+}

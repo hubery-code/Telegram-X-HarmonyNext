@@ -10,6 +10,8 @@
  *   原始 error.message 只允许进 cause（§7：禁止直接当用户文案）；
  * - 超时（默认 10s，可配）→ Err(network/timeout, retryable=true)；
  * - 取消（cancel() 句柄或 AbortSignalLike）→ Err 稳定取消错误；
+ * - close()（BRG-005）→ 全部挂起请求按取消 settle，此后新请求立即
+ *   Err（kind='unknown'，origin='td_gateway.closed'），绝不发送；
  * - 迟到响应（ settled 之后才到）绝不二次 resolve，计入 lateResponseCount 后丢弃。
  *
  * 契约要点（§7）：
@@ -30,6 +32,9 @@ import { RealTimeoutScheduler, TdTimeoutScheduler } from './TimeoutScheduler';
 import { TdWireObject, TdWireValue, copyWireObject, isWireObject, isValidClientId, wireNumber, wireString } from './TdWire';
 
 export const GATEWAY_ORIGIN: string = 'td_gateway';
+
+/** 稳定「gateway 已关闭」错误 origin：kind='unknown' + 固定 origin（BRG-005 closed 后拒绝新请求）。 */
+export const GATEWAY_CLOSED_ORIGIN: string = 'td_gateway.closed';
 
 /** 最小 AbortSignal 形态（ArkTS 无 DOM AbortSignal；只取 aborted 语义）。 */
 export interface TdAbortSignal {
@@ -119,6 +124,9 @@ export class RequestRegistry {
   private readonly pending: Map<string, PendingEntry> = new Map();
   private readonly tombstones: Map<string, SettleReason> = new Map();
 
+  /** BRG-005：close() 后为 true，新请求立即以稳定 closed 错误 settle（不发送）。 */
+  private closedFlag: boolean = false;
+
   private resolvedCount: number = 0;
   private timedOutCount: number = 0;
   private cancelledCount: number = 0;
@@ -145,6 +153,22 @@ export class RequestRegistry {
     const promise: Promise<Result<TdWireObject, AppError>> = new Promise<Result<TdWireObject, AppError>>((resolve: (result: Result<TdWireObject, AppError>) => void): void => {
       resolveRef = resolve;
     });
+
+    // closed 后的新请求：不构造 wire、不发送，立即 settle 为稳定 closed 错误（BRG-005）。
+    if (this.closedFlag) {
+      const closedEntry: PendingEntry = {
+        requestId: '',
+        clientId: clientId,
+        deadlineMillis: 0,
+        timeoutHandle: -1,
+        resolve: resolveRef,
+        settled: true
+      };
+      resolveRef(err<TdWireObject, AppError>(
+        AppErrors.unknown(GATEWAY_CLOSED_ORIGIN, 'td gateway is closed', `method=${method}`)
+      ));
+      return new TdPendingRequest(this, closedEntry, promise);
+    }
 
     // 非法 clientId 是调用方编程错误：不抛异常，按契约 settle 为 parameter 错误。
     if (!isValidClientId(clientId)) {
@@ -255,6 +279,25 @@ export class RequestRegistry {
     this.cancelledCount += 1;
     entry.resolve(err<TdWireObject, AppError>(TdGatewayCancelledError(entry.requestId)));
     return true;
+  }
+
+  /**
+   * 关闭（BRG-005）：取消全部挂起请求（各自 settle 为稳定取消错误，迟到响应由
+   * tombstone 安全丢弃），并拒绝此后的一切新请求（立即 settle 为 closed 错误）。
+   * 幂等：重复调用返回 0。
+   */
+  close(): number {
+    if (this.closedFlag) {
+      return 0;
+    }
+    this.closedFlag = true;
+    let cancelled: number = 0;
+    for (const entry of Array.from(this.pending.values())) {
+      if (this.cancelEntry(entry)) {
+        cancelled += 1;
+      }
+    }
+    return cancelled;
   }
 
   getMetrics(): RequestRegistryMetrics {

@@ -14,6 +14,7 @@ export {
   TdPendingRequest,
   RequestRegistry,
   GATEWAY_ORIGIN,
+  GATEWAY_CLOSED_ORIGIN,
   TdGatewayCancelledError
 } from './RequestRegistry';
 export {
@@ -28,6 +29,7 @@ export {
   TdPayloadParser,
   TdGatewayOptions,
   TdGatewayMetrics,
+  TdGatewayState,
   TdGateway,
   isCancelledRequestError
 } from './TdGateway';

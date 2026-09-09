@@ -1,0 +1,15 @@
+{
+  "name": "@tgx/platform-keystore",
+  "version": "0.1.0",
+  "description": "Telegram X HarmonyOS platform/keystore: SecureKeyStorePort production adapter on HarmonyOS Asset Store Kit (@kit.AssetStoreKit). Screen-lock-aware secure key storage (PLAT-003).",
+  "main": "./src/main/ets/Index.ets",
+  "author": "telegram-x",
+  "license": "GPL-3.0",
+  "dependencies": {
+    "@tgx/core-common": "file:../../core/common",
+    "@tgx/platform-ports": "file:../ports"
+  },
+  "devDependencies": {
+    "@ohos/hypium": "1.0.21"
+  }
+}

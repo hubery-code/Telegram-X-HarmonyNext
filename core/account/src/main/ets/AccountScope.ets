@@ -15,7 +15,8 @@
  * - open(startActive=true)（新建/恢复已启用账号）：createClient → 订阅内部事件 → gateway.start()；
  * - hibernate()：退订 bridge 事件流（gateway.stop()），描述符与数据目录保留，
  *   可 activate() 恢复；内部路由订阅保留，非 active 直达事件由守卫丢弃并计数；
- * - close()：取消域 cancelAll() + gateway.stop()，终态。closed 守卫把迟到事件
+ * - close()：取消域 cancelAll() + gateway.close()（BRG-005：退订 + 取消 registry
+ *   剩余挂起 + gateway 终态），终态。closed 守卫把迟到事件
  *   丢弃并计数（响应侧由 CORE-002 tombstone 保证不二次 resolve）；close() 幂等。
  */
 
@@ -184,8 +185,11 @@ export class AccountScope {
   }
 
   /**
-   * 关闭（终态）：取消全部 pending request（迟到响应由 CORE-002 tombstone 安全丢弃）、
-   * 停 gateway。事件订阅保留，closed 守卫丢弃并计数迟到事件。幂等。
+   * 关闭（终态）：取消域 cancelAll() + gateway.close()（BRG-005：退订桥事件流，
+   * registry 内剩余挂起请求一并按取消 settle，gateway 转 closed 拒绝新请求；
+   * 迟到响应由 CORE-002 tombstone 安全丢弃）。事件订阅保留，closed 守卫把迟到事件
+   * 丢弃并计数。幂等。共享的底层桥不在此关闭——bridge 级 close 由应用/注册表层
+   * 在整体关停时调用（一个 bridge 服务全部账号）。
    */
   close(): Result<AccountLifecycleState, AppError> {
     const reduced: Result<AccountLifecycleState, AppError> = reduceAccountLifecycle(this.lifecycleState, 'close');
@@ -195,7 +199,7 @@ export class AccountScope {
     if (this.lifecycleState !== 'closed') {
       this.lifecycleState = 'closed';
       this.cancellation.cancelAll();
-      this.gateway.stop();
+      this.gateway.close();
     }
     return ok<AccountLifecycleState, AppError>(this.lifecycleState);
   }

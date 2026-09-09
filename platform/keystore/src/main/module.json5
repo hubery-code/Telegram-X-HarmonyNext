@@ -1,0 +1,10 @@
+{
+  "module": {
+    "name": "platform_keystore",
+    "type": "har",
+    "description": "platform/keystore: SecureKeyStorePort 生产 adapter（Asset Store Kit — @kit.AssetStoreKit）",
+    "deviceTypes": [
+      "phone"
+    ]
+  }
+}
