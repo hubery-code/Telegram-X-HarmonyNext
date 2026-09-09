@@ -58,3 +58,12 @@ $HDC file recv /data/local/tmp/tdx_brg003_restart.jpeg .
   创建）和 `option` 响应，sequence 连续
 - 指标行：`dropped=0 subs=1 running=true`；退订后
   `subs=0 running=false`
+
+**BRG-003/004 DEVICE VERIFICATION: PASS（2026-09-09 09:58，VYG-AL00 / API 24）**
+
+- 页面自动完成：subscribe(id=1) → createClient(clientId=1) → send getOption(version, @extra.requestId=smoke-1)
+- 收到异步响应：`clientId=1 sequence=4 @type=optionValueString`（截图 `tdx_subscribe_device.jpeg`）
+- 事件序列严格保序：#1 updateOption → #2 updateOption → #3 updateAuthorizationState → #4 optionValueString（sequence 单调递增）
+- 指标（订阅时刻快照）：queue=0 overflowWait=0 dropped=0 subs=1 running=true
+- 销毁安全：`aa force-stop` 后重启，全流程自动重跑无崩溃（截图 `tdx_subscribe_relaunch.jpeg`）
+- 备注：`forwarded=0` 为订阅时刻的静态快照（指标行仅在订阅/按钮时刷新，非 bug）
