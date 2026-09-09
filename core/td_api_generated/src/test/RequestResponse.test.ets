@@ -6,23 +6,32 @@ import {
   TdUser,
   TdMessage,
   TdOk,
+  TdResponseMap,
   User,
   Message,
   Ok,
-  SendMessage,
   GetMe,
+  SendMessage,
   InputMessageText,
   encodeSendMessage,
   decodeSendMessage,
   decodeGetMe,
   decodeOk,
-  TdResponseMap,
   decodeTdObject,
   TD_SCHEMA_HASH
 } from '../main/ets/Index';
+import { jsonObj, toJson } from './TestJson';
 
 function responseMapTypeCheck(map: TdResponseMap | null): void {
   expect(map === null).assertTrue();
+}
+
+function inputMessageTextJson(): TdJsonRaw {
+  const content = jsonObj();
+  content['@type'] = 'inputMessageText';
+  content['text'] = null;
+  content['link_preview_options'] = null;
+  return toJson(content);
 }
 
 export default function requestResponseTest() {
@@ -40,7 +49,7 @@ export default function requestResponseTest() {
       request.input_message_content = inputText;
 
       const encoded: TdJsonRaw = encodeSendMessage(request);
-      const record = encoded as Record<string, TdJsonRaw>;
+      const record: Record<string, TdJsonRaw> = encoded as Record<string, TdJsonRaw>;
       expect(record['@type']).assertEqual('sendMessage');
       expect(record['chat_id']).assertEqual(123);
       const nested: TdJsonRaw = record['input_message_content'];
@@ -51,24 +60,23 @@ export default function requestResponseTest() {
     });
 
     it('requestDecode_extraTagIsPreserved', 0, () => {
-      const json: TdJsonRaw = {
-        '@type': 'sendMessage',
-        'chat_id': 1,
-        'topic_id': null,
-        'reply_to': null,
-        'options': null,
-        'reply_markup': null,
-        'input_message_content': { '@type': 'inputMessageText', 'text': null, 'link_preview_options': null },
-        '@extra': 'request-tag-42'
-      };
-      const decoded: SendMessage | null = decodeSendMessage(json);
+      const raw = jsonObj();
+      raw['@type'] = 'sendMessage';
+      raw['chat_id'] = 1;
+      raw['topic_id'] = null;
+      raw['reply_to'] = null;
+      raw['options'] = null;
+      raw['reply_markup'] = null;
+      raw['input_message_content'] = inputMessageTextJson();
+      raw['@extra'] = 'request-tag-42';
+      const decoded: SendMessage | null = decodeSendMessage(toJson(raw));
       expect(decoded === null).assertFalse();
       if (decoded === null) {
         return;
       }
       expect(decoded.extra).assertEqual('request-tag-42');
       const encoded: TdJsonRaw = encodeSendMessage(decoded);
-      const record = encoded as Record<string, TdJsonRaw>;
+      const record: Record<string, TdJsonRaw> = encoded as Record<string, TdJsonRaw>;
       expect(record['@extra']).assertEqual('request-tag-42');
     });
 
@@ -88,7 +96,9 @@ export default function requestResponseTest() {
       const getMe: GetMe = new GetMe();
       const asFunction: TdFunction = getMe;
       expect(asFunction.type).assertEqual('getMe');
-      const decoded: GetMe | null = decodeGetMe({ '@type': 'getMe' });
+      const raw = jsonObj();
+      raw['@type'] = 'getMe';
+      const decoded: GetMe | null = decodeGetMe(toJson(raw));
       expect(decoded === null).assertFalse();
       if (decoded !== null) {
         expect(decoded.type).assertEqual('getMe');
@@ -96,7 +106,10 @@ export default function requestResponseTest() {
     });
 
     it('okResponse_decodesViaGenericEntryPoint', 0, () => {
-      const decoded: TdObject | null = decodeTdObject({ '@type': 'ok', '@extra': 'tag-1' });
+      const raw = jsonObj();
+      raw['@type'] = 'ok';
+      raw['@extra'] = 'tag-1';
+      const decoded: TdObject | null = decodeTdObject(toJson(raw));
       expect(decoded === null).assertFalse();
       if (decoded === null) {
         return;
@@ -105,7 +118,9 @@ export default function requestResponseTest() {
       if (decoded instanceof Ok) {
         expect(decoded.extra).assertEqual('tag-1');
       }
-      const direct: Ok | null = decodeOk({ '@type': 'ok' });
+      const okRaw = jsonObj();
+      okRaw['@type'] = 'ok';
+      const direct: Ok | null = decodeOk(toJson(okRaw));
       expect(direct === null).assertFalse();
     });
 

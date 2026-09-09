@@ -7,7 +7,8 @@
 
 import { TdJsonRaw, asBool, asInt64, asNumber, asRecord, asString } from '../runtime/TdJson';
 import { ChatAdministratorRights, decodeChatAdministratorRights, encodeChatAdministratorRights } from './TdTypes_C';
-import { TdButtonStyle, TdKeyboardButtonType, decodeTdButtonStyle, decodeTdKeyboardButtonType, encodeTdButtonStyle, encodeTdKeyboardButtonType } from './TdUnions';
+import { TdButtonStyle, decodeTdButtonStyle, encodeTdButtonStyle } from './TdUnions_B';
+import { TdKeyboardButtonType, decodeTdKeyboardButtonType, encodeTdKeyboardButtonType } from './TdUnions_K';
 
 /** keyboardButton = KeyboardButton — Represents a single button in a bot keyboard */
 export class KeyboardButton {
@@ -25,7 +26,7 @@ export class KeyboardButton {
 
 /** Decode a TDLib `keyboardButton` object; null input -> null. */
 export function decodeKeyboardButton(json: TdJsonRaw): KeyboardButton | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -66,7 +67,7 @@ export class KeyboardButtonSourceMessage {
 
 /** Decode a TDLib `keyboardButtonSourceMessage` object; null input -> null. */
 export function decodeKeyboardButtonSourceMessage(json: TdJsonRaw): KeyboardButtonSourceMessage | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -103,7 +104,7 @@ export class KeyboardButtonSourceWebApp {
 
 /** Decode a TDLib `keyboardButtonSourceWebApp` object; null input -> null. */
 export function decodeKeyboardButtonSourceWebApp(json: TdJsonRaw): KeyboardButtonSourceWebApp | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -162,7 +163,7 @@ export class KeyboardButtonTypeRequestChat {
 
 /** Decode a TDLib `keyboardButtonTypeRequestChat` object; null input -> null. */
 export function decodeKeyboardButtonTypeRequestChat(json: TdJsonRaw): KeyboardButtonTypeRequestChat | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -217,7 +218,7 @@ export class KeyboardButtonTypeRequestLocation {
 
 /** Decode a TDLib `keyboardButtonTypeRequestLocation` object; null input -> null. */
 export function decodeKeyboardButtonTypeRequestLocation(json: TdJsonRaw): KeyboardButtonTypeRequestLocation | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -252,7 +253,7 @@ export class KeyboardButtonTypeRequestManagedBot {
 
 /** Decode a TDLib `keyboardButtonTypeRequestManagedBot` object; null input -> null. */
 export function decodeKeyboardButtonTypeRequestManagedBot(json: TdJsonRaw): KeyboardButtonTypeRequestManagedBot | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -287,7 +288,7 @@ export class KeyboardButtonTypeRequestPhoneNumber {
 
 /** Decode a TDLib `keyboardButtonTypeRequestPhoneNumber` object; null input -> null. */
 export function decodeKeyboardButtonTypeRequestPhoneNumber(json: TdJsonRaw): KeyboardButtonTypeRequestPhoneNumber | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -320,7 +321,7 @@ export class KeyboardButtonTypeRequestPoll {
 
 /** Decode a TDLib `keyboardButtonTypeRequestPoll` object; null input -> null. */
 export function decodeKeyboardButtonTypeRequestPoll(json: TdJsonRaw): KeyboardButtonTypeRequestPoll | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -371,7 +372,7 @@ export class KeyboardButtonTypeRequestUsers {
 
 /** Decode a TDLib `keyboardButtonTypeRequestUsers` object; null input -> null. */
 export function decodeKeyboardButtonTypeRequestUsers(json: TdJsonRaw): KeyboardButtonTypeRequestUsers | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -418,7 +419,7 @@ export class KeyboardButtonTypeText {
 
 /** Decode a TDLib `keyboardButtonTypeText` object; null input -> null. */
 export function decodeKeyboardButtonTypeText(json: TdJsonRaw): KeyboardButtonTypeText | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -449,7 +450,7 @@ export class KeyboardButtonTypeWebApp {
 
 /** Decode a TDLib `keyboardButtonTypeWebApp` object; null input -> null. */
 export function decodeKeyboardButtonTypeWebApp(json: TdJsonRaw): KeyboardButtonTypeWebApp | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);

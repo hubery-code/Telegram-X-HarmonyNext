@@ -6,7 +6,7 @@
  */
 
 import { TdJsonRaw, asRecord, asString, decodeVector, encodeVector } from '../runtime/TdJson';
-import { TdSuggestedAction, decodeTdSuggestedAction, encodeTdSuggestedAction } from './TdUnions';
+import { TdSuggestedAction, decodeTdSuggestedAction, encodeTdSuggestedAction } from './TdUnions_S';
 
 /** hashtags = Hashtags — Contains a list of hashtags */
 export class Hashtags {
@@ -18,7 +18,7 @@ export class Hashtags {
 
 /** Decode a TDLib `hashtags` object; null input -> null. */
 export function decodeHashtags(json: TdJsonRaw): Hashtags | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -49,7 +49,7 @@ export class HideContactCloseBirthdays {
 
 /** Decode a TDLib `hideContactCloseBirthdays` object; null input -> null. */
 export function decodeHideContactCloseBirthdays(json: TdJsonRaw): HideContactCloseBirthdays | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -80,7 +80,7 @@ export class HideSuggestedAction {
 
 /** Decode a TDLib `hideSuggestedAction` object; null input -> null. */
 export function decodeHideSuggestedAction(json: TdJsonRaw): HideSuggestedAction | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -113,7 +113,7 @@ export class HttpUrl {
 
 /** Decode a TDLib `httpUrl` object; null input -> null. */
 export function decodeHttpUrl(json: TdJsonRaw): HttpUrl | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);

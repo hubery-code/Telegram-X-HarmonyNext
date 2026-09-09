@@ -8,7 +8,12 @@
 import { TdJsonRaw, asBool, asInt64, asNumber, asRecord, asString, decodeVector, encodeVector } from '../runtime/TdJson';
 import { File, decodeFile, encodeFile } from './TdTypes_F';
 import { MaskPosition, Message, decodeMaskPosition, decodeMessage, encodeMaskPosition, encodeMessage } from './TdTypes_M';
-import { TdFileType, TdInputFile, TdMessageSender, TdNetworkStatisticsEntry, TdNetworkType, TdNotificationGroupType, TdNotificationType, TdPushMessageContent, TdStickerFormat, decodeTdFileType, decodeTdInputFile, decodeTdMessageSender, decodeTdNetworkStatisticsEntry, decodeTdNetworkType, decodeTdNotificationGroupType, decodeTdNotificationType, decodeTdPushMessageContent, decodeTdStickerFormat, encodeTdFileType, encodeTdInputFile, encodeTdMessageSender, encodeTdNetworkStatisticsEntry, encodeTdNetworkType, encodeTdNotificationGroupType, encodeTdNotificationType, encodeTdPushMessageContent, encodeTdStickerFormat } from './TdUnions';
+import { TdFileType, decodeTdFileType, encodeTdFileType } from './TdUnions_F';
+import { TdInputFile, decodeTdInputFile, encodeTdInputFile } from './TdUnions_I';
+import { TdMessageSender, decodeTdMessageSender, encodeTdMessageSender } from './TdUnions_M';
+import { TdNetworkStatisticsEntry, TdNetworkType, TdNotificationGroupType, TdNotificationType, decodeTdNetworkStatisticsEntry, decodeTdNetworkType, decodeTdNotificationGroupType, decodeTdNotificationType, encodeTdNetworkStatisticsEntry, encodeTdNetworkType, encodeTdNotificationGroupType, encodeTdNotificationType } from './TdUnions_N';
+import { TdPushMessageContent, decodeTdPushMessageContent, encodeTdPushMessageContent } from './TdUnions_P';
+import { TdStickerFormat, decodeTdStickerFormat, encodeTdStickerFormat } from './TdUnions_S';
 
 /** networkStatistics = NetworkStatistics — A full list of available network statistic entries */
 export class NetworkStatistics {
@@ -22,7 +27,7 @@ export class NetworkStatistics {
 
 /** Decode a TDLib `networkStatistics` object; null input -> null. */
 export function decodeNetworkStatistics(json: TdJsonRaw): NetworkStatistics | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -63,7 +68,7 @@ export class NetworkStatisticsEntryCall {
 
 /** Decode a TDLib `networkStatisticsEntryCall` object; null input -> null. */
 export function decodeNetworkStatisticsEntryCall(json: TdJsonRaw): NetworkStatisticsEntryCall | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -108,7 +113,7 @@ export class NetworkStatisticsEntryFile {
 
 /** Decode a TDLib `networkStatisticsEntryFile` object; null input -> null. */
 export function decodeNetworkStatisticsEntryFile(json: TdJsonRaw): NetworkStatisticsEntryFile | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -145,7 +150,7 @@ export class NetworkTypeMobile {
 
 /** Decode a TDLib `networkTypeMobile` object; null input -> null. */
 export function decodeNetworkTypeMobile(json: TdJsonRaw): NetworkTypeMobile | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -174,7 +179,7 @@ export class NetworkTypeMobileRoaming {
 
 /** Decode a TDLib `networkTypeMobileRoaming` object; null input -> null. */
 export function decodeNetworkTypeMobileRoaming(json: TdJsonRaw): NetworkTypeMobileRoaming | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -203,7 +208,7 @@ export class NetworkTypeNone {
 
 /** Decode a TDLib `networkTypeNone` object; null input -> null. */
 export function decodeNetworkTypeNone(json: TdJsonRaw): NetworkTypeNone | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -232,7 +237,7 @@ export class NetworkTypeOther {
 
 /** Decode a TDLib `networkTypeOther` object; null input -> null. */
 export function decodeNetworkTypeOther(json: TdJsonRaw): NetworkTypeOther | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -261,7 +266,7 @@ export class NetworkTypeWiFi {
 
 /** Decode a TDLib `networkTypeWiFi` object; null input -> null. */
 export function decodeNetworkTypeWiFi(json: TdJsonRaw): NetworkTypeWiFi | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -294,7 +299,7 @@ export class NewChatPrivacySettings {
 
 /** Decode a TDLib `newChatPrivacySettings` object; null input -> null. */
 export function decodeNewChatPrivacySettings(json: TdJsonRaw): NewChatPrivacySettings | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -337,7 +342,7 @@ export class NewSticker {
 
 /** Decode a TDLib `newSticker` object; null input -> null. */
 export function decodeNewSticker(json: TdJsonRaw): NewSticker | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -384,7 +389,7 @@ export class Notification {
 
 /** Decode a TDLib `notification` object; null input -> null. */
 export function decodeNotification(json: TdJsonRaw): Notification | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -431,7 +436,7 @@ export class NotificationGroup {
 
 /** Decode a TDLib `notificationGroup` object; null input -> null. */
 export function decodeNotificationGroup(json: TdJsonRaw): NotificationGroup | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -470,7 +475,7 @@ export class NotificationGroupTypeCalls {
 
 /** Decode a TDLib `notificationGroupTypeCalls` object; null input -> null. */
 export function decodeNotificationGroupTypeCalls(json: TdJsonRaw): NotificationGroupTypeCalls | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -499,7 +504,7 @@ export class NotificationGroupTypeMentions {
 
 /** Decode a TDLib `notificationGroupTypeMentions` object; null input -> null. */
 export function decodeNotificationGroupTypeMentions(json: TdJsonRaw): NotificationGroupTypeMentions | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -528,7 +533,7 @@ export class NotificationGroupTypeMessages {
 
 /** Decode a TDLib `notificationGroupTypeMessages` object; null input -> null. */
 export function decodeNotificationGroupTypeMessages(json: TdJsonRaw): NotificationGroupTypeMessages | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -557,7 +562,7 @@ export class NotificationGroupTypeSecretChat {
 
 /** Decode a TDLib `notificationGroupTypeSecretChat` object; null input -> null. */
 export function decodeNotificationGroupTypeSecretChat(json: TdJsonRaw): NotificationGroupTypeSecretChat | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -586,7 +591,7 @@ export class NotificationSettingsScopeChannelChats {
 
 /** Decode a TDLib `notificationSettingsScopeChannelChats` object; null input -> null. */
 export function decodeNotificationSettingsScopeChannelChats(json: TdJsonRaw): NotificationSettingsScopeChannelChats | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -615,7 +620,7 @@ export class NotificationSettingsScopeGroupChats {
 
 /** Decode a TDLib `notificationSettingsScopeGroupChats` object; null input -> null. */
 export function decodeNotificationSettingsScopeGroupChats(json: TdJsonRaw): NotificationSettingsScopeGroupChats | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -644,7 +649,7 @@ export class NotificationSettingsScopePrivateChats {
 
 /** Decode a TDLib `notificationSettingsScopePrivateChats` object; null input -> null. */
 export function decodeNotificationSettingsScopePrivateChats(json: TdJsonRaw): NotificationSettingsScopePrivateChats | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -685,7 +690,7 @@ export class NotificationSound {
 
 /** Decode a TDLib `notificationSound` object; null input -> null. */
 export function decodeNotificationSound(json: TdJsonRaw): NotificationSound | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -728,7 +733,7 @@ export class NotificationSounds {
 
 /** Decode a TDLib `notificationSounds` object; null input -> null. */
 export function decodeNotificationSounds(json: TdJsonRaw): NotificationSounds | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -761,7 +766,7 @@ export class NotificationTypeNewCall {
 
 /** Decode a TDLib `notificationTypeNewCall` object; null input -> null. */
 export function decodeNotificationTypeNewCall(json: TdJsonRaw): NotificationTypeNewCall | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -796,7 +801,7 @@ export class NotificationTypeNewMessage {
 
 /** Decode a TDLib `notificationTypeNewMessage` object; null input -> null. */
 export function decodeNotificationTypeNewMessage(json: TdJsonRaw): NotificationTypeNewMessage | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -839,7 +844,7 @@ export class NotificationTypeNewPushMessage {
 
 /** Decode a TDLib `notificationTypeNewPushMessage` object; null input -> null. */
 export function decodeNotificationTypeNewPushMessage(json: TdJsonRaw): NotificationTypeNewPushMessage | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -878,7 +883,7 @@ export class NotificationTypeNewSecretChat {
 
 /** Decode a TDLib `notificationTypeNewSecretChat` object; null input -> null. */
 export function decodeNotificationTypeNewSecretChat(json: TdJsonRaw): NotificationTypeNewSecretChat | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);

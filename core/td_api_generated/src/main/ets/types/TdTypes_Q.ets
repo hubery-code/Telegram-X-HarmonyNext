@@ -6,7 +6,8 @@
  */
 
 import { TdJsonRaw, asBool, asInt64, asNumber, asRecord, asString, decodeVector, encodeVector } from '../runtime/TdJson';
-import { TdMessageContent, TdMessageSendingState, TdReplyMarkup, decodeTdMessageContent, decodeTdMessageSendingState, decodeTdReplyMarkup, encodeTdMessageContent, encodeTdMessageSendingState, encodeTdReplyMarkup } from './TdUnions';
+import { TdMessageContent, TdMessageSendingState, decodeTdMessageContent, decodeTdMessageSendingState, encodeTdMessageContent, encodeTdMessageSendingState } from './TdUnions_M';
+import { TdReplyMarkup, decodeTdReplyMarkup, encodeTdReplyMarkup } from './TdUnions_R';
 
 /** quickReplyMessage = QuickReplyMessage — Describes a message that can be used for quick reply */
 export class QuickReplyMessage {
@@ -32,7 +33,7 @@ export class QuickReplyMessage {
 
 /** Decode a TDLib `quickReplyMessage` object; null input -> null. */
 export function decodeQuickReplyMessage(json: TdJsonRaw): QuickReplyMessage | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -79,7 +80,7 @@ export class QuickReplyMessages {
 
 /** Decode a TDLib `quickReplyMessages` object; null input -> null. */
 export function decodeQuickReplyMessages(json: TdJsonRaw): QuickReplyMessages | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -118,7 +119,7 @@ export class QuickReplyShortcut {
 
 /** Decode a TDLib `quickReplyShortcut` object; null input -> null. */
 export function decodeQuickReplyShortcut(json: TdJsonRaw): QuickReplyShortcut | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);

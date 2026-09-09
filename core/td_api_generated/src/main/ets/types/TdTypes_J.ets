@@ -7,7 +7,9 @@
 
 import { TdJsonRaw, asBool, asNumber, asRecord, asString, decodeVector, encodeVector } from '../runtime/TdJson';
 import { GroupCallJoinParameters, decodeGroupCallJoinParameters, encodeGroupCallJoinParameters } from './TdTypes_G';
-import { TdInputGroupCall, TdJsonValue, TdMessageSender, decodeTdInputGroupCall, decodeTdJsonValue, decodeTdMessageSender, encodeTdInputGroupCall, encodeTdJsonValue, encodeTdMessageSender } from './TdUnions';
+import { TdInputGroupCall, decodeTdInputGroupCall, encodeTdInputGroupCall } from './TdUnions_I';
+import { TdJsonValue, decodeTdJsonValue, encodeTdJsonValue } from './TdUnions_J';
+import { TdMessageSender, decodeTdMessageSender, encodeTdMessageSender } from './TdUnions_M';
 
 /** joinChat = ChatJoinResult — Adds the current user as a new member to a chat. Private and secret chats can't be joined using this method */
 export class JoinChat {
@@ -19,7 +21,7 @@ export class JoinChat {
 
 /** Decode a TDLib `joinChat` object; null input -> null. */
 export function decodeJoinChat(json: TdJsonRaw): JoinChat | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -52,7 +54,7 @@ export class JoinChatByInviteLink {
 
 /** Decode a TDLib `joinChatByInviteLink` object; null input -> null. */
 export function decodeJoinChatByInviteLink(json: TdJsonRaw): JoinChatByInviteLink | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -87,7 +89,7 @@ export class JoinGroupCall {
 
 /** Decode a TDLib `joinGroupCall` object; null input -> null. */
 export function decodeJoinGroupCall(json: TdJsonRaw): JoinGroupCall | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -124,7 +126,7 @@ export class JoinLiveStory {
 
 /** Decode a TDLib `joinLiveStory` object; null input -> null. */
 export function decodeJoinLiveStory(json: TdJsonRaw): JoinLiveStory | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -165,7 +167,7 @@ export class JoinVideoChat {
 
 /** Decode a TDLib `joinVideoChat` object; null input -> null. */
 export function decodeJoinVideoChat(json: TdJsonRaw): JoinVideoChat | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -206,7 +208,7 @@ export class JsonObjectMember {
 
 /** Decode a TDLib `jsonObjectMember` object; null input -> null. */
 export function decodeJsonObjectMember(json: TdJsonRaw): JsonObjectMember | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -241,7 +243,7 @@ export class JsonValueArray {
 
 /** Decode a TDLib `jsonValueArray` object; null input -> null. */
 export function decodeJsonValueArray(json: TdJsonRaw): JsonValueArray | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -274,7 +276,7 @@ export class JsonValueBoolean {
 
 /** Decode a TDLib `jsonValueBoolean` object; null input -> null. */
 export function decodeJsonValueBoolean(json: TdJsonRaw): JsonValueBoolean | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -305,7 +307,7 @@ export class JsonValueNull {
 
 /** Decode a TDLib `jsonValueNull` object; null input -> null. */
 export function decodeJsonValueNull(json: TdJsonRaw): JsonValueNull | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -336,7 +338,7 @@ export class JsonValueNumber {
 
 /** Decode a TDLib `jsonValueNumber` object; null input -> null. */
 export function decodeJsonValueNumber(json: TdJsonRaw): JsonValueNumber | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -369,7 +371,7 @@ export class JsonValueObject {
 
 /** Decode a TDLib `jsonValueObject` object; null input -> null. */
 export function decodeJsonValueObject(json: TdJsonRaw): JsonValueObject | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -402,7 +404,7 @@ export class JsonValueString {
 
 /** Decode a TDLib `jsonValueString` object; null input -> null. */
 export function decodeJsonValueString(json: TdJsonRaw): JsonValueString | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);

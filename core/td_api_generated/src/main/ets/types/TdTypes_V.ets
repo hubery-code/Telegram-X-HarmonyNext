@@ -14,7 +14,10 @@ import { OrderInfo, decodeOrderInfo, encodeOrderInfo } from './TdTypes_O';
 import { Point, decodePoint, encodePoint } from './TdTypes_P';
 import { ShippingOption, decodeShippingOption, encodeShippingOption } from './TdTypes_S';
 import { Thumbnail, decodeThumbnail, encodeThumbnail } from './TdTypes_T';
-import { TdInputInvoice, TdMessageSender, TdMessageSource, TdPremiumFeature, TdSpeechRecognitionResult, decodeTdInputInvoice, decodeTdMessageSender, decodeTdMessageSource, decodeTdPremiumFeature, decodeTdSpeechRecognitionResult, encodeTdInputInvoice, encodeTdMessageSender, encodeTdMessageSource, encodeTdPremiumFeature, encodeTdSpeechRecognitionResult } from './TdUnions';
+import { TdInputInvoice, decodeTdInputInvoice, encodeTdInputInvoice } from './TdUnions_I';
+import { TdMessageSender, TdMessageSource, decodeTdMessageSender, decodeTdMessageSource, encodeTdMessageSender, encodeTdMessageSource } from './TdUnions_M';
+import { TdPremiumFeature, decodeTdPremiumFeature, encodeTdPremiumFeature } from './TdUnions_P';
+import { TdSpeechRecognitionResult, decodeTdSpeechRecognitionResult, encodeTdSpeechRecognitionResult } from './TdUnions_S';
 
 /** validateOrderInfo = ValidatedOrderInfo — Validates the order information provided by a user and returns the available shipping options for a flexible invoice */
 export class ValidateOrderInfo {
@@ -30,7 +33,7 @@ export class ValidateOrderInfo {
 
 /** Decode a TDLib `validateOrderInfo` object; null input -> null. */
 export function decodeValidateOrderInfo(json: TdJsonRaw): ValidateOrderInfo | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -69,7 +72,7 @@ export class ValidatedOrderInfo {
 
 /** Decode a TDLib `validatedOrderInfo` object; null input -> null. */
 export function decodeValidatedOrderInfo(json: TdJsonRaw): ValidatedOrderInfo | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -108,7 +111,7 @@ export class VectorPathCommandCubicBezierCurve {
 
 /** Decode a TDLib `vectorPathCommandCubicBezierCurve` object; null input -> null. */
 export function decodeVectorPathCommandCubicBezierCurve(json: TdJsonRaw): VectorPathCommandCubicBezierCurve | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -145,7 +148,7 @@ export class VectorPathCommandLine {
 
 /** Decode a TDLib `vectorPathCommandLine` object; null input -> null. */
 export function decodeVectorPathCommandLine(json: TdJsonRaw): VectorPathCommandLine | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -188,7 +191,7 @@ export class Venue {
 
 /** Decode a TDLib `venue` object; null input -> null. */
 export function decodeVenue(json: TdJsonRaw): Venue | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -237,7 +240,7 @@ export class VerificationStatus {
 
 /** Decode a TDLib `verificationStatus` object; null input -> null. */
 export function decodeVerificationStatus(json: TdJsonRaw): VerificationStatus | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -294,7 +297,7 @@ export class Video {
 
 /** Decode a TDLib `video` object; null input -> null. */
 export function decodeVideo(json: TdJsonRaw): Video | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -349,7 +352,7 @@ export class VideoChat {
 
 /** Decode a TDLib `videoChat` object; null input -> null. */
 export function decodeVideoChat(json: TdJsonRaw): VideoChat | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -400,7 +403,7 @@ export class VideoMessageAdvertisement {
 
 /** Decode a TDLib `videoMessageAdvertisement` object; null input -> null. */
 export function decodeVideoMessageAdvertisement(json: TdJsonRaw): VideoMessageAdvertisement | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -451,7 +454,7 @@ export class VideoMessageAdvertisements {
 
 /** Decode a TDLib `videoMessageAdvertisements` object; null input -> null. */
 export function decodeVideoMessageAdvertisements(json: TdJsonRaw): VideoMessageAdvertisements | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -500,7 +503,7 @@ export class VideoNote {
 
 /** Decode a TDLib `videoNote` object; null input -> null. */
 export function decodeVideoNote(json: TdJsonRaw): VideoNote | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -551,7 +554,7 @@ export class VideoStoryboard {
 
 /** Decode a TDLib `videoStoryboard` object; null input -> null. */
 export function decodeVideoStoryboard(json: TdJsonRaw): VideoStoryboard | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -596,7 +599,7 @@ export class ViewMessages {
 
 /** Decode a TDLib `viewMessages` object; null input -> null. */
 export function decodeViewMessages(json: TdJsonRaw): ViewMessages | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -635,7 +638,7 @@ export class ViewPremiumFeature {
 
 /** Decode a TDLib `viewPremiumFeature` object; null input -> null. */
 export function decodeViewPremiumFeature(json: TdJsonRaw): ViewPremiumFeature | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -668,7 +671,7 @@ export class ViewSponsoredChat {
 
 /** Decode a TDLib `viewSponsoredChat` object; null input -> null. */
 export function decodeViewSponsoredChat(json: TdJsonRaw): ViewSponsoredChat | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -701,7 +704,7 @@ export class ViewTrendingStickerSets {
 
 /** Decode a TDLib `viewTrendingStickerSets` object; null input -> null. */
 export function decodeViewTrendingStickerSets(json: TdJsonRaw): ViewTrendingStickerSets | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -734,7 +737,7 @@ export class ViewVideoMessageAdvertisement {
 
 /** Decode a TDLib `viewVideoMessageAdvertisement` object; null input -> null. */
 export function decodeViewVideoMessageAdvertisement(json: TdJsonRaw): ViewVideoMessageAdvertisement | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -775,7 +778,7 @@ export class VoiceNote {
 
 /** Decode a TDLib `voiceNote` object; null input -> null. */
 export function decodeVoiceNote(json: TdJsonRaw): VoiceNote | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);

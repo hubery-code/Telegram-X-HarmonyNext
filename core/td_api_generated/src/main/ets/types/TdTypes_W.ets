@@ -9,7 +9,10 @@ import { TdJsonRaw, asBool, asInt64, asNumber, asRecord, asString, decodeVector,
 import { Animation, decodeAnimation, encodeAnimation } from './TdTypes_A';
 import { Photo, decodePhoto, encodePhoto } from './TdTypes_P';
 import { ThemeParameters, decodeThemeParameters, encodeThemeParameters } from './TdTypes_T';
-import { TdInternalLinkType, TdMessageContent, TdPageBlock, TdWebAppOpenMode, decodeTdInternalLinkType, decodeTdMessageContent, decodeTdPageBlock, decodeTdWebAppOpenMode, encodeTdInternalLinkType, encodeTdMessageContent, encodeTdPageBlock, encodeTdWebAppOpenMode } from './TdUnions';
+import { TdInternalLinkType, decodeTdInternalLinkType, encodeTdInternalLinkType } from './TdUnions_I';
+import { TdMessageContent, decodeTdMessageContent, encodeTdMessageContent } from './TdUnions_M';
+import { TdPageBlock, decodeTdPageBlock, encodeTdPageBlock } from './TdUnions_P';
+import { TdWebAppOpenMode, decodeTdWebAppOpenMode, encodeTdWebAppOpenMode } from './TdUnions_W';
 
 /** webApp = WebApp — Describes a Web App. Use getInternalLink with internalLinkTypeWebApp to share the Web App */
 export class WebApp {
@@ -29,7 +32,7 @@ export class WebApp {
 
 /** Decode a TDLib `webApp` object; null input -> null. */
 export function decodeWebApp(json: TdJsonRaw): WebApp | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -72,7 +75,7 @@ export class WebAppInfo {
 
 /** Decode a TDLib `webAppInfo` object; null input -> null. */
 export function decodeWebAppInfo(json: TdJsonRaw): WebAppInfo | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -105,7 +108,7 @@ export class WebAppOpenModeCompact {
 
 /** Decode a TDLib `webAppOpenModeCompact` object; null input -> null. */
 export function decodeWebAppOpenModeCompact(json: TdJsonRaw): WebAppOpenModeCompact | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -134,7 +137,7 @@ export class WebAppOpenModeFullScreen {
 
 /** Decode a TDLib `webAppOpenModeFullScreen` object; null input -> null. */
 export function decodeWebAppOpenModeFullScreen(json: TdJsonRaw): WebAppOpenModeFullScreen | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -163,7 +166,7 @@ export class WebAppOpenModeFullSize {
 
 /** Decode a TDLib `webAppOpenModeFullSize` object; null input -> null. */
 export function decodeWebAppOpenModeFullSize(json: TdJsonRaw): WebAppOpenModeFullSize | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -198,7 +201,7 @@ export class WebAppOpenParameters {
 
 /** Decode a TDLib `webAppOpenParameters` object; null input -> null. */
 export function decodeWebAppOpenParameters(json: TdJsonRaw): WebAppOpenParameters | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -237,7 +240,7 @@ export class WebAppUrl {
 
 /** Decode a TDLib `webAppUrl` object; null input -> null. */
 export function decodeWebAppUrl(json: TdJsonRaw): WebAppUrl | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -278,7 +281,7 @@ export class WebBrowserSettings {
 
 /** Decode a TDLib `webBrowserSettings` object; null input -> null. */
 export function decodeWebBrowserSettings(json: TdJsonRaw): WebBrowserSettings | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -315,7 +318,7 @@ export class WebBrowserTypeExternal {
 
 /** Decode a TDLib `webBrowserTypeExternal` object; null input -> null. */
 export function decodeWebBrowserTypeExternal(json: TdJsonRaw): WebBrowserTypeExternal | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -344,7 +347,7 @@ export class WebBrowserTypeInApp {
 
 /** Decode a TDLib `webBrowserTypeInApp` object; null input -> null. */
 export function decodeWebBrowserTypeInApp(json: TdJsonRaw): WebBrowserTypeInApp | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -381,7 +384,7 @@ export class WebDomainException {
 
 /** Decode a TDLib `webDomainException` object; null input -> null. */
 export function decodeWebDomainException(json: TdJsonRaw): WebDomainException | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -430,7 +433,7 @@ export class WebPageInstantView {
 
 /** Decode a TDLib `webPageInstantView` object; null input -> null. */
 export function decodeWebPageInstantView(json: TdJsonRaw): WebPageInstantView | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -475,7 +478,7 @@ export class WelcomeMessage {
 
 /** Decode a TDLib `welcomeMessage` object; null input -> null. */
 export function decodeWelcomeMessage(json: TdJsonRaw): WelcomeMessage | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -514,7 +517,7 @@ export class WriteGeneratedFilePart {
 
 /** Decode a TDLib `writeGeneratedFilePart` object; null input -> null. */
 export function decodeWriteGeneratedFilePart(json: TdJsonRaw): WriteGeneratedFilePart | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);

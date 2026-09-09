@@ -16,7 +16,11 @@ import { Sticker, decodeSticker, encodeSticker } from './TdTypes_S';
 import { ThemeSettings, decodeThemeSettings, encodeThemeSettings } from './TdTypes_T';
 import { UpgradedGift, decodeUpgradedGift, encodeUpgradedGift } from './TdTypes_U';
 import { Video, VideoNote, VoiceNote, decodeVideo, decodeVideoNote, decodeVoiceNote, encodeVideo, encodeVideoNote, encodeVoiceNote } from './TdTypes_V';
-import { TdBackgroundType, TdChatList, TdInviteLinkChatType, TdLanguagePackStringValue, TdLinkPreviewAlbumMedia, TdLinkPreviewType, TdStoryList, decodeTdBackgroundType, decodeTdChatList, decodeTdInviteLinkChatType, decodeTdLanguagePackStringValue, decodeTdLinkPreviewAlbumMedia, decodeTdLinkPreviewType, decodeTdStoryList, encodeTdBackgroundType, encodeTdChatList, encodeTdInviteLinkChatType, encodeTdLanguagePackStringValue, encodeTdLinkPreviewAlbumMedia, encodeTdLinkPreviewType, encodeTdStoryList } from './TdUnions';
+import { TdBackgroundType, decodeTdBackgroundType, encodeTdBackgroundType } from './TdUnions_B';
+import { TdChatList, decodeTdChatList, encodeTdChatList } from './TdUnions_C';
+import { TdInviteLinkChatType, decodeTdInviteLinkChatType, encodeTdInviteLinkChatType } from './TdUnions_I';
+import { TdLanguagePackStringValue, TdLinkPreviewAlbumMedia, TdLinkPreviewType, decodeTdLanguagePackStringValue, decodeTdLinkPreviewAlbumMedia, decodeTdLinkPreviewType, encodeTdLanguagePackStringValue, encodeTdLinkPreviewAlbumMedia, encodeTdLinkPreviewType } from './TdUnions_L';
+import { TdStoryList, decodeTdStoryList, encodeTdStoryList } from './TdUnions_S';
 
 /** labeledPricePart = LabeledPricePart — Portion of the price of a product (e.g., "delivery cost", "tax amount") */
 export class LabeledPricePart {
@@ -30,7 +34,7 @@ export class LabeledPricePart {
 
 /** Decode a TDLib `labeledPricePart` object; null input -> null. */
 export function decodeLabeledPricePart(json: TdJsonRaw): LabeledPricePart | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -89,7 +93,7 @@ export class LanguagePackInfo {
 
 /** Decode a TDLib `languagePackInfo` object; null input -> null. */
 export function decodeLanguagePackInfo(json: TdJsonRaw): LanguagePackInfo | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -148,7 +152,7 @@ export class LanguagePackString {
 
 /** Decode a TDLib `languagePackString` object; null input -> null. */
 export function decodeLanguagePackString(json: TdJsonRaw): LanguagePackString | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -181,7 +185,7 @@ export class LanguagePackStringValueDeleted {
 
 /** Decode a TDLib `languagePackStringValueDeleted` object; null input -> null. */
 export function decodeLanguagePackStringValueDeleted(json: TdJsonRaw): LanguagePackStringValueDeleted | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -212,7 +216,7 @@ export class LanguagePackStringValueOrdinary {
 
 /** Decode a TDLib `languagePackStringValueOrdinary` object; null input -> null. */
 export function decodeLanguagePackStringValueOrdinary(json: TdJsonRaw): LanguagePackStringValueOrdinary | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -255,7 +259,7 @@ export class LanguagePackStringValuePluralized {
 
 /** Decode a TDLib `languagePackStringValuePluralized` object; null input -> null. */
 export function decodeLanguagePackStringValuePluralized(json: TdJsonRaw): LanguagePackStringValuePluralized | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -298,7 +302,7 @@ export class LanguagePackStrings {
 
 /** Decode a TDLib `languagePackStrings` object; null input -> null. */
 export function decodeLanguagePackStrings(json: TdJsonRaw): LanguagePackStrings | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -337,7 +341,7 @@ export class LaunchPrepaidGiveaway {
 
 /** Decode a TDLib `launchPrepaidGiveaway` object; null input -> null. */
 export function decodeLaunchPrepaidGiveaway(json: TdJsonRaw): LaunchPrepaidGiveaway | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -376,7 +380,7 @@ export class LeaveChat {
 
 /** Decode a TDLib `leaveChat` object; null input -> null. */
 export function decodeLeaveChat(json: TdJsonRaw): LeaveChat | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -409,7 +413,7 @@ export class LeaveGroupCall {
 
 /** Decode a TDLib `leaveGroupCall` object; null input -> null. */
 export function decodeLeaveGroupCall(json: TdJsonRaw): LeaveGroupCall | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -466,7 +470,7 @@ export class LinkPreview {
 
 /** Decode a TDLib `linkPreview` object; null input -> null. */
 export function decodeLinkPreview(json: TdJsonRaw): LinkPreview | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -523,7 +527,7 @@ export class LinkPreviewAlbumMediaPhoto {
 
 /** Decode a TDLib `linkPreviewAlbumMediaPhoto` object; null input -> null. */
 export function decodeLinkPreviewAlbumMediaPhoto(json: TdJsonRaw): LinkPreviewAlbumMediaPhoto | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -556,7 +560,7 @@ export class LinkPreviewAlbumMediaVideo {
 
 /** Decode a TDLib `linkPreviewAlbumMediaVideo` object; null input -> null. */
 export function decodeLinkPreviewAlbumMediaVideo(json: TdJsonRaw): LinkPreviewAlbumMediaVideo | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -597,7 +601,7 @@ export class LinkPreviewOptions {
 
 /** Decode a TDLib `linkPreviewOptions` object; null input -> null. */
 export function decodeLinkPreviewOptions(json: TdJsonRaw): LinkPreviewOptions | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -640,7 +644,7 @@ export class LinkPreviewTypeAlbum {
 
 /** Decode a TDLib `linkPreviewTypeAlbum` object; null input -> null. */
 export function decodeLinkPreviewTypeAlbum(json: TdJsonRaw): LinkPreviewTypeAlbum | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -675,7 +679,7 @@ export class LinkPreviewTypeAnimation {
 
 /** Decode a TDLib `linkPreviewTypeAnimation` object; null input -> null. */
 export function decodeLinkPreviewTypeAnimation(json: TdJsonRaw): LinkPreviewTypeAnimation | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -708,7 +712,7 @@ export class LinkPreviewTypeApp {
 
 /** Decode a TDLib `linkPreviewTypeApp` object; null input -> null. */
 export function decodeLinkPreviewTypeApp(json: TdJsonRaw): LinkPreviewTypeApp | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -741,7 +745,7 @@ export class LinkPreviewTypeArticle {
 
 /** Decode a TDLib `linkPreviewTypeArticle` object; null input -> null. */
 export function decodeLinkPreviewTypeArticle(json: TdJsonRaw): LinkPreviewTypeArticle | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -774,7 +778,7 @@ export class LinkPreviewTypeAudio {
 
 /** Decode a TDLib `linkPreviewTypeAudio` object; null input -> null. */
 export function decodeLinkPreviewTypeAudio(json: TdJsonRaw): LinkPreviewTypeAudio | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -809,7 +813,7 @@ export class LinkPreviewTypeBackground {
 
 /** Decode a TDLib `linkPreviewTypeBackground` object; null input -> null. */
 export function decodeLinkPreviewTypeBackground(json: TdJsonRaw): LinkPreviewTypeBackground | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -844,7 +848,7 @@ export class LinkPreviewTypeChannelBoost {
 
 /** Decode a TDLib `linkPreviewTypeChannelBoost` object; null input -> null. */
 export function decodeLinkPreviewTypeChannelBoost(json: TdJsonRaw): LinkPreviewTypeChannelBoost | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -881,7 +885,7 @@ export class LinkPreviewTypeChat {
 
 /** Decode a TDLib `linkPreviewTypeChat` object; null input -> null. */
 export function decodeLinkPreviewTypeChat(json: TdJsonRaw): LinkPreviewTypeChat | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -918,7 +922,7 @@ export class LinkPreviewTypeDirectMessagesChat {
 
 /** Decode a TDLib `linkPreviewTypeDirectMessagesChat` object; null input -> null. */
 export function decodeLinkPreviewTypeDirectMessagesChat(json: TdJsonRaw): LinkPreviewTypeDirectMessagesChat | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -951,7 +955,7 @@ export class LinkPreviewTypeDocument {
 
 /** Decode a TDLib `linkPreviewTypeDocument` object; null input -> null. */
 export function decodeLinkPreviewTypeDocument(json: TdJsonRaw): LinkPreviewTypeDocument | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -994,7 +998,7 @@ export class LinkPreviewTypeEmbeddedAnimationPlayer {
 
 /** Decode a TDLib `linkPreviewTypeEmbeddedAnimationPlayer` object; null input -> null. */
 export function decodeLinkPreviewTypeEmbeddedAnimationPlayer(json: TdJsonRaw): LinkPreviewTypeEmbeddedAnimationPlayer | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -1047,7 +1051,7 @@ export class LinkPreviewTypeEmbeddedAudioPlayer {
 
 /** Decode a TDLib `linkPreviewTypeEmbeddedAudioPlayer` object; null input -> null. */
 export function decodeLinkPreviewTypeEmbeddedAudioPlayer(json: TdJsonRaw): LinkPreviewTypeEmbeddedAudioPlayer | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -1100,7 +1104,7 @@ export class LinkPreviewTypeEmbeddedVideoPlayer {
 
 /** Decode a TDLib `linkPreviewTypeEmbeddedVideoPlayer` object; null input -> null. */
 export function decodeLinkPreviewTypeEmbeddedVideoPlayer(json: TdJsonRaw): LinkPreviewTypeEmbeddedVideoPlayer | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -1147,7 +1151,7 @@ export class LinkPreviewTypeExternalAudio {
 
 /** Decode a TDLib `linkPreviewTypeExternalAudio` object; null input -> null. */
 export function decodeLinkPreviewTypeExternalAudio(json: TdJsonRaw): LinkPreviewTypeExternalAudio | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -1192,7 +1196,7 @@ export class LinkPreviewTypeExternalVideo {
 
 /** Decode a TDLib `linkPreviewTypeExternalVideo` object; null input -> null. */
 export function decodeLinkPreviewTypeExternalVideo(json: TdJsonRaw): LinkPreviewTypeExternalVideo | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -1235,7 +1239,7 @@ export class LinkPreviewTypeGiftAuction {
 
 /** Decode a TDLib `linkPreviewTypeGiftAuction` object; null input -> null. */
 export function decodeLinkPreviewTypeGiftAuction(json: TdJsonRaw): LinkPreviewTypeGiftAuction | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -1270,7 +1274,7 @@ export class LinkPreviewTypeGiftCollection {
 
 /** Decode a TDLib `linkPreviewTypeGiftCollection` object; null input -> null. */
 export function decodeLinkPreviewTypeGiftCollection(json: TdJsonRaw): LinkPreviewTypeGiftCollection | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -1301,7 +1305,7 @@ export class LinkPreviewTypeGroupCall {
 
 /** Decode a TDLib `linkPreviewTypeGroupCall` object; null input -> null. */
 export function decodeLinkPreviewTypeGroupCall(json: TdJsonRaw): LinkPreviewTypeGroupCall | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -1330,7 +1334,7 @@ export class LinkPreviewTypeInvoice {
 
 /** Decode a TDLib `linkPreviewTypeInvoice` object; null input -> null. */
 export function decodeLinkPreviewTypeInvoice(json: TdJsonRaw): LinkPreviewTypeInvoice | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -1363,7 +1367,7 @@ export class LinkPreviewTypeLiveStory {
 
 /** Decode a TDLib `linkPreviewTypeLiveStory` object; null input -> null. */
 export function decodeLinkPreviewTypeLiveStory(json: TdJsonRaw): LinkPreviewTypeLiveStory | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -1396,7 +1400,7 @@ export class LinkPreviewTypeMessage {
 
 /** Decode a TDLib `linkPreviewTypeMessage` object; null input -> null. */
 export function decodeLinkPreviewTypeMessage(json: TdJsonRaw): LinkPreviewTypeMessage | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -1427,7 +1431,7 @@ export class LinkPreviewTypePhoto {
 
 /** Decode a TDLib `linkPreviewTypePhoto` object; null input -> null. */
 export function decodeLinkPreviewTypePhoto(json: TdJsonRaw): LinkPreviewTypePhoto | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -1458,7 +1462,7 @@ export class LinkPreviewTypePremiumGiftCode {
 
 /** Decode a TDLib `linkPreviewTypePremiumGiftCode` object; null input -> null. */
 export function decodeLinkPreviewTypePremiumGiftCode(json: TdJsonRaw): LinkPreviewTypePremiumGiftCode | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -1487,7 +1491,7 @@ export class LinkPreviewTypeRequestManagedBot {
 
 /** Decode a TDLib `linkPreviewTypeRequestManagedBot` object; null input -> null. */
 export function decodeLinkPreviewTypeRequestManagedBot(json: TdJsonRaw): LinkPreviewTypeRequestManagedBot | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -1516,7 +1520,7 @@ export class LinkPreviewTypeShareableChatFolder {
 
 /** Decode a TDLib `linkPreviewTypeShareableChatFolder` object; null input -> null. */
 export function decodeLinkPreviewTypeShareableChatFolder(json: TdJsonRaw): LinkPreviewTypeShareableChatFolder | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -1547,7 +1551,7 @@ export class LinkPreviewTypeSticker {
 
 /** Decode a TDLib `linkPreviewTypeSticker` object; null input -> null. */
 export function decodeLinkPreviewTypeSticker(json: TdJsonRaw): LinkPreviewTypeSticker | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -1580,7 +1584,7 @@ export class LinkPreviewTypeStickerSet {
 
 /** Decode a TDLib `linkPreviewTypeStickerSet` object; null input -> null. */
 export function decodeLinkPreviewTypeStickerSet(json: TdJsonRaw): LinkPreviewTypeStickerSet | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -1615,7 +1619,7 @@ export class LinkPreviewTypeStory {
 
 /** Decode a TDLib `linkPreviewTypeStory` object; null input -> null. */
 export function decodeLinkPreviewTypeStory(json: TdJsonRaw): LinkPreviewTypeStory | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -1652,7 +1656,7 @@ export class LinkPreviewTypeStoryAlbum {
 
 /** Decode a TDLib `linkPreviewTypeStoryAlbum` object; null input -> null. */
 export function decodeLinkPreviewTypeStoryAlbum(json: TdJsonRaw): LinkPreviewTypeStoryAlbum | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -1687,7 +1691,7 @@ export class LinkPreviewTypeSupergroupBoost {
 
 /** Decode a TDLib `linkPreviewTypeSupergroupBoost` object; null input -> null. */
 export function decodeLinkPreviewTypeSupergroupBoost(json: TdJsonRaw): LinkPreviewTypeSupergroupBoost | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -1720,7 +1724,7 @@ export class LinkPreviewTypeTextCompositionStyle {
 
 /** Decode a TDLib `linkPreviewTypeTextCompositionStyle` object; null input -> null. */
 export function decodeLinkPreviewTypeTextCompositionStyle(json: TdJsonRaw): LinkPreviewTypeTextCompositionStyle | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -1755,7 +1759,7 @@ export class LinkPreviewTypeTheme {
 
 /** Decode a TDLib `linkPreviewTypeTheme` object; null input -> null. */
 export function decodeLinkPreviewTypeTheme(json: TdJsonRaw): LinkPreviewTypeTheme | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -1788,7 +1792,7 @@ export class LinkPreviewTypeUnsupported {
 
 /** Decode a TDLib `linkPreviewTypeUnsupported` object; null input -> null. */
 export function decodeLinkPreviewTypeUnsupported(json: TdJsonRaw): LinkPreviewTypeUnsupported | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -1819,7 +1823,7 @@ export class LinkPreviewTypeUpgradedGift {
 
 /** Decode a TDLib `linkPreviewTypeUpgradedGift` object; null input -> null. */
 export function decodeLinkPreviewTypeUpgradedGift(json: TdJsonRaw): LinkPreviewTypeUpgradedGift | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -1854,7 +1858,7 @@ export class LinkPreviewTypeUser {
 
 /** Decode a TDLib `linkPreviewTypeUser` object; null input -> null. */
 export function decodeLinkPreviewTypeUser(json: TdJsonRaw): LinkPreviewTypeUser | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -1893,7 +1897,7 @@ export class LinkPreviewTypeVideo {
 
 /** Decode a TDLib `linkPreviewTypeVideo` object; null input -> null. */
 export function decodeLinkPreviewTypeVideo(json: TdJsonRaw): LinkPreviewTypeVideo | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -1934,7 +1938,7 @@ export class LinkPreviewTypeVideoChat {
 
 /** Decode a TDLib `linkPreviewTypeVideoChat` object; null input -> null. */
 export function decodeLinkPreviewTypeVideoChat(json: TdJsonRaw): LinkPreviewTypeVideoChat | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -1971,7 +1975,7 @@ export class LinkPreviewTypeVideoNote {
 
 /** Decode a TDLib `linkPreviewTypeVideoNote` object; null input -> null. */
 export function decodeLinkPreviewTypeVideoNote(json: TdJsonRaw): LinkPreviewTypeVideoNote | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -2004,7 +2008,7 @@ export class LinkPreviewTypeVoiceNote {
 
 /** Decode a TDLib `linkPreviewTypeVoiceNote` object; null input -> null. */
 export function decodeLinkPreviewTypeVoiceNote(json: TdJsonRaw): LinkPreviewTypeVoiceNote | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -2037,7 +2041,7 @@ export class LinkPreviewTypeWebApp {
 
 /** Decode a TDLib `linkPreviewTypeWebApp` object; null input -> null. */
 export function decodeLinkPreviewTypeWebApp(json: TdJsonRaw): LinkPreviewTypeWebApp | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -2072,7 +2076,7 @@ export class ListenToAudio {
 
 /** Decode a TDLib `listenToAudio` object; null input -> null. */
 export function decodeListenToAudio(json: TdJsonRaw): ListenToAudio | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -2113,7 +2117,7 @@ export class LiveLocation {
 
 /** Decode a TDLib `liveLocation` object; null input -> null. */
 export function decodeLiveLocation(json: TdJsonRaw): LiveLocation | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -2154,7 +2158,7 @@ export class LiveStoryDonors {
 
 /** Decode a TDLib `liveStoryDonors` object; null input -> null. */
 export function decodeLiveStoryDonors(json: TdJsonRaw): LiveStoryDonors | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -2189,7 +2193,7 @@ export class LoadActiveStories {
 
 /** Decode a TDLib `loadActiveStories` object; null input -> null. */
 export function decodeLoadActiveStories(json: TdJsonRaw): LoadActiveStories | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -2222,7 +2226,7 @@ export class LoadChatWelcomeMessages {
 
 /** Decode a TDLib `loadChatWelcomeMessages` object; null input -> null. */
 export function decodeLoadChatWelcomeMessages(json: TdJsonRaw): LoadChatWelcomeMessages | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -2257,7 +2261,7 @@ export class LoadChats {
 
 /** Decode a TDLib `loadChats` object; null input -> null. */
 export function decodeLoadChats(json: TdJsonRaw): LoadChats | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -2292,7 +2296,7 @@ export class LoadCommunityFullInfo {
 
 /** Decode a TDLib `loadCommunityFullInfo` object; null input -> null. */
 export function decodeLoadCommunityFullInfo(json: TdJsonRaw): LoadCommunityFullInfo | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -2327,7 +2331,7 @@ export class LoadDirectMessagesChatTopics {
 
 /** Decode a TDLib `loadDirectMessagesChatTopics` object; null input -> null. */
 export function decodeLoadDirectMessagesChatTopics(json: TdJsonRaw): LoadDirectMessagesChatTopics | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -2364,7 +2368,7 @@ export class LoadGroupCallParticipants {
 
 /** Decode a TDLib `loadGroupCallParticipants` object; null input -> null. */
 export function decodeLoadGroupCallParticipants(json: TdJsonRaw): LoadGroupCallParticipants | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -2399,7 +2403,7 @@ export class LoadQuickReplyShortcutMessages {
 
 /** Decode a TDLib `loadQuickReplyShortcutMessages` object; null input -> null. */
 export function decodeLoadQuickReplyShortcutMessages(json: TdJsonRaw): LoadQuickReplyShortcutMessages | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -2430,7 +2434,7 @@ export class LoadQuickReplyShortcuts {
 
 /** Decode a TDLib `loadQuickReplyShortcuts` object; null input -> null. */
 export function decodeLoadQuickReplyShortcuts(json: TdJsonRaw): LoadQuickReplyShortcuts | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -2461,7 +2465,7 @@ export class LoadSavedMessagesTopics {
 
 /** Decode a TDLib `loadSavedMessagesTopics` object; null input -> null. */
 export function decodeLoadSavedMessagesTopics(json: TdJsonRaw): LoadSavedMessagesTopics | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -2508,7 +2512,7 @@ export class LocalFile {
 
 /** Decode a TDLib `localFile` object; null input -> null. */
 export function decodeLocalFile(json: TdJsonRaw): LocalFile | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -2555,7 +2559,7 @@ export class LocalizationTargetInfo {
 
 /** Decode a TDLib `localizationTargetInfo` object; null input -> null. */
 export function decodeLocalizationTargetInfo(json: TdJsonRaw): LocalizationTargetInfo | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -2592,7 +2596,7 @@ export class Location {
 
 /** Decode a TDLib `location` object; null input -> null. */
 export function decodeLocation(json: TdJsonRaw): Location | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -2635,7 +2639,7 @@ export class LocationAddress {
 
 /** Decode a TDLib `locationAddress` object; null input -> null. */
 export function decodeLocationAddress(json: TdJsonRaw): LocationAddress | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -2672,7 +2676,7 @@ export class LogOut {
 
 /** Decode a TDLib `logOut` object; null input -> null. */
 export function decodeLogOut(json: TdJsonRaw): LogOut | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -2701,7 +2705,7 @@ export class LogStreamDefault {
 
 /** Decode a TDLib `logStreamDefault` object; null input -> null. */
 export function decodeLogStreamDefault(json: TdJsonRaw): LogStreamDefault | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -2730,7 +2734,7 @@ export class LogStreamEmpty {
 
 /** Decode a TDLib `logStreamEmpty` object; null input -> null. */
 export function decodeLogStreamEmpty(json: TdJsonRaw): LogStreamEmpty | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -2765,7 +2769,7 @@ export class LogStreamFile {
 
 /** Decode a TDLib `logStreamFile` object; null input -> null. */
 export function decodeLogStreamFile(json: TdJsonRaw): LogStreamFile | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -2802,7 +2806,7 @@ export class LogTags {
 
 /** Decode a TDLib `logTags` object; null input -> null. */
 export function decodeLogTags(json: TdJsonRaw): LogTags | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -2835,7 +2839,7 @@ export class LogVerbosityLevel {
 
 /** Decode a TDLib `logVerbosityLevel` object; null input -> null. */
 export function decodeLogVerbosityLevel(json: TdJsonRaw): LogVerbosityLevel | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -2870,7 +2874,7 @@ export class LoginUrlInfoOpen {
 
 /** Decode a TDLib `loginUrlInfoOpen` object; null input -> null. */
 export function decodeLoginUrlInfoOpen(json: TdJsonRaw): LoginUrlInfoOpen | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);
@@ -2911,7 +2915,7 @@ export class LoginUrlInfoRequestConfirmation {
 
 /** Decode a TDLib `loginUrlInfoRequestConfirmation` object; null input -> null. */
 export function decodeLoginUrlInfoRequestConfirmation(json: TdJsonRaw): LoginUrlInfoRequestConfirmation | null {
-  if (json === null) {
+  if (json === null || json === undefined) {
     return null;
   }
   const record: Record<string, TdJsonRaw> = asRecord(json);

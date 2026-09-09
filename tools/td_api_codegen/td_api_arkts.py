@@ -34,8 +34,10 @@ Output layout (all under core/td_api_generated/src/main/ets):
   runtime/TdJson.ets      TdJsonValue, TdUnknownObject, scalar/vector helpers
   types/TdTypes_<A-Z>.ets classes + per-constructor decode/encode (chunked
                           alphabetically by class name to keep files editable)
-  types/TdUnions.ets      union aliases, union decode/encode, TdObject,
-                          TdFunction, TdResponseMap
+  types/TdUnions_<A-Z>.ets union aliases + decode/encode, split per first
+                          letter (a single file exceeds the panda index limit)
+  types/TdEntries.ets     TdObject/TdFunction, decodeTdObject/encodeTdObject,
+                          TdResponseMap
 
 Generation is fully deterministic: repeated runs produce byte-identical
 output (CI: `python3 tools/td_api_codegen/td_api_arkts.py verify`).
@@ -65,7 +67,11 @@ CODEGEN_FORMAT_VERSION = 1
 CODEGEN_NAME = "tools/td_api_codegen/td_api_arkts.py"
 
 RUNTIME_FILE = "runtime/TdJson.ets"
-UNIONS_FILE = "types/TdUnions.ets"
+# Union aliases + their decode/encode are split per first letter of the union
+# name: a single TdUnions file exceeds the panda file index limit during
+# merged es2abc compilation (measured: 147202 items > 131072 limit).
+UNION_CHUNKS = "types/TdUnions_{}.ets"
+ENTRIES_FILE = "types/TdEntries.ets"
 
 # ArkTS/JS globals that generated classes must not shadow.
 GLOBALS = {
@@ -158,9 +164,12 @@ class Schema:
             self.symbol_file["decode" + cls] = self.chunk_files[letter]
             self.symbol_file["encode" + cls] = self.chunk_files[letter]
         for t in self.type_names:
-            self.symbol_file[self.union_names[t]] = UNIONS_FILE
-            self.symbol_file["decode" + self.union_names[t]] = UNIONS_FILE
-            self.symbol_file["encode" + self.union_names[t]] = UNIONS_FILE
+            un = self.union_names[t]
+            uletter = un[len("Td"):]
+            ufile = UNION_CHUNKS.format(uletter[0])
+            self.symbol_file[un] = ufile
+            self.symbol_file["decode" + un] = ufile
+            self.symbol_file["encode" + un] = ufile
 
     # -- type mapping -----------------------------------------------------
 
@@ -450,7 +459,7 @@ def gen_decode(schema: Schema, c: dict) -> str:
     out.append(
         f"export function {fn}(json: {HELPER_JSON_VALUE}): {cls} | null {{\n"
     )
-    out.append("  if (json === null) {\n")
+    out.append("  if (json === null || json === undefined) {\n")
     out.append("    return null;\n")
     out.append("  }\n")
     out.append(f"  const record: Record<string, {HELPER_JSON_VALUE}> = {HELPER_AS_RECORD}(json);\n")
@@ -503,7 +512,8 @@ def collect_chunk_refs(schema: Schema, ctors: list) -> dict:
             if t in SCALARS:
                 continue
             if t in schema.type_names:
-                used.add(UNIONS_FILE)
+                un = schema.union_names[t]
+                used.add(UNION_CHUNKS.format(un[len("Td")][0]))
             else:
                 target = schema.chunk_files[schema.class_names[t][0]]
                 if target != mine:
@@ -530,8 +540,10 @@ def gen_chunk(schema: Schema, letter: str) -> str:
             if t in SCALARS:
                 continue
             if t in schema.type_names:
-                imports.setdefault(UNIONS_FILE, set()).add("decode" + schema.union_names[t])
-                imports.setdefault(UNIONS_FILE, set()).add("encode" + schema.union_names[t])
+                un = schema.union_names[t]
+                ufile = UNION_CHUNKS.format(un[len("Td")][0])
+                imports.setdefault(ufile, set()).add("decode" + un)
+                imports.setdefault(ufile, set()).add("encode" + un)
             else:
                 target = schema.chunk_files[schema.class_names[t][0]]
                 if target != my_file:
@@ -580,23 +592,36 @@ def gen_chunk(schema: Schema, letter: str) -> str:
     return "".join(out)
 
 
-def gen_unions(schema: Schema) -> str:
-    out: list = [HEADER]
-    # imports: every class decode/encode from chunks
-    for letter in sorted(schema.chunks):
-        syms: list = []
-        for c in schema.chunks[letter]:
-            cls = schema.class_names[c["name"]]
-            syms.append(cls)
-            syms.append("decode" + cls)
-            syms.append("encode" + cls)
-        out.append(f"import {{ {', '.join(syms)} }} from './TdTypes_{letter}';\n")
-    out.append(
-        f"import {{ {HELPER_UNKNOWN}, {HELPER_ENCODE_UNKNOWN}, {HELPER_AS_RECORD}, "
-        f"{HELPER_AS_STRING}, {HELPER_JSON_VALUE} }} from '../runtime/TdJson';\n"
+def gen_union_chunk(schema: Schema, letter: str) -> str:
+    """Union aliases + decode/encode for unions whose name starts with letter."""
+    my_types = sorted(
+        (t for t in schema.type_names if schema.union_names[t][len("Td")].upper() == letter.upper()
+         and schema.union_names[t][len("Td")] == letter),
+        key=lambda t: t,
     )
+    my_types = [t for t in sorted(schema.type_names) if schema.union_names[t][len("Td")] == letter]
+    out: list = [HEADER]
+    # imports: member class decode/encode fns from class chunks, runtime helpers
+    imports: dict = {}
+    for t in my_types:
+        for c in schema.types[t]["constructors"]:
+            cls = schema.class_names[c]
+            target = schema.chunk_files[cls[0]]
+            imports.setdefault(target, set()).add(cls)
+            imports.setdefault(target, set()).add("decode" + cls)
+            imports.setdefault(target, set()).add("encode" + cls)
+    imports.setdefault(RUNTIME_FILE, set()).update([
+        HELPER_UNKNOWN, HELPER_ENCODE_UNKNOWN, HELPER_AS_RECORD, HELPER_AS_STRING, HELPER_JSON_VALUE,
+    ])
+    for file in sorted(imports):
+        syms = sorted(imports[file])
+        if file.startswith("types/"):
+            rel = "./" + file[len("types/"):-4]
+        else:
+            rel = "../" + file[:-4]
+        out.append(f"import {{ {', '.join(syms)} }} from '{rel}';\n")
     out.append("\n")
-    for t in sorted(schema.type_names):
+    for t in my_types:
         ctors = schema.types[t]["constructors"]
         un = schema.union_names[t]
         desc = schema.types[t].get("doc") or ""
@@ -612,10 +637,9 @@ def gen_unions(schema: Schema) -> str:
                 out.append(f"  | {m}\n")
             out.append("  ;\n")
         out.append("\n")
-        # decode
         out.append(doc_comment(f"Decode any member of TDLib type {t}; unknown @type -> TdUnknownObject."))
         out.append(f"export function decode{un}(json: {HELPER_JSON_VALUE}): {un} | null {{\n")
-        out.append("  if (json === null) {\n")
+        out.append("  if (json === null || json === undefined) {\n")
         out.append("    return null;\n")
         out.append("  }\n")
         out.append(f"  const record: Record<string, {HELPER_JSON_VALUE}> = {HELPER_AS_RECORD}(json);\n")
@@ -629,7 +653,6 @@ def gen_unions(schema: Schema) -> str:
         out.append("  }\n")
         out.append("}\n")
         out.append("\n")
-        # encode
         out.append(doc_comment(f"Encode any member of TDLib type {t}."))
         out.append(f"export function encode{un}(value: {un}): Record<string, {HELPER_JSON_VALUE}> {{\n")
         out.append("  switch (value.type) {\n")
@@ -642,9 +665,44 @@ def gen_unions(schema: Schema) -> str:
         out.append("  }\n")
         out.append("}\n")
         out.append("\n")
-    # TdObject / TdFunction
+    return "".join(out)
+
+
+def gen_entries(schema: Schema) -> str:
+    """TdObject/TdFunction unions, generic decode/encode entry points, response map."""
+    out: list = [HEADER]
     object_ctors = [c for c in schema.ctors if c["kind"] == "object"]
     function_ctors = [c for c in schema.ctors if c["kind"] == "function"]
+    # imports: every object class + its decode/encode, every union type (for the
+    # response map), runtime helpers.
+    imports: dict = {}
+    for c in object_ctors:
+        cls = schema.class_names[c["name"]]
+        target = schema.chunk_files[cls[0]]
+        imports.setdefault(target, set()).add(cls)
+        imports.setdefault(target, set()).add("decode" + cls)
+        imports.setdefault(target, set()).add("encode" + cls)
+    for c in function_ctors:
+        cls = schema.class_names[c["name"]]
+        target = schema.chunk_files[cls[0]]
+        imports.setdefault(target, set()).add(cls)
+    union_imports: dict = {}
+    for c in function_ctors:
+        un = schema.union_names[c["type"]]
+        union_imports.setdefault(un, set())
+    for file in sorted(imports):
+        syms = sorted(imports[file])
+        rel = "./" + file[len("types/"):-4]
+        out.append(f"import {{ {', '.join(syms)} }} from '{rel}';\n")
+    for un in sorted(union_imports):
+        ufile = schema.symbol_file[un]
+        rel = "./" + ufile[len("types/"):-4]
+        out.append(f"import {{ {un} }} from '{rel}';\n")
+    out.append(
+        f"import {{ {HELPER_UNKNOWN}, {HELPER_ENCODE_UNKNOWN}, {HELPER_AS_RECORD}, "
+        f"{HELPER_AS_STRING}, {HELPER_JSON_VALUE} }} from '../runtime/TdJson';\n"
+    )
+    out.append("\n")
     out.append(doc_comment("Any TDLib object (update/event payload)."))
     out.append("export type TdObject =\n")
     for c in sorted(object_ctors, key=lambda c: schema.class_names[c["name"]]):
@@ -656,7 +714,35 @@ def gen_unions(schema: Schema) -> str:
     for c in sorted(function_ctors, key=lambda c: schema.class_names[c["name"]]):
         out.append(f"  | {schema.class_names[c['name']]}\n")
     out.append("  ;\n\n")
-    # response map
+    out.append(doc_comment(
+        "Decode any TDLib object by its @type; unknown constructors -> "
+        "TdUnknownObject, null input -> null. Never throws."))
+    out.append(f"export function decodeTdObject(json: {HELPER_JSON_VALUE}): TdObject | null {{\n")
+    out.append("  if (json === null || json === undefined) {\n")
+    out.append("    return null;\n")
+    out.append("  }\n")
+    out.append(f"  const record: Record<string, {HELPER_JSON_VALUE}> = {HELPER_AS_RECORD}(json);\n")
+    out.append(f"  const typeName: string = {HELPER_AS_STRING}(record['@type'], '');\n")
+    out.append("  switch (typeName) {\n")
+    for c in sorted(object_ctors, key=lambda c: c["name"]):
+        cls = schema.class_names[c["name"]]
+        out.append(f"    case '{c['name']}':\n")
+        out.append(f"      return decode{cls}(json);\n")
+    out.append("    default:\n")
+    out.append(f"      return new {HELPER_UNKNOWN}(typeName, record);\n")
+    out.append("  }\n")
+    out.append("}\n\n")
+    out.append(doc_comment("Encode any TDLib object into TDLib JSON wire shape."))
+    out.append(f"export function encodeTdObject(value: TdObject): Record<string, {HELPER_JSON_VALUE}> {{\n")
+    out.append("  switch (value.type) {\n")
+    for c in sorted(object_ctors, key=lambda c: c["name"]):
+        cls = schema.class_names[c["name"]]
+        out.append(f"    case '{c['name']}':\n")
+        out.append(f"      return encode{cls}(value as {cls});\n")
+    out.append("    default:\n")
+    out.append(f"      return {HELPER_ENCODE_UNKNOWN}(value as {HELPER_UNKNOWN});\n")
+    out.append("  }\n")
+    out.append("}\n\n")
     out.append(doc_comment("Request name -> response type (TDLib function result type)."))
     out.append("export interface TdResponseMap {\n")
     for c in sorted(function_ctors, key=lambda c: c["name"]):
@@ -676,14 +762,21 @@ def gen_index(schema: Schema) -> str:
             syms.append("decode" + cls)
             syms.append("encode" + cls)
         out.append(f"export {{ {', '.join(syms)} }} from './types/TdTypes_{letter}';\n")
-    union_syms: list = []
-    for t in sorted(schema.type_names):
-        un = schema.union_names[t]
-        union_syms.append(un)
-        union_syms.append("decode" + un)
-        union_syms.append("encode" + un)
-    union_syms.extend(["TdObject", "TdFunction", "TdResponseMap"])
-    out.append(f"export {{ {', '.join(union_syms)} }} from './types/TdUnions';\n")
+    union_letters = sorted({schema.union_names[t][len("Td")][0] for t in schema.type_names})
+    for uletter in union_letters:
+        syms: list = []
+        for t in sorted(schema.type_names):
+            un = schema.union_names[t]
+            if un[len("Td")][0] != uletter:
+                continue
+            syms.append(un)
+            syms.append("decode" + un)
+            syms.append("encode" + un)
+        out.append(f"export {{ {', '.join(syms)} }} from './types/TdUnions_{uletter}';\n")
+    out.append(
+        "export { TdObject, TdFunction, TdResponseMap, decodeTdObject, encodeTdObject } "
+        "from './types/TdEntries';\n"
+    )
     out.append(
         "export { TdJsonRaw, TdUnknownObject, encodeUnknownObject, "
         "TD_SCHEMA_HASH, TD_CODEGEN, TD_CODEGEN_FORMAT_VERSION } from './runtime/TdJson';\n"
@@ -698,13 +791,20 @@ def build_files(ir: dict) -> dict:
     files[RUNTIME_FILE] = gen_runtime(schema)
     for letter in sorted(schema.chunks):
         files[schema.chunk_files[letter]] = gen_chunk(schema, letter)
-    files[UNIONS_FILE] = gen_unions(schema)
+    union_letters = sorted({schema.union_names[t][len("Td")][0] for t in schema.type_names})
+    for uletter in union_letters:
+        files[UNION_CHUNKS.format(uletter)] = gen_union_chunk(schema, uletter)
+    files[ENTRIES_FILE] = gen_entries(schema)
     return files
 
 
 def cmd_generate(args) -> int:
     ir = json.loads(IR_PATH.read_text(encoding="utf-8"))
     files = build_files(ir)
+    # Remove stale output from earlier generator versions (e.g. unsplit TdUnions.ets).
+    stale = OUT_ROOT / "types/TdUnions.ets"
+    if stale.exists():
+        stale.unlink()
     for rel in sorted(files):
         path = OUT_ROOT / rel
         path.parent.mkdir(parents=True, exist_ok=True)

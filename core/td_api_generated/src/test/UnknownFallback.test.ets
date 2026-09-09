@@ -12,11 +12,23 @@ import {
   decodeTdObject,
   encodeUnknownObject
 } from '../main/ets/Index';
+import { jsonObj, toJson } from './TestJson';
+
+function formattedTextJson(text: string): Record<string, TdJsonRaw> {
+  const out = jsonObj();
+  out['@type'] = 'formattedText';
+  out['text'] = text;
+  out['entities'] = [];
+  return out;
+}
 
 export default function unknownFallbackTest() {
   describe('UnknownFallbackTest', () => {
     it('unknownTypeInUnion_fallsBackToUnknownObjectWithoutThrowing', 0, () => {
-      const json: TdJsonRaw = { '@type': 'messageFutureConstructor', 'future_field': 42 };
+      const raw = jsonObj();
+      raw['@type'] = 'messageFutureConstructor';
+      raw['future_field'] = 42;
+      const json: TdJsonRaw = toJson(raw);
       const decoded: TdMessageContent | null = decodeTdMessageContent(json);
       expect(decoded === null).assertFalse();
       if (decoded === null) {
@@ -30,7 +42,11 @@ export default function unknownFallbackTest() {
     });
 
     it('unknownObject_reEncodePreservesRawJson', 0, () => {
-      const json: TdJsonRaw = { '@type': 'futureThing', 'a': 1, 'b': 'x' };
+      const raw = jsonObj();
+      raw['@type'] = 'futureThing';
+      raw['a'] = 1;
+      raw['b'] = 'x';
+      const json: TdJsonRaw = toJson(raw);
       const decoded: TdObject | null = decodeTdObject(json);
       expect(decoded === null).assertFalse();
       if (decoded === null) {
@@ -44,7 +60,10 @@ export default function unknownFallbackTest() {
     });
 
     it('unknownTopLevelType_decodeTdObjectFallsBack', 0, () => {
-      const decoded: TdObject | null = decodeTdObject({ '@type': 'updateFromTheFuture', 'x': true });
+      const raw = jsonObj();
+      raw['@type'] = 'updateFromTheFuture';
+      raw['x'] = true;
+      const decoded: TdObject | null = decodeTdObject(toJson(raw));
       expect(decoded === null).assertFalse();
       if (decoded === null) {
         return;
@@ -56,13 +75,16 @@ export default function unknownFallbackTest() {
     });
 
     it('unknownFieldsOnKnownConstructor_areIgnoredWithoutThrowing', 0, () => {
-      const json: TdJsonRaw = {
-        '@type': 'messageText',
-        'text': { '@type': 'formattedText', 'text': 'hi', 'entities': [], 'future_entity_field': 1 },
-        'link_preview': null,
-        'link_preview_options': null,
-        'brand_new_field': { 'nested': [1, 2, 3] }
-      };
+      const text = formattedTextJson('hi');
+      text['future_entity_field'] = 1;
+      const raw = jsonObj();
+      raw['@type'] = 'messageText';
+      raw['text'] = toJson(text);
+      raw['link_preview'] = null;
+      raw['link_preview_options'] = null;
+      raw['brand_new_field'] = 7;
+      const json: TdJsonRaw = toJson(raw);
+
       const decoded: MessageText | null = decodeMessageText(json);
       expect(decoded === null).assertFalse();
       if (decoded === null) {
@@ -72,7 +94,7 @@ export default function unknownFallbackTest() {
       if (decoded.text !== null) {
         expect(decoded.text.text).assertEqual('hi');
       }
-      // unknown fields are dropped on encode (documented forward-compat behavior)
+      // Unknown fields are dropped on encode (documented forward-compat behavior).
       const encoded: TdJsonRaw = encodeMessageText(decoded);
       const roundTripped: MessageText | null = decodeMessageText(encoded);
       expect(roundTripped === null).assertFalse();
@@ -82,7 +104,9 @@ export default function unknownFallbackTest() {
     });
 
     it('missingFields_getSchemaDefaultsWithoutThrowing', 0, () => {
-      const decoded: MessageText | null = decodeMessageText({ '@type': 'messageText' });
+      const raw = jsonObj();
+      raw['@type'] = 'messageText';
+      const decoded: MessageText | null = decodeMessageText(toJson(raw));
       expect(decoded === null).assertFalse();
       if (decoded === null) {
         return;
@@ -92,7 +116,10 @@ export default function unknownFallbackTest() {
     });
 
     it('unionEncode_unknownMember_roundTripsRaw', 0, () => {
-      const json: TdJsonRaw = { '@type': 'messageFutureConstructor', 'future_field': 7 };
+      const raw = jsonObj();
+      raw['@type'] = 'messageFutureConstructor';
+      raw['future_field'] = 7;
+      const json: TdJsonRaw = toJson(raw);
       const decoded: TdMessageContent | null = decodeTdMessageContent(json);
       expect(decoded === null).assertFalse();
       if (decoded === null) {
@@ -101,5 +128,6 @@ export default function unknownFallbackTest() {
       const encoded: TdJsonRaw = encodeTdMessageContent(decoded);
       expect(JSON.stringify(encoded)).assertEqual(JSON.stringify(json));
     });
+
   });
 }
