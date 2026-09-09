@@ -21,6 +21,7 @@ export struct PhonePage {
   onCountrySelected: (info: CountryInfo) => void = () => {};
   onPhoneChanged: (phone: string) => void = () => {};
   onSubmit: () => void = () => {};
+  onUseQrCode: () => void = () => {};
 
   @State showCountryPicker: boolean = false;
 
@@ -121,6 +122,17 @@ export struct PhonePage {
       }
 
       Blank()
+
+      Button('Log in with QR code')
+        .width('90%')
+        .height(44)
+        .fontColor(T.colors.accent)
+        .backgroundColor(Color.Transparent)
+        .enabled(!this.isSubmitting)
+        .margin({ bottom: T.spacing.sm })
+        .onClick(() => {
+          this.onUseQrCode();
+        })
 
       Button() {
         Row() {

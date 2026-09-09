@@ -18,12 +18,14 @@ import {
   ChangePhoneInput,
   SubmitPhone,
   ChangePasswordInput,
-  SubmitPassword
+  SubmitPassword,
+  RequestQrCodeLogin
 } from '../main/ets/contract/AuthIntent';
 import {
   AuthAccountScopeLike,
   AuthCoordinator,
-  AuthSubscriptionLike
+  AuthSubscriptionLike,
+  TdlibParametersConfig
 } from '../main/ets/coordinator/AuthCoordinator';
 
 function wireJson(json: string): TdWireObject {
@@ -108,11 +110,28 @@ function makeEnv(): ReducerEnv {
   };
 }
 
+function makeTdlibParameters(): TdlibParametersConfig {
+  return {
+    apiId: 1,
+    apiHash: 'test-hash',
+    databaseDirectory: '/tmp/test-db',
+    filesDirectory: '/tmp/test-files',
+    systemLanguageCode: 'en',
+    deviceModel: 'test-device',
+    applicationVersion: '0.1.0',
+    useTestDc: true
+  };
+}
+
+function makeCoordinator(scope: FakeAuthAccountScope): AuthCoordinator {
+  return new AuthCoordinator({ scope, env: makeEnv(), tdlibParameters: makeTdlibParameters() });
+}
+
 export default function authCoordinatorTest(): void {
   describe('AuthCoordinatorTest', () => {
     it('start_syncsInitialStateAndSubscribes', 0, () => {
       const scope = new FakeAuthAccountScope();
-      const coord = new AuthCoordinator({ scope, env: makeEnv() });
+      const coord = makeCoordinator(scope);
       coord.start();
 
       expect(scope.eventListeners.length).assertEqual(1);
@@ -123,8 +142,7 @@ export default function authCoordinatorTest(): void {
 
     it('dispatch_submitPhone_sendsRequestToScope', 0, () => {
       const scope = new FakeAuthAccountScope();
-      const coord = new AuthCoordinator({ scope, env: makeEnv() });
-      coord.start();
+      const coord = makeCoordinator(scope);
 
       coord.dispatch(new ChangePhoneInput('13800138000'));
       coord.dispatch(new SubmitPhone());
@@ -141,7 +159,7 @@ export default function authCoordinatorTest(): void {
 
     it('incomingEvent_waitCode_transitionsUiState', 0, () => {
       const scope = new FakeAuthAccountScope();
-      const coord = new AuthCoordinator({ scope, env: makeEnv() });
+      const coord = makeCoordinator(scope);
       coord.start();
 
       const updatePayload: TdWireObject = wireJson(
@@ -159,7 +177,7 @@ export default function authCoordinatorTest(): void {
 
     it('incomingEvent_waitPassword_transitions2faAndSubmits', 0, () => {
       const scope = new FakeAuthAccountScope();
-      const coord = new AuthCoordinator({ scope, env: makeEnv() });
+      const coord = makeCoordinator(scope);
       coord.start();
 
       const updatePayload: TdWireObject = wireJson(
@@ -174,10 +192,10 @@ export default function authCoordinatorTest(): void {
       coord.dispatch(new ChangePasswordInput('pwd123'));
       coord.dispatch(new SubmitPassword());
 
-      expect(scope.requests.length).assertEqual(1);
-      expect(scope.requests[0].method).assertEqual('checkAuthenticationPassword');
-      if (scope.requests[0].params !== undefined) {
-        expect(scope.requests[0].params['password']).assertEqual('pwd123');
+      expect(scope.requests.length).assertEqual(2);
+      expect(scope.requests[1].method).assertEqual('checkAuthenticationPassword');
+      if (scope.requests[1].params !== undefined) {
+        expect(scope.requests[1].params['password']).assertEqual('pwd123');
       }
 
       coord.destroy();
@@ -185,7 +203,7 @@ export default function authCoordinatorTest(): void {
 
     it('listener_receivesStateUpdates_andUnsubscribes', 0, () => {
       const scope = new FakeAuthAccountScope();
-      const coord = new AuthCoordinator({ scope, env: makeEnv() });
+      const coord = makeCoordinator(scope);
       const captured: AuthUiState[] = [];
 
       const unsub = coord.subscribe((s: AuthUiState) => {
@@ -201,6 +219,45 @@ export default function authCoordinatorTest(): void {
       coord.dispatch(new ChangePhoneInput('12345'));
       expect(captured.length).assertEqual(2); // 不再接收更新
 
+      coord.destroy();
+    });
+
+    it('requestQrCodeLogin_sendsTdlibRequestAndDisplaysUpdates', 0, () => {
+      const scope = new FakeAuthAccountScope();
+      const coord = makeCoordinator(scope);
+      coord.start();
+
+      coord.dispatch(new RequestQrCodeLogin());
+      expect(scope.requests.length).assertEqual(2);
+      expect(scope.requests[1].method).assertEqual('requestQrCodeAuthentication');
+
+      const updatePayload: TdWireObject = wireJson(
+        '{"@type":"updateAuthorizationState","authorization_state":{"@type":"authorizationStateWaitOtherDeviceConfirmation","link":"tg://login?token=test-token"}}'
+      );
+      scope.emitEvent(updatePayload);
+
+      expect(coord.state.step).assertEqual('waitQrCode');
+      expect(coord.state.qrCodeLink).assertEqual('tg://login?token=test-token');
+      coord.destroy();
+    });
+
+    it('incomingRecaptcha_reportsFailureToReleasePendingRequest', 0, () => {
+      const scope = new FakeAuthAccountScope();
+      const coord = makeCoordinator(scope);
+      coord.start();
+
+      const updatePayload: TdWireObject = wireJson(
+        '{"@type":"updateApplicationRecaptchaVerificationRequired","verification_id":77,"action":"login","recaptcha_key_id":"mobile-key"}'
+      );
+      scope.emitEvent(updatePayload);
+
+      expect(coord.state.step).assertEqual('waitRecaptcha');
+      expect(scope.requests.length).assertEqual(2);
+      expect(scope.requests[1].method).assertEqual('setApplicationVerificationToken');
+      if (scope.requests[1].params !== undefined) {
+        expect(scope.requests[1].params['verification_id']).assertEqual(77);
+        expect(scope.requests[1].params['token']).assertEqual('');
+      }
       coord.destroy();
     });
   });

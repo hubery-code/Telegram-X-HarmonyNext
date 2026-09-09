@@ -21,7 +21,7 @@ import {
   SubmitPassword,
   SubmitPhone,
   SubmitRegistration,
-  SubmitRecaptchaToken,
+  RequestQrCodeLogin,
   TogglePasswordVisibility
 } from '../contract/AuthIntent';
 import { CountryInfo } from '../model/CountryCode';
@@ -30,6 +30,7 @@ import { CodePage } from './CodePage';
 import { PasswordPage } from './PasswordPage';
 import { RegistrationPage } from './RegistrationPage';
 import { RecaptchaPage } from './RecaptchaPage';
+import { QrCodePage } from './QrCodePage';
 
 const T = LightTheme;
 
@@ -56,6 +57,9 @@ export struct AuthRootPage {
           },
           onSubmit: () => {
             this.onDispatch(new SubmitPhone());
+          },
+          onUseQrCode: () => {
+            this.onDispatch(new RequestQrCodeLogin());
           }
         })
       } else if (this.uiState.step === 'waitCode') {
@@ -118,9 +122,20 @@ export struct AuthRootPage {
         })
       } else if (this.uiState.step === 'waitRecaptcha') {
         RecaptchaPage({
-          recaptchaKeyId: this.uiState.recaptchaKeyId,
-          onToken: (token: string) => {
-            this.onDispatch(new SubmitRecaptchaToken(token));
+          isSubmitting: this.uiState.isSubmitting,
+          onUseQrCode: () => {
+            this.onDispatch(new RequestQrCodeLogin());
+          },
+          onBackToPhone: () => {
+            this.onDispatch(new BackToPhone());
+          }
+        })
+      } else if (this.uiState.step === 'waitQrCode') {
+        QrCodePage({
+          link: this.uiState.qrCodeLink,
+          errorMessage: this.uiState.errorMessage,
+          onRetry: () => {
+            this.onDispatch(new RequestQrCodeLogin());
           }
         })
       } else if (this.uiState.step === 'failed') {

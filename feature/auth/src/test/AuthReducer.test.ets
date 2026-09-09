@@ -28,7 +28,10 @@ import {
   OnAuthStateChanged,
   OnRequestError,
   ClearError,
-  BackToPhone
+  BackToPhone,
+  OnRecaptchaRequired,
+  RequestQrCodeLogin,
+  OnQrCodeLinkReceived
 } from '../main/ets/contract/AuthIntent';
 import {
   SendPhoneNumber,
@@ -39,7 +42,9 @@ import {
   NavigateToRoute,
   ShowToast,
   StartCountdown,
-  StopCountdown
+  StopCountdown,
+  SendVerificationToken,
+  RequestQrCodeAuthentication
 } from '../main/ets/contract/AuthEffect';
 import { authReducer } from '../main/ets/reducer/AuthReducer';
 
@@ -396,6 +401,52 @@ export default function authReducerTest(): void {
       expect(res.state.step).assertEqual('waitPhone');
       expect(res.state.code).assertEqual('');
       expect(res.state.errorMessage).assertNull();
+    });
+
+    it('onRecaptchaRequired_reportsUnsupportedVerification', 0, () => {
+      const res = authReducer(
+        AuthUiState.initial(),
+        new OnRecaptchaRequired(42, 'login', 'mobile-key'),
+        makeEnv()
+      );
+      expect(res.state.step).assertEqual('waitRecaptcha');
+      expect(res.state.verificationId).assertEqual(42);
+      expect(res.effects.length).assertEqual(1);
+      const effect: SendVerificationToken = res.effects[0] as SendVerificationToken;
+      expect(effect.kind).assertEqual('sendVerificationToken');
+      expect(effect.verificationId).assertEqual(42);
+      expect(effect.token).assertEqual('');
+    });
+
+    it('requestQrCodeLogin_startsQrAuthentication', 0, () => {
+      const res = authReducer(AuthUiState.initial(), new RequestQrCodeLogin(), makeEnv());
+      expect(res.state.step).assertEqual('waitQrCode');
+      expect(res.state.isSubmitting).assertTrue();
+      expect(res.effects.length).assertEqual(1);
+      expect((res.effects[0] as RequestQrCodeAuthentication).kind).assertEqual('requestQrCodeAuthentication');
+    });
+
+    it('onQrCodeLinkReceived_displaysLatestLink', 0, () => {
+      const res = authReducer(
+        AuthUiState.initial().copyWith({ step: 'waitQrCode', isSubmitting: true }),
+        new OnQrCodeLinkReceived('tg://login?token=test'),
+        makeEnv()
+      );
+      expect(res.state.step).assertEqual('waitQrCode');
+      expect(res.state.qrCodeLink).assertEqual('tg://login?token=test');
+      expect(res.state.isSubmitting).assertFalse();
+    });
+
+    it('onRequestError_duringQrLogin_isVisibleAndRetryable', 0, () => {
+      const res = authReducer(
+        AuthUiState.initial().copyWith({ step: 'waitQrCode', isSubmitting: true }),
+        new OnRequestError(AppErrors.internal('qr.failed', 'QR login failed')),
+        makeEnv()
+      );
+      expect(res.state.step).assertEqual('waitQrCode');
+      expect(res.state.isSubmitting).assertFalse();
+      expect(res.state.errorMessage).assertEqual('QR login failed');
+      expect(res.effects.length).assertEqual(1);
     });
 
     it('reducer_pure_sameInputSameOutput', 0, () => {

@@ -90,6 +90,10 @@ export class SendVerificationToken implements Effect {
   }
 }
 
+export class RequestQrCodeAuthentication implements Effect {
+  readonly kind: 'requestQrCodeAuthentication' = 'requestQrCodeAuthentication';
+}
+
 export type AuthEffect =
   | SendPhoneNumber
   | CheckCode
@@ -100,4 +104,5 @@ export type AuthEffect =
   | ShowToast
   | StartCountdown
   | StopCountdown
-  | SendVerificationToken;
+  | SendVerificationToken
+  | RequestQrCodeAuthentication;

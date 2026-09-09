@@ -140,6 +140,19 @@ export class SubmitRecaptchaToken implements Intent {
   }
 }
 
+export class RequestQrCodeLogin implements Intent {
+  readonly kind: 'requestQrCodeLogin' = 'requestQrCodeLogin';
+}
+
+export class OnQrCodeLinkReceived implements Intent {
+  readonly kind: 'onQrCodeLinkReceived' = 'onQrCodeLinkReceived';
+  readonly link: string;
+
+  constructor(link: string) {
+    this.link = link;
+  }
+}
+
 export type AuthIntent =
   | SelectCountry
   | ChangePhoneInput
@@ -159,4 +172,6 @@ export type AuthIntent =
   | ClearError
   | BackToPhone
   | OnRecaptchaRequired
-  | SubmitRecaptchaToken;
+  | SubmitRecaptchaToken
+  | RequestQrCodeLogin
+  | OnQrCodeLinkReceived;

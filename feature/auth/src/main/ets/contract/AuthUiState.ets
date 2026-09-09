@@ -27,6 +27,7 @@ export interface AuthUiStateOptions {
   readonly verificationId?: number;
   readonly recaptchaKeyId?: string;
   readonly recaptchaAction?: string;
+  readonly qrCodeLink?: string;
   readonly isSubmitting?: boolean;
   readonly errorMessage?: string | null;
   readonly errorCode?: string | null;
@@ -51,6 +52,7 @@ export class AuthUiState implements UiState {
   readonly verificationId: number;
   readonly recaptchaKeyId: string;
   readonly recaptchaAction: string;
+  readonly qrCodeLink: string;
   readonly isSubmitting: boolean;
   readonly errorMessage: string | null;
   readonly errorCode: string | null;
@@ -74,6 +76,7 @@ export class AuthUiState implements UiState {
     verificationId: number,
     recaptchaKeyId: string,
     recaptchaAction: string,
+    qrCodeLink: string,
     isSubmitting: boolean,
     errorMessage: string | null,
     errorCode: string | null,
@@ -96,6 +99,7 @@ export class AuthUiState implements UiState {
     this.verificationId = verificationId;
     this.recaptchaKeyId = recaptchaKeyId;
     this.recaptchaAction = recaptchaAction;
+    this.qrCodeLink = qrCodeLink;
     this.isSubmitting = isSubmitting;
     this.errorMessage = errorMessage;
     this.errorCode = errorCode;
@@ -119,6 +123,7 @@ export class AuthUiState implements UiState {
       '',
       '',
       0,
+      '',
       '',
       '',
       false,
@@ -147,6 +152,7 @@ export class AuthUiState implements UiState {
       options.verificationId !== undefined ? options.verificationId : this.verificationId,
       options.recaptchaKeyId !== undefined ? options.recaptchaKeyId : this.recaptchaKeyId,
       options.recaptchaAction !== undefined ? options.recaptchaAction : this.recaptchaAction,
+      options.qrCodeLink !== undefined ? options.qrCodeLink : this.qrCodeLink,
       options.isSubmitting !== undefined ? options.isSubmitting : this.isSubmitting,
       options.errorMessage !== undefined ? options.errorMessage : this.errorMessage,
       options.errorCode !== undefined ? options.errorCode : this.errorCode,

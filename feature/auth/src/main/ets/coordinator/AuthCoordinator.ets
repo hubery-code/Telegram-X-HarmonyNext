@@ -25,11 +25,16 @@ import {
   CountdownTick,
   OnAuthStateChanged,
   OnRequestError,
-  OnRecaptchaRequired
+  OnRecaptchaRequired,
+  OnQrCodeLinkReceived
 } from '../contract/AuthIntent';
-import { AuthEffect, SendVerificationToken } from '../contract/AuthEffect';
+import { AuthEffect } from '../contract/AuthEffect';
 import { authReducer as authFeatureReducer } from '../reducer/AuthReducer';
-import { parseAuthEventFromWire, parseRecaptchaUpdateFromWire } from './AuthEventParser';
+import {
+  parseAuthEventFromWire,
+  parseQrCodeLinkFromWire,
+  parseRecaptchaUpdateFromWire
+} from './AuthEventParser';
 
 const DOMAIN: number = 0x0000;
 const TAG: string = 'AuthCoordinator';
@@ -197,6 +202,13 @@ export class AuthCoordinator {
       return;
     }
 
+    const qrCodeLink: string | null = parseQrCodeLinkFromWire(event.payload);
+    if (qrCodeLink !== null) {
+      hilog.info(DOMAIN, TAG, 'QR authentication link updated');
+      this.dispatch(new OnQrCodeLinkReceived(qrCodeLink));
+      return;
+    }
+
     const authEvent: AuthEvent | null = parseAuthEventFromWire(event.payload);
     if (authEvent === null) {
       return;
@@ -293,7 +305,11 @@ export class AuthCoordinator {
           if (res.err) {
             hilog.error(DOMAIN, TAG, 'setAuthenticationPhoneNumber failed: %{public}s %{public}s %{public}s',
               res.error.kind, res.error.message, res.error.cause ?? '');
-            this.dispatch(new OnRequestError(res.error));
+            if (this.currentState.step === 'waitRecaptcha' || this.currentState.step === 'waitQrCode') {
+              hilog.info(DOMAIN, TAG, 'phone authentication request was released for QR fallback');
+            } else {
+              this.dispatch(new OnRequestError(res.error));
+            }
           } else {
             hilog.info(DOMAIN, TAG, 'setAuthenticationPhoneNumber succeeded');
           }
@@ -378,9 +394,26 @@ export class AuthCoordinator {
           if (res.err) {
             hilog.error(DOMAIN, TAG, 'setApplicationVerificationToken failed: %{public}s %{public}s %{public}s',
               res.error.kind, res.error.message, res.error.cause ?? '');
-            this.dispatch(new OnRequestError(res.error));
+            if (effect.token.length > 0) {
+              this.dispatch(new OnRequestError(res.error));
+            }
           } else {
-            hilog.info(DOMAIN, TAG, 'setApplicationVerificationToken succeeded — waiting for auth state update');
+            hilog.info(DOMAIN, TAG, effect.token.length === 0
+              ? 'unsupported application verification reported to TDLib'
+              : 'setApplicationVerificationToken succeeded');
+          }
+        });
+        break;
+      }
+
+      case 'requestQrCodeAuthentication': {
+        const parsed: Object = JSON.parse('{"other_user_ids":[]}');
+        hilog.info(DOMAIN, TAG, 'executing requestQrCodeAuthentication');
+        this.scope.request('requestQrCodeAuthentication', parsed as TdWireObject).then((res: Result<TdWireObject, AppError>) => {
+          if (res.err) {
+            hilog.error(DOMAIN, TAG, 'requestQrCodeAuthentication failed: %{public}s %{public}s %{public}s',
+              res.error.kind, res.error.message, res.error.cause ?? '');
+            this.dispatch(new OnRequestError(res.error));
           }
         });
         break;

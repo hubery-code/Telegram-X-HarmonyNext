@@ -13,6 +13,25 @@ export interface RecaptchaUpdateInfo {
   readonly recaptchaKeyId: string;
 }
 
+export function parseQrCodeLinkFromWire(payload: TdWireObject): string | null {
+  const type: string = wireString(payload['@type']);
+  if (type !== 'updateAuthorizationState') {
+    return null;
+  }
+
+  const rawAuthState = payload['authorization_state'];
+  if (!isWireObject(rawAuthState)) {
+    return null;
+  }
+  const authStateObj: TdWireObject = rawAuthState as TdWireObject;
+  if (wireString(authStateObj['@type']) !== 'authorizationStateWaitOtherDeviceConfirmation') {
+    return null;
+  }
+
+  const link: string = wireString(authStateObj['link']);
+  return link.length > 0 ? link : null;
+}
+
 export function parseRecaptchaUpdateFromWire(payload: TdWireObject): RecaptchaUpdateInfo | null {
   const type: string = wireString(payload['@type']);
   if (type !== 'updateApplicationRecaptchaVerificationRequired') {

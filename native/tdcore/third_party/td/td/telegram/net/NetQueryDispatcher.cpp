@@ -109,7 +109,7 @@ void NetQueryDispatcher::dispatch(NetQueryPtr net_query) {
         return;
       }
       return send_closure_later(delayer_, &NetQueryDelayer::delay, std::move(net_query));
-#if TD_ANDROID || TD_DARWIN_IOS || TD_DARWIN_VISION_OS || TD_DARWIN_WATCH_OS || TD_TEST_VERIFICATION
+#if TD_ANDROID || TD_DARWIN_IOS || TD_DARWIN_VISION_OS || TD_DARWIN_WATCH_OS || TD_TEST_VERIFICATION || defined(__OHOS__)
     } else if (code == 403) {
       Slice captcha_prefix = "RECAPTCHA_CHECK_";
       if (begins_with(net_query->error().message(), captcha_prefix)) {
@@ -375,7 +375,7 @@ NetQueryDispatcher::NetQueryDispatcher(const std::function<ActorShared<>()> &cre
     main_dc_id_ = to_integer<int32>(s_main_dc_id);
   }
   delayer_ = create_actor<NetQueryDelayer>("NetQueryDelayer", create_reference());
-#if TD_ANDROID || TD_DARWIN_IOS || TD_DARWIN_VISION_OS || TD_DARWIN_WATCH_OS || TD_TEST_VERIFICATION
+#if TD_ANDROID || TD_DARWIN_IOS || TD_DARWIN_VISION_OS || TD_DARWIN_WATCH_OS || TD_TEST_VERIFICATION || defined(__OHOS__)
   verifier_ = create_actor<NetQueryVerifier>("NetQueryVerifier", create_reference());
 #endif
   dc_auth_manager_ = create_actor_on_scheduler<DcAuthManager>("DcAuthManager", G()->get_main_session_scheduler_id(),

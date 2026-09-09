@@ -20,7 +20,8 @@ import {
   OnAuthStateChanged,
   OnRequestError,
   OnRecaptchaRequired,
-  SubmitRecaptchaToken
+  SubmitRecaptchaToken,
+  OnQrCodeLinkReceived
 } from '../contract/AuthIntent';
 import {
   AuthEffect,
@@ -33,7 +34,8 @@ import {
   ShowToast,
   StartCountdown,
   StopCountdown,
-  SendVerificationToken
+  SendVerificationToken,
+  RequestQrCodeAuthentication
 } from '../contract/AuthEffect';
 import { formatFullPhoneNumber } from '../model/CountryCode';
 
@@ -247,6 +249,7 @@ export const authReducer: Reducer<AuthUiState, AuthIntent, AuthEffect> = (
         case 'waitPhone':
           return reduced(state.copyWith({
             step: 'waitPhone',
+            qrCodeLink: '',
             isSubmitting: false,
             rawAuthState: auth
           }));
@@ -337,6 +340,9 @@ export const authReducer: Reducer<AuthUiState, AuthIntent, AuthEffect> = (
 
     case 'onRequestError': {
       const errIntent: OnRequestError = intent as OnRequestError;
+      if (state.step === 'waitRecaptcha') {
+        return reduced(state);
+      }
       const nextState: AuthUiState = state.copyWith({
         isSubmitting: false,
         errorMessage: errIntent.error.message,
@@ -360,7 +366,8 @@ export const authReducer: Reducer<AuthUiState, AuthIntent, AuthEffect> = (
         errorMessage: null,
         errorCode: null,
         code: '',
-        password: ''
+        password: '',
+        qrCodeLink: ''
       }));
     }
 
@@ -375,7 +382,8 @@ export const authReducer: Reducer<AuthUiState, AuthIntent, AuthEffect> = (
         errorMessage: null,
         errorCode: null
       });
-      return reduced(nextState);
+      const effects: AuthEffect[] = [new SendVerificationToken(recaptchaIntent.verificationId, '')];
+      return reduced(nextState, effects);
     }
 
     case 'submitRecaptchaToken': {
@@ -387,6 +395,29 @@ export const authReducer: Reducer<AuthUiState, AuthIntent, AuthEffect> = (
       });
       const effects: AuthEffect[] = [new SendVerificationToken(state.verificationId, tokenIntent.token)];
       return reduced(nextState, effects);
+    }
+
+    case 'requestQrCodeLogin': {
+      const nextState: AuthUiState = state.copyWith({
+        step: 'waitQrCode',
+        qrCodeLink: '',
+        isSubmitting: true,
+        errorMessage: null,
+        errorCode: null
+      });
+      const effects: AuthEffect[] = [new RequestQrCodeAuthentication()];
+      return reduced(nextState, effects);
+    }
+
+    case 'onQrCodeLinkReceived': {
+      const linkIntent: OnQrCodeLinkReceived = intent as OnQrCodeLinkReceived;
+      return reduced(state.copyWith({
+        step: 'waitQrCode',
+        qrCodeLink: linkIntent.link,
+        isSubmitting: false,
+        errorMessage: null,
+        errorCode: null
+      }));
     }
   }
 

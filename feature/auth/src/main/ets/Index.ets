@@ -32,6 +32,10 @@ export {
   CountdownTick,
   ClearError,
   BackToPhone,
+  OnRecaptchaRequired,
+  SubmitRecaptchaToken,
+  RequestQrCodeLogin,
+  OnQrCodeLinkReceived,
   AuthIntent
 } from './contract/AuthIntent';
 
@@ -45,12 +49,19 @@ export {
   ShowToast,
   StartCountdown,
   StopCountdown,
+  SendVerificationToken,
+  RequestQrCodeAuthentication,
   AuthEffect
 } from './contract/AuthEffect';
 
 export { authReducer } from './reducer/AuthReducer';
 
-export { parseAuthEventFromWire } from './coordinator/AuthEventParser';
+export {
+  RecaptchaUpdateInfo,
+  parseAuthEventFromWire,
+  parseRecaptchaUpdateFromWire,
+  parseQrCodeLinkFromWire
+} from './coordinator/AuthEventParser';
 export {
   AuthAccountScopeLike,
   AuthSubscriptionLike,
@@ -64,4 +75,6 @@ export { PhonePage } from './pages/PhonePage';
 export { CodePage } from './pages/CodePage';
 export { PasswordPage } from './pages/PasswordPage';
 export { RegistrationPage } from './pages/RegistrationPage';
+export { RecaptchaPage } from './pages/RecaptchaPage';
+export { QrCodePage } from './pages/QrCodePage';
 export { AuthRootPage } from './pages/AuthRootPage';
