@@ -48,7 +48,10 @@ export function bootstrap(
   const files: HarmonyAppFilesAdapter = new HarmonyAppFilesAdapter(filesDir, cacheDir);
   const options: AccountRegistryOptions = {
     bridge: bridge as TdNativeBridgeLike,
-    files: files
+    files: files,
+    gatewayOptions: {
+      defaultTimeoutMillis: 60000
+    }
   };
   const registry: AccountRegistry = new AccountRegistry(options);
   registry.start();

@@ -278,9 +278,14 @@ export class AuthCoordinator {
     switch (effect.kind) {
       case 'sendPhoneNumber': {
         const params: TdWireObject = wireParam1('phone_number', effect.phoneNumber);
+        hilog.info(DOMAIN, TAG, 'executing setAuthenticationPhoneNumber');
         this.scope.request('setAuthenticationPhoneNumber', params).then((res: Result<TdWireObject, AppError>) => {
           if (res.err) {
+            hilog.error(DOMAIN, TAG, 'setAuthenticationPhoneNumber failed: %{public}s %{public}s %{public}s',
+              res.error.kind, res.error.message, res.error.cause ?? '');
             this.dispatch(new OnRequestError(res.error));
+          } else {
+            hilog.info(DOMAIN, TAG, 'setAuthenticationPhoneNumber succeeded');
           }
         });
         break;
@@ -288,9 +293,14 @@ export class AuthCoordinator {
 
       case 'checkCode': {
         const params: TdWireObject = wireParam1('code', effect.code);
+        hilog.info(DOMAIN, TAG, 'executing checkAuthenticationCode');
         this.scope.request('checkAuthenticationCode', params).then((res: Result<TdWireObject, AppError>) => {
           if (res.err) {
+            hilog.error(DOMAIN, TAG, 'checkAuthenticationCode failed: %{public}s %{public}s %{public}s',
+              res.error.kind, res.error.message, res.error.cause ?? '');
             this.dispatch(new OnRequestError(res.error));
+          } else {
+            hilog.info(DOMAIN, TAG, 'checkAuthenticationCode succeeded');
           }
         });
         break;
