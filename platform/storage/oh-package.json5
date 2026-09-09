@@ -1,0 +1,15 @@
+{
+  "name": "@tgx/platform-storage",
+  "version": "0.1.0",
+  "description": "Telegram X HarmonyOS platform/storage: PreferencesPort production adapters (HarmonyOS Preferences Kit + RDB KV store with schema version & migration framework). Kit adapters; pure logic (store core, SQL assembly, migration) is locally unit-tested (PLAT-002).",
+  "main": "./src/main/ets/Index.ets",
+  "author": "telegram-x",
+  "license": "GPL-3.0",
+  "dependencies": {
+    "@tgx/core-common": "file:../../core/common",
+    "@tgx/platform-ports": "file:../ports"
+  },
+  "devDependencies": {
+    "@ohos/hypium": "1.0.21"
+  }
+}

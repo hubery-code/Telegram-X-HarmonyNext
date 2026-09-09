@@ -1,0 +1,10 @@
+{
+  "module": {
+    "name": "platform_storage",
+    "type": "har",
+    "description": "platform/storage: PreferencesPort 生产 adapter（Preferences Kit + RDB KV + schema migration 框架）",
+    "deviceTypes": [
+      "phone"
+    ]
+  }
+}

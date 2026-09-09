@@ -130,6 +130,18 @@
           ]
         }
       ]
+    },
+    {
+      "name": "platform_storage",
+      "srcPath": "./platform/storage",
+      "targets": [
+        {
+          "name": "default",
+          "applyToProducts": [
+            "default"
+          ]
+        }
+      ]
     }
   ]
 }
