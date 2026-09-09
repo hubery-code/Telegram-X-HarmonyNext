@@ -23,9 +23,6 @@
 | 工作包 | 负责人(AI) | 开始时间 | 说明 |
 |---|---|---|---|
 | CHATLIST-001 chat list domain projection | AI-Agent-Antigravity | 2026-09-09 | ✅ 已完成（assembleHar SUCCESSFUL，排序分页模型就绪）；区域：`core/domain/` |
-| CHATLIST-002 chat list ArkUI | 主会话→子agent | 2026-09-09 | 会话列表 Lazy list UI，依赖 CHATLIST-001 + UI-001 |
-| PLAT-003 HUKS 安全密钥存储 | 主会话→子agent | 2026-09-09 | Asset Store/HUKS adapter，依赖 PLAT-001 |
-| BRG-005 TDLib close/shutdown 生命周期 | 主会话→子agent | 2026-09-09 | 重复 close、迟到回调、快速重建，依赖 BRG-003 |
 
 > ⚠️ 并行约定：**不要执行 git commit**，完成后报告文件清单由主会话统一提交。core/account 禁止 import ArkUI/Kit。项目内有 `.agents/skills/harmony-next/` 离线参考（API 12-23 快照），编码遇 API 问题可查。
 
@@ -57,6 +54,9 @@
 
 | 工作包 | 完成日期 | 证据 |
 |---|---|---|
+| CHATLIST-002 chat list ArkUI | 2026-09-09 ✅ | 子agent-27：`feature/chat_list` har 模块（`@tgx/feature-chat-list`）；ChatListPage LazyForEach 列表（头像彩色圆+首字母、标题、预览截断、时间戳、未读角标）+ MVI contract（ChatListUiState/ChatListIntent/ChatListEffect/chatListReducer）+ MockChatData 50 条确定性 mock；`assembleHar` BUILD SUCCESSFUL；commit `eec44b1` |
+| PLAT-003 HUKS 安全密钥存储 | 2026-09-09 ✅ | 子agent-28：`platform/keystore` har 模块（`@tgx/platform-keystore`）；HarmonySecureKeyStore 实现 SecureKeyStorePort（Asset Store Kit：put/get/remove/getStatus，DEVICE_UNLOCKED 可达性、OVERWRITE 冲突、NEVER 同步、稳定错误码映射）；`assembleHar` BUILD SUCCESSFUL；commit `eec44b1` |
+| BRG-005 TDLib close/shutdown 生命周期 | 2026-09-09 ✅ | 子agent-29：TdCoreBridge 状态机（idle→active→closing→closed），close() 幂等、迟到回调丢弃计数、createClient 快速重建；TdGateway close()（stop + registry.close()，新请求拒绝 GATEWAY_CLOSED_ORIGIN）；RequestRegistry.close() 批量取消 pending；AccountScope.close() 级联 gateway.close()；3 模块 `assembleHar` + `assembleHap` 全 BUILD SUCCESSFUL，既有测试不回归；commit `eec44b1` |
 | SPIKE-001 真机授权登录垂直切片 | 2026-09-09 ✅ | 真机端到端验证 PASS：`EntryAbility.onCreate → bootstrap() → AccountScope.open(startActive=true) → gateway.start() → TDLib setTdlibParameters 成功 → authorizationStateWaitPhoneNumber → AuthCoordinator → AuthRootPage "Your Phone" 渲染`。修复两个问题：① TDLib 初始事件在 eventListener 注册前被丢弃 → `executeCoreEffectsForState` 补发 core effects；② `setTdlibParameters` 被调两次（补发 + 事件到达）→ `tdlibParamsSent`/`dbKeySent` 防重标志。新模块：`platform/files`（`HarmonyAppFilesAdapter` 实现 AppFilesPort，@kit.CoreFileKit 原子写入/路径安全）；`entry/ScopeAuthAdapter.ets`（适配 AccountScope → AuthAccountScopeLike）。日志：`setTdlibParameters succeeded` + 页面渲染 "Your Phone"（China +86，输入框，Continue 按钮）；commit `ab62b8c` |
 | AUTH-001 授权页面壳与 Reducer 对接 | 2026-09-09 ✅ | AI-Agent-Antigravity：`feature/auth` 注册为 har 模块（modules 追加 `feature_auth`，包名 `@tgx/feature-auth`）；基于 UI-003 MVI 范式（UiState/Intent/Effect/Reducer）+ CORE-005 授权状态机；AuthUiState（11 步骤、电话格式化、验证码位数自适应、2FA 密码显隐、姓名注册、loading/error 状态，copyWith 不可变派生）+ 17 种 AuthIntent + 9 种 AuthEffect + 纯函数 authReducer + AuthCoordinator（异步 effect 驱动、TDLib updateAuthorizationState 解析与状态同步、倒计时调度）+ 5 个 ArkUI 组件（AuthRootView / AuthPhoneView / AuthCodeView / AuthPasswordView / AuthRegistrationView）；纯单测 36 用例全 Success（CountryCode 3 + AuthReducer 28 + AuthCoordinator 5）：`./hvigorw test --mode module -p module=feature_auth@default -p product=default --no-daemon`；`assembleHar` BUILD SUCCESSFUL |
 | GEN-003 codec fixture round-trip | 2026-09-09 ✅ | AI-Agent-J：22 个全合成脱敏 fixture（TDLib 官方仓库无静态 JSON 样本，字段结构派生自 td_api.tl；13 个授权状态机 + 4 个 updateNewMessage 内容类型 + error/ok `@extra` 关联 + vector&lt;int64&gt; 大数 + 2 个未知类型 raw 回传；来源/脱敏规则/加 fixture 流程见 `core/td_api_generated/fixtures/README.md`）；每 fixture 独立用例 `decodeTdObject→encodeTdObject→canonicalJson 语义等价→二次 decode 稳定`，未知类型断言 `TdUnknownObject` 无损；`FixtureData.ets` 由 `fixtures/sync_fixtures.py` 从 json 确定性生成；`./hvigorw test --mode module -p module=core_td_api_generated@default -p product=default --no-daemon` `Tests run: 48, Failure: 0, Error: 0, Pass: 48`（既有 20 例不回归）；期间定位并清除损坏的 533MB `init_coverage.json` 构建缓存（00308018 假错误，`.test/` 产物非源码） |
