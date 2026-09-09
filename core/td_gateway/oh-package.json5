@@ -1,0 +1,14 @@
+{
+  "name": "@tgx/td-gateway",
+  "version": "0.1.0",
+  "description": "Telegram X HarmonyOS core/td_gateway: TdNativeBridgeLike contract, RequestRegistry (requestId/timeout/cancel/late-drop), OrderedEventRouter, TdGateway facade. Pure ArkTS, no Kit / ArkUI / TDLib dependency (CORE-002).",
+  "main": "./src/main/ets/Index.ets",
+  "author": "telegram-x",
+  "license": "GPL-3.0",
+  "dependencies": {
+    "@tgx/core-common": "file:../common"
+  },
+  "devDependencies": {
+    "@ohos/hypium": "1.0.21"
+  }
+}

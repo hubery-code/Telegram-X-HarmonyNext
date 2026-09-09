@@ -108,6 +108,30 @@
       ]
     },
     {
+      "name": "core_td_gateway",
+      "srcPath": "./core/td_gateway",
+      "targets": [
+        {
+          "name": "default",
+          "applyToProducts": [
+            "default"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "core_observability",
+      "srcPath": "./core/observability",
+      "targets": [
+        {
+          "name": "default",
+          "applyToProducts": [
+            "default"
+          ]
+        }
+      ]
+    },
+    {
       "name": "feature_template",
       "srcPath": "./feature/_template",
       "targets": [

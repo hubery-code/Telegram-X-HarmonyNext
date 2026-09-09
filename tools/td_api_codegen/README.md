@@ -135,8 +135,71 @@ python3 tools/td_api_codegen/td_api_arkts.py info
 
 - GEN-003（codec fixture round-trip）：decode/encode 函数已全部生成，
   只需补官方/脱敏 JSON fixtures 与差分测试。
-- GEN-004（脱敏元数据）：敏感字段可从 IR `doc`/字段名启发式产出，
-  生成器结构可直接复用（`Schema` 命名映射与文件分块逻辑）。
+- GEN-004（脱敏元数据）：已实现，见下节。
+
+## GEN-004：敏感字段元数据 + 日志脱敏 helper（td_api_sensitive.py）
+
+从 `core/td_api_generated/schema.ir.json` 生成敏感字段元数据与脱敏运行时，
+输出到 `core/td_api_generated/src/main/ets/redaction/`。**不要重新解析 .tl，
+不要改动 `td_api_ir.py`/`td_api_arkts.py`。** 生成完全确定：重复运行字节级一致。
+
+```bash
+# 重新生成（生成物禁止手改，改生成器里的规则表）
+python3 tools/td_api_codegen/td_api_sensitive.py generate
+
+# CI 入口：内存中重新生成并与 checked-in 文件逐字节比对（不写文件）
+python3 tools/td_api_codegen/td_api_sensitive.py verify
+
+# 规则统计（规则按策略分布、覆盖构造器/字段/类型数）
+python3 tools/td_api_codegen/td_api_sensitive.py info
+```
+
+### 规则表（单一决策点）
+
+规则全部集中在 `td_api_sensitive.py` 顶部的三张表里，每条规则带决策注释：
+
+1. **`SCOPED_RULES`** — 构造器级覆盖（最高优先级）。用于同名异义字段：
+   `username` 在 Telegram 用户上是公开标识，但在 `proxyTypeHttp/proxyTypeSocks5`
+   上是代理凭据；`setTdlibParameters` 的 `api_id/api_hash/database_encryption_key`；
+   `error.code` 是 TDLib 错误码而非验证码（反向覆盖为 keep）。
+2. **`EXACT_RULES`** — 精确字段名规则（不做子串匹配，避免 `next_code_type`
+   这类"类型标签"被误伤）。含密码/验证码/令牌/密钥/手机号/邮箱/IP/姓名等，
+   并显式记录 keep 决策（`country_code`、`language_code`、`key`、`is_secret`、
+   `has_password`、`username` 等）以防后续 suffix 规则误伤。
+3. **`SUFFIX_RULES`** — 后缀规则（`_password`/`_secret` redact，
+   `_token`/`_hash` mask）。刻意**没有** `_code`（`country_code` 等非敏感）。
+
+策略语义（在生成物 `TdSensitiveFields.ets` 头部也有说明）：
+
+| policy | 语义 |
+|---|---|
+| `redact` | 完全遮蔽：字符串→`«redacted»`，数字→0，布尔→false，子树整体替换 |
+| `mask` | 部分遮蔽：字符串留头尾若干字符；数字/布尔置 0/false；子树递归细粒度处理 |
+| `keep` | 保留（未列入元数据的字段默认 keep） |
+
+首个匹配生效（scoped > exact > suffix > 默认 keep）。
+
+### 输出文件
+
+| 文件 | 说明 |
+|---|---|
+| `redaction/TdSensitiveFields.ets` | 结构化元数据：构造器→字段→策略+决策理由、`TD_SENSITIVE_TYPES` 类型级清单（仅 object 构造器，函数请求的敏感入参不会污染其返回类型）、未知 `@type` 兜底子串表；头部带 schema hash 与生成器版本 |
+| `redaction/TdRedact.ets` | `redactTdJson(json)`：按元数据脱敏 TDLib JSON 字符串，未知 `@type` 按字段名子串保守遮蔽，非法输入永不抛错（返回占位符，不允许不可审计内容放行）；`redactFields(obj: TdObject)`：encode→redact→decode 的 DTO 深拷贝脱敏 |
+
+### 当前统计（TDLib d1085f9ce / schemaHash 7fbae70a…c5929）
+
+`ctorsWithRules=124 flaggedFields=154 sensitiveTypes=44`（info 子命令实时输出；
+redact 75 / mask 79）。与 GEN-002 的关系：GEN-002 文件一律不改动，本阶段只新增
+`redaction/` 目录两个文件（`TD_KNOWN_CONSTRUCTORS` 全量构造器表也在
+TdSensitiveFields.ets 内，用于区分「已知但无规则→keep」与「未知 @type→保守兜底」）。
+
+### 与 core/observability 的关系（§14.4 两道防线）
+
+计划要求「日志按字段白名单输出，禁止先完整记录再正则脱敏」。`core/observability`
+的 Logger 是第一道防线（白名单制，只有显式标记可日志的字段才输出）；
+`TdRedact` 是第二道防线（白名单过滤后的输出再过一遍元数据脱敏）。
+TDLib 升级后重跑三个生成器（ir → arkts → sensitive），规则表随 schema 重新推导。
+
 
 ## GEN-001 交接说明（历史，已被 GEN-002 实现）
 

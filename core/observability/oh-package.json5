@@ -1,0 +1,15 @@
+{
+  "name": "@tgx/observability",
+  "version": "0.1.0",
+  "description": "Telegram X HarmonyOS core/observability: whitelist Logger for TDLib objects + AppError log strings, second-line redaction via GEN-004 metadata (OBS-001/GEN-004). Pure ArkTS, no Kit / ArkUI dependency.",
+  "main": "./src/main/ets/Index.ets",
+  "author": "telegram-x",
+  "license": "GPL-3.0",
+  "dependencies": {
+    "@tgx/core-common": "file:../common",
+    "@tgx/td-api-generated": "file:../td_api_generated"
+  },
+  "devDependencies": {
+    "@ohos/hypium": "1.0.21"
+  }
+}

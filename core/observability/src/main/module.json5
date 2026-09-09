@@ -1,0 +1,10 @@
+{
+  "module": {
+    "name": "core_observability",
+    "type": "har",
+    "description": "core/observability：白名单制脱敏 Logger（纯 ArkTS，无 Kit 依赖）",
+    "deviceTypes": [
+      "phone"
+    ]
+  }
+}

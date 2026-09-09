@@ -20,11 +20,14 @@ report() {
 
 echo "[secret-scan] scanning tracked sources under ${ROOT}"
 
-# 上游源码自带的公开测试 PEM（OpenSSL apps/*.pem 等）不属于秘密，排除 third_party
+# 上游源码自带的公开测试 PEM（OpenSSL apps/*.pem 等）不属于秘密，排除 third_party；
+# .agents/skills 下是第三方 SDK 参考文档（含厂商示例 PEM 形态字符串，非真实密钥），
+# 同样不属于本工程秘密面。
 EXCLUDE=':!native/tdcore/third_party'
+EXCLUDE_SKILL_DOCS=':!.agents'
 
 # 1. 私钥 PEM 块（任何被 git 跟踪的文件里都不允许；上游 vendored 测试材料除外）
-if git grep -n --no-color -I -E -e "-----BEGIN (RSA |EC |OPENSSH |PGP |ENCRYPTED )?PRIVATE KEY( BLOCK)?-----" -- . "$EXCLUDE" ; then
+if git grep -n --no-color -I -E -e "-----BEGIN (RSA |EC |OPENSSH |PGP |ENCRYPTED )?PRIVATE KEY( BLOCK)?-----" -- . "$EXCLUDE" "$EXCLUDE_SKILL_DOCS" ; then
   report "private key PEM block found in tracked files"
 fi
 

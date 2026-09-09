@@ -1,0 +1,10 @@
+{
+  "module": {
+    "name": "core_td_gateway",
+    "type": "har",
+    "description": "core/td_gateway: TdNativeBridgeLike 契约 + RequestRegistry（@extra.requestId/超时/取消/迟到丢弃）+ OrderedEventRouter（按 client 单调有序分发）+ TdGateway facade（纯 ArkTS，无 Kit 依赖）",
+    "deviceTypes": [
+      "phone"
+    ]
+  }
+}
