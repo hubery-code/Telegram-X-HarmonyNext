@@ -118,6 +118,28 @@ export class BackToPhone implements Intent {
   readonly kind: 'backToPhone' = 'backToPhone';
 }
 
+export class OnRecaptchaRequired implements Intent {
+  readonly kind: 'onRecaptchaRequired' = 'onRecaptchaRequired';
+  readonly verificationId: number;
+  readonly action: string;
+  readonly recaptchaKeyId: string;
+
+  constructor(verificationId: number, action: string, recaptchaKeyId: string) {
+    this.verificationId = verificationId;
+    this.action = action;
+    this.recaptchaKeyId = recaptchaKeyId;
+  }
+}
+
+export class SubmitRecaptchaToken implements Intent {
+  readonly kind: 'submitRecaptchaToken' = 'submitRecaptchaToken';
+  readonly token: string;
+
+  constructor(token: string) {
+    this.token = token;
+  }
+}
+
 export type AuthIntent =
   | SelectCountry
   | ChangePhoneInput
@@ -135,4 +157,6 @@ export type AuthIntent =
   | OnRequestError
   | CountdownTick
   | ClearError
-  | BackToPhone;
+  | BackToPhone
+  | OnRecaptchaRequired
+  | SubmitRecaptchaToken;

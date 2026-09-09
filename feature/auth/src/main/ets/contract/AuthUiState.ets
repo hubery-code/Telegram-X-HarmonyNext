@@ -24,6 +24,9 @@ export interface AuthUiStateOptions {
   readonly isPasswordVisible?: boolean;
   readonly firstName?: string;
   readonly lastName?: string;
+  readonly verificationId?: number;
+  readonly recaptchaKeyId?: string;
+  readonly recaptchaAction?: string;
   readonly isSubmitting?: boolean;
   readonly errorMessage?: string | null;
   readonly errorCode?: string | null;
@@ -45,6 +48,9 @@ export class AuthUiState implements UiState {
   readonly isPasswordVisible: boolean;
   readonly firstName: string;
   readonly lastName: string;
+  readonly verificationId: number;
+  readonly recaptchaKeyId: string;
+  readonly recaptchaAction: string;
   readonly isSubmitting: boolean;
   readonly errorMessage: string | null;
   readonly errorCode: string | null;
@@ -65,6 +71,9 @@ export class AuthUiState implements UiState {
     isPasswordVisible: boolean,
     firstName: string,
     lastName: string,
+    verificationId: number,
+    recaptchaKeyId: string,
+    recaptchaAction: string,
     isSubmitting: boolean,
     errorMessage: string | null,
     errorCode: string | null,
@@ -84,6 +93,9 @@ export class AuthUiState implements UiState {
     this.isPasswordVisible = isPasswordVisible;
     this.firstName = firstName;
     this.lastName = lastName;
+    this.verificationId = verificationId;
+    this.recaptchaKeyId = recaptchaKeyId;
+    this.recaptchaAction = recaptchaAction;
     this.isSubmitting = isSubmitting;
     this.errorMessage = errorMessage;
     this.errorCode = errorCode;
@@ -104,6 +116,9 @@ export class AuthUiState implements UiState {
       '',
       '',
       false,
+      '',
+      '',
+      0,
       '',
       '',
       false,
@@ -129,6 +144,9 @@ export class AuthUiState implements UiState {
       options.isPasswordVisible !== undefined ? options.isPasswordVisible : this.isPasswordVisible,
       options.firstName !== undefined ? options.firstName : this.firstName,
       options.lastName !== undefined ? options.lastName : this.lastName,
+      options.verificationId !== undefined ? options.verificationId : this.verificationId,
+      options.recaptchaKeyId !== undefined ? options.recaptchaKeyId : this.recaptchaKeyId,
+      options.recaptchaAction !== undefined ? options.recaptchaAction : this.recaptchaAction,
       options.isSubmitting !== undefined ? options.isSubmitting : this.isSubmitting,
       options.errorMessage !== undefined ? options.errorMessage : this.errorMessage,
       options.errorCode !== undefined ? options.errorCode : this.errorCode,

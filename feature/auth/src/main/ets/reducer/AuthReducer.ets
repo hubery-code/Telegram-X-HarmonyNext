@@ -18,7 +18,9 @@ import {
   ChangeFirstName,
   ChangeLastName,
   OnAuthStateChanged,
-  OnRequestError
+  OnRequestError,
+  OnRecaptchaRequired,
+  SubmitRecaptchaToken
 } from '../contract/AuthIntent';
 import {
   AuthEffect,
@@ -30,7 +32,8 @@ import {
   NavigateToRoute,
   ShowToast,
   StartCountdown,
-  StopCountdown
+  StopCountdown,
+  SendVerificationToken
 } from '../contract/AuthEffect';
 import { formatFullPhoneNumber } from '../model/CountryCode';
 
@@ -359,6 +362,31 @@ export const authReducer: Reducer<AuthUiState, AuthIntent, AuthEffect> = (
         code: '',
         password: ''
       }));
+    }
+
+    case 'onRecaptchaRequired': {
+      const recaptchaIntent: OnRecaptchaRequired = intent as OnRecaptchaRequired;
+      const nextState: AuthUiState = state.copyWith({
+        step: 'waitRecaptcha',
+        verificationId: recaptchaIntent.verificationId,
+        recaptchaKeyId: recaptchaIntent.recaptchaKeyId,
+        recaptchaAction: recaptchaIntent.action,
+        isSubmitting: false,
+        errorMessage: null,
+        errorCode: null
+      });
+      return reduced(nextState);
+    }
+
+    case 'submitRecaptchaToken': {
+      const tokenIntent: SubmitRecaptchaToken = intent as SubmitRecaptchaToken;
+      const nextState: AuthUiState = state.copyWith({
+        isSubmitting: true,
+        errorMessage: null,
+        errorCode: null
+      });
+      const effects: AuthEffect[] = [new SendVerificationToken(state.verificationId, tokenIntent.token)];
+      return reduced(nextState, effects);
     }
   }
 

@@ -11,6 +11,7 @@ export type AuthStep =
   | 'waitCode'
   | 'wait2fa'
   | 'waitRegistration'
+  | 'waitRecaptcha'
   | 'ready'
   | 'loggingOut'
   | 'closing'

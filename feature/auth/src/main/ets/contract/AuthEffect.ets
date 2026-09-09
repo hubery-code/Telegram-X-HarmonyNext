@@ -79,6 +79,17 @@ export class StopCountdown implements Effect {
   readonly kind: 'stopCountdown' = 'stopCountdown';
 }
 
+export class SendVerificationToken implements Effect {
+  readonly kind: 'sendVerificationToken' = 'sendVerificationToken';
+  readonly verificationId: number;
+  readonly token: string;
+
+  constructor(verificationId: number, token: string) {
+    this.verificationId = verificationId;
+    this.token = token;
+  }
+}
+
 export type AuthEffect =
   | SendPhoneNumber
   | CheckCode
@@ -88,4 +99,5 @@ export type AuthEffect =
   | NavigateToRoute
   | ShowToast
   | StartCountdown
-  | StopCountdown;
+  | StopCountdown
+  | SendVerificationToken;

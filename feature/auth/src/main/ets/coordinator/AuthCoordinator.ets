@@ -24,11 +24,12 @@ import {
   AuthIntent,
   CountdownTick,
   OnAuthStateChanged,
-  OnRequestError
+  OnRequestError,
+  OnRecaptchaRequired
 } from '../contract/AuthIntent';
-import { AuthEffect } from '../contract/AuthEffect';
+import { AuthEffect, SendVerificationToken } from '../contract/AuthEffect';
 import { authReducer as authFeatureReducer } from '../reducer/AuthReducer';
-import { parseAuthEventFromWire } from './AuthEventParser';
+import { parseAuthEventFromWire, parseRecaptchaUpdateFromWire } from './AuthEventParser';
 
 const DOMAIN: number = 0x0000;
 const TAG: string = 'AuthCoordinator';
@@ -187,6 +188,15 @@ export class AuthCoordinator {
   }
 
   private handleIncomingEvent(event: TdRoutedEvent): void {
+    const recaptchaInfo = parseRecaptchaUpdateFromWire(event.payload);
+    if (recaptchaInfo !== null) {
+      hilog.info(DOMAIN, TAG, 'recaptcha required: verificationId=%{public}d action=%{public}s keyId=%{public}s',
+        recaptchaInfo.verificationId, recaptchaInfo.action, recaptchaInfo.recaptchaKeyId);
+      this.dispatch(new OnRecaptchaRequired(
+        recaptchaInfo.verificationId, recaptchaInfo.action, recaptchaInfo.recaptchaKeyId));
+      return;
+    }
+
     const authEvent: AuthEvent | null = parseAuthEventFromWire(event.payload);
     if (authEvent === null) {
       return;
@@ -356,6 +366,23 @@ export class AuthCoordinator {
         if (this.onToast !== undefined) {
           this.onToast(effect.messageKey);
         }
+        break;
+      }
+
+      case 'sendVerificationToken': {
+        const params: Record<string, Object> = {};
+        params['verification_id'] = effect.verificationId;
+        params['token'] = effect.token;
+        hilog.info(DOMAIN, TAG, 'executing setApplicationVerificationToken verificationId=%{public}d', effect.verificationId);
+        this.scope.request('setApplicationVerificationToken', params as TdWireObject).then((res: Result<TdWireObject, AppError>) => {
+          if (res.err) {
+            hilog.error(DOMAIN, TAG, 'setApplicationVerificationToken failed: %{public}s %{public}s %{public}s',
+              res.error.kind, res.error.message, res.error.cause ?? '');
+            this.dispatch(new OnRequestError(res.error));
+          } else {
+            hilog.info(DOMAIN, TAG, 'setApplicationVerificationToken succeeded — waiting for auth state update');
+          }
+        });
         break;
       }
     }

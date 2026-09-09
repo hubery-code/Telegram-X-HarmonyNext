@@ -21,6 +21,7 @@ import {
   SubmitPassword,
   SubmitPhone,
   SubmitRegistration,
+  SubmitRecaptchaToken,
   TogglePasswordVisibility
 } from '../contract/AuthIntent';
 import { CountryInfo } from '../model/CountryCode';
@@ -28,6 +29,7 @@ import { PhonePage } from './PhonePage';
 import { CodePage } from './CodePage';
 import { PasswordPage } from './PasswordPage';
 import { RegistrationPage } from './RegistrationPage';
+import { RecaptchaPage } from './RecaptchaPage';
 
 const T = LightTheme;
 
@@ -112,6 +114,13 @@ export struct AuthRootPage {
           },
           onSubmit: () => {
             this.onDispatch(new SubmitRegistration());
+          }
+        })
+      } else if (this.uiState.step === 'waitRecaptcha') {
+        RecaptchaPage({
+          recaptchaKeyId: this.uiState.recaptchaKeyId,
+          onToken: (token: string) => {
+            this.onDispatch(new SubmitRecaptchaToken(token));
           }
         })
       } else if (this.uiState.step === 'failed') {

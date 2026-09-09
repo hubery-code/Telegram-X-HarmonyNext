@@ -7,6 +7,29 @@
 import { TdWireObject, isWireObject, wireNumber, wireString } from '@tgx/td-gateway';
 import { AuthCodeInfo, AuthEvent } from '@tgx/core-account';
 
+export interface RecaptchaUpdateInfo {
+  readonly verificationId: number;
+  readonly action: string;
+  readonly recaptchaKeyId: string;
+}
+
+export function parseRecaptchaUpdateFromWire(payload: TdWireObject): RecaptchaUpdateInfo | null {
+  const type: string = wireString(payload['@type']);
+  if (type !== 'updateApplicationRecaptchaVerificationRequired') {
+    return null;
+  }
+
+  const verificationId: number = wireNumber(payload['verification_id'], 0);
+  const action: string = wireString(payload['action']);
+  const recaptchaKeyId: string = wireString(payload['recaptcha_key_id']);
+
+  if (verificationId === 0 || recaptchaKeyId.length === 0) {
+    return null;
+  }
+
+  return { verificationId, action, recaptchaKeyId };
+}
+
 export function parseAuthEventFromWire(payload: TdWireObject): AuthEvent | null {
   const type: string = wireString(payload['@type']);
   if (type !== 'updateAuthorizationState') {
