@@ -178,6 +178,18 @@
           ]
         }
       ]
+    },
+    {
+      "name": "platform_tdcore_bridge",
+      "srcPath": "./platform/tdcore-bridge",
+      "targets": [
+        {
+          "name": "default",
+          "applyToProducts": [
+            "default"
+          ]
+        }
+      ]
     }
   ]
 }

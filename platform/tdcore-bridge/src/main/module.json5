@@ -1,0 +1,10 @@
+{
+  "module": {
+    "name": "platform_tdcore_bridge",
+    "type": "har",
+    "description": "platform/tdcore-bridge: TdNativeBridgeLike production adapter wrapping libtdcore_napi.so (BRG-006)",
+    "deviceTypes": [
+      "phone"
+    ]
+  }
+}

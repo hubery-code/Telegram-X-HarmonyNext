@@ -24,7 +24,8 @@
 |---|---|---|---|
 | CORE-003 AccountScope/Registry | 主会话 | 2026-09-09 | ✅ 已完成 |
 | CORE-005 授权状态机 reducer | 主会话 | 2026-09-09 | ✅ 已完成 |
-| BRG-006 生产桥 adapter | 主会话 | 2026-09-09 | 待启动（429 中断）；区域：`platform/tdcore-bridge/` |
+| BRG-006 生产桥 adapter | 主会话 | 2026-09-09 | ✅ 已完成 |
+| AUTH-001 授权 UI 壳 | 主会话 | 2026-09-09 | 手机号/验证码/2FA 页面 + reducer 对接；区域：`feature/auth/`、`entry/` |
 
 > ⚠️ 并行约定：**不要执行 git commit**，完成后报告文件清单由主会话统一提交。core/account 禁止 import ArkUI/Kit。项目内有 `.agents/skills/harmony-next/` 离线参考（API 12-23 快照），编码遇 API 问题可查。
 
@@ -83,6 +84,7 @@
 | CORE-005 授权状态机 reducer | 2026-09-09 ✅ | authReducer（event-driven，10 状态/12 事件/effect union）+ AuthorizationStateMachine 不可变包装 + failed/closed 终态守卫；98 用例全 Success（60 原有 + 38 新增）；CI 全绿；commit `9d5e7a1` |
 | CORE-003 AccountScope/Registry | 2026-09-09 ✅ | `core/account`（`@tgx/core-account`）：生命周期纯 reducer（active/hibernating/closed 终态幂等）、每账号独占 TdGateway + ScopeIsolatingBridge 事件边界隔离、restoreAll 逐账号失败隔离、迟到事件守卫丢弃；AuthorizationState 占位待 CORE-005；60/60 用例；CI 全绿；commit `832f11f` |
 | GEN-004 敏感字段元数据+脱敏 | 2026-09-09 ✅ | 生成器 `td_api_sensitive.py`（generate/verify 双模式，字节级可复现）：124 构造器/154 字段/44 类型级清单（redact 75/mask 79，三层首匹配规则表带决策注释）；产物 `td_api_generated/.../redaction/`（TdSensitiveFields 3861 行 + TdRedact）；`core/observability`（`@tgx/observability`）白名单 Logger + 双防线脱敏，43/43 用例（secret fixture 100% 拦截）；commit `4f1194e` |
+| BRG-006 生产桥 adapter | 2026-09-09 ✅ | `platform/tdcore-bridge`（`@tgx/platform-tdcore-bridge`）：TdCoreBridge 实现 TdNativeBridgeLike（getVersion/execute/createClient/send/subscribeUpdates/unsubscribe/getMetrics，可注入 native module）；entry Bootstrap.ets 装配骨架（TdCoreBridge→AccountRegistry→scope，FakeAppFiles 占位，EntryAbility 未接）；11/11 用例；CI 全绿 |
 | PLAT-002 Preferences/RDB adapter | 2026-09-09 ✅（设备项待验） | AI-Agent-K：`platform/storage` 注册为 har 模块（modules **仅追加** `platform_storage`，包名 `@tgx/platform-storage`，依赖 `@tgx/core-common` + `@tgx/platform-ports` file: 引用，oh_modules 符号链接同 ports）；**两个 PreferencesPort 生产 adapter**：`HarmonyPreferencesAdapter`（@ohos.data.preferences，open/openSync）+ `RdbPreferencesAdapter`（@ohos.data.relationalStore，open/幂等 close），共享纯 ArkTS `PreferenceStoreCore`（内存视图/同 key 合并/flush 后派发/clear 通配/失败挂起重试，语义对齐 PLAT-001 契约）；**schema+migration**：`tgx_meta(user_version)` + `tgx_kv(key,type_tag,value_text,value_real,value_integer)` 类型分列，线性版本链 `planMigrations`（up/down 双路径、缺 down 步骤拒绝回滚、版本跳跃遍历）+ `runMigrations`（每步完成先推版本标记→中断可断点续跑，Kit 层 beginTransaction/commit/rollBack 整体回滚）；fake 注入中断/升级/回滚单测 **47 用例全 Success**（`Tests run: 47, Failure: 0, Error: 0, Pass: 47`）：`./hvigorw test --mode module -p module=platform_storage@default -p product=default --no-daemon`；`assembleHar` BUILD SUCCESSFUL（Kit adapter 严格编译通过）；`src/ohosTest` 设备测试（真实落盘+重开读回/事件派发）就位**待真机**；**新工程要点**：ArkTS 收窄仅块内 `if (r.ok/r.err)` 有效（取反/early-return/else 分支均不收窄，用 getOrNull/getOrElse 或 fold 规避）；内联对象字面量类型被禁（用 interface union）；PLAT-001 contract 函数在 ports 的 src/test、跨模块相对 import 被编译器拒绝→全量 contract 复用待 test_support 包；验证矩阵/交接见 `platform/storage/README.md` |
 
 已知工程要点（runbook 已记录）：hvigorw 为 shell/JS polyglot；离线构建依赖 `~/.hvigor/project_caches`；`DEVECO_SDK_HOME` 必须指向 `…/Contents/sdk`（wrapper 已内置）；签名/真机待用户提供。

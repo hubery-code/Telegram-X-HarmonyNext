@@ -5,7 +5,16 @@
   "main": "",
   "author": "telegram-x",
   "license": "GPL-3.0",
-  "dependencies": {},
+  "dependencies": {
+    "@tgx/core-account": "file:../core/account",
+    "@tgx/core-common": "file:../core/common",
+    "@tgx/core-design-system": "file:../core/design_system",
+    "@tgx/feature-auth": "file:../feature/auth",
+    "@tgx/feature-template": "file:../feature/_template",
+    "@tgx/platform-tdcore-bridge": "file:../platform/tdcore-bridge",
+    "@tgx/platform-ports": "file:../platform/ports",
+    "@tgx/td-gateway": "file:../core/td_gateway"
+  },
   "devDependencies": {
     "@ohos/hypium": "1.0.21"
   }

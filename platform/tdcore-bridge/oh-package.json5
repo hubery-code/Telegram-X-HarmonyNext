@@ -1,0 +1,15 @@
+{
+  "name": "@tgx/platform-tdcore-bridge",
+  "version": "0.1.0",
+  "description": "Telegram X HarmonyOS platform/tdcore-bridge: production TdNativeBridgeLike adapter wrapping libtdcore_napi.so (BRG-006). Delegates to native Node-API module; sequence as decimal string (64-bit safe).",
+  "main": "./src/main/ets/Index.ets",
+  "author": "telegram-x",
+  "license": "GPL-3.0",
+  "dependencies": {
+    "@tgx/core-common": "file:../../core/common",
+    "@tgx/td-gateway": "file:../../core/td_gateway"
+  },
+  "devDependencies": {
+    "@ohos/hypium": "1.0.21"
+  }
+}
