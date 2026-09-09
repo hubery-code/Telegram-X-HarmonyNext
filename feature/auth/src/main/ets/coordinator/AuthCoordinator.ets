@@ -8,6 +8,7 @@
  */
 
 import { AppError, Result, err } from '@tgx/core-common';
+import { hilog } from '@kit.PerformanceAnalysisKit';
 import {
   AuthState,
   AuthEvent,
@@ -28,6 +29,9 @@ import {
 import { AuthEffect } from '../contract/AuthEffect';
 import { authReducer as authFeatureReducer } from '../reducer/AuthReducer';
 import { parseAuthEventFromWire } from './AuthEventParser';
+
+const DOMAIN: number = 0x0000;
+const TAG: string = 'AuthCoordinator';
 
 export interface AuthSubscriptionLike {
   unsubscribe(): void;
@@ -104,6 +108,8 @@ export class AuthCoordinator {
   private readonly listeners: AuthUiStateListener[] = [];
   private eventSubscription: AuthSubscriptionLike | null = null;
   private countdownTimerId: number | null = null;
+  private tdlibParamsSent: boolean = false;
+  private dbKeySent: boolean = false;
 
   constructor(deps: AuthCoordinatorDeps, initialState?: AuthUiState) {
     this.scope = deps.scope;
@@ -127,6 +133,11 @@ export class AuthCoordinator {
     this.eventSubscription = this.scope.subscribeEvents((event: TdRoutedEvent) => {
       this.handleIncomingEvent(event);
     });
+
+    // TDLib 在 gateway.start() 后立刻 emit 初始授权事件，但此时 eventListener
+    // 尚未注册，第一个事件被静默丢弃。这里主动补发当前状态对应的 core effect，
+    // 确保 setTdlibParameters / checkDbKey 一定被执行。
+    this.executeCoreEffectsForState(this.scope.authorization);
 
     // 初始状态同步
     this.dispatch(new OnAuthStateChanged(this.scope.authorization));
@@ -200,23 +211,58 @@ export class AuthCoordinator {
     this.dispatch(new OnAuthStateChanged(authResult.state));
   }
 
+  /**
+   * 补发当前授权状态对应的 core effect。
+   * 处理 start() 前 TDLib 已 emit 但被丢弃的初始事件（setTdlibParameters / checkDbKey）。
+   */
+  private executeCoreEffectsForState(authState: AuthState): void {
+    switch (authState.kind) {
+      case 'waitParams':
+        this.executeCoreAuthEffect({ kind: 'setTdlibParameters' });
+        break;
+      case 'waitDbKey':
+        this.executeCoreAuthEffect({ kind: 'checkDbKey' });
+        break;
+      default:
+        break;
+    }
+  }
+
   private executeCoreAuthEffect(effect: CoreAuthEffect): void {
     switch (effect.kind) {
       case 'setTdlibParameters': {
+        if (this.tdlibParamsSent) {
+          hilog.info(DOMAIN, TAG, 'setTdlibParameters already sent, skipping');
+          break;
+        }
+        this.tdlibParamsSent = true;
+        hilog.info(DOMAIN, TAG, 'executing setTdlibParameters');
         const params: TdWireObject = buildSetTdlibParametersParams(this.tdlibParameters);
         this.scope.request('setTdlibParameters', params).then((res: Result<TdWireObject, AppError>) => {
           if (res.err) {
+            hilog.error(DOMAIN, TAG, 'setTdlibParameters failed: %{public}s %{public}s', res.error.kind, res.error.message);
             this.dispatch(new OnRequestError(res.error));
+          } else {
+            hilog.info(DOMAIN, TAG, 'setTdlibParameters succeeded');
           }
         });
         break;
       }
       case 'checkDbKey': {
+        if (this.dbKeySent) {
+          hilog.info(DOMAIN, TAG, 'checkDbKey already sent, skipping');
+          break;
+        }
+        this.dbKeySent = true;
+        hilog.info(DOMAIN, TAG, 'executing checkDatabaseEncryptionKey');
         const json: string = '{"@type":"checkDatabaseEncryptionKey","encryption_key":""}';
         const parsed: Object = JSON.parse(json);
         this.scope.request('checkDatabaseEncryptionKey', parsed as TdWireObject).then((res: Result<TdWireObject, AppError>) => {
           if (res.err) {
+            hilog.error(DOMAIN, TAG, 'checkDbKey failed: %{public}s %{public}s', res.error.kind, res.error.message);
             this.dispatch(new OnRequestError(res.error));
+          } else {
+            hilog.info(DOMAIN, TAG, 'checkDbKey succeeded');
           }
         });
         break;
