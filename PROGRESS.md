@@ -24,6 +24,7 @@
 |---|---|---|---|
 | CORE-002 TdGateway+RequestRegistry | 主会话 | 2026-09-09 | request 注册表（@extra.requestId 关联 Promise/超时/取消/迟到响应）+ 有序事件流；区域：`core/td_gateway/` |
 | GEN-004 敏感字段元数据 | 主会话 | 2026-09-09 | 生成 redaction map + 日志脱敏 helper；区域：`tools/td_api_codegen/`、`core/observability/` |
+| UI-003 UiState/Intent/Effect 基类约定 | AI-Agent-M（kimi-code 子代理） | 2026-09-09 | feature 模板模块：UiState/Intent/Effect 标记约定 + Reducer 契约（env 注入 Clock/Id）+ 示例 feature + reducer 单测；区域：`feature/_template/`，登记 `build-profile.json5` 追加 `feature_template` |
 
 > ⚠️ 并行约定：**不要执行 git commit**，完成后报告文件清单由主会话统一提交。CORE-002 禁止 import ArkUI；GEN-004 不得手改生成物。
 

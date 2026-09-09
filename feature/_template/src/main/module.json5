@@ -1,0 +1,10 @@
+{
+  "module": {
+    "name": "feature_template",
+    "type": "har",
+    "description": "feature/_template: UiState/Intent/Effect 约定 + Reducer 契约 + 示例 feature（纯 ArkTS，无 ArkUI 依赖）",
+    "deviceTypes": [
+      "phone"
+    ]
+  }
+}

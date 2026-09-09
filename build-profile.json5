@@ -106,6 +106,18 @@
           ]
         }
       ]
+    },
+    {
+      "name": "feature_template",
+      "srcPath": "./feature/_template",
+      "targets": [
+        {
+          "name": "default",
+          "applyToProducts": [
+            "default"
+          ]
+        }
+      ]
     }
   ]
 }
