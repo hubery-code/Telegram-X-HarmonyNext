@@ -1,0 +1,15 @@
+# MediaKeySession
+
+```ets
+typedef struct MediaKeySession MediaKeySession
+```
+
+#### 概述
+
+MediaKeySession类型。
+
+起始版本： 12
+
+相关模块： [AVPlayer](AVPlayer.md)
+
+所在头文件： [avplayer.h](avplayer.h.md)

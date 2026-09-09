@@ -1,0 +1,12 @@
+{
+  "name": "empty-ability-smoke",
+  "version": "1.0.0",
+  "ohos": {
+    "org": "example",
+    "buildTool": "hvigor",
+    "directoryLevel": "project"
+  },
+  "description": "Minimal HarmonyOS NEXT Empty Ability smoke fixture.",
+  "license": "UNLICENSED",
+  "dependencies": {}
+}

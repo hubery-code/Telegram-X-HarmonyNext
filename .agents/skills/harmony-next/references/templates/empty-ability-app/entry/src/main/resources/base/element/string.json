@@ -1,0 +1,16 @@
+{
+  "string": [
+    {
+      "name": "module_desc",
+      "value": "Entry module"
+    },
+    {
+      "name": "EntryAbility_desc",
+      "value": "Empty Ability smoke entry"
+    },
+    {
+      "name": "EntryAbility_label",
+      "value": "Empty Ability Smoke"
+    }
+  ]
+}

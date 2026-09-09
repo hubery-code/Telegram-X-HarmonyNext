@@ -1,0 +1,269 @@
+# 用户文件URI介绍
+
+本文根据华为开发者官网 `user-file-uri-intro` 页面整理为离线版入口。
+来源：<https://developer.huawei.com/consumer/cn/doc/harmonyos-guides/user-file-uri-intro>
+更新时间：2026-04-30 02:41:24
+
+用户文件URI是文件的唯一标识，在对用户文件进行访问与修改等操作时往往都会使用到URI，不建议开发者解析URI中的片段用于业务代码开发，不同类型的URI使用方式将在下文详细介绍。
+
+## URI的类型
+
+URI类型可以归纳为文档类URI和媒体文件URI两类
+
+- 文档类URI：由picker拉起文件管理器选择或保存返回。具体获取方式参见文档类URI获取方式。
+- 媒体文件URI：由picker通过拉起图库选择图片或者视频返回，通过photoAccessHelper模块获取图片或者视频文件的URI，以及通过userFileManager模块获取图片、视频或者音频文件的URI。具体获取方式参见媒体文件URI获取方式。
+
+## 文档类URI
+
+## 文档类URI介绍
+
+文档类URI的格式类型为：
+
+'file://docs/storage/Users/currentUser/<relative_path>/test.txt'
+
+其中各个字段表示的含义为：
+
+URI字段
+
+说明
+
+'file://docs/storage/Users/currentUser/'
+
+文件管理器的根目录。
+
+'<relative_path>/'
+
+文件在根目录下的相对路径。例如：'Download/'和'Documents/'。
+
+'test.txt'
+
+用户文件系统中存储的文件名，支持的文件类型为文件管理器支持的所有类型，以文件管理器为准。例如txt、jpg、mp4和mp3等格式的文件。
+
+## 文档类URI获取方式
+
+- 通过DocumentViewPicker接口选择或保存文件，返回选择或保存的文件URI。
+- 通过AudioViewPicker接口选择或保存文件，返回选择或保存的文件URI。
+
+## 文档类URI的使用方式
+
+应用使用此类URI可通过文件管理进行进一步处理。示例代码参见picker中的选择文档类文件和保存文档类文件。
+
+## 媒体文件URI
+
+## 媒体文件URI介绍
+
+媒体文件URI的格式类型为：
+
+图片URI格式：
+
+- 'file://media/Photo/<id>/IMG_datetime_0001/displayName.jpg'
+
+视频URI格式：
+
+- 'file://media/Photo/<id>/VID_datetime_0001/displayName.mp4'
+
+音频URI格式：
+
+- 'file://media/Audio/<id>/AUD_datetime_0001/displayName.mp3'
+
+其中各个字段表示的含义为：
+
+URI字段
+
+说明
+
+'file://media'
+
+表示这个URI是媒体文件。
+
+'Photo'
+
+表示这个URI是媒体文件中的图片或者视频类文件。
+
+'Audio'
+
+表示这个URI是媒体文件中的音频类文件。
+
+'<id>'
+
+表示在数据库中多个表中处理后的值，并不是指表中的file_id列，注意请不要使用此id去数据库中查询具体文件。
+
+'IMG_datetime_0001'
+
+表示图片文件在用户文件系统中存储的文件名去掉后缀剩下的部分。
+
+'VID_datetime_0001'
+
+表示视频文件在用户文件系统中存储的文件名去掉后缀剩下的部分。
+
+'AUD_datetime_0001'
+
+表示音频文件在用户文件系统中存储的文件名去掉后缀剩下的部分。
+
+## 媒体文件URI获取方式
+
+- 通过PhotoAccessHelper的PhotoViewPicker选择媒体文件，返回选择的媒体文件的URI。
+- 通过photoAccessHelper模块中的getAssets或createAsset接口获取媒体文件对应文件的URI。
+
+## 媒体文件URI的使用方式
+
+normal等级的应用使用此类URI可以通过photoAccessHelper模块进行进一步处理。示例代码参见媒体资源使用指导中的指定URI获取图片或视频资源。此接口需要申请相册管理模块读权限（ohos.permission.READ_IMAGEVIDEO），在使用中需要注意应用是否有此权限。
+
+若normal等级的应用不想申请权限也可以通过临时授权的方式使用PhotoAccessHelper的PhotoViewPicker得到的URI使用photoAccessHelper.getAssets接口获取对应URI的PhotoAsset对象。通过此方式获取的PhotoAsset对象可调用getThumbnail方法获取缩略图，并通过get接口方法读取PhotoKeys中的部分信息。
+
+以下为PhotoKeys中支持临时授权方式可以读取的信息：
+
+名称
+
+值
+
+说明
+
+URI
+
+'uri'
+
+文件URI。
+
+PHOTO_TYPE
+
+'media_type'
+
+媒体文件类型。
+
+DISPLAY_NAME
+
+'display_name'
+
+显示名字。
+
+SIZE
+
+'size'
+
+文件大小。
+
+DATE_ADDED
+
+'date_added'
+
+文件创建时的Unix时间戳（单位：秒）。
+
+DATE_MODIFIED
+
+'date_modified'
+
+文件修改时的Unix时间戳（单位：秒）。修改文件名不会改变此值，当文件内容发生修改时才会更新。
+
+DURATION
+
+'duration'
+
+持续时间（单位：毫秒）。
+
+WIDTH
+
+'width'
+
+图片宽度（单位：像素）。
+
+HEIGHT
+
+'height'
+
+图片高度（单位：像素）。
+
+DATE_TAKEN
+
+'date_taken'
+
+拍摄时的Unix时间戳（单位：秒）。
+
+ORIENTATION
+
+'orientation'
+
+图片文件的方向。
+
+TITLE
+
+'title'
+
+文件标题。
+
+下面为通过临时授权方式使用媒体文件URI进行获取缩略图和读取文件部分信息的示例代码：
+
+```text
+import { BusinessError } from '@kit.BasicServicesKit';
+// ...
+import { common } from '@kit.AbilityKit';
+// ...
+import { dataSharePredicates } from '@kit.ArkData';
+// ...
+import { photoAccessHelper } from '@kit.MediaLibraryKit';
+
+// 定义一个uri数组，用于接收PhotoViewPicker选择图片返回的uri
+let uris: string[] = [];
+
+// ...
+
+// 调用PhotoViewPicker.select选择图片
+async function photoPickerGetUri() {
+  try {
+    let photoSelectOptions = new photoAccessHelper.PhotoSelectOptions();
+    photoSelectOptions.MIMEType = photoAccessHelper.PhotoViewMIMETypes.IMAGE_TYPE;
+    // 设置最多可以选择的图片数量为1
+    photoSelectOptions.maxSelectNumber = 1;
+    let photoPicker = new photoAccessHelper.PhotoViewPicker();
+    // 等待用户选择图片
+    let photoSelectResult: photoAccessHelper.PhotoSelectResult = await photoPicker.select(photoSelectOptions);
+    console.info('PhotoViewPicker.select successfully, PhotoSelectResult uri: ' + JSON.stringify(photoSelectResult));
+    uris = photoSelectResult.photoUris;
+  } catch (err) {
+    let error: BusinessError = err as BusinessError;
+    console.error(`PhotoViewPicker failed with err, code is ${error.code}, message is ${error.message}`);
+  }
+}
+
+// 请在组件内获取context
+async function uriGetAssets(context: common.UIAbilityContext): Promise<string> {
+  // 检查uris数组是否为空
+  if (uris.length === 0) {
+    throw new Error('No URIs available');
+  }
+  try {
+    let phAccessHelper = photoAccessHelper.getPhotoAccessHelper(context);
+    let predicates: dataSharePredicates.DataSharePredicates = new dataSharePredicates.DataSharePredicates();
+    // 配置查询条件，使用PhotoViewPicker选择图片返回的uri进行查询
+    predicates.equalTo('uri', uris[0]);
+    let fetchOption: photoAccessHelper.FetchOptions = {
+      fetchColumns: [photoAccessHelper.PhotoKeys.WIDTH, photoAccessHelper.PhotoKeys.HEIGHT,
+        photoAccessHelper.PhotoKeys.TITLE, photoAccessHelper.PhotoKeys.DURATION],
+      predicates: predicates
+    };
+    let fetchResult: photoAccessHelper.FetchResult<photoAccessHelper.PhotoAsset> =
+      await phAccessHelper.getAssets(fetchOption);
+    // 得到uri对应的PhotoAsset对象，读取文件的部分信息
+    const asset: photoAccessHelper.PhotoAsset = await fetchResult.getFirstObject();
+    console.info('asset displayName: ', asset.displayName);
+    console.info('asset uri: ', asset.uri);
+    console.info('asset photoType: ', asset.photoType);
+    console.info('asset width: ', asset.get(photoAccessHelper.PhotoKeys.WIDTH));
+    console.info('asset height: ', asset.get(photoAccessHelper.PhotoKeys.HEIGHT));
+    console.info('asset title: ' + asset.get(photoAccessHelper.PhotoKeys.TITLE));
+    // 获取缩略图
+    asset.getThumbnail((err, pixelMap) => {
+      if (err == undefined) {
+        console.info('getThumbnail successful ' + JSON.stringify(pixelMap));
+      } else {
+        console.error('getThumbnail fail', err);
+      }
+    });
+    // ...
+  } catch (error) {
+    console.error(`uriGetAssets failed with err, code is ${error.code}, message is ${error.message}`);
+    return 'ReadMediaUriFail';
+  }
+  return 'ReadMediaUriFail';
+}
+```

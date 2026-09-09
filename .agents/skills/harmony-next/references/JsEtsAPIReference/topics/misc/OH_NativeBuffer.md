@@ -1,0 +1,11 @@
+# [OH_NativeBuffer](OH_NativeBuffer.md)
+
+#### 概述
+
+OH_NativeBuffer结构体声明。
+
+起始版本： 10
+
+相关模块： [Vulkan](Vulkan.md)
+
+所在头文件： [vulkan_ohos.h](vulkan_ohos.h.md)

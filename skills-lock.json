@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "harmony-next": {
+      "source": "linhay/harmony-next.skills",
+      "sourceType": "github",
+      "skillPath": "harmony-next/SKILL.md",
+      "computedHash": "38ea69994d905b0ddf52da2e8d22a5c46554915f4a2d07064de05f2b128cbe88"
+    }
+  }
+}
