@@ -22,7 +22,6 @@
 
 | 工作包 | 负责人(AI) | 开始时间 | 说明 |
 |---|---|---|---|
-| LIFE-001 EntryAbility 前后台协调 | AI-Agent-Antigravity | 2026-09-09 | 负责 LifecycleCoordinator、杀进程恢复、网络状态与前后台状态同步；区域：`entry/` |
 
 > ⚠️ 并行约定：**不要执行 git commit**，完成后报告文件清单由主会话统一提交。core/account 禁止 import ArkUI/Kit。项目内有 `.agents/skills/harmony-next/` 离线参考（API 12-23 快照），编码遇 API 问题可查。
 
@@ -52,6 +51,7 @@
 
 | 工作包 | 完成日期 | 证据 |
 |---|---|---|
+| LIFE-001 EntryAbility 前后台协调 | 2026-09-09 ✅ | AI-Agent-Antigravity：`entry/lifecycle`（LifecycleCoordinator：restoreAll 杀进程恢复与兜底建号、onForeground/onBackground 状态流转、NetworkStatePort.observe 动态网络监听、mapSnapshotToNetworkType 映射 SetNetworkType 广播至各活跃 scope、onDestroy 退订与关闭）；EntryAbility 回调（onForeground/onBackground/onDestroy）全链路接通；Bootstrap 装配 ConnectivityAdapter；`assembleHap` BUILD SUCCESSFUL（生成 entry-default-signed.hap 51MB）；commit `dab01fd` |
 | CHATLIST-001 chat list domain projection | 2026-09-09 ✅ | AI-Agent-Antigravity：新建 `core/domain` 模块（`@tgx/core-domain`）；ChatRegistry 单一事实源 + ChatListProjection（order 64位 BigInt 降序排列、(order, chat.id) 比较、增量位置更新、loadNextPage 分页）；`assembleHar` BUILD SUCCESSFUL；commit `75e8613`+`63f75b7` |
 | CHATLIST-002 chat list ArkUI | 2026-09-09 ✅ | 子agent-27：`feature/chat_list` har 模块（`@tgx/feature-chat-list`）；ChatListPage LazyForEach 列表（头像彩色圆+首字母、标题、预览截断、时间戳、未读角标）+ MVI contract（ChatListUiState/ChatListIntent/ChatListEffect/chatListReducer）+ MockChatData 50 条确定性 mock；`assembleHar` BUILD SUCCESSFUL；commit `eec44b1` |
 | PLAT-003 HUKS 安全密钥存储 | 2026-09-09 ✅ | 子agent-28：`platform/keystore` har 模块（`@tgx/platform-keystore`）；HarmonySecureKeyStore 实现 SecureKeyStorePort（Asset Store Kit：put/get/remove/getStatus，DEVICE_UNLOCKED 可达性、OVERWRITE 冲突、NEVER 同步、稳定错误码映射）；`assembleHar` BUILD SUCCESSFUL；commit `eec44b1` |
