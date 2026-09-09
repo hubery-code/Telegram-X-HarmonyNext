@@ -1,0 +1,252 @@
+/**
+ * feature/auth — 登录协调器（AUTH-001）。
+ *
+ * 桥接 core/account 的 AccountScope 与 feature/auth 的 AuthReducer：
+ * - 接收 UI Intent 并经 authReducer 驱动状态更新
+ * - 执行 AuthEffect（向 AccountScope 发起 TDLib 请求）
+ * - 订阅 AccountScope 的事件流，解析 updateAuthorizationState 并驱动内部状态
+ */
+
+import { AppError, Result } from '@tgx/core-common';
+import {
+  AuthState,
+  AuthEvent,
+  AuthReducerResult,
+  authReducer,
+  AuthorizationStateHolder
+} from '@tgx/core-account';
+import { ReducerEnv, ReducerResult } from '@tgx/feature-template';
+import { TdRoutedEvent, TdWireObject } from '@tgx/td-gateway';
+import { AuthUiState } from '../contract/AuthUiState';
+import {
+  AuthIntent,
+  CountdownTick,
+  OnAuthStateChanged,
+  OnRequestError
+} from '../contract/AuthIntent';
+import { AuthEffect } from '../contract/AuthEffect';
+import { authReducer as authFeatureReducer } from '../reducer/AuthReducer';
+import { parseAuthEventFromWire } from './AuthEventParser';
+
+export interface AuthSubscriptionLike {
+  unsubscribe(): void;
+}
+
+export interface AuthAccountScopeLike {
+  readonly accountId: string;
+  readonly authorization: AuthState;
+  readonly authorizationHolder: AuthorizationStateHolder;
+  request(method: string, params?: TdWireObject): Promise<Result<TdWireObject, AppError>>;
+  subscribeEvents(listener: (event: TdRoutedEvent) => void): AuthSubscriptionLike;
+}
+
+export type AuthUiStateListener = (state: AuthUiState) => void;
+
+export interface AuthCoordinatorDeps {
+  readonly scope: AuthAccountScopeLike;
+  readonly env: ReducerEnv;
+  readonly onNavigate?: (route: string) => void;
+  readonly onToast?: (message: string) => void;
+}
+
+function wireParam1(key: string, value: string): TdWireObject {
+  const json: string = `{"${key}":${JSON.stringify(value)}}`;
+  const parsed: Object = JSON.parse(json);
+  return parsed as TdWireObject;
+}
+
+function wireParam2(k1: string, v1: string, k2: string, v2: string): TdWireObject {
+  const json: string = `{"${k1}":${JSON.stringify(v1)},"${k2}":${JSON.stringify(v2)}}`;
+  const parsed: Object = JSON.parse(json);
+  return parsed as TdWireObject;
+}
+
+export class AuthCoordinator {
+  private readonly scope: AuthAccountScopeLike;
+  private readonly env: ReducerEnv;
+  private readonly onNavigate?: (route: string) => void;
+  private readonly onToast?: (message: string) => void;
+
+  private currentState: AuthUiState;
+  private readonly listeners: AuthUiStateListener[] = [];
+  private eventSubscription: AuthSubscriptionLike | null = null;
+  private countdownTimerId: number | null = null;
+
+  constructor(deps: AuthCoordinatorDeps, initialState?: AuthUiState) {
+    this.scope = deps.scope;
+    this.env = deps.env;
+    this.onNavigate = deps.onNavigate;
+    this.onToast = deps.onToast;
+    this.currentState = initialState !== undefined ? initialState : AuthUiState.initial();
+  }
+
+  get state(): AuthUiState {
+    return this.currentState;
+  }
+
+  start(): void {
+    if (this.eventSubscription !== null) {
+      return;
+    }
+
+    // 订阅 scope 的事件流
+    this.eventSubscription = this.scope.subscribeEvents((event: TdRoutedEvent) => {
+      this.handleIncomingEvent(event);
+    });
+
+    // 初始状态同步
+    this.dispatch(new OnAuthStateChanged(this.scope.authorization));
+  }
+
+  destroy(): void {
+    if (this.eventSubscription !== null) {
+      this.eventSubscription.unsubscribe();
+      this.eventSubscription = null;
+    }
+    this.stopCountdownTimer();
+    this.listeners.length = 0;
+  }
+
+  subscribe(listener: AuthUiStateListener): () => void {
+    this.listeners.push(listener);
+    listener(this.currentState);
+    return () => {
+      const idx: number = this.listeners.indexOf(listener);
+      if (idx >= 0) {
+        this.listeners.splice(idx, 1);
+      }
+    };
+  }
+
+  dispatch(intent: AuthIntent): void {
+    const result: ReducerResult<AuthUiState, AuthEffect> = authFeatureReducer(
+      this.currentState,
+      intent,
+      this.env
+    );
+
+    const stateChanged: boolean = result.state !== this.currentState;
+    this.currentState = result.state;
+
+    if (stateChanged) {
+      for (let i = 0; i < this.listeners.length; i++) {
+        this.listeners[i](this.currentState);
+      }
+    }
+
+    if (result.effects !== undefined && result.effects.length > 0) {
+      for (let i = 0; i < result.effects.length; i++) {
+        this.executeEffect(result.effects[i]);
+      }
+    }
+  }
+
+  private handleIncomingEvent(event: TdRoutedEvent): void {
+    const authEvent: AuthEvent | null = parseAuthEventFromWire(event.payload);
+    if (authEvent === null) {
+      return;
+    }
+
+    // 驱动 core/account 的底层状态机
+    const authResult: AuthReducerResult = authReducer(
+      this.scope.authorization,
+      authEvent,
+      { accountId: this.scope.accountId }
+    );
+    this.scope.authorizationHolder.replace(authResult.state);
+
+    // 同步到 UI 状态
+    this.dispatch(new OnAuthStateChanged(authResult.state));
+  }
+
+  private executeEffect(effect: AuthEffect): void {
+    switch (effect.kind) {
+      case 'sendPhoneNumber': {
+        const params: TdWireObject = wireParam1('phone_number', effect.phoneNumber);
+        this.scope.request('setAuthenticationPhoneNumber', params).then((res: Result<TdWireObject, AppError>) => {
+          if (res.err) {
+            this.dispatch(new OnRequestError(res.error));
+          }
+        });
+        break;
+      }
+
+      case 'checkCode': {
+        const params: TdWireObject = wireParam1('code', effect.code);
+        this.scope.request('checkAuthenticationCode', params).then((res: Result<TdWireObject, AppError>) => {
+          if (res.err) {
+            this.dispatch(new OnRequestError(res.error));
+          }
+        });
+        break;
+      }
+
+      case 'resendCode': {
+        this.scope.request('resendAuthenticationCode').then((res: Result<TdWireObject, AppError>) => {
+          if (res.err) {
+            this.dispatch(new OnRequestError(res.error));
+          }
+        });
+        break;
+      }
+
+      case 'checkPassword': {
+        const params: TdWireObject = wireParam1('password', effect.password);
+        this.scope.request('checkAuthenticationPassword', params).then((res: Result<TdWireObject, AppError>) => {
+          if (res.err) {
+            this.dispatch(new OnRequestError(res.error));
+          }
+        });
+        break;
+      }
+
+      case 'registerUser': {
+        const params: TdWireObject = wireParam2('first_name', effect.firstName, 'last_name', effect.lastName);
+        this.scope.request('registerUser', params).then((res: Result<TdWireObject, AppError>) => {
+          if (res.err) {
+            this.dispatch(new OnRequestError(res.error));
+          }
+        });
+        break;
+      }
+
+      case 'startCountdown': {
+        this.startCountdownTimer();
+        break;
+      }
+
+      case 'stopCountdown': {
+        this.stopCountdownTimer();
+        break;
+      }
+
+      case 'navigateToRoute': {
+        if (this.onNavigate !== undefined) {
+          this.onNavigate(effect.routeName);
+        }
+        break;
+      }
+
+      case 'showToast': {
+        if (this.onToast !== undefined) {
+          this.onToast(effect.messageKey);
+        }
+        break;
+      }
+    }
+  }
+
+  private startCountdownTimer(): void {
+    this.stopCountdownTimer();
+    this.countdownTimerId = setInterval(() => {
+      this.dispatch(new CountdownTick());
+    }, 1000);
+  }
+
+  private stopCountdownTimer(): void {
+    if (this.countdownTimerId !== null) {
+      clearInterval(this.countdownTimerId);
+      this.countdownTimerId = null;
+    }
+  }
+}

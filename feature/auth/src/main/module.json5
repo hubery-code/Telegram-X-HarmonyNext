@@ -1,0 +1,10 @@
+{
+  "module": {
+    "name": "feature_auth",
+    "type": "har",
+    "deviceTypes": [
+      "default",
+      "tablet"
+    ]
+  }
+}

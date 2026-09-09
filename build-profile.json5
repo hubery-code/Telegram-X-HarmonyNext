@@ -190,6 +190,19 @@
           ]
         }
       ]
+    },
+    {
+      "name": "feature_auth",
+      "srcPath": "./feature/auth",
+      "targets": [
+        {
+          "name": "default",
+          "applyToProducts": [
+            "default"
+          ]
+        }
+      ]
     }
   ]
 }
+
