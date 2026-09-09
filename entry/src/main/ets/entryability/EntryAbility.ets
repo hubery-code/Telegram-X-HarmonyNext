@@ -40,7 +40,7 @@ export default class EntryAbility extends UIAbility {
     const result: BootstrapResult | undefined = AppStorage.get<BootstrapResult>('bootstrapResult');
     if (result !== undefined && result !== null) {
       result.coordinator.destroy();
-      result.registry.stop();
+      result.lifecycle.onDestroy();
     }
   }
 
@@ -60,9 +60,17 @@ export default class EntryAbility extends UIAbility {
 
   onForeground(): void {
     hilog.info(DOMAIN, TAG, 'onForeground');
+    const result: BootstrapResult | undefined = AppStorage.get<BootstrapResult>('bootstrapResult');
+    if (result !== undefined && result !== null) {
+      result.lifecycle.onForeground();
+    }
   }
 
   onBackground(): void {
     hilog.info(DOMAIN, TAG, 'onBackground');
+    const result: BootstrapResult | undefined = AppStorage.get<BootstrapResult>('bootstrapResult');
+    if (result !== undefined && result !== null) {
+      result.lifecycle.onBackground();
+    }
   }
 }

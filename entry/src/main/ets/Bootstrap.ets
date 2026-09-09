@@ -1,15 +1,10 @@
 /**
- * entry — Bootstrap：真机授权链路装配（SPIKE-001）。
+ * entry — Bootstrap：真机授权链路与生命周期装配（SPIKE-001 + LIFE-001）。
  *
  * 链路：
- *   HarmonyAppFilesAdapter → TdCoreBridge → AccountRegistry → create('default')
+ *   HarmonyAppFilesAdapter + ConnectivityAdapter + TdCoreBridge → AccountRegistry
+ *   → LifecycleCoordinator.start() 恢复/创建账号 → primaryScope
  *   → ScopeAuthAdapter → AuthCoordinator
- *
- * EntryAbility.onCreate 调用 bootstrap()，返回 AuthCoordinator 供 Index.ets 使用。
- * scope.gatewayInstance.start() 已在 AccountScope.open(startActive=true) 中完成。
- * TDLib 启动后 emit authorizationStateWaitTdlibParameters →
- * AuthCoordinator.handleIncomingEvent → core authReducer emits setTdlibParameters effect →
- * AuthCoordinator.executeCoreAuthEffect → scope.request('setTdlibParameters', params)。
  */
 
 import { TdCoreBridge } from '@tgx/platform-tdcore-bridge';
@@ -27,19 +22,27 @@ import {
   AuthCoordinatorDeps,
   TdlibParametersConfig
 } from '@tgx/feature-auth';
+import { NetworkStatePort } from '@tgx/platform-ports';
+import { ConnectivityAdapter } from '@tgx/platform-network';
 import { ScopeAuthAdapter } from './ScopeAuthAdapter';
+import {
+  LifecycleCoordinator,
+  LifecycleBootstrapReport
+} from './lifecycle/LifecycleCoordinator';
 
 export interface BootstrapResult {
   readonly coordinator: AuthCoordinator;
   readonly registry: AccountRegistry;
   readonly scope: AccountScope;
   readonly bridge: TdCoreBridge;
+  readonly lifecycle: LifecycleCoordinator;
 }
 
 export function bootstrap(
   filesDir: string,
   cacheDir: string,
-  tdlibParams: TdlibParametersConfig
+  tdlibParams: TdlibParametersConfig,
+  networkPort?: NetworkStatePort
 ): BootstrapResult {
   const bridge: TdCoreBridge = new TdCoreBridge();
   const files: HarmonyAppFilesAdapter = new HarmonyAppFilesAdapter(filesDir, cacheDir);
@@ -49,11 +52,14 @@ export function bootstrap(
   };
   const registry: AccountRegistry = new AccountRegistry(options);
   registry.start();
-  const created = registry.create('default');
-  if (created.ok === false) {
-    throw new Error(`bootstrap: failed to create default scope: ${created.error.kind}`);
-  }
-  const scope: AccountScope = created.value;
+
+  const network: NetworkStatePort = networkPort !== undefined ? networkPort : new ConnectivityAdapter();
+  const lifecycle: LifecycleCoordinator = new LifecycleCoordinator({
+    registry: registry,
+    network: network
+  });
+  const report: LifecycleBootstrapReport = lifecycle.start();
+  const scope: AccountScope = report.primaryScope;
 
   const authScope: ScopeAuthAdapter = new ScopeAuthAdapter(scope);
   const env: ReducerEnv = {
@@ -74,6 +80,7 @@ export function bootstrap(
     coordinator: coordinator,
     registry: registry,
     scope: scope,
-    bridge: bridge
+    bridge: bridge,
+    lifecycle: lifecycle
   };
 }
