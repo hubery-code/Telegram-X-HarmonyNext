@@ -138,7 +138,7 @@ export class AccountScope {
     return this.lifecycleState;
   }
 
-  /** 授权状态（占位，转换 reducer 归 CORE-005）。UI 只读。 */
+  /** 授权状态（CORE-005 的 authReducer 经 authorizationHolder.replace 提交）。UI 只读。 */
   get authorization(): AuthorizationState {
     return this.authHolder.current;
   }

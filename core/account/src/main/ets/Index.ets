@@ -5,8 +5,29 @@ export {
   reduceAccountLifecycle
 } from './AccountLifecycle';
 export {
+  LoginType,
+  AuthState,
+  AuthStateWaitParams,
+  AuthStateWaitDbKey,
+  AuthStateWaitPhone,
+  AuthStateWaitCode,
+  AuthStateWait2FA,
+  AuthStateWaitRegistration,
+  AuthStateReady,
+  AuthStateLoggingOut,
+  AuthStateClosing,
+  AuthStateClosed,
+  AuthStateFailed,
+  INITIAL_AUTH_STATE,
   AuthorizationState,
   INITIAL_AUTHORIZATION_STATE,
+  AuthCodeInfo,
+  AuthEvent,
+  AuthEffect,
+  AuthReducerDeps,
+  AuthReducerResult,
+  authReducer,
+  AuthorizationStateMachine,
   AuthorizationStateHolder
 } from './AuthorizationState';
 export {

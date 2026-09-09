@@ -216,11 +216,11 @@ export default function accountScopeTest() {
 
     it('authorizationHolder_initialWaitParams_replaceableForCore005', 0, () => {
       const h: ScopeHarness = newScopeHarness(true, 'acc-a');
-      expect(h.scope.authorization).assertEqual('waitParams');
-      h.scope.authorizationHolder.replace('ready');
-      expect(h.scope.authorization).assertEqual('ready');
-      h.scope.authorizationHolder.replace('waitCode');
-      expect(h.scope.authorization).assertEqual('waitCode');
+      expect(h.scope.authorization.kind).assertEqual('waitParams');
+      h.scope.authorizationHolder.replace({ kind: 'ready' });
+      expect(h.scope.authorization.kind).assertEqual('ready');
+      h.scope.authorizationHolder.replace({ kind: 'waitCode', phoneOrEmail: '', resendTimeoutMs: 0, codeLength: 5 });
+      expect(h.scope.authorization.kind).assertEqual('waitCode');
     });
 
     it('resolveAccountPath_goesThroughFilesPort', 0, () => {
