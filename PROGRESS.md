@@ -22,6 +22,7 @@
 
 | 工作包 | 负责人(AI) | 开始时间 | 说明 |
 |---|---|---|---|
+| CHAT-003 composer + send text | 主会话(kimi) | 2026-09-10 | 聊天页底部输入栏 + TDLib sendMessage 文本发送 + 发送态展示，feature/chat 模块 |
 
 > ⚠️ 并行约定：**不要执行 git commit**，完成后报告文件清单由主会话统一提交。core/account 禁止 import ArkUI/Kit。项目内有 `.agents/skills/harmony-next/` 离线参考（API 12-23 快照），编码遇 API 问题可查。
 

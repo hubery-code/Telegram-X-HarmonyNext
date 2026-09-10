@@ -1,5 +1,5 @@
 /**
- * feature/chat — 会话页纯 Reducer（CHAT-001）。
+ * feature/chat — 会话页纯 Reducer（CHAT-001 + CHAT-003）。
  *
  * 遵循计划 §5.11 / UI-003：
  * - 纯函数：(state, intent, env) -> ReducerResult<ChatUiState, ChatEffect>
@@ -12,12 +12,15 @@ import { ChatUiState } from '../contract/ChatUiState';
 import {
   ChatIntent,
   OnMessagesLoaded,
-  OnMessagesLoadFailed
+  OnMessagesLoadFailed,
+  ComposerTextChanged,
+  OnMessageSendFailed
 } from '../contract/ChatIntent';
 import {
   ChatEffect,
   FetchInitialMessages,
   FetchOlderMessages,
+  SendTextMessage,
   NavigateBack
 } from '../contract/ChatEffect';
 
@@ -67,6 +70,39 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
       const nextState: ChatUiState = state.copyWith({
         isLoading: false,
         errorMessage: failedIntent.error.message
+      });
+      return reduced(nextState);
+    }
+
+    case 'composerTextChanged': {
+      const changedIntent: ComposerTextChanged = intent as ComposerTextChanged;
+      // 输入即清掉陈旧错误（发送失败/加载失败），不打断正在打的字。
+      const nextState: ChatUiState = state.copyWith({
+        composerText: changedIntent.text,
+        errorMessage: null
+      });
+      return reduced(nextState);
+    }
+
+    case 'sendCurrentMessage': {
+      // 空文本（trim 后）不发送；发送后立即清空输入栏（乐观清空，
+      // 失败由 OnMessageSendFailed 回灌 errorMessage 提示，不回填文本）。
+      const text: string = state.composerText.trim();
+      if (text.length === 0) {
+        return reduced(state);
+      }
+      const nextState: ChatUiState = state.copyWith({
+        composerText: '',
+        errorMessage: null
+      });
+      const effects: ChatEffect[] = [new SendTextMessage(state.chatId, text)];
+      return reduced(nextState, effects);
+    }
+
+    case 'onMessageSendFailed': {
+      const sendFailedIntent: OnMessageSendFailed = intent as OnMessageSendFailed;
+      const nextState: ChatUiState = state.copyWith({
+        errorMessage: sendFailedIntent.error.message
       });
       return reduced(nextState);
     }

@@ -23,20 +23,25 @@ import {
   encodeGetChatHistory,
   encodeOpenChat,
   encodeCloseChat,
+  encodeSendMessage,
   GetChatHistory,
   OpenChat,
   CloseChat,
+  SendMessage,
+  InputMessageText,
+  FormattedText,
   Message,
   TdJsonRaw,
   TdUpdate,
   UpdateNewMessage,
   UpdateMessageContent,
   UpdateMessageEdited,
+  UpdateMessageSendSucceeded,
   UpdateDeleteMessages
 } from '@tgx/core-td-api-generated';
 import { AccountScope } from '@tgx/core-account';
 import { TdUpdateSubscription, TdPendingRequest, TdWireObject, TdWireValue } from '@tgx/td-gateway';
-import { Result, AppError } from '@tgx/core-common';
+import { Result, AppError, AppErrors, err } from '@tgx/core-common';
 
 export interface MessageListState {
   /** 按 message.id 升序（最旧在前）。 */
@@ -152,6 +157,33 @@ export class MessageProjection {
     return this.requestHistory(this.orderedIds[0], 0, limit);
   }
 
+  /**
+   * 发送文本消息（CHAT-003）：组 inputMessageText 调 sendMessage。
+   * trim 后为空直接判 parameter/missing，不发起请求；成功/失败经返回的
+   * Result 与 pendingRequest.promise 透传给调用方。
+   * 发出的消息经 updateNewMessage 进入列表、经 updateMessageSendSucceeded /
+   * updateMessageSendFailed 结算发送态，均由现有更新订阅处理，这里不手动插入。
+   */
+  sendTextMessage(text: string): Result<TdPendingRequest, AppError> {
+    const trimmed: string = text.trim();
+    if (trimmed.length === 0) {
+      return err<TdPendingRequest, AppError>(
+        AppErrors.parameter('missing', 'text', 'message text is empty')
+      );
+    }
+    const formatted: FormattedText = new FormattedText();
+    formatted.text = trimmed;
+
+    const content: InputMessageText = new InputMessageText();
+    content.text = formatted;
+
+    const req: SendMessage = new SendMessage();
+    req.chat_id = this.chatId;
+    req.input_message_content = content;
+
+    return this.scope.request('sendMessage', encodeSendMessage(req) as TdWireObject);
+  }
+
   private requestHistory(fromMessageId: number, offset: number, limit: number): Result<TdPendingRequest, AppError> {
     const req: GetChatHistory = new GetChatHistory();
     req.chat_id = this.chatId;
@@ -222,6 +254,23 @@ export class MessageProjection {
     if (update.type === 'updateNewMessage') {
       const message: Message | null = (update as UpdateNewMessage).message;
       if (message !== null && message.chat_id === this.chatId) {
+        this.upsertMessages([message]);
+        this.notifyStateChanged();
+      }
+    } else if (update.type === 'updateMessageSendSucceeded' || update.type === 'updateMessageSendFailed') {
+      // 发送结算（CHAT-003）：发出的消息先以临时 id + pending 态进列表，
+      // 结算时把临时 id 换成正式消息（成功，sending_state=null）或失败态消息
+      // （失败，sending_state=failed）。Succeeded/Failed 两个类的 message 与
+      // old_message_id 字段同构，统一按 Succeeded 形状取。
+      const sendUpdate: UpdateMessageSendSucceeded = update as UpdateMessageSendSucceeded;
+      const message: Message | null = sendUpdate.message;
+      if (message !== null && message.chat_id === this.chatId) {
+        if (this.messagesById.delete(sendUpdate.old_message_id)) {
+          const idx: number = this.orderedIds.indexOf(sendUpdate.old_message_id);
+          if (idx >= 0) {
+            this.orderedIds.splice(idx, 1);
+          }
+        }
         this.upsertMessages([message]);
         this.notifyStateChanged();
       }

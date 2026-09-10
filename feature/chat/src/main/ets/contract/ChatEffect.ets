@@ -1,5 +1,5 @@
 /**
- * feature/chat — 会话页副作用描述（CHAT-001）。
+ * feature/chat — 会话页副作用描述（CHAT-001 + CHAT-003）。
  *
  * Effect 是一次性副作用的描述，由 Coordinator 执行，reducer 严禁执行。
  */
@@ -24,6 +24,17 @@ export class FetchOlderMessages implements Effect {
   }
 }
 
+export class SendTextMessage implements Effect {
+  readonly kind: 'sendTextMessage' = 'sendTextMessage';
+  readonly chatId: number;
+  readonly text: string;
+
+  constructor(chatId: number, text: string) {
+    this.chatId = chatId;
+    this.text = text;
+  }
+}
+
 export class NavigateBack implements Effect {
   readonly kind: 'navigateBack' = 'navigateBack';
 }
@@ -31,4 +42,5 @@ export class NavigateBack implements Effect {
 export type ChatEffect =
   | FetchInitialMessages
   | FetchOlderMessages
+  | SendTextMessage
   | NavigateBack;

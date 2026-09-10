@@ -1,39 +1,44 @@
 /**
- * feature/chat — 会话页协调器（CHAT-001 + CHAT-002 基础）。
+ * feature/chat — 会话页协调器（CHAT-001 + CHAT-002 基础 + CHAT-003 发送）。
  *
  * 桥接 core/domain 的 MessageProjection 与本模块的 MVI：
  * - dispatch 经 chatReducer 驱动 ChatUiState，并执行 Effect
  *   （FetchInitialMessages / FetchOlderMessages → projection 的 getChatHistory 分页；
- *   NavigateBack → onBack 回调，由装配层销毁本 coordinator 并切回会话列表）；
+ *   SendTextMessage → projection.sendTextMessage，请求级/响应级失败回灌
+ *   OnMessageSendFailed；NavigateBack → onBack 回调，由装配层销毁本 coordinator
+ *   并切回会话列表）；
  * - projection 状态变化时把 Message 映射为 MessageItem[]（文本消息取原文，
  *   多媒体按类型出占位标签），经 OnMessagesLoaded 回灌 reducer；
  * - TDLib 更新成批到达，经 setTimeout(0) 合并为一个同步点，避免反复重绘。
+ * - 日志不记录消息正文，send 结果只记 ok/err 与稳定错误分类。
  *
  * 生命周期：start() 打开会话（openChat + 首屏加载），destroy() 关闭（closeChat）。
  */
 
 import { hilog } from '@kit.PerformanceAnalysisKit';
-import { ManualClock, SequentialIdGenerator, AppError } from '@tgx/core-common';
+import { ManualClock, SequentialIdGenerator, AppError, AppErrors } from '@tgx/core-common';
 import { AccountScope } from '@tgx/core-account';
 import {
   Message,
   MessageText,
-  TdMessageContent
+  TdMessageContent,
+  TdMessageSendingState
 } from '@tgx/core-td-api-generated';
 import { MessageListState, MessageProjection } from '@tgx/core-domain';
 import { TdPendingRequest, TdWireObject, TdWireValue } from '@tgx/td-gateway';
 import { Result } from '@tgx/core-common';
 import { ReducerEnv, ReducerResult } from '@tgx/feature-template';
-import { MessageItem } from '../model/MessageItem';
+import { MessageItem, MessageSendState } from '../model/MessageItem';
 import { ChatUiState } from '../contract/ChatUiState';
 import {
   ChatIntent,
   LoadInitialMessages,
   LoadOlderMessages,
   OnMessagesLoaded,
-  OnMessagesLoadFailed
+  OnMessagesLoadFailed,
+  OnMessageSendFailed
 } from '../contract/ChatIntent';
-import { ChatEffect } from '../contract/ChatEffect';
+import { ChatEffect, SendTextMessage } from '../contract/ChatEffect';
 import { chatReducer } from '../reducer/ChatReducer';
 
 const DOMAIN: number = 0x0000;
@@ -93,6 +98,20 @@ export function messageContentText(content: TdMessageContent | null): string {
   }
 }
 
+/** Message.sending_state → MessageItem.sendState（CHAT-003）。 */
+export function messageSendStateOf(sendingState: TdMessageSendingState | null): MessageSendState {
+  if (sendingState === null) {
+    return 'none';
+  }
+  if (sendingState.type === 'messageSendingStatePending') {
+    return 'pending';
+  }
+  if (sendingState.type === 'messageSendingStateFailed') {
+    return 'failed';
+  }
+  return 'none';
+}
+
 export class ChatCoordinator {
   private readonly projection: MessageProjection;
   private readonly env: ReducerEnv;
@@ -116,7 +135,7 @@ export class ChatCoordinator {
       clock: new ManualClock(1000, 500),
       ids: new SequentialIdGenerator('chat-')
     };
-    this.currentState = new ChatUiState(chatId, chatTitle, [], false, true, null);
+    this.currentState = new ChatUiState(chatId, chatTitle, [], false, true, null, '');
   }
 
   get state(): ChatUiState {
@@ -226,7 +245,8 @@ export class ChatCoordinator {
       messageContentText(message.content),
       message.date * 1000,
       message.is_outgoing,
-      '' // senderName：user registry 未建（CHAT-002 后续）
+      '', // senderName：user registry 未建（CHAT-002 后续）
+      messageSendStateOf(message.sending_state)
     );
   }
 
@@ -241,6 +261,31 @@ export class ChatCoordinator {
       case 'fetchOlderMessages': {
         hilog.info(DOMAIN, TAG, 'fetch older messages chatId=%{public}s', `${this.currentState.chatId}`);
         this.runFetch(this.projection.loadOlderMessages(OLDER_PAGE_SIZE));
+        break;
+      }
+
+      case 'sendTextMessage': {
+        const send: SendTextMessage = effect as SendTextMessage;
+        hilog.info(DOMAIN, TAG, 'send message chatId=%{public}s', `${send.chatId}`);
+        const result: Result<TdPendingRequest, AppError> = this.projection.sendTextMessage(send.text);
+        if (result.err) {
+          hilog.error(DOMAIN, TAG, 'sendMessage rejected: %{public}s', AppErrors.toLogString(result.error));
+          this.dispatch(new OnMessageSendFailed(result.error));
+        }
+        if (result.ok) {
+          result.value.promise.then((res: Result<TdWireObject, AppError>) => {
+            if (res.err) {
+              hilog.error(DOMAIN, TAG, 'sendMessage failed: %{public}s', AppErrors.toLogString(res.error));
+              if (!this.destroyed) {
+                this.dispatch(new OnMessageSendFailed(res.error));
+              }
+            }
+            if (res.ok) {
+              hilog.info(DOMAIN, TAG, 'sendMessage ok chatId=%{public}s', `${send.chatId}`);
+            }
+          }).catch(() => {
+          });
+        }
         break;
       }
 

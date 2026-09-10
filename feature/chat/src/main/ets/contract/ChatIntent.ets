@@ -1,9 +1,11 @@
 /**
- * feature/chat — 会话页意图（CHAT-001）。
+ * feature/chat — 会话页意图（CHAT-001 + CHAT-003）。
  *
  * 用户动作：LoadInitialMessages（首屏加载）、LoadOlderMessages（滚动到顶翻页）、
- * BackToChatList（返回会话列表）；系统事件：OnMessagesLoaded / OnMessagesLoadFailed
- * 把异步结果回灌 reducer。每个类带字面量 kind 判别属性。
+ * ComposerTextChanged（输入栏文本变化）、SendCurrentMessage（发送当前输入）、
+ * BackToChatList（返回会话列表）；系统事件：OnMessagesLoaded /
+ * OnMessagesLoadFailed / OnMessageSendFailed 把异步结果回灌 reducer。
+ * 每个类带字面量 kind 判别属性。
  */
 
 import { Intent } from '@tgx/feature-template';
@@ -38,6 +40,28 @@ export class OnMessagesLoadFailed implements Intent {
   }
 }
 
+export class ComposerTextChanged implements Intent {
+  readonly kind: 'composerTextChanged' = 'composerTextChanged';
+  readonly text: string;
+
+  constructor(text: string) {
+    this.text = text;
+  }
+}
+
+export class SendCurrentMessage implements Intent {
+  readonly kind: 'sendCurrentMessage' = 'sendCurrentMessage';
+}
+
+export class OnMessageSendFailed implements Intent {
+  readonly kind: 'onMessageSendFailed' = 'onMessageSendFailed';
+  readonly error: AppError;
+
+  constructor(error: AppError) {
+    this.error = error;
+  }
+}
+
 export class BackToChatList implements Intent {
   readonly kind: 'backToChatList' = 'backToChatList';
 }
@@ -47,4 +71,7 @@ export type ChatIntent =
   | LoadOlderMessages
   | OnMessagesLoaded
   | OnMessagesLoadFailed
+  | ComposerTextChanged
+  | SendCurrentMessage
+  | OnMessageSendFailed
   | BackToChatList;

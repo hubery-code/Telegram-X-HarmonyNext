@@ -1,21 +1,32 @@
 /**
- * feature/chat — ChatPage：单会话消息页（CHAT-001 + CHAT-002 基础）。
+ * feature/chat — ChatPage：单会话消息页（CHAT-001 + CHAT-002 基础 + CHAT-003 输入栏）。
  *
  * 顶部：返回箭头 + 会话标题；主体：LazyForEach 消息气泡列表（最旧在前、
  * 最新在底，首屏/新消息自动滚到底）；文本气泡：发出的右对齐 chatOutgoing、
- * 收到的左对齐 chatIncoming，时间戳 HH:mm；滚动到顶 onReachStart 翻更早历史；
- * 空/加载/错误三态。全部色彩/字号/间距用 design_system token，不硬编码。
+ * 收到的左对齐 chatIncoming，时间戳 HH:mm（发送中附 "…"、失败附 "!"）；
+ * 滚动到顶 onReachStart 翻更早历史；空/加载/错误三态；底部：圆角输入栏 +
+ * 圆形发送按钮（受控输入经 ComposerTextChanged / SendCurrentMessage 驱动）。
+ * 键盘避让依赖系统默认 adjustResize，输入栏固定于根 Column 底部。
+ * 全部色彩/字号/间距用 design_system token，不硬编码。
  */
 
 import { LightTheme } from '@tgx/core-design-system';
 import { MessageItem } from '../model/MessageItem';
 import { ChatUiState } from '../contract/ChatUiState';
-import { LoadInitialMessages, LoadOlderMessages, BackToChatList } from '../contract/ChatIntent';
+import {
+  LoadInitialMessages,
+  LoadOlderMessages,
+  BackToChatList,
+  ComposerTextChanged,
+  SendCurrentMessage
+} from '../contract/ChatIntent';
 
 const T = LightTheme;
 
 const BUBBLE_MAX_WIDTH: string = '78%';
 const BACK_ARROW_SIZE: number = 44;
+const COMPOSER_INPUT_HEIGHT: number = 40;
+const SEND_BUTTON_SIZE: number = 40;
 
 function pad2(value: number): string {
   return value < 10 ? `0${value}` : `${value}`;
@@ -25,6 +36,17 @@ function pad2(value: number): string {
 function formatMessageTime(timestampMs: number): string {
   const date: Date = new Date(timestampMs);
   return `${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
+}
+
+/** 气泡时间戳 + 发送状态：pending 附 "…"，failed 只显 "!"；pending 消息 date 可能为 0。 */
+function formatMessageStatus(item: MessageItem): string {
+  if (item.sendState === 'pending') {
+    return item.timestampMs > 0 ? `${formatMessageTime(item.timestampMs)} …` : '…';
+  }
+  if (item.sendState === 'failed') {
+    return '!';
+  }
+  return formatMessageTime(item.timestampMs);
 }
 
 /** LazyForEach 数据源：整体替换 items 并触发全量刷新。 */
@@ -69,11 +91,13 @@ export struct ChatPage {
 
   private dataSource: MessageListDataSource = new MessageListDataSource();
   private scroller: Scroller = new Scroller();
+  private shownMessages: readonly MessageItem[] = [];
   private shownCount: number = 0;
   private lastTailMessageId: number = 0;
 
   aboutToAppear(): void {
     this.dataSource.setItems(this.uiState.messages);
+    this.shownMessages = this.uiState.messages;
     this.shownCount = this.uiState.messages.length;
     if (this.shownCount > 0) {
       this.lastTailMessageId = this.uiState.messages[this.shownCount - 1].messageId;
@@ -81,11 +105,18 @@ export struct ChatPage {
   }
 
   onUiStateChanged(): void {
-    const count: number = this.uiState.messages.length;
-    const tailId: number = count > 0 ? this.uiState.messages[count - 1].messageId : 0;
+    const messages: readonly MessageItem[] = this.uiState.messages;
+    // composerText 等变化不触碰列表：仅 messages 引用变化才刷新数据源，
+    // 避免输入栏每次击键都触发 LazyForEach 全量重载。
+    if (messages === this.shownMessages) {
+      return;
+    }
+    const count: number = messages.length;
+    const tailId: number = count > 0 ? messages[count - 1].messageId : 0;
     const firstContent: boolean = this.shownCount === 0 && count > 0;
     const grewAtTail: boolean = count > 0 && tailId !== this.lastTailMessageId;
-    this.dataSource.setItems(this.uiState.messages);
+    this.dataSource.setItems(messages);
+    this.shownMessages = messages;
     this.shownCount = count;
     this.lastTailMessageId = tailId;
     // 首屏出内容或尾部来了新消息 → 滚到底；顶部翻页（前插）不打断阅读位置。
@@ -134,6 +165,23 @@ export struct ChatPage {
           this.onDispatch(new LoadOlderMessages());
         })
       }
+
+      // 发送失败等错误：已有消息时不挡列表，仅在输入栏上方出细条提示。
+      if (this.uiState.errorMessage !== null && this.uiState.messages.length > 0) {
+        Text(this.uiState.errorMessage)
+          .fontSize(T.typography.footnote.fontSize)
+          .fontColor(T.colors.destructive)
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .width('100%')
+          .padding({
+            left: T.spacing.screenInset,
+            right: T.spacing.screenInset,
+            top: T.spacing.xs
+          })
+      }
+
+      this.ComposerBar()
     }
     .width('100%')
     .height('100%')
@@ -182,9 +230,9 @@ export struct ChatPage {
           .fontSize(T.typography.body.fontSize)
           .fontColor(T.colors.chatText)
 
-        Text(formatMessageTime(item.timestampMs))
+        Text(formatMessageStatus(item))
           .fontSize(T.typography.caption.fontSize)
-          .fontColor(T.colors.textSecondary)
+          .fontColor(item.sendState === 'failed' ? T.colors.destructive : T.colors.textSecondary)
           .margin({ top: T.spacing.hairline })
       }
       .alignItems(HorizontalAlign.End)
@@ -205,6 +253,69 @@ export struct ChatPage {
       right: T.spacing.screenInset,
       top: T.spacing.xs
     })
+  }
+
+  /** 底部输入栏：圆角输入框 + 圆形发送按钮；受控输入，发送经 MVI 分发。 */
+  @Builder
+  ComposerBar() {
+    Row() {
+      Row() {
+        TextInput({
+          text: this.uiState.composerText,
+          placeholder: 'Message'
+        })
+          .fontSize(T.typography.body.fontSize)
+          .fontColor(T.colors.textPrimary)
+          .placeholderColor(T.colors.textSecondary)
+          .backgroundColor(Color.Transparent)
+          .width('100%')
+          .height(COMPOSER_INPUT_HEIGHT)
+          .padding({ left: T.spacing.lg, right: T.spacing.lg })
+          .onChange((value: string) => {
+            this.onDispatch(new ComposerTextChanged(value));
+          })
+          .onSubmit(() => {
+            this.dispatchSend();
+          })
+      }
+      .layoutWeight(1)
+      .height(COMPOSER_INPUT_HEIGHT)
+      .backgroundColor(T.colors.surfaceVariant)
+      .borderRadius(T.radius.full)
+
+      Text('↑')
+        .fontSize(T.typography.title.fontSize)
+        .fontWeight(T.typography.title.fontWeight)
+        .fontColor(T.colors.textOnAccent)
+        .textAlign(TextAlign.Center)
+        .width(SEND_BUTTON_SIZE)
+        .height(SEND_BUTTON_SIZE)
+        .backgroundColor(this.canSend() ? T.colors.accent : T.colors.disabled)
+        .borderRadius(T.radius.full)
+        .margin({ left: T.spacing.sm })
+        .enabled(this.canSend())
+        .onClick(() => {
+          this.dispatchSend();
+        })
+    }
+    .width('100%')
+    .alignItems(VerticalAlign.Center)
+    .padding({
+      left: T.spacing.screenInset,
+      right: T.spacing.screenInset,
+      top: T.spacing.xs,
+      bottom: T.spacing.sm
+    })
+    .borderWidth({ top: 1 })
+    .borderColor(T.colors.divider)
+  }
+
+  private canSend(): boolean {
+    return this.uiState.composerText.trim().length > 0;
+  }
+
+  private dispatchSend(): void {
+    this.onDispatch(new SendCurrentMessage());
   }
 
   @Builder

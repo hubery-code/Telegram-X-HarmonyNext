@@ -1,8 +1,8 @@
 /**
- * feature/chat — 导出入口（CHAT-001）。
+ * feature/chat — 导出入口（CHAT-001 + CHAT-003）。
  */
 
-export { MessageItem } from './model/MessageItem';
+export { MessageItem, MessageSendState } from './model/MessageItem';
 
 export { ChatUiStateOptions, ChatUiState } from './contract/ChatUiState';
 
@@ -11,6 +11,9 @@ export {
   LoadOlderMessages,
   OnMessagesLoaded,
   OnMessagesLoadFailed,
+  ComposerTextChanged,
+  SendCurrentMessage,
+  OnMessageSendFailed,
   BackToChatList,
   ChatIntent
 } from './contract/ChatIntent';
@@ -18,6 +21,7 @@ export {
 export {
   FetchInitialMessages,
   FetchOlderMessages,
+  SendTextMessage,
   NavigateBack,
   ChatEffect
 } from './contract/ChatEffect';
@@ -27,7 +31,8 @@ export { chatReducer } from './reducer/ChatReducer';
 export {
   ChatUiStateListener,
   ChatCoordinator,
-  messageContentText
+  messageContentText,
+  messageSendStateOf
 } from './coordinator/ChatCoordinator';
 
 export { MessageListDataSource, ChatPage } from './pages/ChatPage';
