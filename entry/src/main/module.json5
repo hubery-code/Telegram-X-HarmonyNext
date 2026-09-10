@@ -18,6 +18,16 @@
         "icon": "$media:icon",
         "label": "$string:EntryAbility_label",
         "exported": true,
+        "skills": [
+          {
+            "entities": [
+              "entity.system.home"
+            ],
+            "actions": [
+              "ohos.want.action.home"
+            ]
+          }
+        ],
         "startWindowIcon": "$media:icon",
         "startWindowBackground": "$color:start_window_background"
       }
