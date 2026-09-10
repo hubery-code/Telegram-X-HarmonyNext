@@ -262,6 +262,30 @@
           ]
         }
       ]
+    },
+    {
+      "name": "feature_settings",
+      "srcPath": "./feature/settings",
+      "targets": [
+        {
+          "name": "default",
+          "applyToProducts": [
+            "default"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "feature_search",
+      "srcPath": "./feature/search",
+      "targets": [
+        {
+          "name": "default",
+          "applyToProducts": [
+            "default"
+          ]
+        }
+      ]
     }
   ]
 }
