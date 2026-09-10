@@ -20,6 +20,7 @@ import {
   SubmitCode,
   SubmitPassword,
   SubmitPhone,
+  SubmitRecaptchaToken,
   SubmitRegistration,
   RequestQrCodeLogin,
   TogglePasswordVisibility
@@ -122,7 +123,11 @@ export struct AuthRootPage {
         })
       } else if (this.uiState.step === 'waitRecaptcha') {
         RecaptchaPage({
+          recaptchaKeyId: this.uiState.recaptchaKeyId,
           isSubmitting: this.uiState.isSubmitting,
+          onToken: (token: string) => {
+            this.onDispatch(new SubmitRecaptchaToken(token));
+          },
           onUseQrCode: () => {
             this.onDispatch(new RequestQrCodeLogin());
           },
