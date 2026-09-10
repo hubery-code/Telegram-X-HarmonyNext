@@ -8,6 +8,8 @@ import { encodeLoadChats, decodeTdUpdate,
   TdUpdate,
   UpdateNewChat,
   UpdateChatPosition,
+  UpdateChatLastMessage,
+  UpdateChatReadInbox,
   LoadChats,
 } from '@tgx/core-td-api-generated';
 import { ChatRegistry } from './ChatRegistry';
@@ -67,11 +69,23 @@ export class ChatListProjection {
   private hasMore: boolean = true;
   
   private subscription: TdUpdateSubscription | null = null;
+  private stateListener: (() => void) | null = null;
   
   constructor(chatList: TdChatList | null, registry: ChatRegistry, scope: AccountScope) {
     this.chatList = chatList;
     this.registry = registry;
     this.scope = scope;
+  }
+  
+  /** 列表内容或加载状态变化时回调（每次变更一次，调用方负责合并高频通知）。 */
+  setOnStateChanged(listener: (() => void) | null): void {
+    this.stateListener = listener;
+  }
+  
+  private notifyStateChanged(): void {
+    if (this.stateListener !== null) {
+      this.stateListener();
+    }
   }
   
   start(): void {
@@ -108,6 +122,7 @@ export class ChatListProjection {
     }
     
     this.isLoading = true;
+    this.notifyStateChanged();
     const req = new LoadChats();
     req.chat_list = this.chatList;
     req.limit = limit;
@@ -120,11 +135,14 @@ export class ChatListProjection {
         if (res.ok === false) {
           this.hasMore = false;
         }
+        this.notifyStateChanged();
       }).catch(() => {
         this.isLoading = false;
+        this.notifyStateChanged();
       });
     } else {
       this.isLoading = false;
+      this.notifyStateChanged();
     }
     return result; // Type workaround for now
   }
@@ -154,6 +172,26 @@ export class ChatListProjection {
           }
         }
       }
+    } else if (update.type === 'updateChatLastMessage') {
+      // 刷新 registry 里的 last_message，并按 update 携带的 positions 重排
+      const lmUpdate = update as UpdateChatLastMessage;
+      const chat = this.registry.getChat(lmUpdate.chat_id);
+      if (chat) {
+        chat.last_message = lmUpdate.last_message;
+        const position = lmUpdate.positions.find((p: ChatPosition) => chatListEquals(p.list, this.chatList));
+        if (position) {
+          this.setChatPosition(lmUpdate.chat_id, position);
+        } else {
+          this.notifyStateChanged();
+        }
+      }
+    } else if (update.type === 'updateChatReadInbox') {
+      const readUpdate = update as UpdateChatReadInbox;
+      const chat = this.registry.getChat(readUpdate.chat_id);
+      if (chat) {
+        chat.unread_count = readUpdate.unread_count;
+        this.notifyStateChanged();
+      }
     }
   }
   
@@ -170,6 +208,7 @@ export class ChatListProjection {
       const idx = this.orderedChatIds.indexOf(chatId);
       if (idx >= 0) {
         this.orderedChatIds.splice(idx, 1);
+        this.notifyStateChanged();
       }
       return;
     }
@@ -210,5 +249,6 @@ export class ChatListProjection {
         chat.positions.push(position);
       }
     }
+    this.notifyStateChanged();
   }
 }

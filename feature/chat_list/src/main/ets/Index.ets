@@ -31,4 +31,6 @@ export {
 
 export { CHAT_LIST_PAGE_SIZE, chatListReducer } from './reducer/ChatListReducer';
 
+export { ChatListUiStateListener, ChatListCoordinator } from './coordinator/ChatListCoordinator';
+
 export { ChatListDataSource, ChatListPage } from './pages/ChatListPage';

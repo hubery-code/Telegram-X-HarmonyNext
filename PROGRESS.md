@@ -51,6 +51,7 @@
 
 | 工作包 | 完成日期 | 证据 |
 |---|---|---|
+| CHATLIST-003 chat list 接入真实 TDLib 数据 | 2026-09-10 ✅ | 子agent-33：`core/domain` ChatListProjection 新增 `setOnStateChanged` 变更回调（setChatPosition/loadNextPage 各路径触发）+ `updateChatLastMessage`（刷新 last_message 并按携带 positions 重排）与 `updateChatReadInbox`（未读数）处理；新建 `feature/chat_list/coordinator/ChatListCoordinator.ets`——桥接 projection 与 MVI：dispatch 经 chatListReducer、FetchChatList→`loadNextPage`，projection 变更经 setTimeout(0) 合并后映射 Chat→ChatListItem 并回灌 OnChatsLoaded（messageText 取原文去换行，多媒体按类型出 `[Photo]` 等占位标签）；投影列表标识用 `new ChatListMain()`（chatListEquals 对 null 恒不等，传 null 永不匹配）；entry `Index.ets` 占位文本替换为 `ChatListPage`，auth `ready` 时用 `BootstrapResult.scope` 创建/订阅/销毁 coordinator；`feature/chat_list` oh-package 增加 core-account/core-domain/core-td-api-generated 依赖并补 oh_modules 符号链接；`./hvigorw assembleHap --mode module -p module=entry@default -p product=default -p buildMode=debug --no-daemon` BUILD SUCCESSFUL（14s，产物 entry-default-signed.hap）；`./hvigorw test --mode module -p module=core_domain@default` BUILD SUCCESSFUL 不回归；真机验证待主会话 |
 | AUTH-E2E-001 真机扫码登录与登录态恢复 | 2026-09-10 ✅ | Codex + 用户真机验证：通过 TDLib QR 登录完成真实账号授权，授权页切换到 `chat_list`；随后执行 `aa force-stop org.telegram.x.harmony` 并从桌面图标冷启动，应用未再次显示登录页，直接恢复到 `Chat list placeholder`，证明 TDLib 授权数据库和账号恢复链路生效。当前后续缺口明确为 Entry 会话列表占位尚未接入真实 TDLib chat 数据。 |
 | ENTRY-ICON-001 桌面图标启动入口修复 | 2026-09-10 ✅ | Codex：定位桌面图标原先解析到 `AppDetailAbility`（系统应用详情页），而 HDC 显式启动才进入 `EntryAbility`；在 `entry/src/main/module.json5` 为 EntryAbility 补齐 `entity.system.home` + `ohos.want.action.home` skills。`entry assembleHap` BUILD SUCCESSFUL，真机覆盖安装后从桌面图标点击，日志确认 `EntryAbility.onCreate`、bootstrap、setTdlibParameters 成功，页面显示手机号与 QR 登录入口。 |
 | AUTH-QR-001 reCAPTCHA 阻塞兜底与二维码登录 | 2026-09-09 ✅ | Codex：确认 `updateApplicationRecaptchaVerificationRequired` 仅面向受支持的官方移动端集成，移除把 Android 移动端 key 塞入 WebView 的无效实现；收到 challenge 后以空 token 调 `setApplicationVerificationToken` 明确结束挂起验证，并接入 TDLib `requestQrCodeAuthentication` + `authorizationStateWaitOtherDeviceConfirmation.link` + ArkUI `QRCode`。新增 5 个 reducer/coordinator 用例；`feature_auth test`、`assembleHar`、`entry assembleHap` 全部 BUILD SUCCESSFUL。真机 6XE0225A27023538 安装成功，日志确认 `VERIFICATION_FAILED` 被安全释放、`requestQrCodeAuthentication` 执行且 QR link 到达，页面实际显示可扫描二维码；commit `1c9dc5c`。 |
@@ -108,6 +109,5 @@
 
 ### 当前状态（2026-09-10）
 - 手机已通过 QR 登录（AUTH-QR-001 by Codex），auth 全链路打通
-- 应用登录后显示 "Chat list placeholder"（entry/src/main/ets/pages/Index.ets:82-98 占位文本）
-- **下一步**：把 `feature/chat_list`（@tgx/feature-chat-list，CHATLIST-002 已建 MVI+LazyForEach 页面）接到真实 TDLib 数据：Index.ets 替换占位为 ChatListPage，经 AccountScope.gateway 调 getChats/loadChats + 订阅 updateNewChat/updateChatLastMessage 等事件，走 core/domain 的 ChatRegistry/ChatListProjection（CHATLIST-001）
-- 之后按 Phase 3：CHAT-001 message page projection → CHAT-002 文本消息 renderer → CHAT-003 composer+send text
+- 会话列表已接入真实 TDLib 数据（CHATLIST-003）：登录/冷启动恢复后 Index.ets 渲染 `ChatListPage`，经 `ChatListCoordinator` ← `ChatListProjection`（ChatListMain）订阅 updateNewChat/updateChatPosition/updateChatLastMessage/updateChatReadInbox，`loadChats` 分页；下拉刷新走 RefreshChats；点击行仅记日志（会话页未建）
+- **下一步**：真机验证会话列表渲染与滚动分页；之后按 Phase 3：CHAT-001 message page projection（ChatSelected 导航落地）→ CHAT-002 文本消息 renderer → CHAT-003 composer+send text
