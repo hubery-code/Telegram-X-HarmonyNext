@@ -111,5 +111,6 @@
 ### 当前状态（2026-09-10）
 - 手机已通过 QR 登录（AUTH-QR-001 by Codex），auth 全链路打通
 - 会话列表已接入真实 TDLib 数据（CHATLIST-003）：登录/冷启动恢复后 Index.ets 渲染 `ChatListPage`，经 `ChatListCoordinator` ← `ChatListProjection`（ChatListMain）订阅 updateNewChat/updateChatPosition/updateChatLastMessage/updateChatReadInbox，`loadChats` 分页；下拉刷新走 RefreshChats
-- 会话消息页已落地（CHAT-001 + CHAT-002 基础）：点击会话行 → `onNavigateToChat` 回调 → Index.ets 创建 `ChatCoordinator`（`MessageProjection`：openChat + getChatHistory 分页 + 四类消息更新订阅）→ 渲染 `ChatPage` 文本气泡（右出左入、HH:mm、滚顶翻页、到底跟随新消息）；返回箭头销毁并切回列表
-- **下一步**：真机验证会话页消息加载/翻页/实时收信；已知限制：翻页前插用全量 reload（滚动位置可能跳动）、非文本内容为占位标签、senderName 未接 user registry；之后按 Phase 3：CHAT-002 完整文本 renderer（entities/link preview）→ CHAT-003 composer+send text
+- 会话消息页已落地并真机验证通过（CHAT-001 + CHAT-002 基础）：点击会话行 → `onNavigateToChat` 回调 → Index.ets 创建 `ChatCoordinator`（`MessageProjection`：openChat + getChatHistory 分页 + 四类消息更新订阅）→ 渲染 `ChatPage` 文本气泡（右出左入、HH:mm、滚顶翻页、到底跟随新消息）；返回箭头销毁并切回列表
+- **2026-09-10 修复聊天历史加载链**（commit `21c634b`）：真机发现所有会话只渲染 1 条消息。根因两条：① getChatHistory 初始请求 offset=-limit+1，from_message_id=0 时 TDLib 语义为"末条+之后 -offset-1 条更新的消息"，末条之后没有更新消息 → 只回 1 条（已改 offset=0）；② TDLib `get_dialog_history` 内存优先——内存里只有 last_message 时立即返回它并后台异步 preload 更旧历史，preload 无声完成（无 update 推送），客户端须再次请求才拿得到；配合修复：到顶判定改为连续 3 页无新增（容忍 preload 空窗），ChatCoordinator 在消息不足一屏（<20）时延迟 900ms 自动补拉。真机验证：EI CLUB 群连续补拉多页 20 条、单屏 11+ 气泡；be hu 私聊 5 条全量；消息真少的会话 3 次空跑后正确停止
+- **下一步**：CHAT-003 composer + send text；已知限制：翻页前插用全量 reload（滚动位置可能跳动）、非文本内容为占位标签、senderName 未接 user registry、无日期分隔条
