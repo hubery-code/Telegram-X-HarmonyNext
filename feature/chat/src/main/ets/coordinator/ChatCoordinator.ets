@@ -21,7 +21,7 @@ import {
   TdMessageContent
 } from '@tgx/core-td-api-generated';
 import { MessageListState, MessageProjection } from '@tgx/core-domain';
-import { TdPendingRequest, TdWireObject } from '@tgx/td-gateway';
+import { TdPendingRequest, TdWireObject, TdWireValue } from '@tgx/td-gateway';
 import { Result } from '@tgx/core-common';
 import { ReducerEnv, ReducerResult } from '@tgx/feature-template';
 import { MessageItem } from '../model/MessageItem';
@@ -29,6 +29,7 @@ import { ChatUiState } from '../contract/ChatUiState';
 import {
   ChatIntent,
   LoadInitialMessages,
+  LoadOlderMessages,
   OnMessagesLoaded,
   OnMessagesLoadFailed
 } from '../contract/ChatIntent';
@@ -39,6 +40,10 @@ const DOMAIN: number = 0x0000;
 const TAG: string = 'ChatCoordinator';
 const INITIAL_PAGE_SIZE: number = 30;
 const OLDER_PAGE_SIZE: number = 20;
+/** 消息数低于该值且未到历史顶端时自动补拉。 */
+const BACKFILL_THRESHOLD: number = 20;
+/** 补拉延迟：给 TDLib 后台 preload 留时间窗（服务器往返 1-2s）。 */
+const BACKFILL_DELAY_MS: number = 900;
 
 export type ChatUiStateListener = (state: ChatUiState) => void;
 
@@ -95,6 +100,7 @@ export class ChatCoordinator {
   private currentState: ChatUiState;
   private readonly listeners: ChatUiStateListener[] = [];
   private syncScheduled: boolean = false;
+  private backfillScheduled: boolean = false;
   private destroyed: boolean = false;
 
   constructor(
@@ -186,6 +192,32 @@ export class ChatCoordinator {
       items.push(this.mapMessageToItem(projectionState.messages[i]));
     }
     this.dispatch(new OnMessagesLoaded(items, projectionState.hasMoreOlder));
+    this.maybeBackfillOlder(projectionState);
+  }
+
+  /**
+   * 首屏/翻页后消息仍不足一屏 → 延迟补拉一页更早历史。
+   * TDLib getChatHistory 首屏常只回内存中已有的末条消息（后台异步 preload
+   * 更旧历史），需要再次请求才能拿到 preload 结果；投影侧以空页/全重复判顶，
+   * 消息真实不足一屏的会话多拉一两页后自然终止。延迟给 preload 留时间窗。
+   */
+  private maybeBackfillOlder(state: MessageListState): void {
+    if (this.destroyed || state.isLoading || !state.hasMoreOlder) {
+      return;
+    }
+    if (state.messages.length === 0 || state.messages.length >= BACKFILL_THRESHOLD) {
+      return;
+    }
+    if (this.backfillScheduled) {
+      return;
+    }
+    this.backfillScheduled = true;
+    setTimeout(() => {
+      this.backfillScheduled = false;
+      if (!this.destroyed && this.currentState.hasMoreOlder && !this.currentState.isLoading) {
+        this.dispatch(new LoadOlderMessages());
+      }
+    }, BACKFILL_DELAY_MS);
   }
 
   private mapMessageToItem(message: Message): MessageItem {
@@ -239,6 +271,11 @@ export class ChatCoordinator {
           if (!this.destroyed) {
             this.dispatch(new OnMessagesLoadFailed(res.error));
           }
+        }
+        if (res.ok) {
+          const raw: TdWireValue | undefined = res.value['messages'];
+          const count: number = (raw !== undefined && Array.isArray(raw)) ? (raw as TdWireObject[]).length : -1;
+          hilog.info(DOMAIN, TAG, 'getChatHistory ok: %{public}d messages', count);
         }
       }).catch(() => {
       });

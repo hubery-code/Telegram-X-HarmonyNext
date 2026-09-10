@@ -6,11 +6,13 @@
  *   updateMessageContent / updateMessageEdited / updateDeleteMessages），
  *   并向 TDLib 发 openChat 开始接收该会话的消息更新；
  * - stop()：退订并发 closeChat；
- * - loadInitialMessages(limit)：from_message_id=0、offset=-limit+1 取最新一页；
- * - loadOlderMessages(limit)：from_message_id=当前最旧消息 id、offset=-1 向前翻页；
+ * - loadInitialMessages(limit)：from_message_id=0、offset=0 取最新一页；
+ * - loadOlderMessages(limit)：from_message_id=当前最旧消息 id、offset=0 向前翻页
+ *   （回包含 from 消息本身，经 Map 去重吸收）；
  * - 消息按 message.id 升序维护（会话内 id 与时间序单调一致），渲染层最旧在前；
  *   Map 按 id 去重，回包边界重复天然被吸收；
- * - getChatHistory 回包不足一页或没有新增 id 时判定到达历史顶端（hasMoreOlder=false）。
+ * - TDLib 按"最优性能"自选回包条数（首屏常只回内存里已有的 1 条，同时后台
+ *   preload 更旧历史），因此空页或整页重复（无新增 id）才判定到达历史顶端。
  *
  * 注意：本模块不 import ArkUI / Kit（与 core 层约束一致）。
  */
@@ -54,6 +56,9 @@ class HistoryIngest {
   }
 }
 
+/** 连续无新增页数达到该值才判定历史到顶（容忍 TDLib 后台 preload 在飞的空窗期）。 */
+const MAX_EMPTY_PAGES: number = 3;
+
 export class MessageProjection {
   private readonly chatId: number;
   private readonly scope: AccountScope;
@@ -63,6 +68,7 @@ export class MessageProjection {
 
   private isLoading: boolean = false;
   private hasMoreOlder: boolean = true;
+  private emptyPageStreak: number = 0;
 
   private subscription: TdUpdateSubscription | null = null;
   private stateListener: (() => void) | null = null;
@@ -131,19 +137,19 @@ export class MessageProjection {
     if (this.isLoading || this.orderedIds.length > 0) {
       return null;
     }
-    return this.requestHistory(0, -limit + 1, limit);
+    return this.requestHistory(0, 0, limit);
   }
 
   /**
-   * 向前翻页：取比当前最旧消息更早的一页（offset=-1 会带回至多 1 条
-   * 比 from_message_id 新的已知消息，经 Map 去重吸收）。
+   * 向前翻页：取比当前最旧消息更早的一页（offset=0 从 from_message_id
+   * 本身开始，回包首条与已知最旧消息重复，经 Map 去重吸收）。
    * 正在加载 / 已到顶端 / 尚未首屏加载时忽略并返回 null。
    */
   loadOlderMessages(limit: number = 20): Result<TdPendingRequest, AppError> | null {
     if (this.isLoading || !this.hasMoreOlder || this.orderedIds.length === 0) {
       return null;
     }
-    return this.requestHistory(this.orderedIds[0], -1, limit);
+    return this.requestHistory(this.orderedIds[0], 0, limit);
   }
 
   private requestHistory(fromMessageId: number, offset: number, limit: number): Result<TdPendingRequest, AppError> {
@@ -164,9 +170,17 @@ export class MessageProjection {
         self.isLoading = false;
         if (res.ok) {
           const ingest: HistoryIngest = self.ingestHistoryPage(res.value, limit);
-          // 回包不足一页或没有新增 id → 到达历史顶端
-          if (ingest.received < limit || ingest.added === 0) {
-            self.hasMoreOlder = false;
+          console.info(`MessageProjection history chatId=${self.chatId} received=${ingest.received} added=${ingest.added}`);
+          // TDLib 按"最优性能"自选回包条数：首屏常只回内存已有的末条消息，
+          // 同时后台 preload 更旧历史（服务器往返 1-2s）。preload 在飞时空跑
+          // 会拿到重复/空页，因此连续 MAX_EMPTY_PAGES 次无新增才判定到顶。
+          if (ingest.added > 0) {
+            self.emptyPageStreak = 0;
+          } else {
+            self.emptyPageStreak += 1;
+            if (self.emptyPageStreak >= MAX_EMPTY_PAGES) {
+              self.hasMoreOlder = false;
+            }
           }
           self.notifyStateChanged();
         }
