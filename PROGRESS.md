@@ -102,3 +102,12 @@
 |---|---|---|
 | 2026-09-08 | 用户输入项（api_id/api_hash、真机、AGC/Push 配置）未提供 —— 阻塞 Phase 1 真机项，不阻塞 Phase 0 工程脚手架 | ✅ 已解决：api_id/api_hash 已放入 gitignored `local.properties`（取自 Android 工程）；VYG-AL00 真机已连（API 24 / 6.1.0.135），DevEco 自动签名已接入 |
 | 2026-09-08 | compatibleSdkVersion 26 与设备 API 24 不匹配 | ✅ 已修复为 `6.1.1(24)`（hvigor 映射表 6.1.1→24）；signed hap 已真机安装成功（bundle 校验通过），启动待解锁屏幕 |
+
+| RECAPTCHA-002 Web reCAPTCHA baseUrl 修复 | 2026-09-10 ✅ | RecaptchaPage 恢复 Web 组件（loadData 带 baseUrl=https://web.telegram.org/ 解决 "Invalid domain for site key"）+ QR 码兜底按钮并存；AuthRootPage 传 recaptchaKeyId/onToken；waitRecaptcha 步骤忽略请求超时错误（verifier 持有原查询）；commit `830dc8c` |
+| TDN-003 OHOS reCAPTCHA 拦截补丁 | 2026-09-10 ✅ | NetQueryDispatcher.cpp L112/L378 加 `|| defined(__OHOS__)` 启用 NetQueryVerifier（403 RECAPTCHA_CHECK 拦截 + verifier actor 创建）；patch 文件 `native/tdcore/patches/0002-ohos-recaptcha-verification.patch`；libtdjson.so 重编译完成（stripped 47.9MB） |
+
+### 当前状态（2026-09-10）
+- 手机已通过 QR 登录（AUTH-QR-001 by Codex），auth 全链路打通
+- 应用登录后显示 "Chat list placeholder"（entry/src/main/ets/pages/Index.ets:82-98 占位文本）
+- **下一步**：把 `feature/chat_list`（@tgx/feature-chat-list，CHATLIST-002 已建 MVI+LazyForEach 页面）接到真实 TDLib 数据：Index.ets 替换占位为 ChatListPage，经 AccountScope.gateway 调 getChats/loadChats + 订阅 updateNewChat/updateChatLastMessage 等事件，走 core/domain 的 ChatRegistry/ChatListProjection（CHATLIST-001）
+- 之后按 Phase 3：CHAT-001 message page projection → CHAT-002 文本消息 renderer → CHAT-003 composer+send text
