@@ -22,28 +22,65 @@
 
 | 工作包 | 负责人(AI) | 开始时间 | 说明 |
 |---|---|---|---|
+| MSG-101 富文本实体渲染 | 主会话(Kimi) | 2026-09-10 | formattedText entities → span 渲染，气泡+列表预览共用 |
 
 > ⚠️ 并行约定：**不要执行 git commit**，完成后报告文件清单由主会话统一提交。core/account 禁止 import ArkUI/Kit。项目内有 `.agents/skills/harmony-next/` 离线参考（API 12-23 快照），编码遇 API 问题可查。
 
-## 待认领（Backlog，按计划的 Phase 0 顺序）
+## 待认领（Backlog）
+
+> Phase 0–3 工作包全部完成（见「已完成」表）。以下为按 **计划 §9.6** 从 Phase 4/5 Epic 拆出的工作包（0.5–3 天/包，非生成代码 ≤800–1200 行），范围对齐 `docs/product/FEATURE_MATRIX.md` 的 P1 缺口。依赖列空=现在可做。
+
+### MSG Epic（富文本实体、转发、已读、反应等；回复/编辑/删除已由 CHAT-004 完成）
 
 | 工作包 | 依赖 | 一句话 |
 |---|---|---|
-| GOV-004 | 无 | 建立 Feature/Parity Matrix（P0/P1/P2/P3 功能表，含 Android 参考） |
-| GOV-005 | GOV-004 | ✅ 已完成（事件说明版；真机录屏待设备） |
-| GOV-006 | GOV-001/002 | ✅ 已完成 |
-| QA-001 | GOV-001 | ✅ 已完成 |
-| SEC-001 | GOV-004 | ✅ 已完成 |
+| MSG-101 | — | 富文本实体渲染：formattedText entities → Text span（bold/italic/underline/strike/code/pre/spoiler/mention/url/textUrl），气泡与会话列表预览共用提取逻辑 |
+| MSG-102 | — | UserRegistry（core/domain）：getUser 缓存 + updateUser 订阅；群消息显示发送者名/彩色头像（FEAT-MSG-002） |
+| MSG-103 | MSG-101 | 日期分隔条 + 未读消息分隔线（按 date 计算插入位置） |
+| MSG-104 | — | 已读上报 viewMessages（入屏上报）+ 发出消息单勾/双勾/已读态（updateChatReadOutbox）+ 失败气泡点击重试（FEAT-MSG-004） |
+| MSG-105 | MSG-101 | 复制文本到系统剪贴板 + url/textUrl 可点击打开（FEAT-COMP-007） |
+| MSG-106 | — | 转发：多选消息 → 会话选择器 → forwardMessages（FEAT-COMP-004） |
+| MSG-107 | MSG-101 | 链接预览：发送带 linkPreviewOptions + 气泡渲染 linkPreview 卡片（FEAT-COMP-002） |
+| MSG-108 | — | 置顶/取消置顶会话（FEAT-CHAT-002）+ 手动标未读（FEAT-CHAT-004 部分） |
 
-### 下一批（Phase 1，按依赖顺序；G0 已实质达成）
+### FILE Epic（下载/上传基础设施，MEDIA 全部依赖）
 
 | 工作包 | 依赖 | 一句话 |
 |---|---|---|
-| TDN-001 | GOV-002 | TDLib 依赖构建矩阵（依赖列表、来源、hash、ABI、许可证） |
-| TDN-002 | TDN-001 | 用 HarmonyOS NDK 构建 zlib/SQLite/crypto 最小依赖（arm64） |
-| TDN-003 | TDN-002 | TDLib arm64 Debug 构建（libtdjson），真机 getOption(version) |
-| BRG-001~005 | TDN-003 | Node-API module → create/send/execute → TSFN 接收线程 → 有界队列 → close 生命周期 |
-| GEN-001~004 | TDN-003 | 解析 td_api.tl 生成 ArkTS DTO/codec/validator/脱敏元数据 |
+| FILE-101 | — | FileRegistry（core/domain）：file 状态单一事实源、updateFile 订阅、DownloadFile/CancelDownloadFile 请求、本地路径解析 |
+| FILE-102 | FILE-101 | FileStore：并发上限、优先级、暂停/恢复、断网挂起重试 |
+| FILE-103 | FILE-101 | 传输失败重试/取消 UI 路径（FEAT-MEDIA-005） |
+
+### MEDIA Epic（图片/视频/文件/语音）
+
+| 工作包 | 依赖 | 一句话 |
+|---|---|---|
+| MEDIA-101 | FILE-101 | 图片消息气泡：缩略图自动下载渲染、宽高比占位、进度圈（FEAT-MEDIA-001 收侧） |
+| MEDIA-102 | MEDIA-101 | 图片发送：photoViewPicker 选图 → SendMessage(InputMessagePhoto) + 上传进度（FEAT-MEDIA-001 发侧） |
+| MEDIA-103 | MEDIA-101 | 图片全屏 viewer：缩放/左右翻页（FEAT-MEDIA-006 图片部分） |
+| MEDIA-104 | FILE-101 | 文件消息气泡（名称/大小/下载态）+ 完成可打开（FEAT-MEDIA-003） |
+| MEDIA-105 | MEDIA-103 | 视频消息：缩略图 + 下载 + 播放（FEAT-MEDIA-002） |
+| MEDIA-106 | FILE-101 | 语音消息录制/发送/播放、波形（FEAT-MEDIA-004，~2 天） |
+
+### COMPOSER / SEARCH / NOTIF / ACC / SETTINGS Epic
+
+| 工作包 | 依赖 | 一句话 |
+|---|---|---|
+| COMPOSER-101 | — | 草稿：SetChatDraftMessage + 离开保存/重进恢复 + 列表草稿前缀（FEAT-CHAT-005） |
+| COMPOSER-102 | MEDIA-102 | 附件面板（相册/文件/拍摄入口） |
+| SEARCH-101 | — | 全局搜索页：SearchChats/SearchPublicChats/SearchMessages 分组 + 防抖（FEAT-SEARCH-001） |
+| SEARCH-102 | SEARCH-101 | 聊天内搜索 + 结果跳转定位（FEAT-SEARCH-002） |
+| NOTIF-101 | AGC 配置 | Push Kit token → RegisterDevice 闭环（FEAT-PUSH-001；AGC/签名配置需用户确认） |
+| NOTIF-102 | NOTIF-101 | 通知聚合 + 点击路由直达聊天（FEAT-PUSH-002） |
+| ACC-101 | CORE-003 | 多账号切换 UI + 添加账号入口（FEAT-ACC-002/003；框架已有） |
+| SET-101 | — | 设置主页：账号信息 + 通知/存储/语言入口（FEAT-SET-001）+ 登出（FEAT-AUTH-006） |
+| SET-102 | SET-101 | 深色/浅色主题跟随系统/手动切换（FEAT-UI-001；design token 已有） |
+| SET-103 | SET-101 | 中/英语言切换 + 关键路径文案资源化（FEAT-SET-002/UI-003） |
+| SET-104 | FILE-101 | 存储占用展示 + 一键清理（FEAT-SET-004） |
+
+### P2 及以后（Phase 5 Beta，暂不拆包）
+
+GROUP / PROFILE / SHARE / A11Y / ADAPTIVE Epic 及 FEATURE_MATRIX P2/P3 项：Phase 4（G4 核心聊天 MVP）不启动，进入 Phase 5 前再拆。
 
 > 认领规则：一次只认领一个工作包；认领时把行移到「进行中」并注明你的身份和计划开始的内容。禁止修改未授权目录。
 
