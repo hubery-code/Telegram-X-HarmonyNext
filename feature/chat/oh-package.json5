@@ -1,0 +1,20 @@
+{
+  "name": "@tgx/feature-chat",
+  "version": "0.1.0",
+  "description": "Telegram X HarmonyOS feature/chat: single-chat message page (LazyForEach bubbles with outgoing/incoming alignment, timestamps, older-history pagination), MVI UiState/Intent/Effect + pure reducer, MessageProjection bridge (CHAT-001/CHAT-002).",
+  "main": "./src/main/ets/Index.ets",
+  "author": "telegram-x",
+  "license": "GPL-3.0",
+  "dependencies": {
+    "@tgx/core-common": "file:../../core/common",
+    "@tgx/core-design-system": "file:../../core/design_system",
+    "@tgx/core-account": "file:../../core/account",
+    "@tgx/core-domain": "file:../../core/domain",
+    "@tgx/core-td-api-generated": "file:../../core/td_api_generated",
+    "@tgx/td-gateway": "file:../../core/td_gateway",
+    "@tgx/feature-template": "file:../_template"
+  },
+  "devDependencies": {
+    "@ohos/hypium": "1.0.21"
+  }
+}

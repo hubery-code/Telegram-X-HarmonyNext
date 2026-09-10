@@ -250,6 +250,18 @@
           ]
         }
       ]
+    },
+    {
+      "name": "feature_chat",
+      "srcPath": "./feature/chat",
+      "targets": [
+        {
+          "name": "default",
+          "applyToProducts": [
+            "default"
+          ]
+        }
+      ]
     }
   ]
 }

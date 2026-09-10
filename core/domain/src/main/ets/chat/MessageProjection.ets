@@ -1,0 +1,279 @@
+/**
+ * core/domain — 单会话消息投影（CHAT-001）。
+ *
+ * 与 ChatListProjection 同构，维护单个会话内的消息集合：
+ * - start()：订阅 Gateway 更新（仅处理本 chatId 的 updateNewMessage /
+ *   updateMessageContent / updateMessageEdited / updateDeleteMessages），
+ *   并向 TDLib 发 openChat 开始接收该会话的消息更新；
+ * - stop()：退订并发 closeChat；
+ * - loadInitialMessages(limit)：from_message_id=0、offset=-limit+1 取最新一页；
+ * - loadOlderMessages(limit)：from_message_id=当前最旧消息 id、offset=-1 向前翻页；
+ * - 消息按 message.id 升序维护（会话内 id 与时间序单调一致），渲染层最旧在前；
+ *   Map 按 id 去重，回包边界重复天然被吸收；
+ * - getChatHistory 回包不足一页或没有新增 id 时判定到达历史顶端（hasMoreOlder=false）。
+ *
+ * 注意：本模块不 import ArkUI / Kit（与 core 层约束一致）。
+ */
+
+import {
+  decodeTdUpdate,
+  decodeMessage,
+  encodeGetChatHistory,
+  encodeOpenChat,
+  encodeCloseChat,
+  GetChatHistory,
+  OpenChat,
+  CloseChat,
+  Message,
+  TdJsonRaw,
+  TdUpdate,
+  UpdateNewMessage,
+  UpdateMessageContent,
+  UpdateMessageEdited,
+  UpdateDeleteMessages
+} from '@tgx/core-td-api-generated';
+import { AccountScope } from '@tgx/core-account';
+import { TdUpdateSubscription, TdPendingRequest, TdWireObject, TdWireValue } from '@tgx/td-gateway';
+import { Result, AppError } from '@tgx/core-common';
+
+export interface MessageListState {
+  /** 按 message.id 升序（最旧在前）。 */
+  readonly messages: Message[];
+  readonly isLoading: boolean;
+  readonly hasMoreOlder: boolean;
+}
+
+/** getChatHistory 一页的吞入统计（received=成功 decode 条数，added=新增 id 数）。 */
+class HistoryIngest {
+  readonly received: number;
+  readonly added: number;
+
+  constructor(received: number, added: number) {
+    this.received = received;
+    this.added = added;
+  }
+}
+
+export class MessageProjection {
+  private readonly chatId: number;
+  private readonly scope: AccountScope;
+
+  private readonly messagesById: Map<number, Message> = new Map();
+  private orderedIds: number[] = [];
+
+  private isLoading: boolean = false;
+  private hasMoreOlder: boolean = true;
+
+  private subscription: TdUpdateSubscription | null = null;
+  private stateListener: (() => void) | null = null;
+
+  constructor(chatId: number, scope: AccountScope) {
+    this.chatId = chatId;
+    this.scope = scope;
+  }
+
+  /** 列表内容或加载状态变化时回调（调用方负责合并高频通知）。 */
+  setOnStateChanged(listener: (() => void) | null): void {
+    this.stateListener = listener;
+  }
+
+  private notifyStateChanged(): void {
+    if (this.stateListener !== null) {
+      this.stateListener();
+    }
+  }
+
+  start(): void {
+    if (this.subscription !== null) {
+      return;
+    }
+    this.subscription = this.scope.gatewayInstance.subscribeUpdates(
+      { clientId: this.scope.clientId },
+      (event) => {
+        const update: TdUpdate | null = decodeTdUpdate(event.payload as TdJsonRaw);
+        if (update === null) {
+          return;
+        }
+        this.handleUpdate(update);
+      }
+    );
+    this.openChat();
+  }
+
+  stop(): void {
+    if (this.subscription !== null) {
+      this.subscription.unsubscribe();
+      this.subscription = null;
+    }
+    this.closeChat();
+  }
+
+  get state(): MessageListState {
+    const messages: Message[] = [];
+    for (let i = 0; i < this.orderedIds.length; i++) {
+      const message: Message | undefined = this.messagesById.get(this.orderedIds[i]);
+      if (message !== undefined) {
+        messages.push(message);
+      }
+    }
+    return {
+      messages: messages,
+      isLoading: this.isLoading,
+      hasMoreOlder: this.hasMoreOlder
+    };
+  }
+
+  /**
+   * 首屏：取最新一页消息。
+   * 正在加载或已有数据时忽略并返回 null，避免重复请求。
+   */
+  loadInitialMessages(limit: number = 30): Result<TdPendingRequest, AppError> | null {
+    if (this.isLoading || this.orderedIds.length > 0) {
+      return null;
+    }
+    return this.requestHistory(0, -limit + 1, limit);
+  }
+
+  /**
+   * 向前翻页：取比当前最旧消息更早的一页（offset=-1 会带回至多 1 条
+   * 比 from_message_id 新的已知消息，经 Map 去重吸收）。
+   * 正在加载 / 已到顶端 / 尚未首屏加载时忽略并返回 null。
+   */
+  loadOlderMessages(limit: number = 20): Result<TdPendingRequest, AppError> | null {
+    if (this.isLoading || !this.hasMoreOlder || this.orderedIds.length === 0) {
+      return null;
+    }
+    return this.requestHistory(this.orderedIds[0], -1, limit);
+  }
+
+  private requestHistory(fromMessageId: number, offset: number, limit: number): Result<TdPendingRequest, AppError> {
+    const req: GetChatHistory = new GetChatHistory();
+    req.chat_id = this.chatId;
+    req.from_message_id = fromMessageId;
+    req.offset = offset;
+    req.limit = limit;
+    req.only_local = false;
+
+    const result: Result<TdPendingRequest, AppError> =
+      this.scope.request('getChatHistory', encodeGetChatHistory(req) as TdWireObject);
+    if (result.ok) {
+      this.isLoading = true;
+      this.notifyStateChanged();
+      const self: MessageProjection = this;
+      result.value.promise.then((res: Result<TdWireObject, AppError>) => {
+        self.isLoading = false;
+        if (res.ok) {
+          const ingest: HistoryIngest = self.ingestHistoryPage(res.value, limit);
+          // 回包不足一页或没有新增 id → 到达历史顶端
+          if (ingest.received < limit || ingest.added === 0) {
+            self.hasMoreOlder = false;
+          }
+          self.notifyStateChanged();
+        }
+        // 失败路径不 notify：由调用方经返回的 promise 回灌 OnMessagesLoadFailed，
+        // 避免随后的投影同步把 errorMessage 覆盖掉
+      }).catch(() => {
+        self.isLoading = false;
+      });
+    }
+    return result;
+  }
+
+  /** 解包 messages 数组、逐条 decodeMessage（失败条目跳过），去重后按 id 升序重排。 */
+  private ingestHistoryPage(wire: TdWireObject, limit: number): HistoryIngest {
+    let received: number = 0;
+    let added: number = 0;
+    const rawMessages: TdWireValue | undefined = wire['messages'];
+    if (rawMessages !== undefined && rawMessages !== null && Array.isArray(rawMessages)) {
+      for (let i = 0; i < rawMessages.length; i++) {
+        const message: Message | null = decodeMessage(rawMessages[i] as TdJsonRaw);
+        if (message === null) {
+          continue;
+        }
+        received += 1;
+        if (!this.messagesById.has(message.id)) {
+          added += 1;
+          this.orderedIds.push(message.id);
+        }
+        this.messagesById.set(message.id, message);
+      }
+      if (added > 0) {
+        this.orderedIds.sort((a: number, b: number): number => a - b);
+      }
+    }
+    return new HistoryIngest(received, added);
+  }
+
+  private handleUpdate(update: TdUpdate): void {
+    if (update.type === 'updateNewMessage') {
+      const message: Message | null = (update as UpdateNewMessage).message;
+      if (message !== null && message.chat_id === this.chatId) {
+        this.upsertMessages([message]);
+        this.notifyStateChanged();
+      }
+    } else if (update.type === 'updateMessageContent') {
+      const contentUpdate: UpdateMessageContent = update as UpdateMessageContent;
+      if (contentUpdate.chat_id === this.chatId && contentUpdate.new_content !== null) {
+        const existing: Message | undefined = this.messagesById.get(contentUpdate.message_id);
+        if (existing !== undefined) {
+          existing.content = contentUpdate.new_content;
+          this.notifyStateChanged();
+        }
+      }
+    } else if (update.type === 'updateMessageEdited') {
+      const editedUpdate: UpdateMessageEdited = update as UpdateMessageEdited;
+      if (editedUpdate.chat_id === this.chatId) {
+        const existing: Message | undefined = this.messagesById.get(editedUpdate.message_id);
+        if (existing !== undefined) {
+          existing.edit_date = editedUpdate.edit_date;
+          this.notifyStateChanged();
+        }
+      }
+    } else if (update.type === 'updateDeleteMessages') {
+      const deleteUpdate: UpdateDeleteMessages = update as UpdateDeleteMessages;
+      if (deleteUpdate.chat_id === this.chatId) {
+        let removed: boolean = false;
+        for (let i = 0; i < deleteUpdate.message_ids.length; i++) {
+          const messageId: number = deleteUpdate.message_ids[i];
+          if (this.messagesById.delete(messageId)) {
+            const idx: number = this.orderedIds.indexOf(messageId);
+            if (idx >= 0) {
+              this.orderedIds.splice(idx, 1);
+            }
+            removed = true;
+          }
+        }
+        if (removed) {
+          this.notifyStateChanged();
+        }
+      }
+    }
+  }
+
+  private upsertMessages(messages: Message[]): void {
+    let added: boolean = false;
+    for (let i = 0; i < messages.length; i++) {
+      const message: Message = messages[i];
+      if (!this.messagesById.has(message.id)) {
+        this.orderedIds.push(message.id);
+        added = true;
+      }
+      this.messagesById.set(message.id, message);
+    }
+    if (added) {
+      this.orderedIds.sort((a: number, b: number): number => a - b);
+    }
+  }
+
+  private openChat(): void {
+    const req: OpenChat = new OpenChat();
+    req.chat_id = this.chatId;
+    this.scope.request('openChat', encodeOpenChat(req) as TdWireObject);
+  }
+
+  private closeChat(): void {
+    const req: CloseChat = new CloseChat();
+    req.chat_id = this.chatId;
+    this.scope.request('closeChat', encodeCloseChat(req) as TdWireObject);
+  }
+}

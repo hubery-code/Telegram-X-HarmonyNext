@@ -92,18 +92,24 @@ export class ChatListCoordinator {
   private readonly registry: ChatRegistry;
   private readonly projection: ChatListProjection;
   private readonly env: ReducerEnv;
+  private readonly onNavigateToChat: (chatId: number, chatTitle: string) => void;
   private currentState: ChatListUiState;
   private readonly listeners: ChatListUiStateListener[] = [];
   private syncScheduled: boolean = false;
   private destroyed: boolean = false;
 
-  constructor(scope: AccountScope, env?: ReducerEnv) {
+  constructor(
+    scope: AccountScope,
+    env?: ReducerEnv,
+    onNavigateToChat?: (chatId: number, chatTitle: string) => void
+  ) {
     this.registry = new ChatRegistry();
     this.projection = new ChatListProjection(new ChatListMain(), this.registry, scope);
     this.env = env !== undefined ? env : {
       clock: new ManualClock(1000, 500),
       ids: new SequentialIdGenerator('chat-list-')
     };
+    this.onNavigateToChat = onNavigateToChat !== undefined ? onNavigateToChat : (chatId: number, chatTitle: string): void => {};
     this.currentState = ChatListUiState.initial();
   }
 
@@ -213,9 +219,11 @@ export class ChatListCoordinator {
       }
 
       case 'navigateToChat': {
-        // 会话页（CHAT-001）尚未落地，先记录日志
         const navigateEffect: NavigateToChat = effect as NavigateToChat;
         hilog.info(DOMAIN, TAG, 'chat selected: %{public}s', `${navigateEffect.chatId}`);
+        const chat: Chat | undefined = this.registry.getChat(navigateEffect.chatId);
+        const chatTitle: string = chat !== undefined ? chat.title : '';
+        this.onNavigateToChat(navigateEffect.chatId, chatTitle);
         break;
       }
 
