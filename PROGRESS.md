@@ -22,7 +22,7 @@
 
 | 工作包 | 负责人(AI) | 开始时间 | 说明 |
 |---|---|---|---|
-| MSG-101 富文本实体渲染 | 主会话(Kimi) | 2026-09-10 | formattedText entities → span 渲染，气泡+列表预览共用 |
+| MSG-101 富文本实体渲染 | 主会话(Kimi) | 2026-09-10 | formattedText entities → span 渲染，气泡+列表预览共用。**实现完成（子agent-86）**：MessageTextSpan/FormattedTextParser 纯函数（边界切分+覆盖并集+同款合并）、气泡 Text/Span 渲染（spoiler 点击揭开、link openLink）、单测 34/34 通过、hap 已构建；**待用户真机验证**（清单已交用户） |
 
 > ⚠️ 并行约定：**不要执行 git commit**，完成后报告文件清单由主会话统一提交。core/account 禁止 import ArkUI/Kit。项目内有 `.agents/skills/harmony-next/` 离线参考（API 12-23 快照），编码遇 API 问题可查。
 >
