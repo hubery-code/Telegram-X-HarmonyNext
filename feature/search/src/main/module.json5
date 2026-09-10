@@ -1,0 +1,10 @@
+{
+  "module": {
+    "name": "feature_search",
+    "type": "har",
+    "deviceTypes": [
+      "default",
+      "tablet"
+    ]
+  }
+}
