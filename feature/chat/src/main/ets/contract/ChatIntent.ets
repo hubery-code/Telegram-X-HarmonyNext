@@ -1,11 +1,17 @@
 /**
- * feature/chat — 会话页意图（CHAT-001 + CHAT-003）。
+ * feature/chat — 会话页意图（CHAT-001 + CHAT-003 + CHAT-004）。
  *
  * 用户动作：LoadInitialMessages（首屏加载）、LoadOlderMessages（滚动到顶翻页）、
  * ComposerTextChanged（输入栏文本变化）、SendCurrentMessage（发送当前输入）、
  * BackToChatList（返回会话列表）；系统事件：OnMessagesLoaded /
  * OnMessagesLoadFailed / OnMessageSendFailed 把异步结果回灌 reducer。
  * 每个类带字面量 kind 判别属性。
+ *
+ * CHAT-004 新增消息动作流：
+ * MessageActionRequested（长按气泡）→ FetchMessagePermissions →
+ * OnMessageActionMenuLoaded（权限过滤后弹菜单）→ ReplyToMessage / EditMessage /
+ * DeleteMessage（菜单点选）；CancelComposerMode / DismissMessageActionMenu 撤销；
+ * OnMessageActionFailed 把权限拉取/编辑/删除的失败回灌 errorMessage。
  */
 
 import { Intent } from '@tgx/feature-template';
@@ -66,6 +72,72 @@ export class BackToChatList implements Intent {
   readonly kind: 'backToChatList' = 'backToChatList';
 }
 
+/** 长按气泡：请求该消息的操作菜单（先经 effect 拉 TDLib 权限位）。 */
+export class MessageActionRequested implements Intent {
+  readonly kind: 'messageActionRequested' = 'messageActionRequested';
+  readonly messageId: number;
+
+  constructor(messageId: number) {
+    this.messageId = messageId;
+  }
+}
+
+/** getMessageProperties 返回后的原始权限位（过滤在 reducer 内完成）。 */
+export class OnMessageActionMenuLoaded implements Intent {
+  readonly kind: 'onMessageActionMenuLoaded' = 'onMessageActionMenuLoaded';
+  readonly messageId: number;
+  readonly canBeEdited: boolean;
+  readonly canBeDeletedOnlyForSelf: boolean;
+  readonly canBeDeletedForAllUsers: boolean;
+
+  constructor(
+    messageId: number,
+    canBeEdited: boolean,
+    canBeDeletedOnlyForSelf: boolean,
+    canBeDeletedForAllUsers: boolean
+  ) {
+    this.messageId = messageId;
+    this.canBeEdited = canBeEdited;
+    this.canBeDeletedOnlyForSelf = canBeDeletedOnlyForSelf;
+    this.canBeDeletedForAllUsers = canBeDeletedForAllUsers;
+  }
+}
+
+/** 菜单点选：回复 actionMenu.messageId 指定的消息。 */
+export class ReplyToMessage implements Intent {
+  readonly kind: 'replyToMessage' = 'replyToMessage';
+}
+
+/** 菜单点选：编辑 actionMenu.messageId 指定的消息。 */
+export class EditMessage implements Intent {
+  readonly kind: 'editMessage' = 'editMessage';
+}
+
+/** 菜单点选：删除 actionMenu.messageId 指定的消息（revoke 取菜单状态）。 */
+export class DeleteMessage implements Intent {
+  readonly kind: 'deleteMessage' = 'deleteMessage';
+}
+
+/** 撤销输入栏的回复/编辑模式（编辑模式恢复进入前的草稿）。 */
+export class CancelComposerMode implements Intent {
+  readonly kind: 'cancelComposerMode' = 'cancelComposerMode';
+}
+
+/** 关闭操作菜单（点遮罩）。 */
+export class DismissMessageActionMenu implements Intent {
+  readonly kind: 'dismissMessageActionMenu' = 'dismissMessageActionMenu';
+}
+
+/** 权限拉取/编辑/删除请求失败，回灌 errorMessage。 */
+export class OnMessageActionFailed implements Intent {
+  readonly kind: 'onMessageActionFailed' = 'onMessageActionFailed';
+  readonly error: AppError;
+
+  constructor(error: AppError) {
+    this.error = error;
+  }
+}
+
 export type ChatIntent =
   | LoadInitialMessages
   | LoadOlderMessages
@@ -74,4 +146,12 @@ export type ChatIntent =
   | ComposerTextChanged
   | SendCurrentMessage
   | OnMessageSendFailed
-  | BackToChatList;
+  | BackToChatList
+  | MessageActionRequested
+  | OnMessageActionMenuLoaded
+  | ReplyToMessage
+  | EditMessage
+  | DeleteMessage
+  | CancelComposerMode
+  | DismissMessageActionMenu
+  | OnMessageActionFailed;

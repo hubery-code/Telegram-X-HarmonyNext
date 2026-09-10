@@ -15,6 +15,9 @@
  *   preload 更旧历史），因此空页或整页重复（无新增 id）才判定到达历史顶端。
  *
  * 注意：本模块不 import ArkUI / Kit（与 core 层约束一致）。
+ *
+ * CHAT-004 新增：sendTextMessage 支持 replyToMessageId；editMessageText /
+ * deleteMessages / getMessageProperties（离线方法，供长按菜单权限过滤）。
  */
 
 import {
@@ -24,10 +27,17 @@ import {
   encodeOpenChat,
   encodeCloseChat,
   encodeSendMessage,
+  encodeEditMessageText,
+  encodeDeleteMessages,
+  encodeGetMessageProperties,
   GetChatHistory,
   OpenChat,
   CloseChat,
   SendMessage,
+  EditMessageText,
+  DeleteMessages,
+  GetMessageProperties,
+  InputMessageReplyToMessage,
   InputMessageText,
   FormattedText,
   Message,
@@ -158,13 +168,14 @@ export class MessageProjection {
   }
 
   /**
-   * 发送文本消息（CHAT-003）：组 inputMessageText 调 sendMessage。
+   * 发送文本消息（CHAT-003 + CHAT-004）：组 inputMessageText 调 sendMessage。
    * trim 后为空直接判 parameter/missing，不发起请求；成功/失败经返回的
    * Result 与 pendingRequest.promise 透传给调用方。
+   * replyToMessageId > 0 时组 inputMessageReplyToMessage 挂到 reply_to（CHAT-004 回复）。
    * 发出的消息经 updateNewMessage 进入列表、经 updateMessageSendSucceeded /
    * updateMessageSendFailed 结算发送态，均由现有更新订阅处理，这里不手动插入。
    */
-  sendTextMessage(text: string): Result<TdPendingRequest, AppError> {
+  sendTextMessage(text: string, replyToMessageId: number = 0): Result<TdPendingRequest, AppError> {
     const trimmed: string = text.trim();
     if (trimmed.length === 0) {
       return err<TdPendingRequest, AppError>(
@@ -179,9 +190,114 @@ export class MessageProjection {
 
     const req: SendMessage = new SendMessage();
     req.chat_id = this.chatId;
+    if (replyToMessageId > 0) {
+      const replyTo: InputMessageReplyToMessage = new InputMessageReplyToMessage();
+      replyTo.message_id = replyToMessageId;
+      req.reply_to = replyTo;
+    }
     req.input_message_content = content;
 
     return this.scope.request('sendMessage', encodeSendMessage(req) as TdWireObject);
+  }
+
+  /**
+   * 编辑文本消息（CHAT-004）：组 inputMessageText 调 editMessageText。
+   * trim 后为空判 parameter/missing（editMessageText 不接受空文本）。
+   * 成功后 TDLib 推 updateMessageContent / updateMessageEdited，由现有订阅
+   * 更新列表；失败经 promise 透传给调用方回灌错误提示。
+   */
+  editMessageText(messageId: number, text: string): Result<TdPendingRequest, AppError> {
+    const trimmed: string = text.trim();
+    if (trimmed.length === 0) {
+      return err<TdPendingRequest, AppError>(
+        AppErrors.parameter('missing', 'text', 'message text is empty')
+      );
+    }
+    const formatted: FormattedText = new FormattedText();
+    formatted.text = trimmed;
+
+    const content: InputMessageText = new InputMessageText();
+    content.text = formatted;
+
+    const req: EditMessageText = new EditMessageText();
+    req.chat_id = this.chatId;
+    req.message_id = messageId;
+    req.input_message_content = content;
+
+    const result: Result<TdPendingRequest, AppError> =
+      this.scope.request('editMessageText', encodeEditMessageText(req) as TdWireObject);
+    if (result.ok) {
+      const self: MessageProjection = this;
+      // 响应本体即更新后的 message：确定性落本地，不依赖 updateMessageContent
+      // 推送时序；随后到达的 update 经 upsert 幂等覆盖，无冲突。
+      result.value.promise.then((res: Result<TdWireObject, AppError>) => {
+        if (res.ok) {
+          const message: Message | null = decodeMessage(res.value as TdJsonRaw);
+          if (message !== null && message.chat_id === self.chatId) {
+            self.upsertMessages([message]);
+            self.notifyStateChanged();
+          }
+        }
+      }).catch(() => {
+      });
+    }
+    return result;
+  }
+
+  /**
+   * 删除消息（CHAT-004）：deleteMessages(chat_id, message_ids, revoke)。
+   * revoke=true 对所有人删除（需 can_be_deleted_for_all_users）。
+   * 成功后 TDLib 推 updateDeleteMessages，由现有订阅把气泡移出列表。
+   */
+  deleteMessages(messageIds: number[], revoke: boolean): Result<TdPendingRequest, AppError> {
+    if (messageIds.length === 0) {
+      return err<TdPendingRequest, AppError>(
+        AppErrors.parameter('missing', 'message_ids', 'no message ids to delete')
+      );
+    }
+    const req: DeleteMessages = new DeleteMessages();
+    req.chat_id = this.chatId;
+    req.message_ids = messageIds;
+    req.revoke = revoke;
+
+    const result: Result<TdPendingRequest, AppError> =
+      this.scope.request('deleteMessages', encodeDeleteMessages(req) as TdWireObject);
+    if (result.ok) {
+      const self: MessageProjection = this;
+      // 响应 ok 即本地移除（乐观删除）：不依赖 updateDeleteMessages 推送时序；
+      // 随后到达的 update 对已删除 id 幂等 no-op。
+      result.value.promise.then((res: Result<TdWireObject, AppError>) => {
+        if (res.ok) {
+          let removed: boolean = false;
+          for (let i = 0; i < messageIds.length; i++) {
+            if (self.messagesById.delete(messageIds[i])) {
+              const idx: number = self.orderedIds.indexOf(messageIds[i]);
+              if (idx >= 0) {
+                self.orderedIds.splice(idx, 1);
+              }
+              removed = true;
+            }
+          }
+          if (removed) {
+            self.notifyStateChanged();
+          }
+        }
+      }).catch(() => {
+      });
+    }
+    return result;
+  }
+
+  /**
+   * 拉取单条消息的权限位（CHAT-004 长按菜单）：TDLib getMessageProperties
+   * 为离线方法（本地计算、立即回包），返回 MessageProperties。
+   */
+  getMessageProperties(messageId: number): Result<TdPendingRequest, AppError> {
+    const req: GetMessageProperties = new GetMessageProperties();
+    req.chat_id = this.chatId;
+    req.message_id = messageId;
+
+    return this.scope.request('getMessageProperties', encodeGetMessageProperties(req) as TdWireObject);
   }
 
   private requestHistory(fromMessageId: number, offset: number, limit: number): Result<TdPendingRequest, AppError> {
@@ -251,6 +367,10 @@ export class MessageProjection {
   }
 
   private handleUpdate(update: TdUpdate): void {
+    if (update.type === 'updateMessageContent' || update.type === 'updateMessageEdited' ||
+      update.type === 'updateMessageSendSucceeded' || update.type === 'updateMessageSendFailed') {
+      console.info(`MessageProjection update ${update.type} chatId=${this.chatId}`);
+    }
     if (update.type === 'updateNewMessage') {
       const message: Message | null = (update as UpdateNewMessage).message;
       if (message !== null && message.chat_id === this.chatId) {

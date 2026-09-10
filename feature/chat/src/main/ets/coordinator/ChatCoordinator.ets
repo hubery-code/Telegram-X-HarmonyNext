@@ -1,12 +1,18 @@
 /**
- * feature/chat — 会话页协调器（CHAT-001 + CHAT-002 基础 + CHAT-003 发送）。
+ * feature/chat — 会话页协调器（CHAT-001 + CHAT-002 基础 + CHAT-003 发送 + CHAT-004 消息动作）。
  *
  * 桥接 core/domain 的 MessageProjection 与本模块的 MVI：
  * - dispatch 经 chatReducer 驱动 ChatUiState，并执行 Effect
  *   （FetchInitialMessages / FetchOlderMessages → projection 的 getChatHistory 分页；
- *   SendTextMessage → projection.sendTextMessage，请求级/响应级失败回灌
- *   OnMessageSendFailed；NavigateBack → onBack 回调，由装配层销毁本 coordinator
- *   并切回会话列表）；
+ *   SendTextMessage → projection.sendTextMessage（带 replyToMessageId），
+ *   请求级/响应级失败回灌 OnMessageSendFailed；NavigateBack → onBack 回调，
+ *   由装配层销毁本 coordinator 并切回会话列表）；
+ * - CHAT-004：FetchMessagePermissions → projection.getMessageProperties（TDLib
+ *   离线方法），回包解码 MessageProperties 后经 OnMessageActionMenuLoaded 回灌；
+ *   EditMessageText → projection.editMessageText，DeleteMessages →
+ *   projection.deleteMessages；二者成功靠已订阅的 updateMessageContent /
+ *   updateMessageEdited / updateDeleteMessages 刷新列表，失败统一回灌
+ *   OnMessageActionFailed（errorMessage 细条提示）；
  * - projection 状态变化时把 Message 映射为 MessageItem[]（文本消息取原文，
  *   多媒体按类型出占位标签），经 OnMessagesLoaded 回灌 reducer；
  * - TDLib 更新成批到达，经 setTimeout(0) 合并为一个同步点，避免反复重绘。
@@ -19,10 +25,15 @@ import { hilog } from '@kit.PerformanceAnalysisKit';
 import { ManualClock, SequentialIdGenerator, AppError, AppErrors } from '@tgx/core-common';
 import { AccountScope } from '@tgx/core-account';
 import {
+  decodeMessageProperties,
   Message,
+  MessageProperties,
+  MessageReplyToMessage,
   MessageText,
   TdMessageContent,
-  TdMessageSendingState
+  TdMessageReplyTo,
+  TdMessageSendingState,
+  TdJsonRaw
 } from '@tgx/core-td-api-generated';
 import { MessageListState, MessageProjection } from '@tgx/core-domain';
 import { TdPendingRequest, TdWireObject, TdWireValue } from '@tgx/td-gateway';
@@ -36,9 +47,17 @@ import {
   LoadOlderMessages,
   OnMessagesLoaded,
   OnMessagesLoadFailed,
-  OnMessageSendFailed
+  OnMessageSendFailed,
+  OnMessageActionMenuLoaded,
+  OnMessageActionFailed
 } from '../contract/ChatIntent';
-import { ChatEffect, SendTextMessage } from '../contract/ChatEffect';
+import {
+  ChatEffect,
+  SendTextMessage,
+  FetchMessagePermissions,
+  EditMessageText,
+  DeleteMessages
+} from '../contract/ChatEffect';
 import { chatReducer } from '../reducer/ChatReducer';
 
 const DOMAIN: number = 0x0000;
@@ -112,6 +131,15 @@ export function messageSendStateOf(sendingState: TdMessageSendingState | null): 
   return 'none';
 }
 
+/** Message.reply_to → 被回复消息 id（CHAT-004）；非回复/引用 story → null。 */
+export function repliedMessageIdOf(replyTo: TdMessageReplyTo | null): number | null {
+  if (replyTo === null || replyTo.type !== 'messageReplyToMessage') {
+    return null;
+  }
+  const reply: MessageReplyToMessage = replyTo as MessageReplyToMessage;
+  return reply.message_id > 0 ? reply.message_id : null;
+}
+
 export class ChatCoordinator {
   private readonly projection: MessageProjection;
   private readonly env: ReducerEnv;
@@ -135,7 +163,7 @@ export class ChatCoordinator {
       clock: new ManualClock(1000, 500),
       ids: new SequentialIdGenerator('chat-')
     };
-    this.currentState = new ChatUiState(chatId, chatTitle, [], false, true, null, '');
+    this.currentState = new ChatUiState(chatId, chatTitle, [], false, true, null, '', null, null);
   }
 
   get state(): ChatUiState {
@@ -206,9 +234,15 @@ export class ChatCoordinator {
 
   private syncFromProjection(): void {
     const projectionState: MessageListState = this.projection.state;
+    // 回复引用摘要：先建 id → 正文文本的查找表，原消息不在当前列表时摘要为空。
+    const textById: Map<number, string> = new Map();
+    for (let i = 0; i < projectionState.messages.length; i++) {
+      const message: Message = projectionState.messages[i];
+      textById.set(message.id, messageContentText(message.content));
+    }
     const items: MessageItem[] = [];
     for (let i = 0; i < projectionState.messages.length; i++) {
-      items.push(this.mapMessageToItem(projectionState.messages[i]));
+      items.push(this.mapMessageToItem(projectionState.messages[i], textById));
     }
     this.dispatch(new OnMessagesLoaded(items, projectionState.hasMoreOlder));
     this.maybeBackfillOlder(projectionState);
@@ -239,14 +273,26 @@ export class ChatCoordinator {
     }, BACKFILL_DELAY_MS);
   }
 
-  private mapMessageToItem(message: Message): MessageItem {
+  private mapMessageToItem(message: Message, textById: Map<number, string>): MessageItem {
+    const replyToId: number | null = repliedMessageIdOf(message.reply_to);
+    let replyToSummary: string = '';
+    if (replyToId !== null) {
+      const targetText: string | undefined = textById.get(replyToId);
+      if (targetText !== undefined) {
+        replyToSummary = targetText;
+      }
+    }
     return new MessageItem(
       message.id,
       messageContentText(message.content),
       message.date * 1000,
       message.is_outgoing,
       '', // senderName：user registry 未建（CHAT-002 后续）
-      messageSendStateOf(message.sending_state)
+      messageSendStateOf(message.sending_state),
+      message.content !== null && message.content.type === 'messageText',
+      message.edit_date > 0,
+      replyToId,
+      replyToSummary
     );
   }
 
@@ -267,7 +313,8 @@ export class ChatCoordinator {
       case 'sendTextMessage': {
         const send: SendTextMessage = effect as SendTextMessage;
         hilog.info(DOMAIN, TAG, 'send message chatId=%{public}s', `${send.chatId}`);
-        const result: Result<TdPendingRequest, AppError> = this.projection.sendTextMessage(send.text);
+        const result: Result<TdPendingRequest, AppError> =
+          this.projection.sendTextMessage(send.text, send.replyToMessageId);
         if (result.err) {
           hilog.error(DOMAIN, TAG, 'sendMessage rejected: %{public}s', AppErrors.toLogString(result.error));
           this.dispatch(new OnMessageSendFailed(result.error));
@@ -282,6 +329,102 @@ export class ChatCoordinator {
             }
             if (res.ok) {
               hilog.info(DOMAIN, TAG, 'sendMessage ok chatId=%{public}s', `${send.chatId}`);
+            }
+          }).catch(() => {
+          });
+        }
+        break;
+      }
+
+      case 'fetchMessagePermissions': {
+        const fetch: FetchMessagePermissions = effect as FetchMessagePermissions;
+        hilog.info(DOMAIN, TAG, 'fetch message permissions chatId=%{public}s messageId=%{public}s',
+          `${fetch.chatId}`, `${fetch.messageId}`);
+        const result: Result<TdPendingRequest, AppError> = this.projection.getMessageProperties(fetch.messageId);
+        if (result.err) {
+          hilog.error(DOMAIN, TAG, 'getMessageProperties rejected: %{public}s', AppErrors.toLogString(result.error));
+          this.dispatch(new OnMessageActionFailed(result.error));
+        }
+        if (result.ok) {
+          result.value.promise.then((res: Result<TdWireObject, AppError>) => {
+            if (this.destroyed) {
+              return;
+            }
+            if (res.err) {
+              hilog.error(DOMAIN, TAG, 'getMessageProperties failed: %{public}s', AppErrors.toLogString(res.error));
+              this.dispatch(new OnMessageActionFailed(res.error));
+            }
+            if (res.ok) {
+              const props: MessageProperties | null = decodeMessageProperties(res.value as TdJsonRaw);
+              if (props === null) {
+                hilog.error(DOMAIN, TAG, 'getMessageProperties: undecodable response');
+                this.dispatch(new OnMessageActionFailed(
+                  AppErrors.internal('chat.message_properties_decode', 'failed to decode messageProperties')
+                ));
+                return;
+              }
+              this.dispatch(new OnMessageActionMenuLoaded(
+                fetch.messageId,
+                props.can_be_edited,
+                props.can_be_deleted_only_for_self,
+                props.can_be_deleted_for_all_users
+              ));
+            }
+          }).catch(() => {
+          });
+        }
+        break;
+      }
+
+      case 'editMessageText': {
+        const edit: EditMessageText = effect as EditMessageText;
+        hilog.info(DOMAIN, TAG, 'edit message chatId=%{public}s messageId=%{public}s',
+          `${edit.chatId}`, `${edit.messageId}`);
+        const result: Result<TdPendingRequest, AppError> =
+          this.projection.editMessageText(edit.messageId, edit.text);
+        if (result.err) {
+          hilog.error(DOMAIN, TAG, 'editMessageText rejected: %{public}s', AppErrors.toLogString(result.error));
+          this.dispatch(new OnMessageActionFailed(result.error));
+        }
+        if (result.ok) {
+          result.value.promise.then((res: Result<TdWireObject, AppError>) => {
+            if (res.err) {
+              hilog.error(DOMAIN, TAG, 'editMessageText failed: %{public}s', AppErrors.toLogString(res.error));
+              if (!this.destroyed) {
+                this.dispatch(new OnMessageActionFailed(res.error));
+              }
+            }
+            if (res.ok) {
+              // 成功路径无动作：气泡由 updateMessageContent / updateMessageEdited 刷新。
+              hilog.info(DOMAIN, TAG, 'editMessageText ok messageId=%{public}s', `${edit.messageId}`);
+            }
+          }).catch(() => {
+          });
+        }
+        break;
+      }
+
+      case 'deleteMessages': {
+        const del: DeleteMessages = effect as DeleteMessages;
+        hilog.info(DOMAIN, TAG, 'delete messages chatId=%{public}s count=%{public}d revoke=%{public}s',
+          `${del.chatId}`, del.messageIds.length, `${del.revoke}`);
+        const result: Result<TdPendingRequest, AppError> =
+          this.projection.deleteMessages(del.messageIds, del.revoke);
+        if (result.err) {
+          hilog.error(DOMAIN, TAG, 'deleteMessages rejected: %{public}s', AppErrors.toLogString(result.error));
+          this.dispatch(new OnMessageActionFailed(result.error));
+        }
+        if (result.ok) {
+          result.value.promise.then((res: Result<TdWireObject, AppError>) => {
+            if (res.err) {
+              hilog.error(DOMAIN, TAG, 'deleteMessages failed: %{public}s', AppErrors.toLogString(res.error));
+              if (!this.destroyed) {
+                this.dispatch(new OnMessageActionFailed(res.error));
+              }
+            }
+            if (res.ok) {
+              // 成功路径无动作：气泡由 updateDeleteMessages 移出列表。
+              hilog.info(DOMAIN, TAG, 'deleteMessages ok chatId=%{public}s', `${del.chatId}`);
             }
           }).catch(() => {
           });

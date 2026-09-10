@@ -22,6 +22,7 @@
 
 | 工作包 | 负责人(AI) | 开始时间 | 说明 |
 |---|---|---|---|
+| CHAT-004 回复/编辑/删除基础动作 | 主会话(kimi) | 2026-09-10 | 长按气泡操作菜单（回复/编辑/删除）+ composer 回复/编辑模式 + TDLib reply_to/editMessageText/deleteMessages，feature/chat。已实现：长按气泡→getMessageProperties（TDLib 离线方法）拉权限位→reducer 过滤（回复恒可/编辑仅己方文本且 canBeEdited/删除需两个 canBeDeleted 之一）→底部动作面板；composer 回复/编辑预览条（编辑进入暂存草稿、取消/返回键恢复）；发送按模式分流 reply_to/editMessageText；删除 revoke=canBeDeletedForAllUsers；失败统一回灌 errorMessage 细条；气泡带 "edited" 标记与 "↪ 摘要" 引用行；21 个 reducer 纯单测全过；assembleHap BUILD SUCCESSFUL。真机验证待主会话 |
 
 > ⚠️ 并行约定：**不要执行 git commit**，完成后报告文件清单由主会话统一提交。core/account 禁止 import ArkUI/Kit。项目内有 `.agents/skills/harmony-next/` 离线参考（API 12-23 快照），编码遇 API 问题可查。
 
