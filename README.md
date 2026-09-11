@@ -1,4 +1,4 @@
-# Telegram X · HarmonyOS NEXT（社区迁移版）
+# Telegram X · HarmonyOS NEXT
 
 将 [Telegram X](https://github.com/TGX-Android/Telegram-X) 迁移到 HarmonyOS NEXT（纯血鸿蒙）的社区开源项目。
 
@@ -10,7 +10,7 @@
 
 ### ✅ 已完成（真机验证通过）
 
-| 功能 | 一句话说明 |
+| 功能 | 说明 |
 |---|---|
 | TDLib 移植 | TDLib 1.8.67 经 HarmonyOS NDK 交叉编译跑在真机上，Node-API 桥异步事件有序不丢 |
 | 扫码登录 | 用手机 Telegram 扫二维码完成授权，国内网络环境的人机验证拦截有兜底方案 |
@@ -27,7 +27,7 @@
 
 ### 📋 未开始（按优先级排序）
 
-| 功能 | 一句话说明 |
+| 功能 | 说明 |
 |---|---|
 | 消息转发与置顶 | 消息转发、会话置顶、链接预览卡片 |
 | 媒体消息 | 图片/视频/文件消息的收发、下载进度与全屏查看 |
