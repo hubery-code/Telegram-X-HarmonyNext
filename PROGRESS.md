@@ -22,7 +22,7 @@
 
 | 工作包 | 负责人(AI) | 开始时间 | 说明 |
 |---|---|---|---|
-| MSG-104 已读上报与回执勾 | 主会话(Kimi) | 2026-09-11 | viewMessages 入屏上报 + 发出消息单勾/双勾/已读态（updateChatReadOutbox）+ 失败气泡点击重试（FEAT-MSG-004） |
+| INTEG-001 设置页接入导航 | 主会话(Kimi) | 2026-09-11 | SettingsPage（SET-101 已完成）接入 entry：会话列表加设置入口 → SettingsPage 可到达 |
 
 > ⚠️ 并行约定：**不要执行 git commit**，完成后报告文件清单由主会话统一提交。core/account 禁止 import ArkUI/Kit。项目内有 `.agents/skills/harmony-next/` 离线参考（API 12-23 快照），编码遇 API 问题可查。
 >
@@ -87,6 +87,7 @@ GROUP / PROFILE / SHARE / A11Y / ADAPTIVE Epic 及 FEATURE_MATRIX P2/P3 项：Ph
 
 | 工作包 | 完成日期 | 证据 |
 |---|---|---|
+| MSG-104 已读上报与已读回执 | 2026-09-11 ✅ | 子agent-86 + 主会话真机验证（commit `6377b2b`）：viewMessages 入屏上报（ChatPage onScrollIndex 最后可视下标 → incomingIdUpTo 映射 → ReadReportThrottle 只增节流；sync 路径兜底首屏/新消息）；MessageProjection 订阅 updateChatReadOutbox（水位只增）+ start() 时 getChat 灌 last_read_outbox_message_id 初始水位（修复"打开前已读仍单勾"）；己方消息 ✓/✓✓、pending "…"、failed "!"；失败气泡点击 → resendMessages 重发；单测 feature_chat 53/53、core_domain 48/48（新增 MessageProjection 6 例：灌水位/水位只增/竞态不回退/viewMessages+resendMessages 组包）。**重大根因发现**：真机"对方已读勾不变"排查（桥接日志证实 updateChatReadOutbox 到达且 watermark 已推进到 UI 层）定位为 **ArkUI LazyForEach key 只含 messageId → 同 id 内容变更复用组件不重渲**；修复=key 携带展示内容 FNV-1a 散列（ChatPage.messageRowKey / ChatListPage.chatRowKey），顺带修复实时编辑上屏、会话列表预览/未读数实时刷新。真机：历史已读 ✓✓ ✓、对方实时已读单勾原地变双勾 ✓（诊断日志已移除） |
 | MSG-102 群消息署名 UI 接入 | 2026-09-11 ✅ | 子agent-86 + 主会话真机验证（commit `06ca998`）：ChatCoordinator 持有 UserRegistry（构造即 start，destroy 释放订阅+stop）；start() 一次性 getChat 定 ChatKind（私聊/群/频道，群类型稳定无需监听）；`resolveSenderInfo` 纯函数：非 outgoing + 群 + MessageSenderUser 才署名，getUser 命中用 formatFullName，未命中 requestUser 一次（requestedSenderIds 防重）+ subscribeUser 等更新→scheduleSyncFromProjection 重映射上屏；MessageSenderChat/私聊/outgoing → 空署名；MessageItem 加 senderColorIndex（默认 -1）；气泡左侧 28vp 彩底首字母头像 + 调色板署名行（NAME_PALETTE 7 色对齐 chat_list AVATAR_PALETTE）；补 core/domain 缺失的 @tgx/platform-ports 依赖声明（arkts-no-structural-typing 禁接口结构兼容，须直引 Subscription）；10 新单测 44/44 全过。真机：EI CLUB 群聊彩色名字+头像 ✓、私聊布局不变 ✓。**注意**：未走 ChatRegistry（被 ChatListCoordinator 私有持有，feature/chat 无法访问），用自包含 getChat 解决 |
 | MSG-101 富文本实体渲染 | 2026-09-11 ✅（有保留） | 子agent-86 + 主会话真机验证（commit `3b25069`）：`MessageTextSpan` 不可变 span 模型 + `FormattedTextParser` 纯函数（边界集合切分、逐段实体并集、相邻同款合并、非法实体 clamp/跳过；UTF-16 offset 与 ArkTS 对齐）；MessageItem 加 spans（默认空兼容旧调用）；ChatPage 气泡 Text/Span 渲染：粗/斜/下划线/删除线、代码等宽+浅底、链接与 mention/hashtag 等着色、spoiler 深色遮罩点击揭开、link 点击 openLink（Span.onClick，SDK 26 d.ts 无 ContainerSpan.onClick）；样式全走 LightTheme token；13 新单测 + 21 回归全过（34/34）。真机：URL/mention/botCommand 蓝色渲染 ✓、链接点击拉起浏览器 ✓；**保留**：粗体/spoiler 真机演示用户豁免（单测覆盖），CustomEmoji 普通文本占位、BlockQuote/DateTime 按普通文本 |
 | FILE-102 FileStore 文件下载队列调度器 | 2026-09-10 ✅ | AI-Agent-Antigravity (Subagent-FileStore)：`core/domain/src/main/ets/file/FileStore.ets`；在 FileRegistry 之上实现并发控制（maxConcurrentDownloads 默认 3）、优先级与 FIFO 排队调度（高优先级插队）、下载完成/失败自动推进队列、单任务/批量 pause/resume、任务取消 cancel、断网挂起（setNetworkAvailable 标记 pausedByNetwork）与联网自动恢复重试；单测 12 项用例全 Success，覆盖率达 94.12%，30 项基线单测无回归；`assembleHar` BUILD SUCCESSFUL |
@@ -143,6 +144,8 @@ GROUP / PROFILE / SHARE / A11Y / ADAPTIVE Epic 及 FEATURE_MATRIX P2/P3 项：Ph
 已知工程要点（runbook 已记录）：hvigorw 为 shell/JS polyglot；离线构建依赖 `~/.hvigor/project_caches`；`DEVECO_SDK_HOME` 必须指向 `…/Contents/sdk`（wrapper 已内置）；签名/真机待用户提供。
 
 已知工程要点（CORE-001 实测）：① 后续 har 模块照 `core/common/` 模板注册：`hvigorfile.ts` 用 `harTasks`；模块自己的 `build-profile.json5`（`{"apiType":"stageMode","buildOption":{}}`）；`src/main/module.json5` 的 `type` 必须是 `"har"`（写 `"shared"` 会被当 HSP 导致 `PackageSignHar` 缺失）；oh-package.json5 的 `main` 指向 `./src/main/ets/Index.ets`。② har 模块单测入口固定为 `src/test/List.test.ets`（hvigor 生成 harness 硬编码 import 它，由它汇总其他 `*.test.ets`）。③ 模块本地单测需在 `<module>/oh_modules/@ohos/hypium` 建符号链接到根 `oh_modules/.ohpm/@ohos+hypium@1.0.21/...`（gitignored；照抄 entry 的做法）。
+
+已知工程要点（MSG-104 实测，**所有做列表的 AI 必读**）：ArkUI `LazyForEach` 以 keyGenerator 的 key 判定行身份——key 不变则复用已有行组件、**不重新执行 builder**，即使数据源 `onDataReloaded()` 全量刷新也一样。只拿 id 做 key 时，同一条目的内容变更（已读勾、编辑后文本、预览文字、未读数）永远不会上屏，只剩"id 变了/新增了行"（发送结算、新消息）才刷新。正确做法：key = `id + 展示相关内容的散列`（参考 `ChatPage.messageRowKey` / `ChatListPage.chatRowKey` 的 FNV-1a 实现）。此前"updateMessageContent 推送不生效"的遗留印象很可能也是这个 UI 问题而非推送丢失——updateChatReadOutbox 已用桥接日志证实推送链路正常。
 
 ## 阻塞 / 风险记录
 
