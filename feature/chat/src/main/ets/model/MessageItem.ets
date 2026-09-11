@@ -8,7 +8,13 @@
  * - isTextMessage：编辑动作只对文本消息开放（editMessageText）；
  * - isEdited：edit_date > 0，气泡时间戳旁附 "edited"；
  * - replyToMessageId / replyToSummary：回复引用（原消息不在当前列表时摘要为空）。
+ *
+ * MSG-101 新增：
+ * - spans：messageText 消息的富文本分段（FormattedText entities 解析结果）；
+ *   非文本消息或无 entities 时为空数组，气泡回退到 text 纯文本渲染。
  */
+
+import { MessageTextSpan } from './MessageTextSpan';
 
 /** 发送状态：none=已发送/收到的正常消息；pending=发送中；failed=发送失败。 */
 export type MessageSendState = 'none' | 'pending' | 'failed';
@@ -24,6 +30,7 @@ export class MessageItem {
   readonly isEdited: boolean;
   readonly replyToMessageId: number | null;
   readonly replyToSummary: string;
+  readonly spans: MessageTextSpan[];
 
   constructor(
     messageId: number,
@@ -35,7 +42,8 @@ export class MessageItem {
     isTextMessage: boolean = true,
     isEdited: boolean = false,
     replyToMessageId: number | null = null,
-    replyToSummary: string = ''
+    replyToSummary: string = '',
+    spans: MessageTextSpan[] = []
   ) {
     this.messageId = messageId;
     this.text = text;
@@ -47,5 +55,6 @@ export class MessageItem {
     this.isEdited = isEdited;
     this.replyToMessageId = replyToMessageId;
     this.replyToSummary = replyToSummary;
+    this.spans = spans;
   }
 }

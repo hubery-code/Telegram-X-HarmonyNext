@@ -14,10 +14,20 @@
  * 的回复/编辑预览条（标题 + 摘要 + 取消 X）；点遮罩或 X 撤销，返回箭头在
  * 回复/编辑模式激活时先退出模式再返回（reducer 保证）。
  * 全部色彩/字号/间距用 design_system token，不硬编码。
+ *
+ * MSG-101：正文富文本。spans 非空时 Text + ForEach(Span) 渲染
+ * bold/italic/underline/strikethrough/code/pre/accent/link；spoiler 遮罩块
+ * 点击揭开/再点还原（Span.onClick，ContainerSpan 在本 SDK 不支持点击），
+ * 状态存本组件 @State（key=messageId:spanIndex）；链接点击经
+ * UIAbilityContext.openLink 打开，失败静默 catch 只记错误码。
  */
 
 import { LightTheme } from '@tgx/core-design-system';
+import { hilog } from '@kit.PerformanceAnalysisKit';
+import { common } from '@kit.AbilityKit';
+import { BusinessError } from '@kit.BasicServicesKit';
 import { MessageItem } from '../model/MessageItem';
+import { MessageTextSpan } from '../model/MessageTextSpan';
 import {
   ChatUiState,
   ComposerMode,
@@ -40,10 +50,17 @@ import {
 
 const T = LightTheme;
 
+const DOMAIN: number = 0x0000;
+const TAG: string = 'ChatPage';
+
 const BUBBLE_MAX_WIDTH: string = '78%';
 const BACK_ARROW_SIZE: number = 44;
 const COMPOSER_INPUT_HEIGHT: number = 40;
 const SEND_BUTTON_SIZE: number = 40;
+/** 等宽（code/pre）span 字号：比正文小 2vp。 */
+const CODE_FONT_SIZE: number = T.typography.body.fontSize - 2;
+/** spoiler 遮罩色（token）：遮罩态文字同色不可读。 */
+const SPOILER_MASK_COLOR: string = T.colors.textPrimary;
 
 function pad2(value: number): string {
   return value < 10 ? `0${value}` : `${value}`;
@@ -112,6 +129,8 @@ export struct ChatPage {
   private shownMessages: readonly MessageItem[] = [];
   private shownCount: number = 0;
   private lastTailMessageId: number = 0;
+  /** 已揭开的 spoiler span 集合，key = `${messageId}:${spanIndex}`（MSG-101）。 */
+  @State private revealedSpoilers: string[] = [];
 
   aboutToAppear(): void {
     this.dataSource.setItems(this.uiState.messages);
@@ -268,9 +287,55 @@ export struct ChatPage {
             .margin({ bottom: T.spacing.hairline })
         }
 
-        Text(item.text)
+        // 正文（MSG-101）：有富文本 spans 时按 span 渲染，否则回退纯文本。
+        if (item.spans.length > 0) {
+          Text() {
+            ForEach(item.spans, (span: MessageTextSpan, spanIndex: number) => {
+              if (span.linkUrl !== null || span.isSpoiler) {
+                // 可交互 span（链接 / spoiler）：本 SDK 的 ContainerSpan 不支持
+                // onClick（universal events 不可用），Span 继承 CommonMethod 支持 onClick。
+                Span(span.text)
+                  .fontSize(this.spanFontSize(span))
+                  .fontColor(this.spanFontColor(span, item.messageId, spanIndex))
+                  .fontWeight(span.bold ? FontWeight.Bold : FontWeight.Normal)
+                  .fontStyle(span.italic ? FontStyle.Italic : FontStyle.Normal)
+                  .fontFamily(this.spanFontFamily(span))
+                  .decoration({
+                    type: this.spanDecorationType(span),
+                    color: this.spanFontColor(span, item.messageId, spanIndex)
+                  })
+                  .textBackgroundStyle({
+                    color: this.spanBackgroundColor(span, item.messageId, spanIndex),
+                    radius: T.radius.sm
+                  })
+                  .onClick(() => {
+                    this.onSpanClick(item.messageId, span, spanIndex);
+                  })
+              } else {
+                Span(span.text)
+                  .fontSize(this.spanFontSize(span))
+                  .fontColor(this.spanFontColor(span, item.messageId, spanIndex))
+                  .fontWeight(span.bold ? FontWeight.Bold : FontWeight.Normal)
+                  .fontStyle(span.italic ? FontStyle.Italic : FontStyle.Normal)
+                  .fontFamily(this.spanFontFamily(span))
+                  .decoration({
+                    type: this.spanDecorationType(span),
+                    color: this.spanFontColor(span, item.messageId, spanIndex)
+                  })
+                  .textBackgroundStyle({
+                    color: this.spanBackgroundColor(span, item.messageId, spanIndex),
+                    radius: T.radius.sm
+                  })
+              }
+            }, (span: MessageTextSpan, spanIndex: number) => `${item.messageId}:${spanIndex}`)
+          }
           .fontSize(T.typography.body.fontSize)
           .fontColor(T.colors.chatText)
+        } else {
+          Text(item.text)
+            .fontSize(T.typography.body.fontSize)
+            .fontColor(T.colors.chatText)
+        }
 
         Text(formatMessageStatus(item))
           .fontSize(T.typography.caption.fontSize)
@@ -484,6 +549,92 @@ export struct ChatPage {
 
   private dispatchSend(): void {
     this.onDispatch(new SendCurrentMessage());
+  }
+
+  // ---- MSG-101 富文本 span：样式与交互 ----
+
+  private isSpoilerRevealed(messageId: number, spanIndex: number): boolean {
+    return this.revealedSpoilers.indexOf(`${messageId}:${spanIndex}`) >= 0;
+  }
+
+  private toggleSpoiler(messageId: number, spanIndex: number): void {
+    const key: string = `${messageId}:${spanIndex}`;
+    if (this.revealedSpoilers.indexOf(key) >= 0) {
+      this.revealedSpoilers = this.revealedSpoilers.filter((k: string) => k !== key);
+    } else {
+      this.revealedSpoilers = this.revealedSpoilers.concat([key]);
+    }
+  }
+
+  private spanFontSize(span: MessageTextSpan): number {
+    return span.isCode || span.isPre ? CODE_FONT_SIZE : T.typography.body.fontSize;
+  }
+
+  private spanFontFamily(span: MessageTextSpan): string {
+    // 'sans-serif' 是 ArkUI 通用族名，解析为系统默认字体，保持与非 code 文本一致。
+    return span.isCode || span.isPre ? 'monospace' : 'sans-serif';
+  }
+
+  private spanFontColor(span: MessageTextSpan, messageId: number, spanIndex: number): string {
+    if (span.isSpoiler && !this.isSpoilerRevealed(messageId, spanIndex)) {
+      return SPOILER_MASK_COLOR; // 遮罩态：文字与遮罩同色，内容不可读
+    }
+    if (span.linkUrl !== null) {
+      return T.colors.link;
+    }
+    if (span.isAccent) {
+      return T.colors.accent;
+    }
+    return T.colors.chatText;
+  }
+
+  private spanDecorationType(span: MessageTextSpan): TextDecorationType {
+    // ArkUI decoration 只支持单 type：underline 与 strikethrough 同现时取 underline。
+    if (span.underline) {
+      return TextDecorationType.Underline;
+    }
+    if (span.strikethrough) {
+      return TextDecorationType.LineThrough;
+    }
+    return TextDecorationType.None;
+  }
+
+  private spanBackgroundColor(span: MessageTextSpan, messageId: number, spanIndex: number): ResourceColor {
+    if (span.isSpoiler && !this.isSpoilerRevealed(messageId, spanIndex)) {
+      return SPOILER_MASK_COLOR; // 遮罩态深色块
+    }
+    if (span.isSpoiler || span.isCode || span.isPre) {
+      return T.colors.surfaceVariant; // 揭开后 / code 的浅底提示
+    }
+    return Color.Transparent;
+  }
+
+  private onSpanClick(messageId: number, span: MessageTextSpan, spanIndex: number): void {
+    if (span.isSpoiler && !this.isSpoilerRevealed(messageId, spanIndex)) {
+      // 遮罩态点击只揭开，不触发链接（防误触）。
+      this.toggleSpoiler(messageId, spanIndex);
+      return;
+    }
+    if (span.linkUrl !== null) {
+      this.openLink(span.linkUrl);
+    }
+  }
+
+  private openLink(url: string): void {
+    const hostContext = this.getUIContext().getHostContext();
+    if (hostContext === undefined) {
+      // 只记失败事件，不记 URL 正文。
+      hilog.warn(DOMAIN, TAG, 'openLink failed: no host context');
+      return;
+    }
+    const context = hostContext as common.UIAbilityContext;
+    context.openLink(url, { appLinkingOnly: false })
+      .then(() => {
+      })
+      .catch((err: BusinessError) => {
+        // 只记失败事件与错误码，不记 URL 正文。
+        hilog.warn(DOMAIN, TAG, 'openLink failed: %{public}d', err.code);
+      });
   }
 
   @Builder

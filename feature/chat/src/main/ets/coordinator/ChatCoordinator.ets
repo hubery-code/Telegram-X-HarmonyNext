@@ -14,6 +14,7 @@
  *   updateMessageEdited / updateDeleteMessages 刷新列表，失败统一回灌
  *   OnMessageActionFailed（errorMessage 细条提示）；
  * - projection 状态变化时把 Message 映射为 MessageItem[]（文本消息取原文，
+ *   MSG-101 起同时解析 FormattedText entities 产出富文本 spans；
  *   多媒体按类型出占位标签），经 OnMessagesLoaded 回灌 reducer；
  * - TDLib 更新成批到达，经 setTimeout(0) 合并为一个同步点，避免反复重绘。
  * - 日志不记录消息正文，send 结果只记 ok/err 与稳定错误分类。
@@ -40,6 +41,8 @@ import { TdPendingRequest, TdWireObject, TdWireValue } from '@tgx/td-gateway';
 import { Result } from '@tgx/core-common';
 import { ReducerEnv, ReducerResult } from '@tgx/feature-template';
 import { MessageItem, MessageSendState } from '../model/MessageItem';
+import { MessageTextSpan } from '../model/MessageTextSpan';
+import { parseFormattedText } from '../model/FormattedTextParser';
 import { ChatUiState } from '../contract/ChatUiState';
 import {
   ChatIntent,
@@ -282,6 +285,13 @@ export class ChatCoordinator {
         replyToSummary = targetText;
       }
     }
+    const isTextMessage: boolean = message.content !== null && message.content.type === 'messageText';
+    // MSG-101：文本消息解析富文本 spans；非文本消息 spans 为空（气泡仍显示占位标签）。
+    let spans: MessageTextSpan[] = [];
+    if (isTextMessage) {
+      const textContent: MessageText = message.content as MessageText;
+      spans = parseFormattedText(textContent.text);
+    }
     return new MessageItem(
       message.id,
       messageContentText(message.content),
@@ -289,10 +299,11 @@ export class ChatCoordinator {
       message.is_outgoing,
       '', // senderName：user registry 未建（CHAT-002 后续）
       messageSendStateOf(message.sending_state),
-      message.content !== null && message.content.type === 'messageText',
+      isTextMessage,
       message.edit_date > 0,
       replyToId,
-      replyToSummary
+      replyToSummary,
+      spans
     );
   }
 
