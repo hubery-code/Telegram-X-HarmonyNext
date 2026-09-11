@@ -22,7 +22,6 @@
 
 | 工作包 | 负责人(AI) | 开始时间 | 说明 |
 |---|---|---|---|
-| INTEG-001 设置页接入导航 | 主会话(Kimi) | 2026-09-11 | SettingsPage（SET-101 已完成）接入 entry：会话列表加设置入口 → SettingsPage 可到达 |
 
 > ⚠️ 并行约定：**不要执行 git commit**，完成后报告文件清单由主会话统一提交。core/account 禁止 import ArkUI/Kit。项目内有 `.agents/skills/harmony-next/` 离线参考（API 12-23 快照），编码遇 API 问题可查。
 >
@@ -70,6 +69,7 @@
 | SEARCH-102 | SEARCH-101 | 聊天内搜索 + 结果跳转定位（FEAT-SEARCH-002） |
 | INTEG-001 | SET-101 | 设置页接入 entry 导航：模块已完成但页面不可达（entry 未 import feature_settings），会话列表加入口 → SettingsPage |
 | INTEG-002 | SEARCH-101 | 搜索页接入 entry 导航：同上，会话列表搜索框/入口 → SearchPage |
+| INTEG-003 | — | 修 entry/src/test 预存单测失败（LIFE-001 的 FakeAccountBridge 的 TdNativeBridgeMetrics 形状过期 + LifecycleCoordinator.test 字面量类型）；干净 HEAD 即失败，非回归 |
 | NOTIF-101 | AGC 配置 | Push Kit token → RegisterDevice 闭环（FEAT-PUSH-001；AGC/签名配置需用户确认） |
 | NOTIF-102 | NOTIF-101 | 通知聚合 + 点击路由直达聊天（FEAT-PUSH-002） |
 | ACC-101 | CORE-003 | 多账号切换 UI + 添加账号入口（FEAT-ACC-002/003；框架已有） |
@@ -87,6 +87,7 @@ GROUP / PROFILE / SHARE / A11Y / ADAPTIVE Epic 及 FEATURE_MATRIX P2/P3 项：Ph
 
 | 工作包 | 完成日期 | 证据 |
 |---|---|---|
+| INTEG-001 设置页接入导航 | 2026-09-11 ✅（待真机验证） | 子agent-87（commit `e8bc7cf`）：会话列表 header 加齿轮入口（⚙ 文本字形）；entry Index.ets 加 showSettings 导航态（优先级 chat > settings > list > auth）；SettingsCoordinator 生命周期对齐 ChatCoordinator（进入创建/订阅/start，离开销毁）；登出成功/会话结束（auth step ≠ ready）自动回登录页（handleSessionEnded 三路销毁）；SettingsPage 加返回箭头；feature_settings 单测通过、assembleHap BUILD SUCCESSFUL；**待真机验证**（设备断连，清单已交用户）。附带发现：entry/src/test 有 2 处 LIFE-001 时期预存单测失败（Fake 的 TdNativeBridgeMetrics 形状过期），干净 HEAD 复跑同样失败，非本次回归——已登记待修 |
 | MSG-104 已读上报与已读回执 | 2026-09-11 ✅ | 子agent-86 + 主会话真机验证（commit `6377b2b`）：viewMessages 入屏上报（ChatPage onScrollIndex 最后可视下标 → incomingIdUpTo 映射 → ReadReportThrottle 只增节流；sync 路径兜底首屏/新消息）；MessageProjection 订阅 updateChatReadOutbox（水位只增）+ start() 时 getChat 灌 last_read_outbox_message_id 初始水位（修复"打开前已读仍单勾"）；己方消息 ✓/✓✓、pending "…"、failed "!"；失败气泡点击 → resendMessages 重发；单测 feature_chat 53/53、core_domain 48/48（新增 MessageProjection 6 例：灌水位/水位只增/竞态不回退/viewMessages+resendMessages 组包）。**重大根因发现**：真机"对方已读勾不变"排查（桥接日志证实 updateChatReadOutbox 到达且 watermark 已推进到 UI 层）定位为 **ArkUI LazyForEach key 只含 messageId → 同 id 内容变更复用组件不重渲**；修复=key 携带展示内容 FNV-1a 散列（ChatPage.messageRowKey / ChatListPage.chatRowKey），顺带修复实时编辑上屏、会话列表预览/未读数实时刷新。真机：历史已读 ✓✓ ✓、对方实时已读单勾原地变双勾 ✓（诊断日志已移除） |
 | MSG-102 群消息署名 UI 接入 | 2026-09-11 ✅ | 子agent-86 + 主会话真机验证（commit `06ca998`）：ChatCoordinator 持有 UserRegistry（构造即 start，destroy 释放订阅+stop）；start() 一次性 getChat 定 ChatKind（私聊/群/频道，群类型稳定无需监听）；`resolveSenderInfo` 纯函数：非 outgoing + 群 + MessageSenderUser 才署名，getUser 命中用 formatFullName，未命中 requestUser 一次（requestedSenderIds 防重）+ subscribeUser 等更新→scheduleSyncFromProjection 重映射上屏；MessageSenderChat/私聊/outgoing → 空署名；MessageItem 加 senderColorIndex（默认 -1）；气泡左侧 28vp 彩底首字母头像 + 调色板署名行（NAME_PALETTE 7 色对齐 chat_list AVATAR_PALETTE）；补 core/domain 缺失的 @tgx/platform-ports 依赖声明（arkts-no-structural-typing 禁接口结构兼容，须直引 Subscription）；10 新单测 44/44 全过。真机：EI CLUB 群聊彩色名字+头像 ✓、私聊布局不变 ✓。**注意**：未走 ChatRegistry（被 ChatListCoordinator 私有持有，feature/chat 无法访问），用自包含 getChat 解决 |
 | MSG-101 富文本实体渲染 | 2026-09-11 ✅（有保留） | 子agent-86 + 主会话真机验证（commit `3b25069`）：`MessageTextSpan` 不可变 span 模型 + `FormattedTextParser` 纯函数（边界集合切分、逐段实体并集、相邻同款合并、非法实体 clamp/跳过；UTF-16 offset 与 ArkTS 对齐）；MessageItem 加 spans（默认空兼容旧调用）；ChatPage 气泡 Text/Span 渲染：粗/斜/下划线/删除线、代码等宽+浅底、链接与 mention/hashtag 等着色、spoiler 深色遮罩点击揭开、link 点击 openLink（Span.onClick，SDK 26 d.ts 无 ContainerSpan.onClick）；样式全走 LightTheme token；13 新单测 + 21 回归全过（34/34）。真机：URL/mention/botCommand 蓝色渲染 ✓、链接点击拉起浏览器 ✓；**保留**：粗体/spoiler 真机演示用户豁免（单测覆盖），CustomEmoji 普通文本占位、BlockQuote/DateTime 按普通文本 |
