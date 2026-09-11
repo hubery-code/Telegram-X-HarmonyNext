@@ -28,6 +28,8 @@ tdlib-credentials.json5
 .cxx/
 .DS_Store
 *.iml
+.clang-tidy
+.clangd
 
 # 工具临时
 *.log
