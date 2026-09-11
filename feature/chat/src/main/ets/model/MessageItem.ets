@@ -12,6 +12,9 @@
  * MSG-101 新增：
  * - spans：messageText 消息的富文本分段（FormattedText entities 解析结果）；
  *   非文本消息或无 entities 时为空数组，气泡回退到 text 纯文本渲染。
+ *
+ * MSG-102 新增：
+ * - senderColorIndex：群聊署名/头像的调色板索引（0..6），-1 = 无署名/默认色。
  */
 
 import { MessageTextSpan } from './MessageTextSpan';
@@ -31,6 +34,7 @@ export class MessageItem {
   readonly replyToMessageId: number | null;
   readonly replyToSummary: string;
   readonly spans: MessageTextSpan[];
+  readonly senderColorIndex: number;
 
   constructor(
     messageId: number,
@@ -43,7 +47,8 @@ export class MessageItem {
     isEdited: boolean = false,
     replyToMessageId: number | null = null,
     replyToSummary: string = '',
-    spans: MessageTextSpan[] = []
+    spans: MessageTextSpan[] = [],
+    senderColorIndex: number = -1
   ) {
     this.messageId = messageId;
     this.text = text;
@@ -56,5 +61,6 @@ export class MessageItem {
     this.replyToMessageId = replyToMessageId;
     this.replyToSummary = replyToSummary;
     this.spans = spans;
+    this.senderColorIndex = senderColorIndex;
   }
 }

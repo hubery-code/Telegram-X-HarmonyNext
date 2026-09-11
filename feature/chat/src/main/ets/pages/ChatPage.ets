@@ -20,6 +20,10 @@
  * 点击揭开/再点还原（Span.onClick，ContainerSpan 在本 SDK 不支持点击），
  * 状态存本组件 @State（key=messageId:spanIndex）；链接点击经
  * UIAbilityContext.openLink 打开，失败静默 catch 只记错误码。
+ *
+ * MSG-102：群聊署名。收到的群消息且 senderName 非空 → 气泡内顶部名字行
+ * （颜色按 senderColorIndex 取 NAME_PALETTE），气泡左侧小圆头像（彩底 +
+ * 首字母，配色与会话列表 AVATAR_PALETTE 一致）；私聊/自己消息布局不变。
  */
 
 import { LightTheme } from '@tgx/core-design-system';
@@ -28,6 +32,7 @@ import { common } from '@kit.AbilityKit';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { MessageItem } from '../model/MessageItem';
 import { MessageTextSpan } from '../model/MessageTextSpan';
+import { avatarLettersForName, nameColorForIndex } from '../model/SenderInfo';
 import {
   ChatUiState,
   ComposerMode,
@@ -61,6 +66,8 @@ const SEND_BUTTON_SIZE: number = 40;
 const CODE_FONT_SIZE: number = T.typography.body.fontSize - 2;
 /** spoiler 遮罩色（token）：遮罩态文字同色不可读。 */
 const SPOILER_MASK_COLOR: string = T.colors.textPrimary;
+/** 群聊署名小圆头像直径（vp）。 */
+const SENDER_AVATAR_SIZE: number = 28;
 
 function pad2(value: number): string {
   return value < 10 ? `0${value}` : `${value}`;
@@ -276,7 +283,31 @@ export struct ChatPage {
   @Builder
   MessageRow(item: MessageItem) {
     Row() {
+      // MSG-102：群聊收到的消息在气泡左侧出小圆头像（彩色底 + 首字母，配色同会话列表）。
+      if (this.showSenderUi(item)) {
+        Text(avatarLettersForName(item.senderName))
+          .width(SENDER_AVATAR_SIZE)
+          .height(SENDER_AVATAR_SIZE)
+          .borderRadius(T.radius.full)
+          .backgroundColor(this.senderAvatarColor(item))
+          .fontColor(T.colors.textOnAccent)
+          .fontSize(T.typography.footnote.fontSize)
+          .textAlign(TextAlign.Center)
+          .margin({ right: T.spacing.xs })
+      }
+
       Column() {
+        // MSG-102：署名行（气泡最顶部，回复引用之上）。
+        if (this.showSenderUi(item)) {
+          Text(item.senderName)
+            .fontSize(T.typography.subheadline.fontSize)
+            .fontWeight(FontWeight.Medium)
+            .fontColor(this.senderNameColor(item))
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+            .margin({ bottom: T.spacing.hairline })
+        }
+
         // 回复引用行（CHAT-004）：原消息不在当前列表时摘要退化为占位文案。
         if (item.replyToMessageId !== null) {
           Text(item.replyToSummary.length > 0 ? `↪ ${item.replyToSummary}` : '↪ message')
@@ -361,6 +392,7 @@ export struct ChatPage {
     }
     .width('100%')
     .justifyContent(item.isOutgoing ? FlexAlign.End : FlexAlign.Start)
+    .alignItems(VerticalAlign.Bottom)
     .padding({
       left: T.spacing.screenInset,
       right: T.spacing.screenInset,
@@ -549,6 +581,23 @@ export struct ChatPage {
 
   private dispatchSend(): void {
     this.onDispatch(new SendCurrentMessage());
+  }
+
+  // ---- MSG-102 群聊署名与头像 ----
+
+  /** 收到的群聊消息且署名已解析 → 显示署名行 + 头像。 */
+  private showSenderUi(item: MessageItem): boolean {
+    return !item.isOutgoing && item.senderName.length > 0;
+  }
+
+  /** 署名颜色：senderColorIndex 取调色板；-1 兜底 accent。 */
+  private senderNameColor(item: MessageItem): string {
+    return item.senderColorIndex >= 0 ? nameColorForIndex(item.senderColorIndex) : T.colors.accent;
+  }
+
+  /** 头像底色：与署名同色调色板取色。 */
+  private senderAvatarColor(item: MessageItem): string {
+    return item.senderColorIndex >= 0 ? nameColorForIndex(item.senderColorIndex) : T.colors.accent;
   }
 
   // ---- MSG-101 富文本 span：样式与交互 ----

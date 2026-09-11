@@ -16,6 +16,11 @@
  * - projection 状态变化时把 Message 映射为 MessageItem[]（文本消息取原文，
  *   MSG-101 起同时解析 FormattedText entities 产出富文本 spans；
  *   多媒体按类型出占位标签），经 OnMessagesLoaded 回灌 reducer；
+ * - MSG-102：持有 UserRegistry（构造即订阅 updateUser/updateUserStatus，
+ *   destroy 时 stop）；start() 发一次 getChat 解析会话种类（群聊才署名）；
+ *   群聊收到的用户消息经 resolveSenderInfo 出署名，缓存未命中时
+ *   requestUser + subscribeUser（requestedSenderIds 防重），User 晚到后
+ *   scheduleSyncFromProjection 重映射上屏；
  * - TDLib 更新成批到达，经 setTimeout(0) 合并为一个同步点，避免反复重绘。
  * - 日志不记录消息正文，send 结果只记 ok/err 与稳定错误分类。
  *
@@ -26,7 +31,11 @@ import { hilog } from '@kit.PerformanceAnalysisKit';
 import { ManualClock, SequentialIdGenerator, AppError, AppErrors } from '@tgx/core-common';
 import { AccountScope } from '@tgx/core-account';
 import {
+  Chat,
+  decodeChat,
   decodeMessageProperties,
+  encodeGetChat,
+  GetChat,
   Message,
   MessageProperties,
   MessageReplyToMessage,
@@ -34,15 +43,23 @@ import {
   TdMessageContent,
   TdMessageReplyTo,
   TdMessageSendingState,
-  TdJsonRaw
+  TdJsonRaw,
+  User
 } from '@tgx/core-td-api-generated';
-import { MessageListState, MessageProjection } from '@tgx/core-domain';
+import { MessageListState, MessageProjection, UserRegistry } from '@tgx/core-domain';
 import { TdPendingRequest, TdWireObject, TdWireValue } from '@tgx/td-gateway';
+import { Subscription } from '@tgx/platform-ports';
 import { Result } from '@tgx/core-common';
 import { ReducerEnv, ReducerResult } from '@tgx/feature-template';
 import { MessageItem, MessageSendState } from '../model/MessageItem';
 import { MessageTextSpan } from '../model/MessageTextSpan';
 import { parseFormattedText } from '../model/FormattedTextParser';
+import {
+  ChatKind,
+  chatKindOf,
+  resolveSenderInfo,
+  SenderInfo
+} from '../model/SenderInfo';
 import { ChatUiState } from '../contract/ChatUiState';
 import {
   ChatIntent,
@@ -145,6 +162,8 @@ export function repliedMessageIdOf(replyTo: TdMessageReplyTo | null): number | n
 
 export class ChatCoordinator {
   private readonly projection: MessageProjection;
+  private readonly scope: AccountScope;
+  private readonly userRegistry: UserRegistry;
   private readonly env: ReducerEnv;
   private readonly onBack: () => void;
   private currentState: ChatUiState;
@@ -152,6 +171,12 @@ export class ChatCoordinator {
   private syncScheduled: boolean = false;
   private backfillScheduled: boolean = false;
   private destroyed: boolean = false;
+  /** MSG-102：会话种类（getChat 一次性解析，群聊才出署名）。 */
+  private chatKind: ChatKind = 'unknown';
+  private chatTypeRequested: boolean = false;
+  /** MSG-102：已发起过 getUser 的 sender，防重复请求。 */
+  private readonly requestedSenderIds: Set<number> = new Set();
+  private readonly senderSubscriptions: Map<number, Subscription> = new Map();
 
   constructor(
     scope: AccountScope,
@@ -161,6 +186,9 @@ export class ChatCoordinator {
     env?: ReducerEnv
   ) {
     this.projection = new MessageProjection(chatId, scope);
+    this.scope = scope;
+    // UserRegistry 构造即 start（订阅 updateUser/updateUserStatus），destroy 时 stop。
+    this.userRegistry = new UserRegistry(scope);
     this.onBack = onBack !== undefined ? onBack : (): void => {};
     this.env = env !== undefined ? env : {
       clock: new ManualClock(1000, 500),
@@ -178,6 +206,7 @@ export class ChatCoordinator {
       this.scheduleSyncFromProjection();
     });
     this.projection.start();
+    this.fetchChatKind();
     this.dispatch(new LoadInitialMessages());
   }
 
@@ -185,6 +214,12 @@ export class ChatCoordinator {
     this.destroyed = true;
     this.projection.setOnStateChanged(null);
     this.projection.stop();
+    this.senderSubscriptions.forEach((sub: Subscription) => {
+      sub.unsubscribe();
+    });
+    this.senderSubscriptions.clear();
+    this.requestedSenderIds.clear();
+    this.userRegistry.stop();
     this.listeners.length = 0;
   }
 
@@ -292,19 +327,88 @@ export class ChatCoordinator {
       const textContent: MessageText = message.content as MessageText;
       spans = parseFormattedText(textContent.text);
     }
+    // MSG-102：群聊收到的用户消息出署名；未命中缓存时 requestSenderUser 拉取并订阅刷新。
+    const senderInfo: SenderInfo = resolveSenderInfo(
+      message.is_outgoing,
+      this.chatKind,
+      message.sender_id,
+      {
+        lookupUser: (userId: number): User | null => this.userRegistry.getUser(userId),
+        requestUser: (userId: number): void => this.requestSenderUser(userId)
+      }
+    );
     return new MessageItem(
       message.id,
       messageContentText(message.content),
       message.date * 1000,
       message.is_outgoing,
-      '', // senderName：user registry 未建（CHAT-002 后续）
+      senderInfo.name,
       messageSendStateOf(message.sending_state),
       isTextMessage,
       message.edit_date > 0,
       replyToId,
       replyToSummary,
-      spans
+      spans,
+      senderInfo.colorIndex
     );
+  }
+
+  /**
+   * MSG-102：取一次会话类型（openChat 后 getChat 命中 TDLib 本地缓存）。
+   * 会话种类稳定（基本群迁移超级群会换 chatId），一次请求足够；失败只记日志，
+   * chatKind 保持 'unknown' 保守不出署名。
+   */
+  private fetchChatKind(): void {
+    if (this.chatTypeRequested || this.destroyed) {
+      return;
+    }
+    this.chatTypeRequested = true;
+    const req: GetChat = new GetChat();
+    req.chat_id = this.currentState.chatId;
+    const result: Result<TdPendingRequest, AppError> =
+      this.scope.request('getChat', encodeGetChat(req) as TdWireObject);
+    if (result.err) {
+      hilog.error(DOMAIN, TAG, 'getChat rejected: %{public}s', AppErrors.toLogString(result.error));
+      return;
+    }
+    if (result.ok) {
+      result.value.promise.then((res: Result<TdWireObject, AppError>) => {
+        if (this.destroyed) {
+          return;
+        }
+        if (res.err) {
+          hilog.error(DOMAIN, TAG, 'getChat failed: %{public}s', AppErrors.toLogString(res.error));
+        }
+        if (res.ok) {
+          const chat: Chat | null = decodeChat(res.value as TdJsonRaw);
+          if (chat !== null) {
+            this.chatKind = chatKindOf(chat.type_);
+            hilog.info(DOMAIN, TAG, 'chat kind resolved: %{public}s', this.chatKind);
+            this.scheduleSyncFromProjection();
+          }
+        }
+      }).catch(() => {
+      });
+    }
+  }
+
+  /** MSG-102：缓存未命中的 sender 拉取一次并订阅，User 到达后重映射上屏。 */
+  private requestSenderUser(userId: number): void {
+    if (this.destroyed || this.requestedSenderIds.has(userId)) {
+      return;
+    }
+    this.requestedSenderIds.add(userId);
+    const subscription: Subscription = this.userRegistry.subscribeUser(userId, () => {
+      if (!this.destroyed) {
+        this.scheduleSyncFromProjection();
+      }
+    });
+    this.senderSubscriptions.set(userId, subscription);
+    const result: Result<TdPendingRequest, AppError> = this.userRegistry.requestUser(userId);
+    if (result.err) {
+      hilog.error(DOMAIN, TAG, 'requestUser rejected userId=%{public}s: %{public}s',
+        `${userId}`, AppErrors.toLogString(result.error));
+    }
   }
 
   private executeEffect(effect: ChatEffect): void {

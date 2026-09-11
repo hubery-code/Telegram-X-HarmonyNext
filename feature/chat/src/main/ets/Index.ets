@@ -1,5 +1,5 @@
 /**
- * feature/chat — 导出入口（CHAT-001 + CHAT-003 + CHAT-004 + MSG-101）。
+ * feature/chat — 导出入口（CHAT-001 + CHAT-003 + CHAT-004 + MSG-101 + MSG-102）。
  */
 
 export { MessageItem, MessageSendState } from './model/MessageItem';
@@ -7,6 +7,18 @@ export { MessageItem, MessageSendState } from './model/MessageItem';
 export { MessageTextSpan } from './model/MessageTextSpan';
 
 export { parseFormattedText } from './model/FormattedTextParser';
+
+export {
+  ChatKind,
+  SenderInfo,
+  SenderInfoDeps,
+  EMPTY_SENDER_INFO,
+  NAME_PALETTE,
+  chatKindOf,
+  resolveSenderInfo,
+  nameColorForIndex,
+  avatarLettersForName
+} from './model/SenderInfo';
 
 export {
   ChatUiStateOptions,

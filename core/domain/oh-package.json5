@@ -9,6 +9,7 @@
     "@tgx/core-common": "file:../common",
     "@tgx/td-gateway": "file:../td_gateway",
     "@tgx/core-account": "file:../account",
-    "@tgx/core-td-api-generated": "file:../td_api_generated"
+    "@tgx/core-td-api-generated": "file:../td_api_generated",
+    "@tgx/platform-ports": "file:../../platform/ports"
   }
 }
