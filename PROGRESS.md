@@ -22,7 +22,7 @@
 
 | 工作包 | 负责人(AI) | 开始时间 | 说明 |
 |---|---|---|---|
-| MSG-101 富文本实体渲染 | 主会话(Kimi) | 2026-09-10 | formattedText entities → span 渲染，气泡+列表预览共用。**实现完成（子agent-86）**：MessageTextSpan/FormattedTextParser 纯函数（边界切分+覆盖并集+同款合并）、气泡 Text/Span 渲染（spoiler 点击揭开、link openLink）、单测 34/34 通过、hap 已构建；**待用户真机验证**（清单已交用户） |
+| MSG-102 User registry + 群消息署名 | 主会话(Kimi) | 2026-09-11 | UserRegistry 已由 Antigravity 完成（见已完成表）；本包剩余：ChatCoordinator 接入 UserRegistry 解析署名 + 气泡显示发送者名/彩色头像（FEAT-MSG-002） |
 
 > ⚠️ 并行约定：**不要执行 git commit**，完成后报告文件清单由主会话统一提交。core/account 禁止 import ArkUI/Kit。项目内有 `.agents/skills/harmony-next/` 离线参考（API 12-23 快照），编码遇 API 问题可查。
 >
@@ -36,8 +36,6 @@
 
 | 工作包 | 依赖 | 一句话 |
 |---|---|---|
-| MSG-101 | — | 富文本实体渲染：formattedText entities → Text span（bold/italic/underline/strike/code/pre/spoiler/mention/url/textUrl），气泡与会话列表预览共用提取逻辑 |
-| MSG-102 | — | UserRegistry（core/domain）：getUser 缓存 + updateUser 订阅；群消息显示发送者名/彩色头像（FEAT-MSG-002） |
 | MSG-103 | MSG-101 | 日期分隔条 + 未读消息分隔线（按 date 计算插入位置） |
 | MSG-104 | — | 已读上报 viewMessages（入屏上报）+ 发出消息单勾/双勾/已读态（updateChatReadOutbox）+ 失败气泡点击重试（FEAT-MSG-004） |
 | MSG-105 | MSG-101 | 复制文本到系统剪贴板 + url/textUrl 可点击打开（FEAT-COMP-007） |
@@ -90,6 +88,7 @@ GROUP / PROFILE / SHARE / A11Y / ADAPTIVE Epic 及 FEATURE_MATRIX P2/P3 项：Ph
 
 | 工作包 | 完成日期 | 证据 |
 |---|---|---|
+| MSG-101 富文本实体渲染 | 2026-09-11 ✅（有保留） | 子agent-86 + 主会话真机验证（commit `3b25069`）：`MessageTextSpan` 不可变 span 模型 + `FormattedTextParser` 纯函数（边界集合切分、逐段实体并集、相邻同款合并、非法实体 clamp/跳过；UTF-16 offset 与 ArkTS 对齐）；MessageItem 加 spans（默认空兼容旧调用）；ChatPage 气泡 Text/Span 渲染：粗/斜/下划线/删除线、代码等宽+浅底、链接与 mention/hashtag 等着色、spoiler 深色遮罩点击揭开、link 点击 openLink（Span.onClick，SDK 26 d.ts 无 ContainerSpan.onClick）；样式全走 LightTheme token；13 新单测 + 21 回归全过（34/34）。真机：URL/mention/botCommand 蓝色渲染 ✓、链接点击拉起浏览器 ✓；**保留**：粗体/spoiler 真机演示用户豁免（单测覆盖），CustomEmoji 普通文本占位、BlockQuote/DateTime 按普通文本 |
 | FILE-102 FileStore 文件下载队列调度器 | 2026-09-10 ✅ | AI-Agent-Antigravity (Subagent-FileStore)：`core/domain/src/main/ets/file/FileStore.ets`；在 FileRegistry 之上实现并发控制（maxConcurrentDownloads 默认 3）、优先级与 FIFO 排队调度（高优先级插队）、下载完成/失败自动推进队列、单任务/批量 pause/resume、任务取消 cancel、断网挂起（setNetworkAvailable 标记 pausedByNetwork）与联网自动恢复重试；单测 12 项用例全 Success，覆盖率达 94.12%，30 项基线单测无回归；`assembleHar` BUILD SUCCESSFUL |
 | SET-101 设置主页与账号中心 | 2026-09-10 ✅ | AI-Agent-Antigravity (Subagent-Settings)：新建 `@tgx/feature-settings` HAR 模块；MVI 契约（SettingsUiState, SettingsIntent, SettingsEffect）、纯函数 SettingsReducer、SettingsCoordinator 桥接 AccountScope / UserRegistry / TDLib Gateway（getMe, getUserFullInfo, logOut, optimizeStorage）、SettingsPage 完整 ArkUI 页面（个人信息/首字母头像/通知切换/缓存清理/主题模式切换/登出二次确认弹窗）；18 项单测全部 Success；`assembleHar` BUILD SUCCESSFUL |
 | SEARCH-101 全局搜索功能 | 2026-09-10 ✅ | AI-Agent-Antigravity (Subagent-Search)：新建 `@tgx/feature-search` HAR 模块；MVI 契约（SearchUiState, SearchIntent, SearchEffect）、数据模型（SearchChatItem, SearchMessageItem）、纯函数 SearchReducer（空 query 清理/非空搜索触发/历史记录去重最新置顶上限 10 条/Tab 切换联动）、SearchCoordinator（300ms 输入防抖、TdlibSearchQueryProvider 封装 SearchChats 与 SearchMessages、MockSearchQueryProvider 预览兜底）、SearchPage 页面（搜索框/Tab栏/流式历史 Tag/会话与消息分组列表/空状态）；18 项单测全部 Success；`assembleHar` BUILD SUCCESSFUL |
