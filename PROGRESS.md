@@ -22,7 +22,7 @@
 
 | 工作包 | 负责人(AI) | 开始时间 | 说明 |
 |---|---|---|---|
-| MSG-102 User registry + 群消息署名 | 主会话(Kimi) | 2026-09-11 | UserRegistry 已由 Antigravity 完成（见已完成表）；本包剩余：ChatCoordinator 接入 UserRegistry 解析署名 + 气泡显示发送者名/彩色头像（FEAT-MSG-002） |
+| MSG-104 已读上报与回执勾 | 主会话(Kimi) | 2026-09-11 | viewMessages 入屏上报 + 发出消息单勾/双勾/已读态（updateChatReadOutbox）+ 失败气泡点击重试（FEAT-MSG-004） |
 
 > ⚠️ 并行约定：**不要执行 git commit**，完成后报告文件清单由主会话统一提交。core/account 禁止 import ArkUI/Kit。项目内有 `.agents/skills/harmony-next/` 离线参考（API 12-23 快照），编码遇 API 问题可查。
 >
@@ -37,7 +37,6 @@
 | 工作包 | 依赖 | 一句话 |
 |---|---|---|
 | MSG-103 | MSG-101 | 日期分隔条 + 未读消息分隔线（按 date 计算插入位置） |
-| MSG-104 | — | 已读上报 viewMessages（入屏上报）+ 发出消息单勾/双勾/已读态（updateChatReadOutbox）+ 失败气泡点击重试（FEAT-MSG-004） |
 | MSG-105 | MSG-101 | 复制文本到系统剪贴板 + url/textUrl 可点击打开（FEAT-COMP-007） |
 | MSG-106 | — | 转发：多选消息 → 会话选择器 → forwardMessages（FEAT-COMP-004） |
 | MSG-107 | MSG-101 | 链接预览：发送带 linkPreviewOptions + 气泡渲染 linkPreview 卡片（FEAT-COMP-002） |
@@ -45,10 +44,10 @@
 
 ### FILE Epic（下载/上传基础设施，MEDIA 全部依赖）
 
+> FILE-101（FileRegistry）与 FILE-102（FileStore）已由 Antigravity 完成，见「已完成」表。
+
 | 工作包 | 依赖 | 一句话 |
 |---|---|---|
-| FILE-101 | — | FileRegistry（core/domain）：file 状态单一事实源、updateFile 订阅、DownloadFile/CancelDownloadFile 请求、本地路径解析 |
-| FILE-102 | FILE-101 | FileStore：并发上限、优先级、暂停/恢复、断网挂起重试 |
 | FILE-103 | FILE-101 | 传输失败重试/取消 UI 路径（FEAT-MEDIA-005） |
 
 ### MEDIA Epic（图片/视频/文件/语音）
@@ -68,13 +67,13 @@
 |---|---|---|
 | COMPOSER-101 | — | 草稿：SetChatDraftMessage + 离开保存/重进恢复 + 列表草稿前缀（FEAT-CHAT-005） |
 | COMPOSER-102 | MEDIA-102 | 附件面板（相册/文件/拍摄入口） |
-| SEARCH-101 | — | 全局搜索页：SearchChats/SearchPublicChats/SearchMessages 分组 + 防抖（FEAT-SEARCH-001） |
 | SEARCH-102 | SEARCH-101 | 聊天内搜索 + 结果跳转定位（FEAT-SEARCH-002） |
+| INTEG-001 | SET-101 | 设置页接入 entry 导航：模块已完成但页面不可达（entry 未 import feature_settings），会话列表加入口 → SettingsPage |
+| INTEG-002 | SEARCH-101 | 搜索页接入 entry 导航：同上，会话列表搜索框/入口 → SearchPage |
 | NOTIF-101 | AGC 配置 | Push Kit token → RegisterDevice 闭环（FEAT-PUSH-001；AGC/签名配置需用户确认） |
 | NOTIF-102 | NOTIF-101 | 通知聚合 + 点击路由直达聊天（FEAT-PUSH-002） |
 | ACC-101 | CORE-003 | 多账号切换 UI + 添加账号入口（FEAT-ACC-002/003；框架已有） |
-| SET-101 | — | 设置主页：账号信息 + 通知/存储/语言入口（FEAT-SET-001）+ 登出（FEAT-AUTH-006） |
-| SET-102 | SET-101 | 深色/浅色主题跟随系统/手动切换（FEAT-UI-001；design token 已有） |
+| SET-102 | INTEG-001 | 深色/浅色主题跟随系统/手动切换（FEAT-UI-001；design token 已有；SettingsPage 已有主题切换 UI，需全局生效） |
 | SET-103 | SET-101 | 中/英语言切换 + 关键路径文案资源化（FEAT-SET-002/UI-003） |
 | SET-104 | FILE-101 | 存储占用展示 + 一键清理（FEAT-SET-004） |
 
@@ -88,6 +87,7 @@ GROUP / PROFILE / SHARE / A11Y / ADAPTIVE Epic 及 FEATURE_MATRIX P2/P3 项：Ph
 
 | 工作包 | 完成日期 | 证据 |
 |---|---|---|
+| MSG-102 群消息署名 UI 接入 | 2026-09-11 ✅ | 子agent-86 + 主会话真机验证（commit `06ca998`）：ChatCoordinator 持有 UserRegistry（构造即 start，destroy 释放订阅+stop）；start() 一次性 getChat 定 ChatKind（私聊/群/频道，群类型稳定无需监听）；`resolveSenderInfo` 纯函数：非 outgoing + 群 + MessageSenderUser 才署名，getUser 命中用 formatFullName，未命中 requestUser 一次（requestedSenderIds 防重）+ subscribeUser 等更新→scheduleSyncFromProjection 重映射上屏；MessageSenderChat/私聊/outgoing → 空署名；MessageItem 加 senderColorIndex（默认 -1）；气泡左侧 28vp 彩底首字母头像 + 调色板署名行（NAME_PALETTE 7 色对齐 chat_list AVATAR_PALETTE）；补 core/domain 缺失的 @tgx/platform-ports 依赖声明（arkts-no-structural-typing 禁接口结构兼容，须直引 Subscription）；10 新单测 44/44 全过。真机：EI CLUB 群聊彩色名字+头像 ✓、私聊布局不变 ✓。**注意**：未走 ChatRegistry（被 ChatListCoordinator 私有持有，feature/chat 无法访问），用自包含 getChat 解决 |
 | MSG-101 富文本实体渲染 | 2026-09-11 ✅（有保留） | 子agent-86 + 主会话真机验证（commit `3b25069`）：`MessageTextSpan` 不可变 span 模型 + `FormattedTextParser` 纯函数（边界集合切分、逐段实体并集、相邻同款合并、非法实体 clamp/跳过；UTF-16 offset 与 ArkTS 对齐）；MessageItem 加 spans（默认空兼容旧调用）；ChatPage 气泡 Text/Span 渲染：粗/斜/下划线/删除线、代码等宽+浅底、链接与 mention/hashtag 等着色、spoiler 深色遮罩点击揭开、link 点击 openLink（Span.onClick，SDK 26 d.ts 无 ContainerSpan.onClick）；样式全走 LightTheme token；13 新单测 + 21 回归全过（34/34）。真机：URL/mention/botCommand 蓝色渲染 ✓、链接点击拉起浏览器 ✓；**保留**：粗体/spoiler 真机演示用户豁免（单测覆盖），CustomEmoji 普通文本占位、BlockQuote/DateTime 按普通文本 |
 | FILE-102 FileStore 文件下载队列调度器 | 2026-09-10 ✅ | AI-Agent-Antigravity (Subagent-FileStore)：`core/domain/src/main/ets/file/FileStore.ets`；在 FileRegistry 之上实现并发控制（maxConcurrentDownloads 默认 3）、优先级与 FIFO 排队调度（高优先级插队）、下载完成/失败自动推进队列、单任务/批量 pause/resume、任务取消 cancel、断网挂起（setNetworkAvailable 标记 pausedByNetwork）与联网自动恢复重试；单测 12 项用例全 Success，覆盖率达 94.12%，30 项基线单测无回归；`assembleHar` BUILD SUCCESSFUL |
 | SET-101 设置主页与账号中心 | 2026-09-10 ✅ | AI-Agent-Antigravity (Subagent-Settings)：新建 `@tgx/feature-settings` HAR 模块；MVI 契约（SettingsUiState, SettingsIntent, SettingsEffect）、纯函数 SettingsReducer、SettingsCoordinator 桥接 AccountScope / UserRegistry / TDLib Gateway（getMe, getUserFullInfo, logOut, optimizeStorage）、SettingsPage 完整 ArkUI 页面（个人信息/首字母头像/通知切换/缓存清理/主题模式切换/登出二次确认弹窗）；18 项单测全部 Success；`assembleHar` BUILD SUCCESSFUL |
