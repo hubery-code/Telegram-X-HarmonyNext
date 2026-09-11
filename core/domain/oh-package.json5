@@ -11,5 +11,8 @@
     "@tgx/core-account": "file:../account",
     "@tgx/core-td-api-generated": "file:../td_api_generated",
     "@tgx/platform-ports": "file:../../platform/ports"
+  },
+  "devDependencies": {
+    "@ohos/hypium": "1.0.21"
   }
 }

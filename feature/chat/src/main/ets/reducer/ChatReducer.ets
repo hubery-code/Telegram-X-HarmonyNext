@@ -38,7 +38,9 @@ import {
   OnMessageSendFailed,
   MessageActionRequested,
   OnMessageActionMenuLoaded,
-  OnMessageActionFailed
+  OnMessageActionFailed,
+  OnVisibleRangeChanged,
+  TapFailedMessage
 } from '../contract/ChatIntent';
 import {
   ChatEffect,
@@ -48,8 +50,11 @@ import {
   FetchMessagePermissions,
   EditMessageText,
   DeleteMessages,
-  NavigateBack
+  NavigateBack,
+  ReportMessagesRead,
+  ResendMessage
 } from '../contract/ChatEffect';
+import { incomingIdUpTo } from '../model/ReadReceipt';
 
 /** 菜单/预览条用的正文摘要：压成单行并截断。 */
 export function messageSnippet(text: string, maxLength: number = 80): string {
@@ -320,6 +325,31 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
         errorMessage: failed.error.message
       });
       return reduced(nextState);
+    }
+
+    case 'onVisibleRangeChanged': {
+      // MSG-104：入屏即读。index → 该范围内最大 incoming 消息 id，出
+      // ReportMessagesRead；无 incoming 不出 effect。节流（只增不减）在
+      // coordinator 执行侧（ReadReportThrottle），reducer 保持无状态。
+      const visible: OnVisibleRangeChanged = intent as OnVisibleRangeChanged;
+      const targetId: number = incomingIdUpTo(state.messages, visible.lastVisibleIndex);
+      if (targetId <= 0) {
+        return reduced(state);
+      }
+      const effects: ChatEffect[] = [new ReportMessagesRead(state.chatId, targetId)];
+      return reduced(state, effects);
+    }
+
+    case 'tapFailedMessage': {
+      // MSG-104：点击失败气泡重发；非失败态/未知消息忽略。状态不变：
+      // 结算由 updateMessageSendSucceeded/Failed 订阅驱动。
+      const tapped: TapFailedMessage = intent as TapFailedMessage;
+      const item: MessageItem | null = findMessage(state, tapped.messageId);
+      if (item === null || item.sendState !== 'failed') {
+        return reduced(state);
+      }
+      const effects: ChatEffect[] = [new ResendMessage(state.chatId, tapped.messageId)];
+      return reduced(state, effects);
     }
   }
 

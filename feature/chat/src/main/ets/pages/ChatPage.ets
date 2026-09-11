@@ -24,6 +24,11 @@
  * MSG-102：群聊署名。收到的群消息且 senderName 非空 → 气泡内顶部名字行
  * （颜色按 senderColorIndex 取 NAME_PALETTE），气泡左侧小圆头像（彩底 +
  * 首字母，配色与会话列表 AVATAR_PALETTE 一致）；私聊/自己消息布局不变。
+ *
+ * MSG-104：已读上报与回执。List.onScrollIndex → OnVisibleRangeChanged →
+ * ReportMessagesRead（入屏即读，节流在 coordinator）；己方消息时间戳旁
+ * 显 ✓/✓✓（isRead）；点击 sendState=failed 的气泡 → TapFailedMessage →
+ * ResendMessage 重发。
  */
 
 import { LightTheme } from '@tgx/core-design-system';
@@ -50,7 +55,9 @@ import {
   EditMessage,
   DeleteMessage,
   CancelComposerMode,
-  DismissMessageActionMenu
+  DismissMessageActionMenu,
+  OnVisibleRangeChanged,
+  TapFailedMessage
 } from '../contract/ChatIntent';
 
 const T = LightTheme;
@@ -79,7 +86,7 @@ function formatMessageTime(timestampMs: number): string {
   return `${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
 }
 
-/** 气泡时间戳 + 发送状态：pending 附 "…"，failed 只显 "!"；pending 消息 date 可能为 0。 */
+/** 气泡时间戳 + 发送状态：pending 附 "…"，failed 只显 "!"；MSG-104 己方消息附已读勾（✓/✓✓）。 */
 function formatMessageStatus(item: MessageItem): string {
   if (item.sendState === 'pending') {
     return item.timestampMs > 0 ? `${formatMessageTime(item.timestampMs)} …` : '…';
@@ -88,12 +95,38 @@ function formatMessageStatus(item: MessageItem): string {
     return '!';
   }
   const time: string = formatMessageTime(item.timestampMs);
-  return item.isEdited ? `${time} edited` : time;
+  const edited: string = item.isEdited ? `${time} edited` : time;
+  if (!item.isOutgoing) {
+    return edited;
+  }
+  return item.isRead ? `${edited} ✓✓` : `${edited} ✓`;
+}
+
+/**
+ * FNV-1a 32 位字符串散列（MSG-104 修复）：给 LazyForEach keyGenerator 用。
+ * ArkUI LazyForEach 以 key 判定行身份，key 不变则复用组件、不重渲染——
+ * 只按 messageId 做 key 时，已读勾/编辑/发送状态等原地变更不会上屏。
+ * key 里必须携带会变化的内容摘要。
+ */
+function fnv1a32(input: string): string {
+  let hash: number = 0x811c9dc5;
+  for (let i = 0; i < input.length; i++) {
+    hash ^= input.charCodeAt(i) & 0xff;
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(16);
+}
+
+/** 消息行的 LazyForEach key：messageId + 展示相关内容散列（正文/署名/回复摘要/发送态/已读/编辑标记）。 */
+function messageRowKey(item: MessageItem): string {
+  const signature: string =
+    `${item.sendState}|${item.isRead}|${item.isEdited}|${item.senderColorIndex}|` +
+    `${item.text}|${item.senderName}|${item.replyToSummary}`;
+  return `${item.messageId}:${fnv1a32(signature)}`;
 }
 
 /** LazyForEach 数据源：整体替换 items 并触发全量刷新。 */
-export class MessageListDataSource implements IDataSource {
-  private items: MessageItem[] = [];
+export class MessageListDataSource implements IDataSource {  private items: MessageItem[] = [];
   private listeners: DataChangeListener[] = [];
 
   totalCount(): number {
@@ -200,12 +233,16 @@ export struct ChatPage {
               ListItem() {
                 this.MessageRow(item)
               }
-            }, (item: MessageItem) => `${item.messageId}`)
+            }, (item: MessageItem) => messageRowKey(item))
           }
           .width('100%')
           .layoutWeight(1)
           .cachedCount(5)
           .scrollBar(BarState.Off)
+          .onScrollIndex((start: number, end: number) => {
+            // MSG-104：入屏即读，最后可见下标变化即上报（节流在 coordinator）。
+            this.onDispatch(new OnVisibleRangeChanged(end));
+          })
           .onReachStart(() => {
             this.onDispatch(new LoadOlderMessages());
           })
@@ -383,6 +420,12 @@ export struct ChatPage {
         bottom: T.spacing.xs
       })
       .constraintSize({ maxWidth: BUBBLE_MAX_WIDTH })
+      .onClick(() => {
+        // MSG-104：点击发送失败的气泡重发；正常气泡点击无动作。
+        if (item.sendState === 'failed') {
+          this.onDispatch(new TapFailedMessage(item.messageId));
+        }
+      })
       .gesture(
         LongPressGesture({ duration: 350 })
           .onAction(() => {

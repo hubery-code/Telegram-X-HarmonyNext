@@ -138,6 +138,27 @@ export class OnMessageActionFailed implements Intent {
   }
 }
 
+/** MSG-104：列表可视范围变化（onScrollIndex）；reducer 出 ReportMessagesRead。 */
+export class OnVisibleRangeChanged implements Intent {
+  readonly kind: 'onVisibleRangeChanged' = 'onVisibleRangeChanged';
+  /** 当前最后可见消息在列表中的下标。 */
+  readonly lastVisibleIndex: number;
+
+  constructor(lastVisibleIndex: number) {
+    this.lastVisibleIndex = lastVisibleIndex;
+  }
+}
+
+/** MSG-104：点击发送失败的气泡 → 重发（reducer 出 ResendMessage）。 */
+export class TapFailedMessage implements Intent {
+  readonly kind: 'tapFailedMessage' = 'tapFailedMessage';
+  readonly messageId: number;
+
+  constructor(messageId: number) {
+    this.messageId = messageId;
+  }
+}
+
 export type ChatIntent =
   | LoadInitialMessages
   | LoadOlderMessages
@@ -154,4 +175,6 @@ export type ChatIntent =
   | DeleteMessage
   | CancelComposerMode
   | DismissMessageActionMenu
-  | OnMessageActionFailed;
+  | OnMessageActionFailed
+  | OnVisibleRangeChanged
+  | TapFailedMessage;

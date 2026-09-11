@@ -18,11 +18,21 @@
  *
  * CHAT-004 新增：sendTextMessage 支持 replyToMessageId；editMessageText /
  * deleteMessages / getMessageProperties（离线方法，供长按菜单权限过滤）。
+ *
+ * MSG-104 新增：markMessagesRead（viewMessages 已读上报）、resendMessages
+ * （失败重发）；订阅 updateChatReadOutbox 维护对端已读水位
+ * lastReadOutboxMessageId（放进 MessageListState）。
+ *
+ * MSG-104 修复：start() 里 openChat 后追加一次 getChat，把
+ * chat.last_read_outbox_message_id 灌为水位初值——历史已读不会补推
+ * updateChatReadOutbox，只靠增量推送会把"进入会话前已读"的消息错显为单勾。
+ * openChat 后 chat 已命中 TDLib 本地缓存，这次请求无网络往返。
  */
 
 import {
   decodeTdUpdate,
   decodeMessage,
+  decodeChat,
   encodeGetChatHistory,
   encodeOpenChat,
   encodeCloseChat,
@@ -30,6 +40,9 @@ import {
   encodeEditMessageText,
   encodeDeleteMessages,
   encodeGetMessageProperties,
+  encodeViewMessages,
+  encodeResendMessages,
+  encodeGetChat,
   GetChatHistory,
   OpenChat,
   CloseChat,
@@ -37,6 +50,10 @@ import {
   EditMessageText,
   DeleteMessages,
   GetMessageProperties,
+  ViewMessages,
+  ResendMessages,
+  GetChat,
+  Chat,
   InputMessageReplyToMessage,
   InputMessageText,
   FormattedText,
@@ -47,7 +64,8 @@ import {
   UpdateMessageContent,
   UpdateMessageEdited,
   UpdateMessageSendSucceeded,
-  UpdateDeleteMessages
+  UpdateDeleteMessages,
+  UpdateChatReadOutbox
 } from '@tgx/core-td-api-generated';
 import { AccountScope } from '@tgx/core-account';
 import { TdUpdateSubscription, TdPendingRequest, TdWireObject, TdWireValue } from '@tgx/td-gateway';
@@ -58,6 +76,8 @@ export interface MessageListState {
   readonly messages: Message[];
   readonly isLoading: boolean;
   readonly hasMoreOlder: boolean;
+  /** MSG-104：对端已读到的最后一条己方消息 id（updateChatReadOutbox），0=未知/无。 */
+  readonly lastReadOutboxMessageId: number;
 }
 
 /** getChatHistory 一页的吞入统计（received=成功 decode 条数，added=新增 id 数）。 */
@@ -84,6 +104,8 @@ export class MessageProjection {
   private isLoading: boolean = false;
   private hasMoreOlder: boolean = true;
   private emptyPageStreak: number = 0;
+  /** MSG-104：对端已读回执水位（updateChatReadOutbox 推进，只增）。 */
+  private lastReadOutboxMessageId: number = 0;
 
   private subscription: TdUpdateSubscription | null = null;
   private stateListener: (() => void) | null = null;
@@ -119,6 +141,7 @@ export class MessageProjection {
       }
     );
     this.openChat();
+    this.fetchReadOutboxWatermark();
   }
 
   stop(): void {
@@ -140,7 +163,8 @@ export class MessageProjection {
     return {
       messages: messages,
       isLoading: this.isLoading,
-      hasMoreOlder: this.hasMoreOlder
+      hasMoreOlder: this.hasMoreOlder,
+      lastReadOutboxMessageId: this.lastReadOutboxMessageId
     };
   }
 
@@ -300,6 +324,43 @@ export class MessageProjection {
     return this.scope.request('getMessageProperties', encodeGetMessageProperties(req) as TdWireObject);
   }
 
+  /**
+   * 已读上报（MSG-104）：viewMessages(chat_id, message_ids, source=null,
+   * force_read=false)——source=null 让 TDLib 按 chat 开关状态判定，页面开着
+   * 才入账。空数组直接判 parameter/missing，不发起请求。
+   */
+  markMessagesRead(messageIds: number[]): Result<TdPendingRequest, AppError> {
+    if (messageIds.length === 0) {
+      return err<TdPendingRequest, AppError>(
+        AppErrors.parameter('missing', 'message_ids', 'no message ids to mark read')
+      );
+    }
+    const req: ViewMessages = new ViewMessages();
+    req.chat_id = this.chatId;
+    req.message_ids = messageIds;
+    req.source = null;
+    req.force_read = false;
+
+    return this.scope.request('viewMessages', encodeViewMessages(req) as TdWireObject);
+  }
+
+  /**
+   * 重发失败消息（MSG-104）：resendMessages(chat_id, message_ids)。
+   * 成功后 TDLib 推 updateMessageSendSucceeded/Failed 结算发送态，由现有订阅处理。
+   */
+  resendMessages(messageIds: number[]): Result<TdPendingRequest, AppError> {
+    if (messageIds.length === 0) {
+      return err<TdPendingRequest, AppError>(
+        AppErrors.parameter('missing', 'message_ids', 'no message ids to resend')
+      );
+    }
+    const req: ResendMessages = new ResendMessages();
+    req.chat_id = this.chatId;
+    req.message_ids = messageIds;
+
+    return this.scope.request('resendMessages', encodeResendMessages(req) as TdWireObject);
+  }
+
   private requestHistory(fromMessageId: number, offset: number, limit: number): Result<TdPendingRequest, AppError> {
     const req: GetChatHistory = new GetChatHistory();
     req.chat_id = this.chatId;
@@ -430,6 +491,45 @@ export class MessageProjection {
           this.notifyStateChanged();
         }
       }
+    } else if (update.type === 'updateChatReadOutbox') {
+      // 已读回执（MSG-104）：对端已读水位只增不减，变化才通知。
+      const readUpdate: UpdateChatReadOutbox = update as UpdateChatReadOutbox;
+      if (readUpdate.chat_id === this.chatId) {
+        console.info(`MessageProjection updateChatReadOutbox chatId=${this.chatId} lastReadOutbox=${readUpdate.last_read_outbox_message_id}`);
+        this.advanceLastReadOutbox(readUpdate.last_read_outbox_message_id);
+      }
+    }
+  }
+
+  /** 已读水位只增不减，变化才通知（getChat 初始灌水位与增量推送共用）。 */
+  private advanceLastReadOutbox(messageId: number): void {
+    if (messageId > this.lastReadOutboxMessageId) {
+      this.lastReadOutboxMessageId = messageId;
+      this.notifyStateChanged();
+    }
+  }
+
+  /**
+   * 初始已读水位（MSG-104 修复）：getChat 取 chat.last_read_outbox_message_id
+   * 灌为水位初值。openChat 后 chat 已命中 TDLib 本地缓存，无网络往返；
+   * 失败静默——水位退化为纯增量推送，与修复前行为一致。
+   */
+  private fetchReadOutboxWatermark(): void {
+    const req: GetChat = new GetChat();
+    req.chat_id = this.chatId;
+    const result: Result<TdPendingRequest, AppError> =
+      this.scope.request('getChat', encodeGetChat(req) as TdWireObject);
+    if (result.ok) {
+      const self: MessageProjection = this;
+      result.value.promise.then((res: Result<TdWireObject, AppError>) => {
+        if (res.ok) {
+          const chat: Chat | null = decodeChat(res.value as TdJsonRaw);
+          if (chat !== null && chat.id === self.chatId) {
+            self.advanceLastReadOutbox(chat.last_read_outbox_message_id);
+          }
+        }
+      }).catch(() => {
+      });
     }
   }
 

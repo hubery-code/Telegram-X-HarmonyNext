@@ -76,8 +76,11 @@ import {
   SendTextMessage,
   FetchMessagePermissions,
   EditMessageText,
-  DeleteMessages
+  DeleteMessages,
+  ReportMessagesRead,
+  ResendMessage
 } from '../contract/ChatEffect';
+import { isOutgoingMessageRead, ReadReportThrottle } from '../model/ReadReceipt';
 import { chatReducer } from '../reducer/ChatReducer';
 
 const DOMAIN: number = 0x0000;
@@ -177,6 +180,8 @@ export class ChatCoordinator {
   /** MSG-102：已发起过 getUser 的 sender，防重复请求。 */
   private readonly requestedSenderIds: Set<number> = new Set();
   private readonly senderSubscriptions: Map<number, Subscription> = new Map();
+  /** MSG-104：已读上报节流（lastReported 只增不减）。 */
+  private readonly readThrottle: ReadReportThrottle = new ReadReportThrottle();
 
   constructor(
     scope: AccountScope,
@@ -280,10 +285,40 @@ export class ChatCoordinator {
     }
     const items: MessageItem[] = [];
     for (let i = 0; i < projectionState.messages.length; i++) {
-      items.push(this.mapMessageToItem(projectionState.messages[i], textById));
+      items.push(this.mapMessageToItem(projectionState.messages[i], textById,
+        projectionState.lastReadOutboxMessageId));
     }
     this.dispatch(new OnMessagesLoaded(items, projectionState.hasMoreOlder));
     this.maybeBackfillOlder(projectionState);
+    // MSG-104：投影有新内容（含首屏完成、新消息到达）时直接上报最新 incoming
+    // 已读。MVP 简化：聊天页开着即视为入屏（列表自动跟随到底时成立），
+    // 精确可视范围由 onScrollIndex → OnVisibleRangeChanged 路径补充。
+    this.reportReadUpTo(items, items.length - 1);
+  }
+
+  /** MSG-104：节流后向 TDLib 发 viewMessages；失败只记日志，不打扰 UI。 */
+  private reportReadUpTo(items: readonly MessageItem[], lastVisibleIndex: number): void {
+    const target: number = this.readThrottle.poll(items, lastVisibleIndex);
+    if (target <= 0 || this.destroyed) {
+      return;
+    }
+    this.sendReadReport(target);
+  }
+
+  private sendReadReport(messageId: number): void {
+    const result: Result<TdPendingRequest, AppError> = this.projection.markMessagesRead([messageId]);
+    if (result.err) {
+      hilog.error(DOMAIN, TAG, 'viewMessages rejected: %{public}s', AppErrors.toLogString(result.error));
+      return;
+    }
+    if (result.ok) {
+      result.value.promise.then((res: Result<TdWireObject, AppError>) => {
+        if (res.err) {
+          hilog.error(DOMAIN, TAG, 'viewMessages failed: %{public}s', AppErrors.toLogString(res.error));
+        }
+      }).catch(() => {
+      });
+    }
   }
 
   /**
@@ -311,7 +346,8 @@ export class ChatCoordinator {
     }, BACKFILL_DELAY_MS);
   }
 
-  private mapMessageToItem(message: Message, textById: Map<number, string>): MessageItem {
+  private mapMessageToItem(message: Message, textById: Map<number, string>,
+    lastReadOutboxMessageId: number): MessageItem {
     const replyToId: number | null = repliedMessageIdOf(message.reply_to);
     let replyToSummary: string = '';
     if (replyToId !== null) {
@@ -349,7 +385,8 @@ export class ChatCoordinator {
       replyToId,
       replyToSummary,
       spans,
-      senderInfo.colorIndex
+      senderInfo.colorIndex,
+      isOutgoingMessageRead(message.is_outgoing, message.id, lastReadOutboxMessageId)
     );
   }
 
@@ -550,6 +587,41 @@ export class ChatCoordinator {
       case 'navigateBack': {
         hilog.info(DOMAIN, TAG, 'back to chat list from chatId=%{public}s', `${this.currentState.chatId}`);
         this.onBack();
+        break;
+      }
+
+      case 'reportMessagesRead': {
+        // MSG-104：scroll intent 路径的已读上报；执行侧再经节流（只增不减）。
+        const report: ReportMessagesRead = effect as ReportMessagesRead;
+        if (!this.destroyed && this.readThrottle.shouldReport(report.messageId)) {
+          this.sendReadReport(report.messageId);
+        }
+        break;
+      }
+
+      case 'resendMessage': {
+        // MSG-104：失败重发；响应失败回灌 OnMessageActionFailed（errorMessage 细条），
+        // 成功无额外动作（updateMessageSendSucceeded/Failed 订阅结算）。
+        const resend: ResendMessage = effect as ResendMessage;
+        hilog.info(DOMAIN, TAG, 'resend message chatId=%{public}s messageId=%{public}s',
+          `${resend.chatId}`, `${resend.messageId}`);
+        const result: Result<TdPendingRequest, AppError> =
+          this.projection.resendMessages([resend.messageId]);
+        if (result.err) {
+          hilog.error(DOMAIN, TAG, 'resendMessages rejected: %{public}s', AppErrors.toLogString(result.error));
+          this.dispatch(new OnMessageActionFailed(result.error));
+        }
+        if (result.ok) {
+          result.value.promise.then((res: Result<TdWireObject, AppError>) => {
+            if (res.err) {
+              hilog.error(DOMAIN, TAG, 'resendMessages failed: %{public}s', AppErrors.toLogString(res.error));
+              if (!this.destroyed) {
+                this.dispatch(new OnMessageActionFailed(res.error));
+              }
+            }
+          }).catch(() => {
+          });
+        }
         break;
       }
 

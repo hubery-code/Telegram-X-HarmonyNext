@@ -84,6 +84,30 @@ export class NavigateBack implements Effect {
   readonly kind: 'navigateBack' = 'navigateBack';
 }
 
+/** MSG-104：已读上报（viewMessages），上报到 messageId（含）为止。 */
+export class ReportMessagesRead implements Effect {
+  readonly kind: 'reportMessagesRead' = 'reportMessagesRead';
+  readonly chatId: number;
+  readonly messageId: number;
+
+  constructor(chatId: number, messageId: number) {
+    this.chatId = chatId;
+    this.messageId = messageId;
+  }
+}
+
+/** MSG-104：重发发送失败的消息（resendMessages）。 */
+export class ResendMessage implements Effect {
+  readonly kind: 'resendMessage' = 'resendMessage';
+  readonly chatId: number;
+  readonly messageId: number;
+
+  constructor(chatId: number, messageId: number) {
+    this.chatId = chatId;
+    this.messageId = messageId;
+  }
+}
+
 export type ChatEffect =
   | FetchInitialMessages
   | FetchOlderMessages
@@ -91,4 +115,6 @@ export type ChatEffect =
   | FetchMessagePermissions
   | EditMessageText
   | DeleteMessages
-  | NavigateBack;
+  | NavigateBack
+  | ReportMessagesRead
+  | ResendMessage;

@@ -39,6 +39,27 @@ function formatChatTimestamp(timestampMs: number): string {
   return `${pad2(date.getDate())}.${pad2(date.getMonth() + 1)}.${date.getFullYear()}`;
 }
 
+/**
+ * FNV-1a 32 位字符串散列：给 LazyForEach keyGenerator 用。
+ * key 不变 LazyForEach 会复用行组件不重渲染——只按 chatId 做 key 时，
+ * 预览文本/未读数/时间戳等原地变更不上屏（与聊天页 MSG-104 同因）。
+ */
+function fnv1a32(input: string): string {
+  let hash: number = 0x811c9dc5;
+  for (let i = 0; i < input.length; i++) {
+    hash ^= input.charCodeAt(i) & 0xff;
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(16);
+}
+
+/** 会话行的 LazyForEach key：chatId + 展示相关内容散列（标题/预览/未读数/时间戳）。 */
+function chatRowKey(item: ChatListItem): string {
+  const signature: string =
+    `${item.title}|${item.lastMessagePreview}|${item.unreadCount}|${item.timestampMs}`;
+  return `${item.chatId}:${fnv1a32(signature)}`;
+}
+
 /** LazyForEach 数据源：整体替换 items 并触发全量刷新。 */
 export class ChatListDataSource implements IDataSource {
   private items: ChatListItem[] = [];
@@ -125,7 +146,7 @@ export struct ChatListPage {
               ListItem() {
                 this.ChatRow(item)
               }
-            }, (item: ChatListItem) => `${item.chatId}`)
+            }, (item: ChatListItem) => chatRowKey(item))
           }
           .width('100%')
           .height('100%')

@@ -15,6 +15,10 @@
  *
  * MSG-102 新增：
  * - senderColorIndex：群聊署名/头像的调色板索引（0..6），-1 = 无署名/默认色。
+ *
+ * MSG-104 新增：
+ * - isRead：己方消息已被对端读（messageId <= lastReadOutboxMessageId），
+ *   气泡时间戳旁显 "✓✓"；收到的消息恒 false。
  */
 
 import { MessageTextSpan } from './MessageTextSpan';
@@ -35,6 +39,7 @@ export class MessageItem {
   readonly replyToSummary: string;
   readonly spans: MessageTextSpan[];
   readonly senderColorIndex: number;
+  readonly isRead: boolean;
 
   constructor(
     messageId: number,
@@ -48,7 +53,8 @@ export class MessageItem {
     replyToMessageId: number | null = null,
     replyToSummary: string = '',
     spans: MessageTextSpan[] = [],
-    senderColorIndex: number = -1
+    senderColorIndex: number = -1,
+    isRead: boolean = false
   ) {
     this.messageId = messageId;
     this.text = text;
@@ -62,5 +68,6 @@ export class MessageItem {
     this.replyToSummary = replyToSummary;
     this.spans = spans;
     this.senderColorIndex = senderColorIndex;
+    this.isRead = isRead;
   }
 }

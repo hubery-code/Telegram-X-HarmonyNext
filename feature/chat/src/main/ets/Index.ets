@@ -46,6 +46,8 @@ export {
   CancelComposerMode,
   DismissMessageActionMenu,
   OnMessageActionFailed,
+  OnVisibleRangeChanged,
+  TapFailedMessage,
   ChatIntent
 } from './contract/ChatIntent';
 
@@ -57,8 +59,16 @@ export {
   EditMessageText,
   DeleteMessages,
   NavigateBack,
+  ReportMessagesRead,
+  ResendMessage,
   ChatEffect
 } from './contract/ChatEffect';
+
+export {
+  isOutgoingMessageRead,
+  incomingIdUpTo,
+  ReadReportThrottle
+} from './model/ReadReceipt';
 
 export { chatReducer, messageSnippet } from './reducer/ChatReducer';
 
