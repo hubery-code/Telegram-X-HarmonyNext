@@ -36,3 +36,4 @@ tdlib-credentials.json5
 .test/
 **/.test/
 signing/
+.agent_status.json

@@ -8,19 +8,38 @@ import {
 import { FakeAppFiles, FakeNetworkState, NetworkSnapshot } from '@tgx/platform-ports';
 import {
   LifecycleCoordinator,
+  LifecycleCoordinatorOptions,
   LifecycleBootstrapReport,
   mapSnapshotToNetworkType
 } from '../../main/ets/lifecycle/LifecycleCoordinator';
 import { FakeAccountBridge } from './FakeAccountBridge';
 
-function createHarness(initialNetwork?: NetworkSnapshot): {
-  bridge: FakeAccountBridge;
-  files: FakeAppFiles;
-  network: FakeNetworkState;
-  registry: AccountRegistry;
-  clock: ManualClock;
-  coordinator: LifecycleCoordinator;
-} {
+class LifecycleTestHarness {
+  readonly bridge: FakeAccountBridge;
+  readonly files: FakeAppFiles;
+  readonly network: FakeNetworkState;
+  readonly registry: AccountRegistry;
+  readonly clock: ManualClock;
+  readonly coordinator: LifecycleCoordinator;
+
+  constructor(
+    bridge: FakeAccountBridge,
+    files: FakeAppFiles,
+    network: FakeNetworkState,
+    registry: AccountRegistry,
+    clock: ManualClock,
+    coordinator: LifecycleCoordinator
+  ) {
+    this.bridge = bridge;
+    this.files = files;
+    this.network = network;
+    this.registry = registry;
+    this.clock = clock;
+    this.coordinator = coordinator;
+  }
+}
+
+function createHarness(initialNetwork?: NetworkSnapshot): LifecycleTestHarness {
   const bridge: FakeAccountBridge = new FakeAccountBridge();
   const files: FakeAppFiles = new FakeAppFiles();
   const clock: ManualClock = new ManualClock(1000, 100);
@@ -34,20 +53,21 @@ function createHarness(initialNetwork?: NetworkSnapshot): {
   const registry: AccountRegistry = new AccountRegistry(options);
   registry.start();
 
-  const coordinator: LifecycleCoordinator = new LifecycleCoordinator({
+  const coordinatorOptions: LifecycleCoordinatorOptions = {
     registry: registry,
     network: network,
     clock: clock
-  });
-
-  return {
-    bridge: bridge,
-    files: files,
-    network: network,
-    registry: registry,
-    clock: clock,
-    coordinator: coordinator
   };
+  const coordinator: LifecycleCoordinator = new LifecycleCoordinator(coordinatorOptions);
+
+  return new LifecycleTestHarness(
+    bridge,
+    files,
+    network,
+    registry,
+    clock,
+    coordinator
+  );
 }
 
 export default function lifecycleCoordinatorTest() {
@@ -97,9 +117,17 @@ export default function lifecycleCoordinatorTest() {
       h.registry.create('secondary_user');
       h.registry.hibernate('secondary_user');
 
-      // Now create a fresh coordinator on the same files/registry
+      // Cold start: fresh registry on same files (manifest preserved)
+      const freshRegistry = new AccountRegistry({
+        bridge: h.bridge,
+        files: h.files,
+        clock: h.clock
+      });
+      freshRegistry.start();
+
+      // Now create a fresh coordinator on the fresh registry
       const freshCoordinator = new LifecycleCoordinator({
-        registry: h.registry,
+        registry: freshRegistry,
         network: h.network,
         clock: h.clock
       });
@@ -109,7 +137,7 @@ export default function lifecycleCoordinatorTest() {
       expect(report.primaryScope.lifecycle).assertEqual('active');
       expect(report.scopes.length).assertEqual(2);
 
-      const secondary = h.registry.get('secondary_user');
+      const secondary = freshRegistry.get('secondary_user');
       expect(secondary?.lifecycle).assertEqual('hibernating');
     });
 

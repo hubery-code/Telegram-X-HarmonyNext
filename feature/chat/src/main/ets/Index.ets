@@ -3,6 +3,7 @@
  */
 
 export { MessageItem, MessageSendState } from './model/MessageItem';
+export { MediaAttachment, MediaKind } from './model/MediaAttachment';
 
 export { MessageTextSpan } from './model/MessageTextSpan';
 

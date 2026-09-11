@@ -22,6 +22,7 @@
  */
 
 import { MessageTextSpan } from './MessageTextSpan';
+import { MediaAttachment } from './MediaAttachment';
 
 /** 发送状态：none=已发送/收到的正常消息；pending=发送中；failed=发送失败。 */
 export type MessageSendState = 'none' | 'pending' | 'failed';
@@ -40,6 +41,7 @@ export class MessageItem {
   readonly spans: MessageTextSpan[];
   readonly senderColorIndex: number;
   readonly isRead: boolean;
+  readonly media: MediaAttachment | null;
 
   constructor(
     messageId: number,
@@ -54,7 +56,8 @@ export class MessageItem {
     replyToSummary: string = '',
     spans: MessageTextSpan[] = [],
     senderColorIndex: number = -1,
-    isRead: boolean = false
+    isRead: boolean = false,
+    media: MediaAttachment | null = null
   ) {
     this.messageId = messageId;
     this.text = text;
@@ -69,5 +72,6 @@ export class MessageItem {
     this.spans = spans;
     this.senderColorIndex = senderColorIndex;
     this.isRead = isRead;
+    this.media = media;
   }
 }

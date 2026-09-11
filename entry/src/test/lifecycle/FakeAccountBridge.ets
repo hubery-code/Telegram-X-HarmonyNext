@@ -10,6 +10,15 @@ export interface SentRecord {
   readonly utf8: string;
 }
 
+class FakeAccountBridgeMetrics implements TdNativeBridgeMetrics {
+  readonly queueSize: number = 0;
+  readonly overflowWaitCount: number = 0;
+  readonly droppedCount: number = 0;
+  readonly eventsForwarded: number = 0;
+  readonly subscriptions: number = 0;
+  readonly dispatcherRunning: boolean = true;
+}
+
 export class FakeAccountBridge implements TdNativeBridgeLike {
   version: string = '1.8.67-fake';
   readonly sent: SentRecord[] = [];
@@ -48,11 +57,6 @@ export class FakeAccountBridge implements TdNativeBridgeLike {
   }
 
   getMetrics(): TdNativeBridgeMetrics {
-    return {
-      receivedCount: 0,
-      droppedCount: 0,
-      queueSize: 0,
-      pendingDispatches: 0
-    };
+    return new FakeAccountBridgeMetrics();
   }
 }

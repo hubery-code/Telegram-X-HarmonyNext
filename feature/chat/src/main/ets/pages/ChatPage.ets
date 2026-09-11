@@ -35,8 +35,10 @@ import { LightTheme } from '@tgx/core-design-system';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { common } from '@kit.AbilityKit';
 import { BusinessError } from '@kit.BasicServicesKit';
+import { fileUri } from '@kit.CoreFileKit';
 import { MessageItem } from '../model/MessageItem';
 import { MessageTextSpan } from '../model/MessageTextSpan';
+import { MediaAttachment } from '../model/MediaAttachment';
 import { avatarLettersForName, nameColorForIndex } from '../model/SenderInfo';
 import {
   ChatUiState,
@@ -117,11 +119,28 @@ function fnv1a32(input: string): string {
   return (hash >>> 0).toString(16);
 }
 
-/** 消息行的 LazyForEach key：messageId + 展示相关内容散列（正文/署名/回复摘要/发送态/已读/编辑标记）。 */
+function formatDuration(seconds: number): string {
+  if (seconds <= 0) {
+    return '0:00';
+  }
+  const mins: number = Math.floor(seconds / 60);
+  const secs: number = Math.floor(seconds % 60);
+  const secsStr: string = secs < 10 ? `0${secs}` : `${secs}`;
+  return `${mins}:${secsStr}`;
+}
+
+/** 消息行的 LazyForEach key：messageId + 展示相关内容散列（正文/署名/回复摘要/发送态/已读/编辑标记/多媒体）。 */
 function messageRowKey(item: MessageItem): string {
+  let mediaSig: string = '';
+  if (item.media !== null) {
+    const m: MediaAttachment = item.media;
+    const path: string = m.localPath !== null ? m.localPath : '';
+    const thumb: string = m.thumbnailPath !== null ? m.thumbnailPath : '';
+    mediaSig = `${m.kind}|${m.fileId}|${path}|${thumb}|${m.isDownloaded}|${m.isDownloading}|${Math.round(m.progress * 10)}`;
+  }
   const signature: string =
     `${item.sendState}|${item.isRead}|${item.isEdited}|${item.senderColorIndex}|` +
-    `${item.text}|${item.senderName}|${item.replyToSummary}`;
+    `${item.text}|${item.senderName}|${item.replyToSummary}|${mediaSig}`;
   return `${item.messageId}:${fnv1a32(signature)}`;
 }
 
@@ -155,6 +174,21 @@ export class MessageListDataSource implements IDataSource {  private items: Mess
     this.listeners.forEach((listener: DataChangeListener) => {
       listener.onDataReloaded();
     });
+  }
+}
+
+function toSandboxUri(path: string | null): string {
+  if (path === null || path.length === 0) {
+    return '';
+  }
+  if (path.startsWith('file://')) {
+    return path;
+  }
+  const normalized: string = path.startsWith('/') ? path : '/' + path;
+  try {
+    return fileUri.getUriFromPath(normalized);
+  } catch (_e) {
+    return 'file://org.telegram.x.harmony' + normalized;
   }
 }
 
@@ -355,7 +389,12 @@ export struct ChatPage {
             .margin({ bottom: T.spacing.hairline })
         }
 
-        // 正文（MSG-101）：有富文本 spans 时按 span 渲染，否则回退纯文本。
+        // 多媒体附件（MEDIA-101 / MEDIA-105）：图片、视频、GIF 动图。
+        if (item.media !== null) {
+          this.MediaBubble(item.media)
+        }
+
+        // 正文/说明文字（MSG-101）：有富文本 spans 时按 span 渲染，否则回退纯文本。
         if (item.spans.length > 0) {
           Text() {
             ForEach(item.spans, (span: MessageTextSpan, spanIndex: number) => {
@@ -399,10 +438,12 @@ export struct ChatPage {
           }
           .fontSize(T.typography.body.fontSize)
           .fontColor(T.colors.chatText)
-        } else {
+          .margin(item.media !== null ? { top: T.spacing.xs } : { top: 0 })
+        } else if (item.text.length > 0) {
           Text(item.text)
             .fontSize(T.typography.body.fontSize)
             .fontColor(T.colors.chatText)
+            .margin(item.media !== null ? { top: T.spacing.xs } : { top: 0 })
         }
 
         Text(formatMessageStatus(item))
@@ -441,6 +482,210 @@ export struct ChatPage {
       right: T.spacing.screenInset,
       top: T.spacing.xs
     })
+  }
+
+  private mediaCardWidth(media: MediaAttachment): number {
+    if (media.width <= 0 || media.height <= 0) {
+      return 220;
+    }
+    const ratio: number = media.width / media.height;
+    if (ratio >= 1.0) {
+      return 240;
+    }
+    return Math.max(140, Math.min(240, Math.round(240 * ratio)));
+  }
+
+  private mediaCardHeight(media: MediaAttachment): number {
+    if (media.width <= 0 || media.height <= 0) {
+      return 160;
+    }
+    const ratio: number = media.width / media.height;
+    if (ratio >= 1.0) {
+      return Math.max(120, Math.min(240, Math.round(240 / ratio)));
+    }
+    return 240;
+  }
+
+  /** 多媒体气泡渲染（MEDIA-101 / MEDIA-105）：图片/视频/GIF 动图。 */
+  @Builder
+  MediaBubble(media: MediaAttachment) {
+    Stack({ alignContent: Alignment.Center }) {
+      // 1. 底图 / 缩略图 / 占位 / 动图视频
+      if (media.localPath !== null && media.isDownloaded) {
+        if (media.kind === 'animation' && (media.localPath.endsWith('.mp4') || media.localPath.indexOf('.mp4') >= 0)) {
+          // Telegram 动图通常为 MP4 格式，无声循环播放
+          Video({
+            src: toSandboxUri(media.localPath),
+            previewUri: toSandboxUri(media.thumbnailPath)
+          })
+            .autoPlay(true)
+            .loop(true)
+            .controls(false)
+            .muted(true)
+            .objectFit(ImageFit.Cover)
+            .width('100%')
+            .height('100%')
+            .borderRadius(T.radius.md)
+        } else if (media.kind === 'video') {
+          // 视频气泡：优先展示封面图（缩略图），若无缩略图则以 Video 组件首帧占位
+          if (media.thumbnailPath !== null) {
+            Image(toSandboxUri(media.thumbnailPath))
+              .width('100%')
+              .height('100%')
+              .objectFit(ImageFit.Cover)
+              .borderRadius(T.radius.md)
+          } else {
+            Video({
+              src: toSandboxUri(media.localPath)
+            })
+              .autoPlay(false)
+              .controls(false)
+              .muted(true)
+              .objectFit(ImageFit.Cover)
+              .width('100%')
+              .height('100%')
+              .borderRadius(T.radius.md)
+          }
+        } else {
+          // 普通图片或原生 GIF 格式图片
+          Image(toSandboxUri(media.localPath))
+            .width('100%')
+            .height('100%')
+            .objectFit(ImageFit.Cover)
+            .borderRadius(T.radius.md)
+        }
+      } else if (media.thumbnailPath !== null) {
+        Image(toSandboxUri(media.thumbnailPath))
+          .width('100%')
+          .height('100%')
+          .objectFit(ImageFit.Cover)
+          .blur(12)
+          .borderRadius(T.radius.md)
+      } else {
+        Column() {
+          Text(media.kind === 'video' ? '🎬' : (media.kind === 'animation' ? '👾' : '🖼️'))
+            .fontSize(32)
+        }
+        .width('100%')
+        .height('100%')
+        .justifyContent(FlexAlign.Center)
+        .alignItems(HorizontalAlign.Center)
+        .backgroundColor(T.colors.surfaceVariant)
+        .borderRadius(T.radius.md)
+      }
+
+      // 2. 状态与角标覆盖层
+      if (media.kind === 'photo') {
+        if (!media.isDownloaded) {
+          if (media.isDownloading) {
+            Column() {
+              LoadingProgress()
+                .width(36)
+                .height(36)
+                .color(Color.White)
+            }
+            .width(48)
+            .height(48)
+            .borderRadius(T.radius.full)
+            .backgroundColor('#80000000')
+            .justifyContent(FlexAlign.Center)
+            .alignItems(HorizontalAlign.Center)
+          } else {
+            Column() {
+              Text('⬇')
+                .fontSize(20)
+                .fontColor(Color.White)
+            }
+            .width(44)
+            .height(44)
+            .borderRadius(T.radius.full)
+            .backgroundColor('#80000000')
+            .justifyContent(FlexAlign.Center)
+            .alignItems(HorizontalAlign.Center)
+          }
+        }
+      } else if (media.kind === 'animation') {
+        // GIF 动图：左上角出 GIF 角标
+        Row() {
+          Text('GIF')
+            .fontSize(10)
+            .fontWeight(FontWeight.Bold)
+            .fontColor(Color.White)
+            .backgroundColor('#80000000')
+            .padding({ left: 6, right: 6, top: 2, bottom: 2 })
+            .borderRadius(4)
+        }
+        .width('100%')
+        .height('100%')
+        .alignItems(VerticalAlign.Top)
+        .justifyContent(FlexAlign.Start)
+        .padding(8)
+
+        if (!media.isDownloaded) {
+          if (media.isDownloading) {
+            Column() {
+              LoadingProgress()
+                .width(36)
+                .height(36)
+                .color(Color.White)
+            }
+            .width(48)
+            .height(48)
+            .borderRadius(T.radius.full)
+            .backgroundColor('#80000000')
+            .justifyContent(FlexAlign.Center)
+            .alignItems(HorizontalAlign.Center)
+          } else {
+            Column() {
+              Text('⬇')
+                .fontSize(20)
+                .fontColor(Color.White)
+            }
+            .width(44)
+            .height(44)
+            .borderRadius(T.radius.full)
+            .backgroundColor('#80000000')
+            .justifyContent(FlexAlign.Center)
+            .alignItems(HorizontalAlign.Center)
+          }
+        }
+      } else if (media.kind === 'video') {
+        // 视频：居中播放按钮
+        Column() {
+          Text('▶')
+            .fontSize(20)
+            .fontColor(Color.White)
+            .margin({ left: 3 })
+        }
+        .width(48)
+        .height(48)
+        .borderRadius(T.radius.full)
+        .backgroundColor('#80000000')
+        .justifyContent(FlexAlign.Center)
+        .alignItems(HorizontalAlign.Center)
+
+        // 右下角时长标签
+        Row() {
+          Text(formatDuration(media.duration))
+            .fontSize(11)
+            .fontWeight(FontWeight.Medium)
+            .fontColor(Color.White)
+            .backgroundColor('#80000000')
+            .padding({ left: 6, right: 6, top: 2, bottom: 2 })
+            .borderRadius(4)
+        }
+        .width('100%')
+        .height('100%')
+        .alignItems(VerticalAlign.Bottom)
+        .justifyContent(FlexAlign.End)
+        .padding(8)
+      }
+    }
+    .width(this.mediaCardWidth(media))
+    .height(this.mediaCardHeight(media))
+    .borderRadius(T.radius.md)
+    .clip(true)
+    .margin({ bottom: T.spacing.xs })
   }
 
   /** 回复/编辑预览条（CHAT-004）：accent 竖条 + 标题/摘要 + 取消 X。 */

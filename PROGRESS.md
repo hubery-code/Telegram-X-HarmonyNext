@@ -22,6 +22,7 @@
 
 | 工作包 | 负责人(AI) | 开始时间 | 说明 |
 |---|---|---|---|
+| （暂无） | — | — | — |
 
 > ⚠️ 并行约定：**不要执行 git commit**，完成后报告文件清单由主会话统一提交。core/account 禁止 import ArkUI/Kit。项目内有 `.agents/skills/harmony-next/` 离线参考（API 12-23 快照），编码遇 API 问题可查。
 >
@@ -53,11 +54,9 @@
 
 | 工作包 | 依赖 | 一句话 |
 |---|---|---|
-| MEDIA-101 | FILE-101 | 图片消息气泡：缩略图自动下载渲染、宽高比占位、进度圈（FEAT-MEDIA-001 收侧） |
 | MEDIA-102 | MEDIA-101 | 图片发送：photoViewPicker 选图 → SendMessage(InputMessagePhoto) + 上传进度（FEAT-MEDIA-001 发侧） |
 | MEDIA-103 | MEDIA-101 | 图片全屏 viewer：缩放/左右翻页（FEAT-MEDIA-006 图片部分） |
 | MEDIA-104 | FILE-101 | 文件消息气泡（名称/大小/下载态）+ 完成可打开（FEAT-MEDIA-003） |
-| MEDIA-105 | MEDIA-103 | 视频消息：缩略图 + 下载 + 播放（FEAT-MEDIA-002） |
 | MEDIA-106 | FILE-101 | 语音消息录制/发送/播放、波形（FEAT-MEDIA-004，~2 天） |
 
 ### COMPOSER / SEARCH / NOTIF / ACC / SETTINGS Epic
@@ -68,7 +67,6 @@
 | COMPOSER-102 | MEDIA-102 | 附件面板（相册/文件/拍摄入口） |
 | SEARCH-102 | SEARCH-101 | 聊天内搜索 + 结果跳转定位（FEAT-SEARCH-002） |
 | INTEG-002 | SEARCH-101 | 搜索页接入 entry 导航：同上，会话列表搜索框/入口 → SearchPage |
-| INTEG-003 | — | 修 entry/src/test 预存单测失败（LIFE-001 的 FakeAccountBridge 的 TdNativeBridgeMetrics 形状过期 + LifecycleCoordinator.test 字面量类型）；干净 HEAD 即失败，非回归 |
 | NOTIF-101 | AGC 配置 | Push Kit token → RegisterDevice 闭环（FEAT-PUSH-001；AGC/签名配置需用户确认） |
 | NOTIF-102 | NOTIF-101 | 通知聚合 + 点击路由直达聊天（FEAT-PUSH-002） |
 | ACC-101 | CORE-003 | 多账号切换 UI + 添加账号入口（FEAT-ACC-002/003；框架已有） |
@@ -86,6 +84,8 @@ GROUP / PROFILE / SHARE / A11Y / ADAPTIVE Epic 及 FEATURE_MATRIX P2/P3 项：Ph
 
 | 工作包 | 完成日期 | 证据 |
 |---|---|---|
+| MEDIA-101 / MEDIA-105 消息多媒体渲染 | 2026-09-11 ✅ | AI-Agent-Antigravity：实现 MediaAttachment 模型、ChatCoordinator 自动下载监听联动、ChatPage 气泡宽高比自适应卡片、@kit.CoreFileKit fileUri 沙箱协议转换（解决 GetAsset failed 报错）、Telegram 动图 MP4 格式采用 ArkUI Video 原生无声循环播放与常驻 GIF 胶囊标、图文混排 Caption；单测 58/58 全过，assembleHap BUILD SUCCESSFUL。真机截图验证（EI CLUB 群聊）：竖屏截图与横屏全景图片高清色彩自适应渲染 ✓、Gawr Gura 动图原生流畅循环播放并叠加 GIF 标 ✓ |
+| INTEG-003 修 entry 单测编译报错 | 2026-09-11 ✅ | AI-Agent-Antigravity：修复 entry/src/test/lifecycle/FakeAccountBridge.ets（新增 FakeAccountBridgeMetrics 实现 TdNativeBridgeMetrics，修复字段形状与对象字面量报错）和 LifecycleCoordinator.test.ets（引入 LifecycleTestHarness 类修复匿名对象字面量类型报错，冷启动恢复测试使用同底座文件的 freshRegistry 真实模拟杀进程恢复）；./hvigorw test --mode module -p module=entry@default -p product=default --no-daemon 全部 PASS（84 任务全绿，29s）；assembleHap BUILD SUCCESSFUL |
 | INTEG-001 设置页接入导航 | 2026-09-11 ✅ | 子agent-87（commit `e8bc7cf`）：会话列表 header 加齿轮入口（⚙ 文本字形）；entry Index.ets 加 showSettings 导航态（优先级 chat > settings > list > auth）；SettingsCoordinator 生命周期对齐 ChatCoordinator（进入创建/订阅/start，离开销毁）；登出成功/会话结束（auth step ≠ ready）自动回登录页（handleSessionEnded 三路销毁）；SettingsPage 加返回箭头；feature_settings 单测通过、assembleHap BUILD SUCCESSFUL。真机验证通过（用户 2026-09-11）：齿轮进设置页 ✓、账号信息展示 ✓、返回箭头回列表 ✓（登出链路未测）。附带发现：entry/src/test 有 2 处 LIFE-001 时期预存单测失败（Fake 的 TdNativeBridgeMetrics 形状过期），干净 HEAD 复跑同样失败，非本次回归——已登记 INTEG-003 待修 |
 | MSG-104 已读上报与已读回执 | 2026-09-11 ✅ | 子agent-86 + 主会话真机验证（commit `6377b2b`）：viewMessages 入屏上报（ChatPage onScrollIndex 最后可视下标 → incomingIdUpTo 映射 → ReadReportThrottle 只增节流；sync 路径兜底首屏/新消息）；MessageProjection 订阅 updateChatReadOutbox（水位只增）+ start() 时 getChat 灌 last_read_outbox_message_id 初始水位（修复"打开前已读仍单勾"）；己方消息 ✓/✓✓、pending "…"、failed "!"；失败气泡点击 → resendMessages 重发；单测 feature_chat 53/53、core_domain 48/48（新增 MessageProjection 6 例：灌水位/水位只增/竞态不回退/viewMessages+resendMessages 组包）。**重大根因发现**：真机"对方已读勾不变"排查（桥接日志证实 updateChatReadOutbox 到达且 watermark 已推进到 UI 层）定位为 **ArkUI LazyForEach key 只含 messageId → 同 id 内容变更复用组件不重渲**；修复=key 携带展示内容 FNV-1a 散列（ChatPage.messageRowKey / ChatListPage.chatRowKey），顺带修复实时编辑上屏、会话列表预览/未读数实时刷新。真机：历史已读 ✓✓ ✓、对方实时已读单勾原地变双勾 ✓（诊断日志已移除） |
 | MSG-102 群消息署名 UI 接入 | 2026-09-11 ✅ | 子agent-86 + 主会话真机验证（commit `06ca998`）：ChatCoordinator 持有 UserRegistry（构造即 start，destroy 释放订阅+stop）；start() 一次性 getChat 定 ChatKind（私聊/群/频道，群类型稳定无需监听）；`resolveSenderInfo` 纯函数：非 outgoing + 群 + MessageSenderUser 才署名，getUser 命中用 formatFullName，未命中 requestUser 一次（requestedSenderIds 防重）+ subscribeUser 等更新→scheduleSyncFromProjection 重映射上屏；MessageSenderChat/私聊/outgoing → 空署名；MessageItem 加 senderColorIndex（默认 -1）；气泡左侧 28vp 彩底首字母头像 + 调色板署名行（NAME_PALETTE 7 色对齐 chat_list AVATAR_PALETTE）；补 core/domain 缺失的 @tgx/platform-ports 依赖声明（arkts-no-structural-typing 禁接口结构兼容，须直引 Subscription）；10 新单测 44/44 全过。真机：EI CLUB 群聊彩色名字+头像 ✓、私聊布局不变 ✓。**注意**：未走 ChatRegistry（被 ChatListCoordinator 私有持有，feature/chat 无法访问），用自包含 getChat 解决 |

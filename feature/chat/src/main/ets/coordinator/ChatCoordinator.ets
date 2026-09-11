@@ -31,28 +31,37 @@ import { hilog } from '@kit.PerformanceAnalysisKit';
 import { ManualClock, SequentialIdGenerator, AppError, AppErrors } from '@tgx/core-common';
 import { AccountScope } from '@tgx/core-account';
 import {
+  Animation,
   Chat,
   decodeChat,
   decodeMessageProperties,
   encodeGetChat,
+  File,
   GetChat,
   Message,
+  MessageAnimation,
+  MessagePhoto,
   MessageProperties,
   MessageReplyToMessage,
   MessageText,
+  MessageVideo,
+  Photo,
+  PhotoSize,
+  TdJsonRaw,
   TdMessageContent,
   TdMessageReplyTo,
   TdMessageSendingState,
-  TdJsonRaw,
-  User
+  User,
+  Video
 } from '@tgx/core-td-api-generated';
-import { MessageListState, MessageProjection, UserRegistry } from '@tgx/core-domain';
+import { FileRegistry, MessageListState, MessageProjection, UserRegistry } from '@tgx/core-domain';
 import { TdPendingRequest, TdWireObject, TdWireValue } from '@tgx/td-gateway';
 import { Subscription } from '@tgx/platform-ports';
 import { Result } from '@tgx/core-common';
 import { ReducerEnv, ReducerResult } from '@tgx/feature-template';
 import { MessageItem, MessageSendState } from '../model/MessageItem';
 import { MessageTextSpan } from '../model/MessageTextSpan';
+import { MediaAttachment } from '../model/MediaAttachment';
 import { parseFormattedText } from '../model/FormattedTextParser';
 import {
   ChatKind,
@@ -167,6 +176,7 @@ export class ChatCoordinator {
   private readonly projection: MessageProjection;
   private readonly scope: AccountScope;
   private readonly userRegistry: UserRegistry;
+  private readonly fileRegistry: FileRegistry;
   private readonly env: ReducerEnv;
   private readonly onBack: () => void;
   private currentState: ChatUiState;
@@ -180,6 +190,8 @@ export class ChatCoordinator {
   /** MSG-102：已发起过 getUser 的 sender，防重复请求。 */
   private readonly requestedSenderIds: Set<number> = new Set();
   private readonly senderSubscriptions: Map<number, Subscription> = new Map();
+  /** MEDIA-101/105：文件下载更新订阅。 */
+  private readonly fileSubscriptions: Map<number, Subscription> = new Map();
   /** MSG-104：已读上报节流（lastReported 只增不减）。 */
   private readonly readThrottle: ReadReportThrottle = new ReadReportThrottle();
 
@@ -194,6 +206,8 @@ export class ChatCoordinator {
     this.scope = scope;
     // UserRegistry 构造即 start（订阅 updateUser/updateUserStatus），destroy 时 stop。
     this.userRegistry = new UserRegistry(scope);
+    // FileRegistry 构造即 start（订阅 updateFile），destroy 时 stop。
+    this.fileRegistry = new FileRegistry(scope);
     this.onBack = onBack !== undefined ? onBack : (): void => {};
     this.env = env !== undefined ? env : {
       clock: new ManualClock(1000, 500),
@@ -224,6 +238,11 @@ export class ChatCoordinator {
     });
     this.senderSubscriptions.clear();
     this.requestedSenderIds.clear();
+    this.fileSubscriptions.forEach((sub: Subscription) => {
+      sub.unsubscribe();
+    });
+    this.fileSubscriptions.clear();
+    this.fileRegistry.stop();
     this.userRegistry.stop();
     this.listeners.length = 0;
   }
@@ -346,6 +365,186 @@ export class ChatCoordinator {
     }, BACKFILL_DELAY_MS);
   }
 
+  private requestMediaDownload(fileId: number): void {
+    if (this.destroyed || fileId <= 0) {
+      return;
+    }
+    if (this.fileRegistry.isDownloaded(fileId)) {
+      return;
+    }
+    if (!this.fileSubscriptions.has(fileId)) {
+      const sub: Subscription = this.fileRegistry.subscribeFile(fileId, (_file: File) => {
+        if (!this.destroyed) {
+          this.scheduleSyncFromProjection();
+        }
+      });
+      this.fileSubscriptions.set(fileId, sub);
+    }
+    this.fileRegistry.downloadFile(fileId, 1);
+  }
+
+  private resolveMediaAttachment(message: Message): MediaAttachment | null {
+    if (message.content === null) {
+      return null;
+    }
+
+    if (message.content.type === 'messagePhoto') {
+      const photoContent: MessagePhoto = message.content as MessagePhoto;
+      if (photoContent.photo === null || photoContent.photo.sizes.length === 0) {
+        return null;
+      }
+      const sizes: PhotoSize[] = photoContent.photo.sizes;
+      const displaySize: PhotoSize = sizes[sizes.length - 1];
+      const thumbSize: PhotoSize = sizes[0];
+      const targetFile: File | null = displaySize.photo;
+      if (targetFile === null) {
+        return null;
+      }
+
+      const fileId: number = targetFile.id;
+      const localPath: string | null = this.fileRegistry.getLocalPath(fileId);
+      const isDownloaded: boolean = this.fileRegistry.isDownloaded(fileId);
+      const progress: number = this.fileRegistry.getDownloadProgress(fileId);
+      const latestFile: File | null = this.fileRegistry.getFile(fileId);
+      const isDownloading: boolean = latestFile !== null && latestFile.local !== null
+        ? latestFile.local.is_downloading_active
+        : (targetFile.local !== null ? targetFile.local.is_downloading_active : false);
+
+      let thumbPath: string | null = null;
+      if (thumbSize.photo !== null) {
+        thumbPath = this.fileRegistry.getLocalPath(thumbSize.photo.id);
+        if (thumbPath === null && thumbSize.photo.id !== fileId) {
+          this.requestMediaDownload(thumbSize.photo.id);
+        }
+      }
+
+      if (!isDownloaded && !isDownloading) {
+        this.requestMediaDownload(fileId);
+      }
+
+      const captionText: string = photoContent.caption !== null ? photoContent.caption.text : '';
+      const captionSpans: MessageTextSpan[] = photoContent.caption !== null ? parseFormattedText(photoContent.caption) : [];
+
+      return new MediaAttachment(
+        'photo',
+        fileId,
+        localPath,
+        thumbPath,
+        displaySize.width,
+        displaySize.height,
+        0,
+        isDownloading,
+        isDownloaded,
+        progress,
+        captionText,
+        captionSpans,
+        photoContent.has_spoiler
+      );
+    }
+
+    if (message.content.type === 'messageAnimation') {
+      const animContent: MessageAnimation = message.content as MessageAnimation;
+      if (animContent.animation === null) {
+        return null;
+      }
+      const anim: Animation = animContent.animation;
+      const targetFile: File | null = anim.animation;
+      if (targetFile === null) {
+        return null;
+      }
+
+      const fileId: number = targetFile.id;
+      const localPath: string | null = this.fileRegistry.getLocalPath(fileId);
+      const isDownloaded: boolean = this.fileRegistry.isDownloaded(fileId);
+      const progress: number = this.fileRegistry.getDownloadProgress(fileId);
+      const latestFile: File | null = this.fileRegistry.getFile(fileId);
+      const isDownloading: boolean = latestFile !== null && latestFile.local !== null
+        ? latestFile.local.is_downloading_active
+        : (targetFile.local !== null ? targetFile.local.is_downloading_active : false);
+
+      let thumbPath: string | null = null;
+      if (anim.thumbnail !== null && anim.thumbnail.file !== null) {
+        thumbPath = this.fileRegistry.getLocalPath(anim.thumbnail.file.id);
+        if (thumbPath === null) {
+          this.requestMediaDownload(anim.thumbnail.file.id);
+        }
+      }
+
+      if (!isDownloaded && !isDownloading) {
+        this.requestMediaDownload(fileId);
+      }
+
+      const captionText: string = animContent.caption !== null ? animContent.caption.text : '';
+      const captionSpans: MessageTextSpan[] = animContent.caption !== null ? parseFormattedText(animContent.caption) : [];
+
+      return new MediaAttachment(
+        'animation',
+        fileId,
+        localPath,
+        thumbPath,
+        anim.width,
+        anim.height,
+        anim.duration,
+        isDownloading,
+        isDownloaded,
+        progress,
+        captionText,
+        captionSpans,
+        animContent.has_spoiler
+      );
+    }
+
+    if (message.content.type === 'messageVideo') {
+      const videoContent: MessageVideo = message.content as MessageVideo;
+      if (videoContent.video === null) {
+        return null;
+      }
+      const video: Video = videoContent.video;
+      const targetFile: File | null = video.video;
+      if (targetFile === null) {
+        return null;
+      }
+
+      const fileId: number = targetFile.id;
+      const localPath: string | null = this.fileRegistry.getLocalPath(fileId);
+      const isDownloaded: boolean = this.fileRegistry.isDownloaded(fileId);
+      const progress: number = this.fileRegistry.getDownloadProgress(fileId);
+      const latestFile: File | null = this.fileRegistry.getFile(fileId);
+      const isDownloading: boolean = latestFile !== null && latestFile.local !== null
+        ? latestFile.local.is_downloading_active
+        : (targetFile.local !== null ? targetFile.local.is_downloading_active : false);
+
+      let thumbPath: string | null = null;
+      if (video.thumbnail !== null && video.thumbnail.file !== null) {
+        thumbPath = this.fileRegistry.getLocalPath(video.thumbnail.file.id);
+        if (thumbPath === null) {
+          this.requestMediaDownload(video.thumbnail.file.id);
+        }
+      }
+
+      const captionText: string = videoContent.caption !== null ? videoContent.caption.text : '';
+      const captionSpans: MessageTextSpan[] = videoContent.caption !== null ? parseFormattedText(videoContent.caption) : [];
+
+      return new MediaAttachment(
+        'video',
+        fileId,
+        localPath,
+        thumbPath,
+        video.width,
+        video.height,
+        video.duration,
+        isDownloading,
+        isDownloaded,
+        progress,
+        captionText,
+        captionSpans,
+        videoContent.has_spoiler
+      );
+    }
+
+    return null;
+  }
+
   private mapMessageToItem(message: Message, textById: Map<number, string>,
     lastReadOutboxMessageId: number): MessageItem {
     const replyToId: number | null = repliedMessageIdOf(message.reply_to);
@@ -357,12 +556,22 @@ export class ChatCoordinator {
       }
     }
     const isTextMessage: boolean = message.content !== null && message.content.type === 'messageText';
-    // MSG-101：文本消息解析富文本 spans；非文本消息 spans 为空（气泡仍显示占位标签）。
+    const media: MediaAttachment | null = this.resolveMediaAttachment(message);
+
     let spans: MessageTextSpan[] = [];
-    if (isTextMessage) {
+    let displayText: string = '';
+
+    if (media !== null) {
+      displayText = media.caption;
+      spans = media.captionSpans;
+    } else if (isTextMessage) {
       const textContent: MessageText = message.content as MessageText;
+      displayText = textContent.text !== null ? textContent.text.text : '';
       spans = parseFormattedText(textContent.text);
+    } else {
+      displayText = messageContentText(message.content);
     }
+
     // MSG-102：群聊收到的用户消息出署名；未命中缓存时 requestSenderUser 拉取并订阅刷新。
     const senderInfo: SenderInfo = resolveSenderInfo(
       message.is_outgoing,
@@ -375,7 +584,7 @@ export class ChatCoordinator {
     );
     return new MessageItem(
       message.id,
-      messageContentText(message.content),
+      displayText,
       message.date * 1000,
       message.is_outgoing,
       senderInfo.name,
@@ -386,7 +595,8 @@ export class ChatCoordinator {
       replyToSummary,
       spans,
       senderInfo.colorIndex,
-      isOutgoingMessageRead(message.is_outgoing, message.id, lastReadOutboxMessageId)
+      isOutgoingMessageRead(message.is_outgoing, message.id, lastReadOutboxMessageId),
+      media
     );
   }
 
