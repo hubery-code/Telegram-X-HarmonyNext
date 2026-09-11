@@ -4,7 +4,8 @@
  * LazyForEach 懒加载列表，每行：头像占位（色板圆 + 首字母）、标题、
  * 最后一条消息预览（单行截断）、时间戳、未读徽标（>99 显示 99+）。
  * 支持下拉刷新（RefreshChats）、点击行（ChatSelected）、空/加载/错误三态。
- * 全部色彩/字号/间距用 design_system token，不硬编码。
+ * header 右侧齿轮按钮经 onOpenSettings 回调打开设置页（INTEG-001，纯导航，
+ * 不经 reducer）。全部色彩/字号/间距用 design_system token，不硬编码。
  */
 
 import { LightTheme } from '@tgx/core-design-system';
@@ -16,6 +17,7 @@ const T = LightTheme;
 
 const AVATAR_SIZE: number = 52;
 const BADGE_HEIGHT: number = 20;
+const SETTINGS_BUTTON_SIZE: number = 44;
 const ONE_DAY_MS: number = 24 * 60 * 60 * 1000;
 const WEEKDAY_NAMES: string[] = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
@@ -100,6 +102,9 @@ export struct ChatListPage {
 
   onDispatch: (intent: Object) => void = () => {};
 
+  /** 打开设置页（纯导航回调，由装配层接线）。 */
+  onOpenSettings: () => void = () => {};
+
   @State private isRefreshing: boolean = false;
   private dataSource: ChatListDataSource = new ChatListDataSource();
 
@@ -124,8 +129,21 @@ export struct ChatListPage {
           .fontSize(T.typography.largeTitle.fontSize)
           .fontWeight(T.typography.largeTitle.fontWeight)
           .fontColor(T.colors.textPrimary)
+          .layoutWeight(1)
+
+        Text('⚙')
+          .fontSize(T.typography.largeTitle.fontSize)
+          .fontWeight(T.typography.title.fontWeight)
+          .fontColor(T.colors.accent)
+          .width(SETTINGS_BUTTON_SIZE)
+          .height(SETTINGS_BUTTON_SIZE)
+          .textAlign(TextAlign.Center)
+          .onClick(() => {
+            this.onOpenSettings();
+          })
       }
       .width('100%')
+      .alignItems(VerticalAlign.Center)
       .padding({
         left: T.spacing.screenInset,
         right: T.spacing.screenInset,

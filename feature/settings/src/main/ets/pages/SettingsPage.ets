@@ -24,6 +24,7 @@ import {
 } from '../contract/SettingsIntent';
 
 const AVATAR_SIZE: number = 64;
+const BACK_ARROW_SIZE: number = 44;
 
 export const AVATAR_PALETTE: string[] = [
   '#FFCC5049', // red
@@ -39,6 +40,9 @@ export const AVATAR_PALETTE: string[] = [
 export struct SettingsPage {
   @Prop @Watch('onUiStateChanged') uiState: SettingsUiState = SettingsUiState.initial();
   onDispatch: (intent: SettingsIntent) => void = (): void => {};
+
+  /** 返回上一页（纯导航回调，由装配层接线，INTEG-001）。 */
+  onBack: () => void = (): void => {};
 
   onUiStateChanged(): void {
   }
@@ -123,12 +127,24 @@ export struct SettingsPage {
   @Builder
   HeaderView() {
     Row() {
+      Text('‹')
+        .fontSize(this.getTheme().typography.largeTitle.fontSize)
+        .fontWeight(this.getTheme().typography.title.fontWeight)
+        .fontColor(this.getTheme().colors.accent)
+        .width(BACK_ARROW_SIZE)
+        .height(BACK_ARROW_SIZE)
+        .textAlign(TextAlign.Center)
+        .onClick((): void => {
+          this.onBack();
+        })
+
       Text('Settings')
         .fontSize(this.getTheme().typography.largeTitle.fontSize)
         .fontWeight(this.getTheme().typography.largeTitle.fontWeight)
         .fontColor(this.getTheme().colors.textPrimary)
     }
     .width('100%')
+    .alignItems(VerticalAlign.Center)
     .padding({
       left: this.getTheme().spacing.screenInset,
       right: this.getTheme().spacing.screenInset,
