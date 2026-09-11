@@ -42,6 +42,10 @@ export class MessageItem {
   readonly senderColorIndex: number;
   readonly isRead: boolean;
   readonly media: MediaAttachment | null;
+  readonly replySenderName: string;
+  readonly replySenderColorIndex: number;
+  readonly replyThumbnailPath: string | null;
+  readonly replyIsSticker: boolean;
 
   constructor(
     messageId: number,
@@ -57,7 +61,11 @@ export class MessageItem {
     spans: MessageTextSpan[] = [],
     senderColorIndex: number = -1,
     isRead: boolean = false,
-    media: MediaAttachment | null = null
+    media: MediaAttachment | null = null,
+    replySenderName: string = '',
+    replySenderColorIndex: number = -1,
+    replyThumbnailPath: string | null = null,
+    replyIsSticker: boolean = false
   ) {
     this.messageId = messageId;
     this.text = text;
@@ -73,5 +81,9 @@ export class MessageItem {
     this.senderColorIndex = senderColorIndex;
     this.isRead = isRead;
     this.media = media;
+    this.replySenderName = replySenderName;
+    this.replySenderColorIndex = replySenderColorIndex;
+    this.replyThumbnailPath = replyThumbnailPath;
+    this.replyIsSticker = replyIsSticker;
   }
 }

@@ -34,10 +34,13 @@ import {
   Animation,
   Chat,
   decodeChat,
+  decodeMessage,
   decodeMessageProperties,
   encodeGetChat,
+  encodeGetMessage,
   File,
   GetChat,
+  GetMessage,
   Message,
   MessageAnimation,
   MessagePhoto,
@@ -183,6 +186,28 @@ export function repliedMessageIdOf(replyTo: TdMessageReplyTo | null): number | n
   return reply.message_id > 0 ? reply.message_id : null;
 }
 
+export class ReplyInfo {
+  readonly summary: string;
+  readonly senderName: string;
+  readonly senderColorIndex: number;
+  readonly thumbnailPath: string | null;
+  readonly isSticker: boolean;
+
+  constructor(
+    summary: string,
+    senderName: string = '',
+    senderColorIndex: number = -1,
+    thumbnailPath: string | null = null,
+    isSticker: boolean = false
+  ) {
+    this.summary = summary;
+    this.senderName = senderName;
+    this.senderColorIndex = senderColorIndex;
+    this.thumbnailPath = thumbnailPath;
+    this.isSticker = isSticker;
+  }
+}
+
 export class ChatCoordinator {
   private readonly projection: MessageProjection;
   private readonly scope: AccountScope;
@@ -208,6 +233,8 @@ export class ChatCoordinator {
   private readonly requestedFileIds: Set<number> = new Set();
   /** MSG-104：已读上报节流（lastReported 只增不减）。 */
   private readonly readThrottle: ReadReportThrottle = new ReadReportThrottle();
+  /** 回复引用消息详情已发起过 getMessage 的 messageId 集合，防重复请求。 */
+  private readonly requestedReplyIds: Set<number> = new Set();
 
   constructor(
     scope: AccountScope,
@@ -344,18 +371,23 @@ export class ChatCoordinator {
 
   private syncFromProjection(): void {
     const projectionState: MessageListState = this.projection.state;
-    // 回复引用摘要：先建 id → 正文文本的查找表，原消息不在当前列表时摘要为空。
-    const textById: Map<number, string> = new Map();
+    // 回复引用查找表：解析被回复消息的 sender、正文摘要与缩略图
+    const replyInfoById: Map<number, ReplyInfo> = new Map();
     for (let i = 0; i < projectionState.messages.length; i++) {
       const message: Message = projectionState.messages[i];
-      textById.set(message.id, messageContentText(message.content));
+      replyInfoById.set(message.id, this.resolveReplyInfo(message));
     }
     const items: MessageItem[] = [];
     for (let i = 0; i < projectionState.messages.length; i++) {
-      items.push(this.mapMessageToItem(projectionState.messages[i], textById,
+      items.push(this.mapMessageToItem(projectionState.messages[i], replyInfoById,
         projectionState.lastReadOutboxMessageId));
     }
-    this.dispatch(new OnMessagesLoaded(items, projectionState.hasMoreOlder, projectionState.lastReadInboxMessageId));
+    this.dispatch(new OnMessagesLoaded(
+      items,
+      projectionState.hasMoreOlder,
+      projectionState.lastReadInboxMessageId,
+      projectionState.unreadCount
+    ));
     this.maybeBackfillOlder(projectionState);
     // MSG-104：投影有新内容（含首屏完成、新消息到达）时直接上报最新 incoming
     // 已读。MVP 简化：聊天页开着即视为入屏（列表自动跟随到底时成立），
@@ -369,11 +401,22 @@ export class ChatCoordinator {
     if (target <= 0 || this.destroyed) {
       return;
     }
-    this.sendReadReport(target);
+    const unreadIds: number[] = [];
+    const limitIndex: number = Math.min(lastVisibleIndex, items.length - 1);
+    for (let i = 0; i <= limitIndex; i++) {
+      const it: MessageItem = items[i];
+      if (!it.isOutgoing && it.messageId <= target) {
+        unreadIds.push(it.messageId);
+      }
+    }
+    if (unreadIds.length === 0) {
+      unreadIds.push(target);
+    }
+    this.sendReadReport(unreadIds);
   }
 
-  private sendReadReport(messageId: number): void {
-    const result: Result<TdPendingRequest, AppError> = this.projection.markMessagesRead([messageId]);
+  private sendReadReport(messageIds: number[]): void {
+    const result: Result<TdPendingRequest, AppError> = this.projection.markMessagesRead(messageIds);
     if (result.err) {
       hilog.error(DOMAIN, TAG, 'viewMessages rejected: %{public}s', AppErrors.toLogString(result.error));
       return;
@@ -722,14 +765,176 @@ export class ChatCoordinator {
     return null;
   }
 
-  private mapMessageToItem(message: Message, textById: Map<number, string>,
+  private resolveReplyInfo(message: Message): ReplyInfo {
+    // 1. 发件人姓名与颜色
+    let senderName: string = '';
+    let senderColorIndex: number = -1;
+    if (message.is_outgoing) {
+      senderName = 'You';
+      senderColorIndex = -1;
+    } else {
+      const senderInfo: SenderInfo = resolveSenderInfo(
+        false,
+        this.chatKind,
+        message.sender_id,
+        {
+          lookupUser: (userId: number): User | null => this.userRegistry.getUser(userId),
+          requestUser: (userId: number): void => this.requestSenderUser(userId)
+        }
+      );
+      senderName = senderInfo.name;
+      senderColorIndex = senderInfo.colorIndex;
+    }
+
+    // 2. 缩略图与多媒体判定
+    let thumbnailPath: string | null = null;
+    let isSticker: boolean = false;
+    let summary: string = '';
+
+    if (message.content !== null) {
+      switch (message.content.type) {
+        case 'messageText': {
+          const textContent: MessageText = message.content as MessageText;
+          summary = textContent.text !== null ? textContent.text.text : '';
+          break;
+        }
+        case 'messagePhoto': {
+          const photoContent: MessagePhoto = message.content as MessagePhoto;
+          if (photoContent.caption !== null && photoContent.caption.text.length > 0) {
+            summary = photoContent.caption.text;
+          } else {
+            summary = 'Photo';
+          }
+          if (photoContent.photo !== null && photoContent.photo.sizes.length > 0) {
+            // 优先检查是否已有任何尺寸已在本地缓存
+            for (let i = 0; i < photoContent.photo.sizes.length; i++) {
+              const ps: PhotoSize = photoContent.photo.sizes[i];
+              if (ps.photo !== null) {
+                const lp: string | null = this.fileRegistry.getLocalPath(ps.photo.id);
+                if (lp !== null) {
+                  thumbnailPath = lp;
+                  break;
+                }
+              }
+            }
+            // 若尚无任何本地缓存，选用最小缩略图发起下载
+            if (thumbnailPath === null) {
+              const smallestSize: PhotoSize = photoContent.photo.sizes[0];
+              if (smallestSize.photo !== null) {
+                const fileId: number = smallestSize.photo.id;
+                thumbnailPath = this.fileRegistry.getLocalPath(fileId);
+                if (thumbnailPath === null && !this.fileRegistry.isDownloaded(fileId)) {
+                  this.requestMediaDownload(fileId, 2);
+                }
+              }
+            }
+          }
+          break;
+        }
+        case 'messageSticker': {
+          const stickerContent: MessageSticker = message.content as MessageSticker;
+          isSticker = true;
+          if (stickerContent.sticker !== null) {
+            const sticker: Sticker = stickerContent.sticker;
+            summary = sticker.emoji.length > 0 ? `${sticker.emoji} Sticker` : 'Sticker';
+            if (sticker.thumbnail !== null && sticker.thumbnail.file !== null) {
+              const fileId: number = sticker.thumbnail.file.id;
+              thumbnailPath = this.fileRegistry.getLocalPath(fileId);
+              if (thumbnailPath === null && !this.fileRegistry.isDownloaded(fileId)) {
+                this.requestMediaDownload(fileId, 2);
+              }
+            }
+            if (thumbnailPath === null && sticker.sticker !== null) {
+              const fileId: number = sticker.sticker.id;
+              thumbnailPath = this.fileRegistry.getLocalPath(fileId);
+              if (thumbnailPath === null && !this.fileRegistry.isDownloaded(fileId)) {
+                this.requestMediaDownload(fileId, 2);
+              }
+            }
+          } else {
+            summary = 'Sticker';
+          }
+          break;
+        }
+        case 'messageVideo': {
+          const videoContent: MessageVideo = message.content as MessageVideo;
+          if (videoContent.caption !== null && videoContent.caption.text.length > 0) {
+            summary = videoContent.caption.text;
+          } else {
+            summary = 'Video';
+          }
+          if (videoContent.video !== null && videoContent.video.thumbnail !== null && videoContent.video.thumbnail.file !== null) {
+            const fileId: number = videoContent.video.thumbnail.file.id;
+            thumbnailPath = this.fileRegistry.getLocalPath(fileId);
+            if (thumbnailPath === null && !this.fileRegistry.isDownloaded(fileId)) {
+              this.requestMediaDownload(fileId, 2);
+            }
+          }
+          break;
+        }
+        case 'messageAnimation': {
+          const animContent: MessageAnimation = message.content as MessageAnimation;
+          if (animContent.caption !== null && animContent.caption.text.length > 0) {
+            summary = animContent.caption.text;
+          } else {
+            summary = 'GIF';
+          }
+          if (animContent.animation !== null && animContent.animation.thumbnail !== null && animContent.animation.thumbnail.file !== null) {
+            const fileId: number = animContent.animation.thumbnail.file.id;
+            thumbnailPath = this.fileRegistry.getLocalPath(fileId);
+            if (thumbnailPath === null && !this.fileRegistry.isDownloaded(fileId)) {
+              this.requestMediaDownload(fileId, 2);
+            }
+          }
+          break;
+        }
+        case 'messageVideoNote': {
+          summary = 'Video message';
+          const noteContent: MessageVideoNote = message.content as MessageVideoNote;
+          if (noteContent.video_note !== null && noteContent.video_note.thumbnail !== null && noteContent.video_note.thumbnail.file !== null) {
+            const fileId: number = noteContent.video_note.thumbnail.file.id;
+            thumbnailPath = this.fileRegistry.getLocalPath(fileId);
+            if (thumbnailPath === null && !this.fileRegistry.isDownloaded(fileId)) {
+              this.requestMediaDownload(fileId, 2);
+            }
+          }
+          break;
+        }
+        default: {
+          summary = messageContentText(message.content);
+          break;
+        }
+      }
+    }
+
+    return new ReplyInfo(summary, senderName, senderColorIndex, thumbnailPath, isSticker);
+  }
+
+  private mapMessageToItem(message: Message, replyInfoById: Map<number, ReplyInfo>,
     lastReadOutboxMessageId: number): MessageItem {
     const replyToId: number | null = repliedMessageIdOf(message.reply_to);
     let replyToSummary: string = '';
+    let replySenderName: string = '';
+    let replySenderColorIndex: number = -1;
+    let replyThumbnailPath: string | null = null;
+    let replyIsSticker: boolean = false;
+
     if (replyToId !== null) {
-      const targetText: string | undefined = textById.get(replyToId);
-      if (targetText !== undefined) {
-        replyToSummary = targetText;
+      let replyInfo: ReplyInfo | undefined = replyInfoById.get(replyToId);
+      if (replyInfo === undefined) {
+        const cachedMsg: Message | undefined = this.projection.getMessageById(replyToId);
+        if (cachedMsg !== undefined) {
+          replyInfo = this.resolveReplyInfo(cachedMsg);
+        } else {
+          this.requestMissingReplyMessage(replyToId);
+        }
+      }
+      if (replyInfo !== undefined) {
+        replyToSummary = replyInfo.summary;
+        replySenderName = replyInfo.senderName;
+        replySenderColorIndex = replyInfo.senderColorIndex;
+        replyThumbnailPath = replyInfo.thumbnailPath;
+        replyIsSticker = replyInfo.isSticker;
       }
     }
     const isTextMessage: boolean = message.content !== null && message.content.type === 'messageText';
@@ -773,8 +978,40 @@ export class ChatCoordinator {
       spans,
       senderInfo.colorIndex,
       isOutgoingMessageRead(message.is_outgoing, message.id, lastReadOutboxMessageId),
-      media
+      media,
+      replySenderName,
+      replySenderColorIndex,
+      replyThumbnailPath,
+      replyIsSticker
     );
+  }
+
+  /**
+   * 被回复消息不在当前已加载历史中 → 异步向 TDLib 拉取该消息详情（getMessage），
+   * 结果注入 projection.addCachedMessage 并触发 throttledSyncFromProjection 重新计算。
+   */
+  private requestMissingReplyMessage(messageId: number): void {
+    if (this.destroyed || this.requestedReplyIds.has(messageId)) {
+      return;
+    }
+    this.requestedReplyIds.add(messageId);
+    const req: GetMessage = new GetMessage();
+    req.chat_id = this.currentState.chatId;
+    req.message_id = messageId;
+    const result: Result<TdPendingRequest, AppError> =
+      this.scope.request('getMessage', encodeGetMessage(req) as TdWireObject);
+    if (result.ok) {
+      result.value.promise.then((res: Result<TdWireObject, AppError>) => {
+        if (!this.destroyed && res.ok) {
+          const msg: Message | null = decodeMessage(res.value as TdJsonRaw);
+          if (msg !== null) {
+            this.projection.addCachedMessage(msg);
+            this.scheduleThrottledSync();
+          }
+        }
+      }).catch(() => {
+      });
+    }
   }
 
   /**
@@ -981,7 +1218,7 @@ export class ChatCoordinator {
         // MSG-104：scroll intent 路径的已读上报；执行侧再经节流（只增不减）。
         const report: ReportMessagesRead = effect as ReportMessagesRead;
         if (!this.destroyed && this.readThrottle.shouldReport(report.messageId)) {
-          this.sendReadReport(report.messageId);
+          this.sendReadReport([report.messageId]);
         }
         break;
       }

@@ -81,6 +81,8 @@ export interface MessageListState {
   readonly lastReadOutboxMessageId: number;
   /** 本端收到的最后一条已读对端消息 id（updateChatReadInbox），0=未知/无。 */
   readonly lastReadInboxMessageId: number;
+  /** 未读消息数（0 表示已全部读完）。 */
+  readonly unreadCount: number;
 }
 
 /** getChatHistory 一页的吞入统计（received=成功 decode 条数，added=新增 id 数）。 */
@@ -111,6 +113,8 @@ export class MessageProjection {
   private lastReadOutboxMessageId: number = 0;
   /** 本端对收到的对端消息已读水位（updateChatReadInbox 推进，只增）。 */
   private lastReadInboxMessageId: number = 0;
+  /** 未读消息计数。 */
+  private unreadCount: number = 0;
 
   private subscription: TdUpdateSubscription | null = null;
   private stateListener: (() => void) | null = null;
@@ -170,8 +174,21 @@ export class MessageProjection {
       isLoading: this.isLoading,
       hasMoreOlder: this.hasMoreOlder,
       lastReadOutboxMessageId: this.lastReadOutboxMessageId,
-      lastReadInboxMessageId: this.lastReadInboxMessageId
+      lastReadInboxMessageId: this.lastReadInboxMessageId,
+      unreadCount: this.unreadCount
     };
+  }
+
+  /** 根据 messageId 从内存缓存中查询 Message 对象（用于回复摘要提取等）。 */
+  getMessageById(messageId: number): Message | undefined {
+    return this.messagesById.get(messageId);
+  }
+
+  /** 将单条消息放入内存查询缓存（不改变 orderedIds 列表展示顺序）。 */
+  addCachedMessage(message: Message): void {
+    if (!this.messagesById.has(message.id)) {
+      this.messagesById.set(message.id, message);
+    }
   }
 
   /**
@@ -508,7 +525,7 @@ export class MessageProjection {
       // 本端对收到的消息已读水位推进（updateChatReadInbox）：只增不减。
       const readInboxUpdate: UpdateChatReadInbox = update as UpdateChatReadInbox;
       if (readInboxUpdate.chat_id === this.chatId) {
-        this.advanceLastReadInbox(readInboxUpdate.last_read_inbox_message_id);
+        this.advanceLastReadInbox(readInboxUpdate.last_read_inbox_message_id, readInboxUpdate.unread_count);
       }
     }
   }
@@ -521,10 +538,18 @@ export class MessageProjection {
     }
   }
 
-  /** 本端已读水位只增不减，变化才通知。 */
-  private advanceLastReadInbox(messageId: number): void {
+  /** 本端已读水位只增不减，未读数同步更新，变化才通知。 */
+  private advanceLastReadInbox(messageId: number, unreadCount?: number): void {
+    let changed: boolean = false;
     if (messageId > this.lastReadInboxMessageId) {
       this.lastReadInboxMessageId = messageId;
+      changed = true;
+    }
+    if (unreadCount !== undefined && unreadCount !== this.unreadCount) {
+      this.unreadCount = unreadCount;
+      changed = true;
+    }
+    if (changed) {
       this.notifyStateChanged();
     }
   }
@@ -547,7 +572,7 @@ export class MessageProjection {
           const chat: Chat | null = decodeChat(res.value as TdJsonRaw);
           if (chat !== null && chat.id === self.chatId) {
             self.advanceLastReadOutbox(chat.last_read_outbox_message_id);
-            self.advanceLastReadInbox(chat.last_read_inbox_message_id);
+            self.advanceLastReadInbox(chat.last_read_inbox_message_id, chat.unread_count);
           }
         }
       }).catch(() => {

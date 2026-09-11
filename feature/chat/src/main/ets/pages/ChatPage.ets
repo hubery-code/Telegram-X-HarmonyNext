@@ -134,7 +134,7 @@ function formatDuration(seconds: number): string {
   return `${mins}:${secsStr}`;
 }
 
-/** 消息行的 LazyForEach key：messageId + 展示相关内容散列（正文/署名/回复摘要/发送态/已读/编辑标记/多媒体）。 */
+/** 消息行的 LazyForEach key：messageId + 展示相关内容散列（正文/署名/回复摘要/回复缩略图/发送态/已读/编辑标记/多媒体）。 */
 function messageRowKey(item: MessageItem): string {
   let mediaSig: string = '';
   if (item.media !== null) {
@@ -143,9 +143,12 @@ function messageRowKey(item: MessageItem): string {
     const thumb: string = m.thumbnailPath !== null ? m.thumbnailPath : '';
     mediaSig = `${m.kind}|${m.fileId}|${path}|${thumb}|${m.isDownloaded}|${m.isDownloading}|${Math.round(m.progress * 10)}`;
   }
+  const replySig: string =
+    `${item.replyToMessageId}|${item.replySenderName}|${item.replySenderColorIndex}|` +
+    `${item.replyThumbnailPath !== null ? item.replyThumbnailPath : ''}|${item.replyIsSticker}`;
   const signature: string =
     `${item.sendState}|${item.isRead}|${item.isEdited}|${item.senderColorIndex}|` +
-    `${item.text}|${item.senderName}|${item.replyToSummary}|${mediaSig}`;
+    `${item.text}|${item.senderName}|${item.replyToSummary}|${mediaSig}|${replySig}`;
   return `${item.messageId}:${fnv1a32(signature)}`;
 }
 
@@ -215,13 +218,21 @@ export struct ChatPage {
   @State private pinchStartScale: number = 1.0;
   @State private viewerBarsVisible: boolean = true;
   private swiperController: SwiperController = new SwiperController();
+  /** 标记用户是否已手动滑动过列表；为 false 时新拉取历史保持目标定位。 */
+  private hasUserScrolled: boolean = false;
+
+  /** 对齐 Telegram X（canGoUnread）：未读数 > 0 且存在已读水位时才定位未读。 */
+  private canGoUnread(): boolean {
+    return this.uiState.unreadCount > 0 && this.uiState.lastReadInboxMessageId > 0;
+  }
 
   private computeScrollTargetIndex(messages: readonly MessageItem[]): number {
     if (messages.length === 0) {
       return 0;
     }
-    const lastReadInbox: number = this.uiState.lastReadInboxMessageId;
-    if (lastReadInbox > 0) {
+    // 未读会话：定位到第一条未读消息
+    if (this.canGoUnread()) {
+      const lastReadInbox: number = this.uiState.lastReadInboxMessageId;
       for (let i = 0; i < messages.length; i++) {
         const item: MessageItem = messages[i];
         if (!item.isOutgoing && item.messageId > lastReadInbox) {
@@ -229,10 +240,12 @@ export struct ChatPage {
         }
       }
     }
+    // 已读会话：一律定位到末尾最新消息
     return messages.length - 1;
   }
 
   aboutToAppear(): void {
+    this.hasUserScrolled = false;
     this.dataSource.setItems(this.uiState.messages);
     this.shownMessages = this.uiState.messages;
     this.shownCount = this.uiState.messages.length;
@@ -265,7 +278,8 @@ export struct ChatPage {
     this.shownMessages = messages;
     this.shownCount = count;
     this.lastTailMessageId = tailId;
-    // 首屏出内容 → 定位到首条未读或最新；尾部来了新消息 → 平滑滚到底；顶部翻页（前插）不打断阅读位置。
+    // 首屏出内容 → 定位到首条未读或最新；尾部来了新消息 → 平滑滚到底；
+    // 顶部翻页/历史回填时，若用户尚未主动滑动，保持目标定位（未读定位未读，已读定位最新末尾）。
     if (firstContent) {
       const targetIdx: number = this.computeScrollTargetIndex(messages);
       const align: ScrollAlign = (targetIdx === count - 1) ? ScrollAlign.END : ScrollAlign.START;
@@ -276,6 +290,12 @@ export struct ChatPage {
       setTimeout(() => {
         this.scroller.scrollToIndex(count - 1, true, ScrollAlign.END);
       }, 40);
+    } else if (!this.hasUserScrolled && count > 0) {
+      const targetIdx: number = this.computeScrollTargetIndex(messages);
+      const align: ScrollAlign = (targetIdx === count - 1) ? ScrollAlign.END : ScrollAlign.START;
+      setTimeout(() => {
+        this.scroller.scrollToIndex(targetIdx, false, align);
+      }, 50);
     }
   }
 
@@ -314,6 +334,11 @@ export struct ChatPage {
           .layoutWeight(1)
           .cachedCount(5)
           .scrollBar(BarState.Off)
+          .onTouch((event: TouchEvent) => {
+            if (event.type === TouchType.Down || event.type === TouchType.Move) {
+              this.hasUserScrolled = true;
+            }
+          })
           .onScrollIndex((start: number, end: number) => {
             // MSG-104：入屏即读，最后可见下标变化即上报（节流在 coordinator）。
             this.onDispatch(new OnVisibleRangeChanged(end));
@@ -422,17 +447,13 @@ export struct ChatPage {
             .fontColor(this.senderNameColor(item))
             .maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
+            .alignSelf(ItemAlign.Start)
             .margin({ bottom: T.spacing.hairline })
         }
 
-        // 回复引用行（CHAT-004）：原消息不在当前列表时摘要退化为占位文案。
+        // 回复引用行（CHAT-004）：微缩图（贴纸/照片）+ 细色条 + 署名与摘要
         if (item.replyToMessageId !== null) {
-          Text(item.replyToSummary.length > 0 ? `↪ ${item.replyToSummary}` : '↪ message')
-            .fontSize(T.typography.caption.fontSize)
-            .fontColor(T.colors.textSecondary)
-            .maxLines(1)
-            .textOverflow({ overflow: TextOverflow.Ellipsis })
-            .margin({ bottom: T.spacing.hairline })
+          this.ReplyReference(item)
         }
 
         // 多媒体附件（MEDIA-101 / MEDIA-105）：图片、视频、GIF 动图；贴纸（STICKER-101）。
@@ -486,11 +507,13 @@ export struct ChatPage {
               }
             }, (span: MessageTextSpan, spanIndex: number) => `${item.messageId}:${spanIndex}`)
           }
+          .alignSelf(ItemAlign.Start)
           .fontSize(T.typography.body.fontSize)
           .fontColor(T.colors.chatText)
           .margin(item.media !== null ? { top: T.spacing.xs } : { top: 0 })
         } else if (item.text.length > 0) {
           Text(item.text)
+            .alignSelf(ItemAlign.Start)
             .fontSize(T.typography.body.fontSize)
             .fontColor(T.colors.chatText)
             .margin(item.media !== null ? { top: T.spacing.xs } : { top: 0 })
@@ -846,6 +869,58 @@ export struct ChatPage {
     .margin({ bottom: T.spacing.xs })
     .onClick(() => {
       this.onDispatch(new OpenMediaViewer(messageId));
+    })
+  }
+
+  /** 回复引用区域（CHAT-004 / 对齐 Telegram X）：左侧细竖条 + 缩略图（34x34vp）+ 被回复者昵称与摘要 */
+  @Builder
+  ReplyReference(item: MessageItem) {
+    Row() {
+      // 左侧细条（宽 2vp，高 34vp，色值与被回复者同色）
+      Column()
+        .width(2)
+        .height(item.replyThumbnailPath !== null ? 34 : 30)
+        .backgroundColor(this.replyLineColor(item))
+        .borderRadius(1)
+
+      // 缩略图（贴纸 Contain，照片/视频 Cover，圆角 4vp）
+      if (item.replyThumbnailPath !== null) {
+        Image(toSandboxUri(item.replyThumbnailPath))
+          .width(34)
+          .height(34)
+          .borderRadius(4)
+          .objectFit(item.replyIsSticker ? ImageFit.Contain : ImageFit.Cover)
+          .margin({ left: 6, right: 6 })
+      }
+
+      // 右侧文本列：首行发件人昵称，次行摘要文案
+      Column() {
+        Text(item.replySenderName.length > 0 ? item.replySenderName : 'Message')
+          .fontSize(12)
+          .fontWeight(FontWeight.Medium)
+          .fontColor(this.replyLineColor(item))
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+
+        Text(item.replyToSummary.length > 0 ? item.replyToSummary : 'Message')
+          .fontSize(12)
+          .fontColor(T.colors.textSecondary)
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .margin({ top: 2 })
+      }
+      .alignItems(HorizontalAlign.Start)
+      .justifyContent(FlexAlign.Center)
+      .margin(item.replyThumbnailPath !== null ? { left: 0 } : { left: 6 })
+      .layoutWeight(1)
+    }
+    .alignSelf(ItemAlign.Start)
+    .alignItems(VerticalAlign.Center)
+    .margin({ bottom: T.spacing.xs })
+    .onClick(() => {
+      if (item.replyToMessageId !== null) {
+        this.scrollToMessageId(item.replyToMessageId);
+      }
     })
   }
 
@@ -1336,6 +1411,21 @@ export struct ChatPage {
   /** 头像底色：与署名同色调色板取色。 */
   private senderAvatarColor(item: MessageItem): string {
     return item.senderColorIndex >= 0 ? nameColorForIndex(item.senderColorIndex) : T.colors.accent;
+  }
+
+  /** 回复引用左侧竖条与发件人昵称颜色：取发送者同款调色板，-1 兜底 accent。 */
+  private replyLineColor(item: MessageItem): string {
+    return item.replySenderColorIndex >= 0 ? nameColorForIndex(item.replySenderColorIndex) : T.colors.accent;
+  }
+
+  /** 点击回复引用跳转到被回复消息所在位置 */
+  private scrollToMessageId(messageId: number): void {
+    for (let i = 0; i < this.uiState.messages.length; i++) {
+      if (this.uiState.messages[i].messageId === messageId) {
+        this.scroller.scrollToIndex(i, true, ScrollAlign.CENTER);
+        break;
+      }
+    }
   }
 
   // ---- MSG-101 富文本 span：样式与交互 ----

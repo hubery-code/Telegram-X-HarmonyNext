@@ -331,8 +331,11 @@ export default function messageProjectionTest(): void {
       }
 
       // updateChatReadInbox 推进
-      bridge.emitUpdate(scope.clientId, 'updateChatReadInbox', makeReadInboxFields(42, 600));
+      const fields600 = makeReadInboxFields(42, 600);
+      fields600['unread_count'] = 3;
+      bridge.emitUpdate(scope.clientId, 'updateChatReadInbox', fields600);
       expect(projection.state.lastReadInboxMessageId).assertEqual(600);
+      expect(projection.state.unreadCount).assertEqual(3);
 
       // 低水位不回退
       bridge.emitUpdate(scope.clientId, 'updateChatReadInbox', makeReadInboxFields(42, 400));

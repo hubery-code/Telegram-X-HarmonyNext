@@ -31,11 +31,18 @@ export class OnMessagesLoaded implements Intent {
   readonly messages: readonly MessageItem[];
   readonly hasMoreOlder: boolean;
   readonly lastReadInboxMessageId: number;
+  readonly unreadCount: number;
 
-  constructor(messages: readonly MessageItem[], hasMoreOlder: boolean, lastReadInboxMessageId: number = 0) {
+  constructor(
+    messages: readonly MessageItem[],
+    hasMoreOlder: boolean,
+    lastReadInboxMessageId: number = 0,
+    unreadCount: number = 0
+  ) {
     this.messages = messages;
     this.hasMoreOlder = hasMoreOlder;
     this.lastReadInboxMessageId = lastReadInboxMessageId;
+    this.unreadCount = unreadCount;
   }
 }
 

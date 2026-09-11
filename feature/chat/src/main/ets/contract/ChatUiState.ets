@@ -89,6 +89,7 @@ export interface ChatUiStateOptions {
   readonly activeViewerIndex?: number;
   readonly viewerItems?: MediaViewerItem[];
   readonly lastReadInboxMessageId?: number;
+  readonly unreadCount?: number;
 }
 
 export class ChatUiState implements UiState {
@@ -104,6 +105,7 @@ export class ChatUiState implements UiState {
   readonly activeViewerIndex: number; // -1 表示关闭，>= 0 表示当前画廊索引
   readonly viewerItems: MediaViewerItem[];
   readonly lastReadInboxMessageId: number; // 0 表示无/未知
+  readonly unreadCount: number; // 0 表示已全部读完
 
   constructor(
     chatId: number,
@@ -117,7 +119,8 @@ export class ChatUiState implements UiState {
     actionMenu: MessageActionMenuState | null,
     activeViewerIndex: number = -1,
     viewerItems: MediaViewerItem[] = [],
-    lastReadInboxMessageId: number = 0
+    lastReadInboxMessageId: number = 0,
+    unreadCount: number = 0
   ) {
     this.chatId = chatId;
     this.chatTitle = chatTitle;
@@ -131,10 +134,11 @@ export class ChatUiState implements UiState {
     this.activeViewerIndex = activeViewerIndex;
     this.viewerItems = viewerItems;
     this.lastReadInboxMessageId = lastReadInboxMessageId;
+    this.unreadCount = unreadCount;
   }
 
   static initial(): ChatUiState {
-    return new ChatUiState(0, '', [], false, true, null, '', null, null, -1, [], 0);
+    return new ChatUiState(0, '', [], false, true, null, '', null, null, -1, [], 0, 0);
   }
 
   copyWith(options: ChatUiStateOptions): ChatUiState {
@@ -150,7 +154,8 @@ export class ChatUiState implements UiState {
       options.actionMenu !== undefined ? options.actionMenu : this.actionMenu,
       options.activeViewerIndex !== undefined ? options.activeViewerIndex : this.activeViewerIndex,
       options.viewerItems !== undefined ? options.viewerItems : this.viewerItems,
-      options.lastReadInboxMessageId !== undefined ? options.lastReadInboxMessageId : this.lastReadInboxMessageId
+      options.lastReadInboxMessageId !== undefined ? options.lastReadInboxMessageId : this.lastReadInboxMessageId,
+      options.unreadCount !== undefined ? options.unreadCount : this.unreadCount
     );
   }
 }

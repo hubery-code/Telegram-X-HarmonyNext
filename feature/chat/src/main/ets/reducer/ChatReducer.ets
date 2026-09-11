@@ -164,7 +164,8 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
         activeViewerIndex: activeIndex,
         lastReadInboxMessageId: loadedIntent.lastReadInboxMessageId > 0
           ? loadedIntent.lastReadInboxMessageId
-          : state.lastReadInboxMessageId
+          : state.lastReadInboxMessageId,
+        unreadCount: loadedIntent.unreadCount
       });
       return reduced(nextState);
     }
