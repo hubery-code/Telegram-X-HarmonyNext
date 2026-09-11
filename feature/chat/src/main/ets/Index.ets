@@ -53,6 +53,7 @@ export {
   OpenMediaViewer,
   CloseMediaViewer,
   ChangeViewerIndex,
+  RequestMediaDownload,
   ChatIntent
 } from './contract/ChatIntent';
 

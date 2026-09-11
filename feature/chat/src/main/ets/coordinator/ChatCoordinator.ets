@@ -45,6 +45,7 @@ import {
   MessageReplyToMessage,
   MessageText,
   MessageVideo,
+  MessageVideoNote,
   Photo,
   PhotoSize,
   TdJsonRaw,
@@ -52,7 +53,8 @@ import {
   TdMessageReplyTo,
   TdMessageSendingState,
   User,
-  Video
+  Video,
+  VideoNote
 } from '@tgx/core-td-api-generated';
 import { FileRegistry, MessageListState, MessageProjection, UserRegistry } from '@tgx/core-domain';
 import { TdPendingRequest, TdWireObject, TdWireValue } from '@tgx/td-gateway';
@@ -78,7 +80,9 @@ import {
   OnMessagesLoadFailed,
   OnMessageSendFailed,
   OnMessageActionMenuLoaded,
-  OnMessageActionFailed
+  OnMessageActionFailed,
+  OpenMediaViewer,
+  RequestMediaDownload
 } from '../contract/ChatIntent';
 import {
   ChatEffect,
@@ -182,6 +186,7 @@ export class ChatCoordinator {
   private currentState: ChatUiState;
   private readonly listeners: ChatUiStateListener[] = [];
   private syncScheduled: boolean = false;
+  private throttledSyncScheduled: boolean = false;
   private backfillScheduled: boolean = false;
   private destroyed: boolean = false;
   /** MSG-102：会话种类（getChat 一次性解析，群聊才出署名）。 */
@@ -192,6 +197,8 @@ export class ChatCoordinator {
   private readonly senderSubscriptions: Map<number, Subscription> = new Map();
   /** MEDIA-101/105：文件下载更新订阅。 */
   private readonly fileSubscriptions: Map<number, Subscription> = new Map();
+  /** 已下发过 downloadFile 的文件 id 集合，防重复请求风暴。 */
+  private readonly requestedFileIds: Set<number> = new Set();
   /** MSG-104：已读上报节流（lastReported 只增不减）。 */
   private readonly readThrottle: ReadReportThrottle = new ReadReportThrottle();
 
@@ -213,7 +220,7 @@ export class ChatCoordinator {
       clock: new ManualClock(1000, 500),
       ids: new SequentialIdGenerator('chat-')
     };
-    this.currentState = new ChatUiState(chatId, chatTitle, [], false, true, null, '', null, null);
+    this.currentState = new ChatUiState(chatId, chatTitle, [], false, true, null, '', null, null, -1, [], 0);
   }
 
   get state(): ChatUiState {
@@ -242,6 +249,7 @@ export class ChatCoordinator {
       sub.unsubscribe();
     });
     this.fileSubscriptions.clear();
+    this.requestedFileIds.clear();
     this.fileRegistry.stop();
     this.userRegistry.stop();
     this.listeners.length = 0;
@@ -259,6 +267,14 @@ export class ChatCoordinator {
   }
 
   dispatch(intent: ChatIntent): void {
+    if (intent.kind === 'openMediaViewer') {
+      const openIntent: OpenMediaViewer = intent as OpenMediaViewer;
+      this.handleOpenMediaViewer(openIntent.messageId);
+    } else if (intent.kind === 'requestMediaDownload') {
+      const reqIntent: RequestMediaDownload = intent as RequestMediaDownload;
+      this.requestMediaDownload(reqIntent.fileId, 32);
+    }
+
     const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
       this.currentState,
       intent,
@@ -279,6 +295,31 @@ export class ChatCoordinator {
         this.executeEffect(result.effects[i]);
       }
     }
+  }
+
+  private handleOpenMediaViewer(messageId: number): void {
+    for (let i = 0; i < this.currentState.messages.length; i++) {
+      const item: MessageItem = this.currentState.messages[i];
+      if (item.messageId === messageId && item.media !== null) {
+        if (!item.media.isDownloaded) {
+          this.requestMediaDownload(item.media.fileId, 32);
+        }
+        break;
+      }
+    }
+  }
+
+  private scheduleThrottledSync(): void {
+    if (this.throttledSyncScheduled || this.destroyed) {
+      return;
+    }
+    this.throttledSyncScheduled = true;
+    setTimeout(() => {
+      this.throttledSyncScheduled = false;
+      if (!this.destroyed) {
+        this.scheduleSyncFromProjection();
+      }
+    }, 200);
   }
 
   private scheduleSyncFromProjection(): void {
@@ -307,7 +348,7 @@ export class ChatCoordinator {
       items.push(this.mapMessageToItem(projectionState.messages[i], textById,
         projectionState.lastReadOutboxMessageId));
     }
-    this.dispatch(new OnMessagesLoaded(items, projectionState.hasMoreOlder));
+    this.dispatch(new OnMessagesLoaded(items, projectionState.hasMoreOlder, projectionState.lastReadInboxMessageId));
     this.maybeBackfillOlder(projectionState);
     // MSG-104：投影有新内容（含首屏完成、新消息到达）时直接上报最新 incoming
     // 已读。MVP 简化：聊天页开着即视为入屏（列表自动跟随到底时成立），
@@ -365,22 +406,47 @@ export class ChatCoordinator {
     }, BACKFILL_DELAY_MS);
   }
 
-  private requestMediaDownload(fileId: number): void {
+  public requestMediaDownload(fileId: number, priority: number = 1): void {
     if (this.destroyed || fileId <= 0) {
       return;
     }
     if (this.fileRegistry.isDownloaded(fileId)) {
       return;
     }
+    if (this.requestedFileIds.has(fileId)) {
+      return;
+    }
+    this.requestedFileIds.add(fileId);
+
     if (!this.fileSubscriptions.has(fileId)) {
-      const sub: Subscription = this.fileRegistry.subscribeFile(fileId, (_file: File) => {
+      const sub: Subscription = this.fileRegistry.subscribeFile(fileId, (file: File) => {
         if (!this.destroyed) {
-          this.scheduleSyncFromProjection();
+          if (file.local !== null && file.local.is_downloading_completed) {
+            this.scheduleSyncFromProjection();
+          } else {
+            this.scheduleThrottledSync();
+          }
         }
       });
       this.fileSubscriptions.set(fileId, sub);
     }
-    this.fileRegistry.downloadFile(fileId, 1);
+    this.fileRegistry.downloadFile(fileId, priority);
+  }
+
+  private chooseDisplaySize(sizes: PhotoSize[]): PhotoSize {
+    if (sizes.length === 0) {
+      return new PhotoSize();
+    }
+    for (let i = 0; i < sizes.length; i++) {
+      const s: PhotoSize = sizes[i];
+      if (s.width >= 320 && s.width <= 960) {
+        return s;
+      }
+    }
+    if (sizes.length > 2) {
+      return sizes[sizes.length - 2];
+    }
+    return sizes[sizes.length - 1];
   }
 
   private resolveMediaAttachment(message: Message): MediaAttachment | null {
@@ -394,7 +460,7 @@ export class ChatCoordinator {
         return null;
       }
       const sizes: PhotoSize[] = photoContent.photo.sizes;
-      const displaySize: PhotoSize = sizes[sizes.length - 1];
+      const displaySize: PhotoSize = this.chooseDisplaySize(sizes);
       const thumbSize: PhotoSize = sizes[0];
       const targetFile: File | null = displaySize.photo;
       if (targetFile === null) {
@@ -414,12 +480,12 @@ export class ChatCoordinator {
       if (thumbSize.photo !== null) {
         thumbPath = this.fileRegistry.getLocalPath(thumbSize.photo.id);
         if (thumbPath === null && thumbSize.photo.id !== fileId) {
-          this.requestMediaDownload(thumbSize.photo.id);
+          this.requestMediaDownload(thumbSize.photo.id, 2);
         }
       }
 
       if (!isDownloaded && !isDownloading) {
-        this.requestMediaDownload(fileId);
+        this.requestMediaDownload(fileId, 1);
       }
 
       const captionText: string = photoContent.caption !== null ? photoContent.caption.text : '';
@@ -466,12 +532,12 @@ export class ChatCoordinator {
       if (anim.thumbnail !== null && anim.thumbnail.file !== null) {
         thumbPath = this.fileRegistry.getLocalPath(anim.thumbnail.file.id);
         if (thumbPath === null) {
-          this.requestMediaDownload(anim.thumbnail.file.id);
+          this.requestMediaDownload(anim.thumbnail.file.id, 2);
         }
       }
 
       if (!isDownloaded && !isDownloading) {
-        this.requestMediaDownload(fileId);
+        this.requestMediaDownload(fileId, 1);
       }
 
       const captionText: string = animContent.caption !== null ? animContent.caption.text : '';
@@ -518,8 +584,14 @@ export class ChatCoordinator {
       if (video.thumbnail !== null && video.thumbnail.file !== null) {
         thumbPath = this.fileRegistry.getLocalPath(video.thumbnail.file.id);
         if (thumbPath === null) {
-          this.requestMediaDownload(video.thumbnail.file.id);
+          this.requestMediaDownload(video.thumbnail.file.id, 2);
         }
+      }
+
+      // 视频较小（<= 10MB）自动下载，便于直接播放
+      const videoSize: number = targetFile.size;
+      if (!isDownloaded && !isDownloading && videoSize > 0 && videoSize <= 10 * 1024 * 1024) {
+        this.requestMediaDownload(fileId, 1);
       }
 
       const captionText: string = videoContent.caption !== null ? videoContent.caption.text : '';
@@ -539,6 +611,55 @@ export class ChatCoordinator {
         captionText,
         captionSpans,
         videoContent.has_spoiler
+      );
+    }
+
+    if (message.content.type === 'messageVideoNote') {
+      const noteContent: MessageVideoNote = message.content as MessageVideoNote;
+      if (noteContent.video_note === null) {
+        return null;
+      }
+      const note: VideoNote = noteContent.video_note;
+      const targetFile: File | null = note.video;
+      if (targetFile === null) {
+        return null;
+      }
+
+      const fileId: number = targetFile.id;
+      const localPath: string | null = this.fileRegistry.getLocalPath(fileId);
+      const isDownloaded: boolean = this.fileRegistry.isDownloaded(fileId);
+      const progress: number = this.fileRegistry.getDownloadProgress(fileId);
+      const latestFile: File | null = this.fileRegistry.getFile(fileId);
+      const isDownloading: boolean = latestFile !== null && latestFile.local !== null
+        ? latestFile.local.is_downloading_active
+        : (targetFile.local !== null ? targetFile.local.is_downloading_active : false);
+
+      let thumbPath: string | null = null;
+      if (note.thumbnail !== null && note.thumbnail.file !== null) {
+        thumbPath = this.fileRegistry.getLocalPath(note.thumbnail.file.id);
+        if (thumbPath === null) {
+          this.requestMediaDownload(note.thumbnail.file.id, 2);
+        }
+      }
+
+      if (!isDownloaded && !isDownloading) {
+        this.requestMediaDownload(fileId, 1);
+      }
+
+      return new MediaAttachment(
+        'video',
+        fileId,
+        localPath,
+        thumbPath,
+        note.length > 0 ? note.length : 240,
+        note.length > 0 ? note.length : 240,
+        note.duration,
+        isDownloading,
+        isDownloaded,
+        progress,
+        '',
+        [],
+        false
       );
     }
 

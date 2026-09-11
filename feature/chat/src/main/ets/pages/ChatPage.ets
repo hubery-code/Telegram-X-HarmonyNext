@@ -63,7 +63,8 @@ import {
   TapFailedMessage,
   OpenMediaViewer,
   CloseMediaViewer,
-  ChangeViewerIndex
+  ChangeViewerIndex,
+  RequestMediaDownload
 } from '../contract/ChatIntent';
 
 const T = LightTheme;
@@ -215,12 +216,33 @@ export struct ChatPage {
   @State private viewerBarsVisible: boolean = true;
   private swiperController: SwiperController = new SwiperController();
 
+  private computeScrollTargetIndex(messages: readonly MessageItem[]): number {
+    if (messages.length === 0) {
+      return 0;
+    }
+    const lastReadInbox: number = this.uiState.lastReadInboxMessageId;
+    if (lastReadInbox > 0) {
+      for (let i = 0; i < messages.length; i++) {
+        const item: MessageItem = messages[i];
+        if (!item.isOutgoing && item.messageId > lastReadInbox) {
+          return i;
+        }
+      }
+    }
+    return messages.length - 1;
+  }
+
   aboutToAppear(): void {
     this.dataSource.setItems(this.uiState.messages);
     this.shownMessages = this.uiState.messages;
     this.shownCount = this.uiState.messages.length;
     if (this.shownCount > 0) {
       this.lastTailMessageId = this.uiState.messages[this.shownCount - 1].messageId;
+      const targetIdx: number = this.computeScrollTargetIndex(this.uiState.messages);
+      const align: ScrollAlign = (targetIdx === this.shownCount - 1) ? ScrollAlign.END : ScrollAlign.START;
+      setTimeout(() => {
+        this.scroller.scrollToIndex(targetIdx, false, align);
+      }, 50);
     }
   }
 
@@ -243,11 +265,17 @@ export struct ChatPage {
     this.shownMessages = messages;
     this.shownCount = count;
     this.lastTailMessageId = tailId;
-    // 首屏出内容或尾部来了新消息 → 滚到底；顶部翻页（前插）不打断阅读位置。
-    if (firstContent || grewAtTail) {
+    // 首屏出内容 → 定位到首条未读或最新；尾部来了新消息 → 平滑滚到底；顶部翻页（前插）不打断阅读位置。
+    if (firstContent) {
+      const targetIdx: number = this.computeScrollTargetIndex(messages);
+      const align: ScrollAlign = (targetIdx === count - 1) ? ScrollAlign.END : ScrollAlign.START;
       setTimeout(() => {
-        this.scroller.scrollToIndex(count - 1, !firstContent);
-      }, 0);
+        this.scroller.scrollToIndex(targetIdx, false, align);
+      }, 50);
+    } else if (grewAtTail) {
+      setTimeout(() => {
+        this.scroller.scrollToIndex(count - 1, true, ScrollAlign.END);
+      }, 40);
     }
   }
 
@@ -275,7 +303,7 @@ export struct ChatPage {
             .padding({ top: T.spacing.xs })
           }
 
-          List({ scroller: this.scroller }) {
+          List({ initialIndex: this.computeScrollTargetIndex(this.uiState.messages), scroller: this.scroller }) {
             LazyForEach(this.dataSource, (item: MessageItem) => {
               ListItem() {
                 this.MessageRow(item)
@@ -577,7 +605,6 @@ export struct ChatPage {
           .width('100%')
           .height('100%')
           .objectFit(ImageFit.Cover)
-          .blur(12)
           .borderRadius(T.radius.md)
       } else {
         Column() {
@@ -668,19 +695,34 @@ export struct ChatPage {
           }
         }
       } else if (media.kind === 'video') {
-        // 视频：居中播放按钮
-        Column() {
-          Text('▶')
-            .fontSize(20)
-            .fontColor(Color.White)
-            .margin({ left: 3 })
+        // 视频：居中下载/播放按钮
+        if (!media.isDownloaded && media.isDownloading) {
+          Column() {
+            LoadingProgress()
+              .width(36)
+              .height(36)
+              .color(Color.White)
+          }
+          .width(48)
+          .height(48)
+          .borderRadius(T.radius.full)
+          .backgroundColor('#80000000')
+          .justifyContent(FlexAlign.Center)
+          .alignItems(HorizontalAlign.Center)
+        } else {
+          Column() {
+            Text('▶')
+              .fontSize(20)
+              .fontColor(Color.White)
+              .margin({ left: 3 })
+          }
+          .width(48)
+          .height(48)
+          .borderRadius(T.radius.full)
+          .backgroundColor('#80000000')
+          .justifyContent(FlexAlign.Center)
+          .alignItems(HorizontalAlign.Center)
         }
-        .width(48)
-        .height(48)
-        .borderRadius(T.radius.full)
-        .backgroundColor('#80000000')
-        .justifyContent(FlexAlign.Center)
-        .alignItems(HorizontalAlign.Center)
 
         // 右下角时长标签
         Row() {
@@ -837,7 +879,60 @@ export struct ChatPage {
       Swiper(this.swiperController) {
         ForEach(this.uiState.viewerItems, (item: MediaViewerItem) => {
           Stack({ alignContent: Alignment.Center }) {
-            if (item.media.kind === 'animation' && (item.media.localPath !== null && (item.media.localPath.endsWith('.mp4') || item.media.localPath.indexOf('.mp4') >= 0))) {
+            if (item.media.kind === 'video') {
+              if (item.media.localPath !== null && item.media.isDownloaded) {
+                Video({
+                  src: toSandboxUri(item.media.localPath),
+                  previewUri: toSandboxUri(item.media.thumbnailPath)
+                })
+                  .autoPlay(true)
+                  .loop(false)
+                  .controls(true)
+                  .muted(false)
+                  .objectFit(ImageFit.Contain)
+                  .width('100%')
+                  .height('100%')
+                  .scale({ x: this.viewerScale, y: this.viewerScale })
+              } else {
+                Stack({ alignContent: Alignment.Center }) {
+                  if (item.media.thumbnailPath !== null) {
+                    Image(toSandboxUri(item.media.thumbnailPath))
+                      .objectFit(ImageFit.Contain)
+                      .width('100%')
+                      .height('100%')
+                      .scale({ x: this.viewerScale, y: this.viewerScale })
+                  }
+                  Column() {
+                    if (item.media.isDownloading) {
+                      LoadingProgress()
+                        .width(44)
+                        .height(44)
+                        .color(Color.White)
+                      Text(`${Math.round(item.media.progress * 100)}%`)
+                        .fontSize(12)
+                        .fontColor(Color.White)
+                        .margin({ top: 6 })
+                    } else {
+                      Text('⬇')
+                        .fontSize(24)
+                        .fontColor(Color.White)
+                      Text('Download Video')
+                        .fontSize(12)
+                        .fontColor(Color.White)
+                        .margin({ top: 6 })
+                    }
+                  }
+                  .padding(16)
+                  .borderRadius(16)
+                  .backgroundColor('#99000000')
+                  .onClick(() => {
+                    this.onDispatch(new RequestMediaDownload(item.media.fileId));
+                  })
+                }
+                .width('100%')
+                .height('100%')
+              }
+            } else if (item.media.kind === 'animation' && (item.media.localPath !== null && (item.media.localPath.endsWith('.mp4') || item.media.localPath.indexOf('.mp4') >= 0))) {
               Video({
                 src: toSandboxUri(item.media.localPath),
                 previewUri: toSandboxUri(item.media.thumbnailPath)
@@ -857,12 +952,29 @@ export struct ChatPage {
                 .height('100%')
                 .scale({ x: this.viewerScale, y: this.viewerScale })
             } else if (item.media.thumbnailPath !== null) {
-              Image(toSandboxUri(item.media.thumbnailPath))
-                .objectFit(ImageFit.Contain)
-                .width('100%')
-                .height('100%')
-                .blur(16)
-                .scale({ x: this.viewerScale, y: this.viewerScale })
+              Stack({ alignContent: Alignment.Center }) {
+                Image(toSandboxUri(item.media.thumbnailPath))
+                  .objectFit(ImageFit.Contain)
+                  .width('100%')
+                  .height('100%')
+                  .blur(8)
+                  .scale({ x: this.viewerScale, y: this.viewerScale })
+
+                Column() {
+                  LoadingProgress()
+                    .width(44)
+                    .height(44)
+                    .color(Color.White)
+                }
+                .width(56)
+                .height(56)
+                .borderRadius(T.radius.full)
+                .backgroundColor('#80000000')
+                .justifyContent(FlexAlign.Center)
+                .alignItems(HorizontalAlign.Center)
+              }
+              .width('100%')
+              .height('100%')
             } else {
               Column() {
                 LoadingProgress()

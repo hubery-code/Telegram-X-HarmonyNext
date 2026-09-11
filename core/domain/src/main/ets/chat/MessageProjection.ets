@@ -65,7 +65,8 @@ import {
   UpdateMessageEdited,
   UpdateMessageSendSucceeded,
   UpdateDeleteMessages,
-  UpdateChatReadOutbox
+  UpdateChatReadOutbox,
+  UpdateChatReadInbox
 } from '@tgx/core-td-api-generated';
 import { AccountScope } from '@tgx/core-account';
 import { TdUpdateSubscription, TdPendingRequest, TdWireObject, TdWireValue } from '@tgx/td-gateway';
@@ -78,6 +79,8 @@ export interface MessageListState {
   readonly hasMoreOlder: boolean;
   /** MSG-104：对端已读到的最后一条己方消息 id（updateChatReadOutbox），0=未知/无。 */
   readonly lastReadOutboxMessageId: number;
+  /** 本端收到的最后一条已读对端消息 id（updateChatReadInbox），0=未知/无。 */
+  readonly lastReadInboxMessageId: number;
 }
 
 /** getChatHistory 一页的吞入统计（received=成功 decode 条数，added=新增 id 数）。 */
@@ -106,6 +109,8 @@ export class MessageProjection {
   private emptyPageStreak: number = 0;
   /** MSG-104：对端已读回执水位（updateChatReadOutbox 推进，只增）。 */
   private lastReadOutboxMessageId: number = 0;
+  /** 本端对收到的对端消息已读水位（updateChatReadInbox 推进，只增）。 */
+  private lastReadInboxMessageId: number = 0;
 
   private subscription: TdUpdateSubscription | null = null;
   private stateListener: (() => void) | null = null;
@@ -164,7 +169,8 @@ export class MessageProjection {
       messages: messages,
       isLoading: this.isLoading,
       hasMoreOlder: this.hasMoreOlder,
-      lastReadOutboxMessageId: this.lastReadOutboxMessageId
+      lastReadOutboxMessageId: this.lastReadOutboxMessageId,
+      lastReadInboxMessageId: this.lastReadInboxMessageId
     };
   }
 
@@ -498,6 +504,12 @@ export class MessageProjection {
         console.info(`MessageProjection updateChatReadOutbox chatId=${this.chatId} lastReadOutbox=${readUpdate.last_read_outbox_message_id}`);
         this.advanceLastReadOutbox(readUpdate.last_read_outbox_message_id);
       }
+    } else if (update.type === 'updateChatReadInbox') {
+      // 本端对收到的消息已读水位推进（updateChatReadInbox）：只增不减。
+      const readInboxUpdate: UpdateChatReadInbox = update as UpdateChatReadInbox;
+      if (readInboxUpdate.chat_id === this.chatId) {
+        this.advanceLastReadInbox(readInboxUpdate.last_read_inbox_message_id);
+      }
     }
   }
 
@@ -509,9 +521,18 @@ export class MessageProjection {
     }
   }
 
+  /** 本端已读水位只增不减，变化才通知。 */
+  private advanceLastReadInbox(messageId: number): void {
+    if (messageId > this.lastReadInboxMessageId) {
+      this.lastReadInboxMessageId = messageId;
+      this.notifyStateChanged();
+    }
+  }
+
   /**
-   * 初始已读水位（MSG-104 修复）：getChat 取 chat.last_read_outbox_message_id
-   * 灌为水位初值。openChat 后 chat 已命中 TDLib 本地缓存，无网络往返；
+   * 初始已读水位（MSG-104 修复与未读定位）：getChat 取
+   * chat.last_read_outbox_message_id 与 chat.last_read_inbox_message_id 灌为水位初值。
+   * openChat 后 chat 已命中 TDLib 本地缓存，无网络往返；
    * 失败静默——水位退化为纯增量推送，与修复前行为一致。
    */
   private fetchReadOutboxWatermark(): void {
@@ -526,6 +547,7 @@ export class MessageProjection {
           const chat: Chat | null = decodeChat(res.value as TdJsonRaw);
           if (chat !== null && chat.id === self.chatId) {
             self.advanceLastReadOutbox(chat.last_read_outbox_message_id);
+            self.advanceLastReadInbox(chat.last_read_inbox_message_id);
           }
         }
       }).catch(() => {

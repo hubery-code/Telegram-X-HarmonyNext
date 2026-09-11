@@ -30,10 +30,12 @@ export class OnMessagesLoaded implements Intent {
   readonly kind: 'onMessagesLoaded' = 'onMessagesLoaded';
   readonly messages: readonly MessageItem[];
   readonly hasMoreOlder: boolean;
+  readonly lastReadInboxMessageId: number;
 
-  constructor(messages: readonly MessageItem[], hasMoreOlder: boolean) {
+  constructor(messages: readonly MessageItem[], hasMoreOlder: boolean, lastReadInboxMessageId: number = 0) {
     this.messages = messages;
     this.hasMoreOlder = hasMoreOlder;
+    this.lastReadInboxMessageId = lastReadInboxMessageId;
   }
 }
 
@@ -184,6 +186,16 @@ export class ChangeViewerIndex implements Intent {
   }
 }
 
+/** 按需下载多媒体原文件或大图/视频。 */
+export class RequestMediaDownload implements Intent {
+  readonly kind: 'requestMediaDownload' = 'requestMediaDownload';
+  readonly fileId: number;
+
+  constructor(fileId: number) {
+    this.fileId = fileId;
+  }
+}
+
 export type ChatIntent =
   | LoadInitialMessages
   | LoadOlderMessages
@@ -205,4 +217,5 @@ export type ChatIntent =
   | TapFailedMessage
   | OpenMediaViewer
   | CloseMediaViewer
-  | ChangeViewerIndex;
+  | ChangeViewerIndex
+  | RequestMediaDownload;

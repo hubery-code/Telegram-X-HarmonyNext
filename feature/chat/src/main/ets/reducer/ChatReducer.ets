@@ -161,7 +161,10 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
         isLoading: false,
         errorMessage: null,
         viewerItems: viewerItems,
-        activeViewerIndex: activeIndex
+        activeViewerIndex: activeIndex,
+        lastReadInboxMessageId: loadedIntent.lastReadInboxMessageId > 0
+          ? loadedIntent.lastReadInboxMessageId
+          : state.lastReadInboxMessageId
       });
       return reduced(nextState);
     }

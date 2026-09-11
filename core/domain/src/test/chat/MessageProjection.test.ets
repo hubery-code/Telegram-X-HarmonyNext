@@ -184,6 +184,14 @@ function makeReadOutboxFields(chatId: number, lastReadOutbox: number): Record<st
   return fields;
 }
 
+function makeReadInboxFields(chatId: number, lastReadInbox: number): Record<string, TdWireValue> {
+  const fields: Record<string, TdWireValue> = {};
+  fields['chat_id'] = chatId;
+  fields['last_read_inbox_message_id'] = lastReadInbox;
+  fields['unread_count'] = 0;
+  return fields;
+}
+
 export default function messageProjectionTest(): void {
   describe('MessageProjection', (): void => {
 
@@ -293,6 +301,42 @@ export default function messageProjectionTest(): void {
 
         expect(projection.state.lastReadOutboxMessageId).assertEqual(900);
       }
+
+      projection.stop();
+    });
+
+    it('should seed lastReadInboxMessageId from getChat and advance via updateChatReadInbox', 0, async (): Promise<void> => {
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const scope: AccountScope = createScope(bridge);
+      const projection: MessageProjection = new MessageProjection(42, scope);
+
+      let notifyCount: number = 0;
+      projection.setOnStateChanged((): void => {
+        notifyCount += 1;
+      });
+
+      projection.start();
+
+      const getChatReq: Record<string, TdWireValue> | null = findSentRequest(bridge, 'getChat');
+      expect(getChatReq !== null).assertTrue();
+      if (getChatReq !== null) {
+        const chat: Chat = new Chat();
+        chat.id = 42;
+        chat.last_read_inbox_message_id = 500;
+        bridge.emitResponse(scope.clientId, sentRequestId(getChatReq),
+          encodeChat(chat) as Record<string, TdWireValue>);
+        await flushAsync();
+
+        expect(projection.state.lastReadInboxMessageId).assertEqual(500);
+      }
+
+      // updateChatReadInbox 推进
+      bridge.emitUpdate(scope.clientId, 'updateChatReadInbox', makeReadInboxFields(42, 600));
+      expect(projection.state.lastReadInboxMessageId).assertEqual(600);
+
+      // 低水位不回退
+      bridge.emitUpdate(scope.clientId, 'updateChatReadInbox', makeReadInboxFields(42, 400));
+      expect(projection.state.lastReadInboxMessageId).assertEqual(600);
 
       projection.stop();
     });
