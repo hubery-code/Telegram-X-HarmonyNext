@@ -55,7 +55,6 @@
 | 工作包 | 依赖 | 一句话 |
 |---|---|---|
 | MEDIA-102 | MEDIA-101 | 图片发送：photoViewPicker 选图 → SendMessage(InputMessagePhoto) + 上传进度（FEAT-MEDIA-001 发侧） |
-| MEDIA-103 | MEDIA-101 | 图片全屏 viewer：缩放/左右翻页（FEAT-MEDIA-006 图片部分） |
 | MEDIA-104 | FILE-101 | 文件消息气泡（名称/大小/下载态）+ 完成可打开（FEAT-MEDIA-003） |
 | MEDIA-106 | FILE-101 | 语音消息录制/发送/播放、波形（FEAT-MEDIA-004，~2 天） |
 
@@ -84,6 +83,7 @@ GROUP / PROFILE / SHARE / A11Y / ADAPTIVE Epic 及 FEATURE_MATRIX P2/P3 项：Ph
 
 | 工作包 | 完成日期 | 证据 |
 |---|---|---|
+| MEDIA-103 图片全屏 viewer + 系统返回体验优化 | 2026-09-11 ✅ | AI-Agent-Antigravity：① entry `Index.ets` 实现 `onBackPress(): boolean`，拦截物理/虚拟 Back 键与边缘滑动返回手势，按分级顺序退出（全屏查看器 → 长按菜单 → 编辑/回复输入模式 → 会话列表），彻底修复在聊天详情页直接退至手机桌面的问题；② 沉浸式全屏媒体查看器（`MediaViewerOverlay`）：点击气泡图片/动图直接进入黑色背景全屏查看器；支持多媒体项左右滑动翻页（`Swiper`）、双指捏合缩放（`PinchGesture`）、双击快捷放大与复位、单指轻触切换工具栏显隐；顶部常驻返回箭头、署名、序号进度（X / N）、时间戳；底部展示半透明附言（Caption）滚动容器；③ 10 项 Reducer 单元测试全绿通过，`entry` 84 项测试全部回归通过，真机安装验证截图（Wallet / EI CLUB）及连续滑动手势层级返回均 100% 验证通过。 |
 | MEDIA-101 / MEDIA-105 消息多媒体渲染 | 2026-09-11 ✅ | AI-Agent-Antigravity：实现 MediaAttachment 模型、ChatCoordinator 自动下载监听联动、ChatPage 气泡宽高比自适应卡片、@kit.CoreFileKit fileUri 沙箱协议转换（解决 GetAsset failed 报错）、Telegram 动图 MP4 格式采用 ArkUI Video 原生无声循环播放与常驻 GIF 胶囊标、图文混排 Caption；单测 58/58 全过，assembleHap BUILD SUCCESSFUL。真机截图验证（EI CLUB 群聊）：竖屏截图与横屏全景图片高清色彩自适应渲染 ✓、Gawr Gura 动图原生流畅循环播放并叠加 GIF 标 ✓ |
 | INTEG-003 修 entry 单测编译报错 | 2026-09-11 ✅ | AI-Agent-Antigravity：修复 entry/src/test/lifecycle/FakeAccountBridge.ets（新增 FakeAccountBridgeMetrics 实现 TdNativeBridgeMetrics，修复字段形状与对象字面量报错）和 LifecycleCoordinator.test.ets（引入 LifecycleTestHarness 类修复匿名对象字面量类型报错，冷启动恢复测试使用同底座文件的 freshRegistry 真实模拟杀进程恢复）；./hvigorw test --mode module -p module=entry@default -p product=default --no-daemon 全部 PASS（84 任务全绿，29s）；assembleHap BUILD SUCCESSFUL |
 | INTEG-001 设置页接入导航 | 2026-09-11 ✅ | 子agent-87（commit `e8bc7cf`）：会话列表 header 加齿轮入口（⚙ 文本字形）；entry Index.ets 加 showSettings 导航态（优先级 chat > settings > list > auth）；SettingsCoordinator 生命周期对齐 ChatCoordinator（进入创建/订阅/start，离开销毁）；登出成功/会话结束（auth step ≠ ready）自动回登录页（handleSessionEnded 三路销毁）；SettingsPage 加返回箭头；feature_settings 单测通过、assembleHap BUILD SUCCESSFUL。真机验证通过（用户 2026-09-11）：齿轮进设置页 ✓、账号信息展示 ✓、返回箭头回列表 ✓（登出链路未测）。附带发现：entry/src/test 有 2 处 LIFE-001 时期预存单测失败（Fake 的 TdNativeBridgeMetrics 形状过期），干净 HEAD 复跑同样失败，非本次回归——已登记 INTEG-003 待修 |

@@ -13,6 +13,7 @@
 
 import { UiState } from '@tgx/feature-template';
 import { MessageItem } from '../model/MessageItem';
+import { MediaViewerItem } from '../model/MediaViewerItem';
 
 /** 输入栏模式：回复某条消息。 */
 export class ComposerReplyMode {
@@ -85,6 +86,8 @@ export interface ChatUiStateOptions {
   readonly composerText?: string;
   readonly composerMode?: ComposerMode | null;
   readonly actionMenu?: MessageActionMenuState | null;
+  readonly activeViewerIndex?: number;
+  readonly viewerItems?: MediaViewerItem[];
 }
 
 export class ChatUiState implements UiState {
@@ -97,6 +100,8 @@ export class ChatUiState implements UiState {
   readonly composerText: string;
   readonly composerMode: ComposerMode | null;
   readonly actionMenu: MessageActionMenuState | null;
+  readonly activeViewerIndex: number; // -1 表示关闭，>= 0 表示当前画廊索引
+  readonly viewerItems: MediaViewerItem[];
 
   constructor(
     chatId: number,
@@ -107,7 +112,9 @@ export class ChatUiState implements UiState {
     errorMessage: string | null,
     composerText: string,
     composerMode: ComposerMode | null,
-    actionMenu: MessageActionMenuState | null
+    actionMenu: MessageActionMenuState | null,
+    activeViewerIndex: number = -1,
+    viewerItems: MediaViewerItem[] = []
   ) {
     this.chatId = chatId;
     this.chatTitle = chatTitle;
@@ -118,10 +125,12 @@ export class ChatUiState implements UiState {
     this.composerText = composerText;
     this.composerMode = composerMode;
     this.actionMenu = actionMenu;
+    this.activeViewerIndex = activeViewerIndex;
+    this.viewerItems = viewerItems;
   }
 
   static initial(): ChatUiState {
-    return new ChatUiState(0, '', [], false, true, null, '', null, null);
+    return new ChatUiState(0, '', [], false, true, null, '', null, null, -1, []);
   }
 
   copyWith(options: ChatUiStateOptions): ChatUiState {
@@ -134,7 +143,9 @@ export class ChatUiState implements UiState {
       options.errorMessage !== undefined ? options.errorMessage : this.errorMessage,
       options.composerText !== undefined ? options.composerText : this.composerText,
       options.composerMode !== undefined ? options.composerMode : this.composerMode,
-      options.actionMenu !== undefined ? options.actionMenu : this.actionMenu
+      options.actionMenu !== undefined ? options.actionMenu : this.actionMenu,
+      options.activeViewerIndex !== undefined ? options.activeViewerIndex : this.activeViewerIndex,
+      options.viewerItems !== undefined ? options.viewerItems : this.viewerItems
     );
   }
 }

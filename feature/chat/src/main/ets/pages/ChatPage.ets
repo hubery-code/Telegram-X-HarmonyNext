@@ -39,6 +39,7 @@ import { fileUri } from '@kit.CoreFileKit';
 import { MessageItem } from '../model/MessageItem';
 import { MessageTextSpan } from '../model/MessageTextSpan';
 import { MediaAttachment } from '../model/MediaAttachment';
+import { MediaViewerItem } from '../model/MediaViewerItem';
 import { avatarLettersForName, nameColorForIndex } from '../model/SenderInfo';
 import {
   ChatUiState,
@@ -59,7 +60,10 @@ import {
   CancelComposerMode,
   DismissMessageActionMenu,
   OnVisibleRangeChanged,
-  TapFailedMessage
+  TapFailedMessage,
+  OpenMediaViewer,
+  CloseMediaViewer,
+  ChangeViewerIndex
 } from '../contract/ChatIntent';
 
 const T = LightTheme;
@@ -205,6 +209,11 @@ export struct ChatPage {
   private lastTailMessageId: number = 0;
   /** 已揭开的 spoiler span 集合，key = `${messageId}:${spanIndex}`（MSG-101）。 */
   @State private revealedSpoilers: string[] = [];
+  /** MEDIA-103：全屏媒体查看器缩放比例与工具栏显隐状态。 */
+  @State private viewerScale: number = 1.0;
+  @State private pinchStartScale: number = 1.0;
+  @State private viewerBarsVisible: boolean = true;
+  private swiperController: SwiperController = new SwiperController();
 
   aboutToAppear(): void {
     this.dataSource.setItems(this.uiState.messages);
@@ -216,6 +225,10 @@ export struct ChatPage {
   }
 
   onUiStateChanged(): void {
+    if (this.uiState.activeViewerIndex < 0) {
+      this.viewerScale = 1.0;
+      this.viewerBarsVisible = true;
+    }
     const messages: readonly MessageItem[] = this.uiState.messages;
     // composerText 等变化不触碰列表：仅 messages 引用变化才刷新数据源，
     // 避免输入栏每次击键都触发 LazyForEach 全量重载。
@@ -311,6 +324,11 @@ export struct ChatPage {
       if (this.uiState.actionMenu !== null) {
         this.ActionMenuSheet(this.uiState.actionMenu)
       }
+
+      // 全屏媒体查看器（MEDIA-103 / FEAT-MEDIA-006）
+      if (this.uiState.activeViewerIndex >= 0) {
+        this.MediaViewerOverlay()
+      }
     }
     .width('100%')
     .height('100%')
@@ -391,7 +409,7 @@ export struct ChatPage {
 
         // 多媒体附件（MEDIA-101 / MEDIA-105）：图片、视频、GIF 动图。
         if (item.media !== null) {
-          this.MediaBubble(item.media)
+          this.MediaBubble(item.media, item.messageId)
         }
 
         // 正文/说明文字（MSG-101）：有富文本 spans 时按 span 渲染，否则回退纯文本。
@@ -508,7 +526,7 @@ export struct ChatPage {
 
   /** 多媒体气泡渲染（MEDIA-101 / MEDIA-105）：图片/视频/GIF 动图。 */
   @Builder
-  MediaBubble(media: MediaAttachment) {
+  MediaBubble(media: MediaAttachment, messageId: number) {
     Stack({ alignContent: Alignment.Center }) {
       // 1. 底图 / 缩略图 / 占位 / 动图视频
       if (media.localPath !== null && media.isDownloaded) {
@@ -686,6 +704,9 @@ export struct ChatPage {
     .borderRadius(T.radius.md)
     .clip(true)
     .margin({ bottom: T.spacing.xs })
+    .onClick(() => {
+      this.onDispatch(new OpenMediaViewer(messageId));
+    })
   }
 
   /** 回复/编辑预览条（CHAT-004）：accent 竖条 + 标题/摘要 + 取消 X。 */
@@ -806,6 +827,225 @@ export struct ChatPage {
     .width('100%')
     .height('100%')
     .alignContent(Alignment.Bottom)
+  }
+
+  /** 全屏多媒体画廊查看器（MEDIA-103 / FEAT-MEDIA-006）。 */
+  @Builder
+  MediaViewerOverlay() {
+    Stack({ alignContent: Alignment.Center }) {
+      // 1. 底层：多图 Swiper 翻页与手势缩放
+      Swiper(this.swiperController) {
+        ForEach(this.uiState.viewerItems, (item: MediaViewerItem) => {
+          Stack({ alignContent: Alignment.Center }) {
+            if (item.media.kind === 'animation' && (item.media.localPath !== null && (item.media.localPath.endsWith('.mp4') || item.media.localPath.indexOf('.mp4') >= 0))) {
+              Video({
+                src: toSandboxUri(item.media.localPath),
+                previewUri: toSandboxUri(item.media.thumbnailPath)
+              })
+                .autoPlay(true)
+                .loop(true)
+                .controls(false)
+                .muted(true)
+                .objectFit(ImageFit.Contain)
+                .width('100%')
+                .height('100%')
+                .scale({ x: this.viewerScale, y: this.viewerScale })
+            } else if (item.media.localPath !== null && item.media.isDownloaded) {
+              Image(toSandboxUri(item.media.localPath))
+                .objectFit(ImageFit.Contain)
+                .width('100%')
+                .height('100%')
+                .scale({ x: this.viewerScale, y: this.viewerScale })
+            } else if (item.media.thumbnailPath !== null) {
+              Image(toSandboxUri(item.media.thumbnailPath))
+                .objectFit(ImageFit.Contain)
+                .width('100%')
+                .height('100%')
+                .blur(16)
+                .scale({ x: this.viewerScale, y: this.viewerScale })
+            } else {
+              Column() {
+                LoadingProgress()
+                  .width(48)
+                  .height(48)
+                  .color(Color.White)
+              }
+              .width('100%')
+              .height('100%')
+              .justifyContent(FlexAlign.Center)
+              .alignItems(HorizontalAlign.Center)
+            }
+          }
+          .width('100%')
+          .height('100%')
+        }, (item: MediaViewerItem) => `${item.messageId}`)
+      }
+      .index(this.uiState.activeViewerIndex)
+      .onChange((index: number) => {
+        if (index !== this.uiState.activeViewerIndex) {
+          this.onDispatch(new ChangeViewerIndex(index));
+          this.viewerScale = 1.0;
+        }
+      })
+      .disableSwipe(this.viewerScale > 1.05)
+      .indicator(false)
+      .loop(false)
+      .width('100%')
+      .height('100%')
+      .priorityGesture(
+        GestureGroup(
+          GestureMode.Parallel,
+          PinchGesture({ fingers: 2 })
+            .onActionStart(() => {
+              this.pinchStartScale = this.viewerScale;
+            })
+            .onActionUpdate((event: GestureEvent) => {
+              let nextScale: number = this.pinchStartScale * event.scale;
+              if (nextScale < 0.8) {
+                nextScale = 0.8;
+              } else if (nextScale > 3.5) {
+                nextScale = 3.5;
+              }
+              this.viewerScale = nextScale;
+            })
+            .onActionEnd(() => {
+              if (this.viewerScale < 1.0) {
+                this.viewerScale = 1.0;
+              } else if (this.viewerScale > 3.0) {
+                this.viewerScale = 3.0;
+              }
+            }),
+          GestureGroup(
+            GestureMode.Exclusive,
+            TapGesture({ count: 2 })
+              .onAction(() => {
+                if (this.viewerScale > 1.05) {
+                  this.viewerScale = 1.0;
+                } else {
+                  this.viewerScale = 2.0;
+                }
+              }),
+            TapGesture({ count: 1 })
+              .onAction(() => {
+                this.viewerBarsVisible = !this.viewerBarsVisible;
+              })
+          )
+        )
+      )
+
+      // 2. 顶部工具栏与底部附言栏（两端对齐浮层）
+      if (this.viewerBarsVisible) {
+        Column() {
+          this.ViewerTopBar()
+
+          Blank()
+
+          if (this.getViewerCaption().length > 0) {
+            this.ViewerBottomBar()
+          }
+        }
+        .width('100%')
+        .height('100%')
+        .justifyContent(FlexAlign.SpaceBetween)
+        .hitTestBehavior(HitTestMode.Transparent)
+      }
+    }
+    .width('100%')
+    .height('100%')
+    .backgroundColor('#000000')
+    .hitTestBehavior(HitTestMode.Block)
+  }
+
+  @Builder
+  ViewerTopBar() {
+    Row() {
+      Text('‹')
+        .fontSize(T.typography.largeTitle.fontSize)
+        .fontWeight(T.typography.title.fontWeight)
+        .fontColor(Color.White)
+        .width(BACK_ARROW_SIZE)
+        .height(BACK_ARROW_SIZE)
+        .textAlign(TextAlign.Center)
+        .onClick(() => {
+          this.onDispatch(new CloseMediaViewer());
+        })
+
+      Column() {
+        Text(this.getViewerTitle())
+          .fontSize(T.typography.title.fontSize)
+          .fontWeight(T.typography.title.fontWeight)
+          .fontColor(Color.White)
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+
+        if (this.getViewerSubtitle().length > 0) {
+          Text(this.getViewerSubtitle())
+            .fontSize(T.typography.caption.fontSize)
+            .fontColor('#B3FFFFFF')
+            .margin({ top: 2 })
+        }
+      }
+      .layoutWeight(1)
+      .alignItems(HorizontalAlign.Start)
+      .margin({ left: T.spacing.xs })
+    }
+    .width('100%')
+    .padding({
+      left: T.spacing.sm,
+      right: T.spacing.md,
+      top: 36,
+      bottom: T.spacing.sm
+    })
+    .backgroundColor('#99000000')
+  }
+
+  @Builder
+  ViewerBottomBar() {
+    Column() {
+      Scroll() {
+        Text(this.getViewerCaption())
+          .fontSize(T.typography.body.fontSize)
+          .fontColor(Color.White)
+          .width('100%')
+      }
+      .scrollBar(BarState.Off)
+      .constraintSize({ maxHeight: 180 })
+    }
+    .width('100%')
+    .padding({
+      left: T.spacing.screenInset,
+      right: T.spacing.screenInset,
+      top: T.spacing.md,
+      bottom: 28
+    })
+    .backgroundColor('#99000000')
+  }
+
+  private getViewerTitle(): string {
+    const total: number = this.uiState.viewerItems.length;
+    const current: number = this.uiState.activeViewerIndex + 1;
+    if (this.uiState.activeViewerIndex < 0 || this.uiState.activeViewerIndex >= total) {
+      return '';
+    }
+    const item: MediaViewerItem = this.uiState.viewerItems[this.uiState.activeViewerIndex];
+    const name: string = item.senderName.length > 0 ? item.senderName : this.uiState.chatTitle;
+    return `${name} (${current} / ${total})`;
+  }
+
+  private getViewerSubtitle(): string {
+    if (this.uiState.activeViewerIndex < 0 || this.uiState.activeViewerIndex >= this.uiState.viewerItems.length) {
+      return '';
+    }
+    const item: MediaViewerItem = this.uiState.viewerItems[this.uiState.activeViewerIndex];
+    return item.timestampMs > 0 ? formatMessageTime(item.timestampMs) : '';
+  }
+
+  private getViewerCaption(): string {
+    if (this.uiState.activeViewerIndex < 0 || this.uiState.activeViewerIndex >= this.uiState.viewerItems.length) {
+      return '';
+    }
+    const item: MediaViewerItem = this.uiState.viewerItems[this.uiState.activeViewerIndex];
+    return item.media.caption;
   }
 
   /** 底部输入栏：圆角输入框 + 圆形发送按钮；受控输入，发送经 MVI 分发。 */

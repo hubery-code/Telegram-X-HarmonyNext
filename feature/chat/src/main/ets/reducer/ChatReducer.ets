@@ -30,6 +30,7 @@ import {
   MessageActionMenuState
 } from '../contract/ChatUiState';
 import { MessageItem } from '../model/MessageItem';
+import { MediaViewerItem } from '../model/MediaViewerItem';
 import {
   ChatIntent,
   OnMessagesLoaded,
@@ -40,7 +41,10 @@ import {
   OnMessageActionMenuLoaded,
   OnMessageActionFailed,
   OnVisibleRangeChanged,
-  TapFailedMessage
+  TapFailedMessage,
+  OpenMediaViewer,
+  CloseMediaViewer,
+  ChangeViewerIndex
 } from '../contract/ChatIntent';
 import {
   ChatEffect,
@@ -55,6 +59,19 @@ import {
   ResendMessage
 } from '../contract/ChatEffect';
 import { incomingIdUpTo } from '../model/ReadReceipt';
+
+/** 收集列表中所有可在大图画廊中展示的多媒体项。 */
+export function buildViewerItems(messages: readonly MessageItem[]): MediaViewerItem[] {
+  const list: MediaViewerItem[] = [];
+  for (let i = 0; i < messages.length; i++) {
+    const item: MessageItem = messages[i];
+    if (item.media !== null && (item.media.kind === 'photo' || item.media.kind === 'animation' || item.media.kind === 'video')) {
+      const sender: string = item.isOutgoing ? 'You' : (item.senderName.length > 0 ? item.senderName : '');
+      list.push(new MediaViewerItem(item.messageId, sender, item.timestampMs, item.media));
+    }
+  }
+  return list;
+}
 
 /** 菜单/预览条用的正文摘要：压成单行并截断。 */
 export function messageSnippet(text: string, maxLength: number = 80): string {
@@ -133,11 +150,18 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
 
     case 'onMessagesLoaded': {
       const loadedIntent: OnMessagesLoaded = intent as OnMessagesLoaded;
+      const viewerItems: MediaViewerItem[] = buildViewerItems(loadedIntent.messages);
+      let activeIndex: number = state.activeViewerIndex;
+      if (activeIndex >= viewerItems.length) {
+        activeIndex = viewerItems.length > 0 ? viewerItems.length - 1 : -1;
+      }
       const nextState: ChatUiState = state.copyWith({
         messages: loadedIntent.messages,
         hasMoreOlder: loadedIntent.hasMoreOlder,
         isLoading: false,
-        errorMessage: null
+        errorMessage: null,
+        viewerItems: viewerItems,
+        activeViewerIndex: activeIndex
       });
       return reduced(nextState);
     }
@@ -209,7 +233,15 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
     }
 
     case 'backToChatList': {
-      // 撤销路径：回复/编辑模式激活时，返回先退出模式（编辑恢复草稿），不离开页面。
+      // 撤销路径：若全屏查看器打开，先关闭查看器不离开页面。
+      if (state.activeViewerIndex >= 0) {
+        return reduced(state.copyWith({ activeViewerIndex: -1 }));
+      }
+      // 气泡长按动作菜单打开时，返回先关闭菜单。
+      if (state.actionMenu !== null) {
+        return reduced(state.copyWith({ actionMenu: null }));
+      }
+      // 回复/编辑模式激活时，返回先退出模式（编辑恢复草稿），不离开页面。
       if (state.composerMode !== null) {
         return reduced(cancelMode(state));
       }
@@ -350,6 +382,41 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
       }
       const effects: ChatEffect[] = [new ResendMessage(state.chatId, tapped.messageId)];
       return reduced(state, effects);
+    }
+
+    case 'openMediaViewer': {
+      const openIntent: OpenMediaViewer = intent as OpenMediaViewer;
+      const viewerItems: MediaViewerItem[] = buildViewerItems(state.messages);
+      let targetIndex: number = -1;
+      for (let i = 0; i < viewerItems.length; i++) {
+        if (viewerItems[i].messageId === openIntent.messageId) {
+          targetIndex = i;
+          break;
+        }
+      }
+      if (targetIndex < 0) {
+        return reduced(state);
+      }
+      const nextState: ChatUiState = state.copyWith({
+        viewerItems: viewerItems,
+        activeViewerIndex: targetIndex
+      });
+      return reduced(nextState);
+    }
+
+    case 'closeMediaViewer': {
+      if (state.activeViewerIndex < 0) {
+        return reduced(state);
+      }
+      return reduced(state.copyWith({ activeViewerIndex: -1 }));
+    }
+
+    case 'changeViewerIndex': {
+      const changeIntent: ChangeViewerIndex = intent as ChangeViewerIndex;
+      if (changeIntent.newIndex < 0 || changeIntent.newIndex >= state.viewerItems.length) {
+        return reduced(state);
+      }
+      return reduced(state.copyWith({ activeViewerIndex: changeIntent.newIndex }));
     }
   }
 

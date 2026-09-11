@@ -4,6 +4,7 @@
 
 export { MessageItem, MessageSendState } from './model/MessageItem';
 export { MediaAttachment, MediaKind } from './model/MediaAttachment';
+export { MediaViewerItem } from './model/MediaViewerItem';
 
 export { MessageTextSpan } from './model/MessageTextSpan';
 
@@ -49,6 +50,9 @@ export {
   OnMessageActionFailed,
   OnVisibleRangeChanged,
   TapFailedMessage,
+  OpenMediaViewer,
+  CloseMediaViewer,
+  ChangeViewerIndex,
   ChatIntent
 } from './contract/ChatIntent';
 

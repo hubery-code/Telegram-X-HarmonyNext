@@ -32,6 +32,7 @@ import {
   ChatPage,
   ChatUiState,
   ChatIntent,
+  BackToChatList,
   ChatCoordinator
 } from '@tgx/feature-chat';
 import {
@@ -115,6 +116,18 @@ struct Index {
       this.unsubscribeFn();
       this.unsubscribeFn = null;
     }
+  }
+
+  onBackPress(): boolean {
+    if (this.currentChatId !== null) {
+      this.chatDispatch(new BackToChatList());
+      return true;
+    }
+    if (this.showSettings) {
+      this.closeSettings();
+      return true;
+    }
+    return false;
   }
 
   private dispatch(intent: AuthIntent): void {

@@ -159,6 +159,31 @@ export class TapFailedMessage implements Intent {
   }
 }
 
+/** MEDIA-103：点击多媒体气泡，打开全屏查看器。 */
+export class OpenMediaViewer implements Intent {
+  readonly kind: 'openMediaViewer' = 'openMediaViewer';
+  readonly messageId: number;
+
+  constructor(messageId: number) {
+    this.messageId = messageId;
+  }
+}
+
+/** MEDIA-103：关闭全屏媒体查看器。 */
+export class CloseMediaViewer implements Intent {
+  readonly kind: 'closeMediaViewer' = 'closeMediaViewer';
+}
+
+/** MEDIA-103：全屏查看器左右翻页切换图片。 */
+export class ChangeViewerIndex implements Intent {
+  readonly kind: 'changeViewerIndex' = 'changeViewerIndex';
+  readonly newIndex: number;
+
+  constructor(newIndex: number) {
+    this.newIndex = newIndex;
+  }
+}
+
 export type ChatIntent =
   | LoadInitialMessages
   | LoadOlderMessages
@@ -177,4 +202,7 @@ export type ChatIntent =
   | DismissMessageActionMenu
   | OnMessageActionFailed
   | OnVisibleRangeChanged
-  | TapFailedMessage;
+  | TapFailedMessage
+  | OpenMediaViewer
+  | CloseMediaViewer
+  | ChangeViewerIndex;

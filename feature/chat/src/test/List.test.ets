@@ -3,6 +3,7 @@ import formattedTextParserTest from './FormattedTextParser.test';
 import senderInfoTest from './SenderInfo.test';
 import readReceiptTest from './ReadReceipt.test';
 import mediaAttachmentTest from './MediaAttachment.test';
+import mediaViewerTest from './MediaViewer.test';
 
 export default function testsuite(): void {
   chatReducerTest();
@@ -10,4 +11,5 @@ export default function testsuite(): void {
   senderInfoTest();
   readReceiptTest();
   mediaAttachmentTest();
+  mediaViewerTest();
 }
