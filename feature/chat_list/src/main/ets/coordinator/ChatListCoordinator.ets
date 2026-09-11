@@ -17,6 +17,7 @@ import {
   Chat,
   ChatListMain,
   Message,
+  MessageSticker,
   MessageText,
   TdMessageContent
 } from '@tgx/core-td-api-generated';
@@ -68,8 +69,13 @@ function messagePreview(message: Message | null): string {
       return '[Video message]';
     case 'messageDocument':
       return '[Document]';
-    case 'messageSticker':
-      return '[Sticker]';
+    case 'messageSticker': {
+      const stickerContent: MessageSticker = message.content as MessageSticker;
+      if (stickerContent.sticker !== null && stickerContent.sticker.emoji.length > 0) {
+        return `${stickerContent.sticker.emoji} Sticker`;
+      }
+      return 'Sticker';
+    }
     case 'messageLocation':
     case 'messageLiveLocation':
       return '[Location]';

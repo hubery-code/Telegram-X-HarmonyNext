@@ -43,11 +43,13 @@ import {
   MessagePhoto,
   MessageProperties,
   MessageReplyToMessage,
+  MessageSticker,
   MessageText,
   MessageVideo,
   MessageVideoNote,
   Photo,
   PhotoSize,
+  Sticker,
   TdJsonRaw,
   TdMessageContent,
   TdMessageReplyTo,
@@ -131,8 +133,13 @@ export function messageContentText(content: TdMessageContent | null): string {
       return '[Video message]';
     case 'messageDocument':
       return '[Document]';
-    case 'messageSticker':
-      return '[Sticker]';
+    case 'messageSticker': {
+      const stickerContent: MessageSticker = content as MessageSticker;
+      if (stickerContent.sticker !== null && stickerContent.sticker.emoji.length > 0) {
+        return `${stickerContent.sticker.emoji} Sticker`;
+      }
+      return 'Sticker';
+    }
     case 'messageLocation':
     case 'messageLiveLocation':
       return '[Location]';
@@ -663,6 +670,55 @@ export class ChatCoordinator {
       );
     }
 
+    if (message.content.type === 'messageSticker') {
+      const stickerContent: MessageSticker = message.content as MessageSticker;
+      if (stickerContent.sticker === null) {
+        return null;
+      }
+      const sticker: Sticker = stickerContent.sticker;
+      const targetFile: File | null = sticker.sticker;
+      if (targetFile === null) {
+        return null;
+      }
+
+      const fileId: number = targetFile.id;
+      const localPath: string | null = this.fileRegistry.getLocalPath(fileId);
+      const isDownloaded: boolean = this.fileRegistry.isDownloaded(fileId);
+      const progress: number = this.fileRegistry.getDownloadProgress(fileId);
+      const latestFile: File | null = this.fileRegistry.getFile(fileId);
+      const isDownloading: boolean = latestFile !== null && latestFile.local !== null
+        ? latestFile.local.is_downloading_active
+        : (targetFile.local !== null ? targetFile.local.is_downloading_active : false);
+
+      let thumbPath: string | null = null;
+      if (sticker.thumbnail !== null && sticker.thumbnail.file !== null) {
+        thumbPath = this.fileRegistry.getLocalPath(sticker.thumbnail.file.id);
+        if (thumbPath === null) {
+          this.requestMediaDownload(sticker.thumbnail.file.id, 2);
+        }
+      }
+
+      if (!isDownloaded && !isDownloading) {
+        this.requestMediaDownload(fileId, 16);
+      }
+
+      return new MediaAttachment(
+        'sticker',
+        fileId,
+        localPath,
+        thumbPath,
+        sticker.width,
+        sticker.height,
+        0,
+        isDownloading,
+        isDownloaded,
+        progress,
+        sticker.emoji,
+        [],
+        false
+      );
+    }
+
     return null;
   }
 
@@ -683,8 +739,8 @@ export class ChatCoordinator {
     let displayText: string = '';
 
     if (media !== null) {
-      displayText = media.caption;
-      spans = media.captionSpans;
+      displayText = media.kind === 'sticker' ? '' : media.caption;
+      spans = media.kind === 'sticker' ? [] : media.captionSpans;
     } else if (isTextMessage) {
       const textContent: MessageText = message.content as MessageText;
       displayText = textContent.text !== null ? textContent.text.text : '';

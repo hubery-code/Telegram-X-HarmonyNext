@@ -138,5 +138,30 @@ export default function mediaAttachmentTest() {
       expect(item.media?.fileId).assertEqual(1234);
     });
 
+    it('creates sticker media attachment with emoji and dimensions', 0, () => {
+      const sticker = new MediaAttachment(
+        'sticker',
+        4004,
+        '/data/storage/el2/base/files/sticker.webp',
+        '/data/storage/el2/base/files/sticker_thumb.jpg',
+        512,
+        512,
+        0,
+        false,
+        true,
+        1.0,
+        '👍',
+        [],
+        false
+      );
+
+      expect(sticker.kind).assertEqual('sticker');
+      expect(sticker.fileId).assertEqual(4004);
+      expect(sticker.caption).assertEqual('👍');
+      expect(sticker.width).assertEqual(512);
+      expect(sticker.height).assertEqual(512);
+      expect(sticker.isDownloaded).assertTrue();
+    });
+
   });
 }

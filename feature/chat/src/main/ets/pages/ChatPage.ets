@@ -435,9 +435,13 @@ export struct ChatPage {
             .margin({ bottom: T.spacing.hairline })
         }
 
-        // 多媒体附件（MEDIA-101 / MEDIA-105）：图片、视频、GIF 动图。
+        // 多媒体附件（MEDIA-101 / MEDIA-105）：图片、视频、GIF 动图；贴纸（STICKER-101）。
         if (item.media !== null) {
-          this.MediaBubble(item.media, item.messageId)
+          if (this.isSticker(item)) {
+            this.StickerBubble(item.media, item)
+          } else {
+            this.MediaBubble(item.media, item.messageId)
+          }
         }
 
         // 正文/说明文字（MSG-101）：有富文本 spans 时按 span 渲染，否则回退纯文本。
@@ -492,15 +496,17 @@ export struct ChatPage {
             .margin(item.media !== null ? { top: T.spacing.xs } : { top: 0 })
         }
 
-        Text(formatMessageStatus(item))
-          .fontSize(T.typography.caption.fontSize)
-          .fontColor(item.sendState === 'failed' ? T.colors.destructive : T.colors.textSecondary)
-          .margin({ top: T.spacing.hairline })
+        if (!this.isSticker(item)) {
+          Text(formatMessageStatus(item))
+            .fontSize(T.typography.caption.fontSize)
+            .fontColor(item.sendState === 'failed' ? T.colors.destructive : T.colors.textSecondary)
+            .margin({ top: T.spacing.hairline })
+        }
       }
       .alignItems(HorizontalAlign.End)
-      .backgroundColor(item.isOutgoing ? T.colors.chatOutgoing : T.colors.chatIncoming)
-      .borderRadius(T.radius.lg)
-      .padding({
+      .backgroundColor(this.isSticker(item) ? Color.Transparent : (item.isOutgoing ? T.colors.chatOutgoing : T.colors.chatIncoming))
+      .borderRadius(this.isSticker(item) ? 0 : T.radius.lg)
+      .padding(this.isSticker(item) ? 0 : {
         left: T.spacing.md,
         right: T.spacing.md,
         top: T.spacing.sm,
@@ -550,6 +556,98 @@ export struct ChatPage {
       return Math.max(120, Math.min(240, Math.round(240 / ratio)));
     }
     return 240;
+  }
+
+  private isSticker(item: MessageItem): boolean {
+    return item.media !== null && item.media.kind === 'sticker';
+  }
+
+  private stickerWidth(media: MediaAttachment): number {
+    const maxDim: number = 180;
+    if (media.width <= 0 || media.height <= 0) {
+      return maxDim;
+    }
+    const ratio: number = Math.min(maxDim / media.width, maxDim / media.height);
+    return Math.max(60, Math.round(media.width * ratio));
+  }
+
+  private stickerHeight(media: MediaAttachment): number {
+    const maxDim: number = 180;
+    if (media.width <= 0 || media.height <= 0) {
+      return maxDim;
+    }
+    const ratio: number = Math.min(maxDim / media.width, maxDim / media.height);
+    return Math.max(60, Math.round(media.height * ratio));
+  }
+
+  /** 贴纸渲染（STICKER-101）：对齐 Telegram X 标准，无气泡框透明渲染，右下角半透明胶囊时间戳。 */
+  @Builder
+  StickerBubble(media: MediaAttachment, item: MessageItem) {
+    Stack({ alignContent: Alignment.BottomEnd }) {
+      if (media.localPath !== null && media.isDownloaded) {
+        if (media.localPath.endsWith('.webm') || media.localPath.indexOf('.webm') >= 0 || media.localPath.endsWith('.mp4')) {
+          Video({
+            src: toSandboxUri(media.localPath),
+            previewUri: toSandboxUri(media.thumbnailPath)
+          })
+            .autoPlay(true)
+            .loop(true)
+            .controls(false)
+            .muted(true)
+            .objectFit(ImageFit.Contain)
+            .hitTestBehavior(HitTestMode.Transparent)
+            .width('100%')
+            .height('100%')
+        } else {
+          Image(toSandboxUri(media.localPath))
+            .objectFit(ImageFit.Contain)
+            .width('100%')
+            .height('100%')
+        }
+      } else if (media.thumbnailPath !== null) {
+        Image(toSandboxUri(media.thumbnailPath))
+          .objectFit(ImageFit.Contain)
+          .width('100%')
+          .height('100%')
+
+        if (media.isDownloading) {
+          Column() {
+            LoadingProgress()
+              .width(28)
+              .height(28)
+              .color(Color.White)
+          }
+          .width(36)
+          .height(36)
+          .borderRadius(T.radius.full)
+          .backgroundColor('#80000000')
+          .justifyContent(FlexAlign.Center)
+          .alignItems(HorizontalAlign.Center)
+        }
+      } else {
+        Column() {
+          Text(media.caption.length > 0 ? media.caption : '🎭')
+            .fontSize(36)
+        }
+        .width('100%')
+        .height('100%')
+        .justifyContent(FlexAlign.Center)
+        .alignItems(HorizontalAlign.Center)
+      }
+
+      // 右下角半透明胶囊时间戳（Telegram X 标准：drawBubbleTimeOverContent）
+      Row() {
+        Text(formatMessageStatus(item))
+          .fontSize(10)
+          .fontColor(Color.White)
+      }
+      .padding({ left: 6, right: 6, top: 2, bottom: 2 })
+      .backgroundColor('#66000000')
+      .borderRadius(T.radius.full)
+      .margin({ right: 4, bottom: 4 })
+    }
+    .width(this.stickerWidth(media))
+    .height(this.stickerHeight(media))
   }
 
   /** 多媒体气泡渲染（MEDIA-101 / MEDIA-105）：图片/视频/GIF 动图。 */

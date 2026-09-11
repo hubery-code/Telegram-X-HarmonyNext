@@ -9,7 +9,7 @@
 
 import { MessageTextSpan } from './MessageTextSpan';
 
-export type MediaKind = 'none' | 'photo' | 'video' | 'animation' | 'document';
+export type MediaKind = 'none' | 'photo' | 'video' | 'animation' | 'document' | 'sticker';
 
 export class MediaAttachment {
   readonly kind: MediaKind;
