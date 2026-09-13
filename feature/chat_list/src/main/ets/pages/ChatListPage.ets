@@ -10,6 +10,9 @@
  * MSG-108：长按行出操作菜单（Pin/Unpin、Mark as read/unread，文案由 reducer
  * 按当前状态定稿）。置顶行在时间戳左侧出置顶标；手动标未读且未读数为 0 时
  * 未读徽标退化为圆点（标未读不产生未读消息数）。
+ *
+ * INTEG-002：header 下方加搜索入口（可点行，样式像输入框），经 onOpenSearch
+ * 回调交给装配层切到 SearchPage——本页不做内联搜索。
  */
 
 import { LightTheme } from '@tgx/core-design-system';
@@ -30,6 +33,8 @@ const T = LightTheme;
 const AVATAR_SIZE: number = 52;
 const BADGE_HEIGHT: number = 20;
 const SETTINGS_BUTTON_SIZE: number = 44;
+/** INTEG-002：搜索入口行高（vp）。 */
+const SEARCH_BAR_HEIGHT: number = 40;
 const ONE_DAY_MS: number = 24 * 60 * 60 * 1000;
 const WEEKDAY_NAMES: string[] = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
@@ -125,6 +130,9 @@ export struct ChatListPage {
   /** 打开设置页（纯导航回调，由装配层接线）。 */
   onOpenSettings: () => void = () => {};
 
+  /** INTEG-002：打开搜索页（纯导航回调，由装配层接线）。 */
+  onOpenSearch: () => void = () => {};
+
   @State private isRefreshing: boolean = false;
   private dataSource: ChatListDataSource = new ChatListDataSource();
 
@@ -170,6 +178,34 @@ export struct ChatListPage {
           right: T.spacing.screenInset,
           top: T.spacing.lg,
           bottom: T.spacing.md
+        })
+
+        // INTEG-002：搜索入口。做成"长得像输入框的可点行"而非真输入框——
+        // 真输入框要把结果渲染进本列表，那属于会话列表内联搜索（SEARCH-102 方向）；
+        // 本包只负责把入口接到独立 SearchPage。
+        Row() {
+          Text('🔍')
+            .fontSize(T.typography.subheadline.fontSize)
+            .margin({ right: T.spacing.xs })
+
+          Text('Search')
+            .fontSize(T.typography.body.fontSize)
+            .fontColor(T.colors.textSecondary)
+            .layoutWeight(1)
+        }
+        .width('100%')
+        .height(SEARCH_BAR_HEIGHT)
+        .alignItems(VerticalAlign.Center)
+        .padding({ left: T.spacing.md, right: T.spacing.md })
+        .backgroundColor(T.colors.surfaceVariant)
+        .borderRadius(T.radius.md)
+        .margin({
+          left: T.spacing.screenInset,
+          right: T.spacing.screenInset,
+          bottom: T.spacing.sm
+        })
+        .onClick(() => {
+          this.onOpenSearch();
         })
 
         // MSG-108：置顶/标未读失败的错误细条（不挡列表）。

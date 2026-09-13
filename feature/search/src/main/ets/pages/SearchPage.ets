@@ -114,16 +114,27 @@ export struct SearchPage {
     }
   }
 
+  /**
+   * 点击会话结果 → 导航到会话（INTEG-002）。
+   *
+   * 协调器存在时**必须直接 return**：`SearchCoordinator.navigateToChat` 内部就是
+   * `this.onNavigateToChat(...)`，转发的正是同一个回调；若再调一次页面 prop，
+   * 装配层会被调两次，每次点结果都会开两次会话（重复 openChat + 重复建协调器）。
+   * 协调器缺席时（只用 reducer 的降级路径）才走页面 prop。
+   */
   private handleChatClick(chatId: number): void {
     if (this.coordinator !== null) {
       this.coordinator.navigateToChat(chatId);
+      return;
     }
     this.onNavigateToChat(chatId);
   }
 
+  /** 点击消息结果 → 导航到所属会话（见 handleChatClick 的双发说明）。 */
   private handleMessageClick(chatId: number, messageId: number): void {
     if (this.coordinator !== null) {
       this.coordinator.navigateToChat(chatId, messageId);
+      return;
     }
     this.onNavigateToChat(chatId, messageId);
   }
@@ -267,7 +278,7 @@ export struct SearchPage {
           Blank()
 
           Text('Clear All')
-            .fontSize(T.typography.caption1.fontSize)
+            .fontSize(T.typography.caption.fontSize)
             .fontColor(T.colors.accent)
             .onClick(() => {
               this.handleClearRecent();
@@ -285,7 +296,7 @@ export struct SearchPage {
           ForEach(this.uiState.recentSearches, (term: string) => {
             Row() {
               Text(term)
-                .fontSize(T.typography.caption1.fontSize)
+                .fontSize(T.typography.caption.fontSize)
                 .fontColor(T.colors.textPrimary)
             }
             .padding({
@@ -337,7 +348,7 @@ export struct SearchPage {
       ) {
         ListItem() {
           Text(`CHATS (${this.uiState.chatResults.length})`)
-            .fontSize(T.typography.caption1.fontSize)
+            .fontSize(T.typography.caption.fontSize)
             .fontWeight(FontWeight.Bold)
             .fontColor(T.colors.textSecondary)
             .padding({
@@ -365,7 +376,7 @@ export struct SearchPage {
       ) {
         ListItem() {
           Text(`MESSAGES (${this.uiState.messageResults.length})`)
-            .fontSize(T.typography.caption1.fontSize)
+            .fontSize(T.typography.caption.fontSize)
             .fontWeight(FontWeight.Bold)
             .fontColor(T.colors.textSecondary)
             .padding({
@@ -422,19 +433,19 @@ export struct SearchPage {
 
           if (item.isChannel) {
             Text('Channel')
-              .fontSize(T.typography.caption2.fontSize)
+              .fontSize(T.typography.caption.fontSize)
               .fontColor(T.colors.accent)
               .padding({ left: T.spacing.xs, right: T.spacing.xs })
               .backgroundColor(T.colors.surfaceVariant)
-              .borderRadius(T.radius.xs)
+              .borderRadius(T.radius.sm)
               .margin({ left: T.spacing.xs })
           } else if (item.isGroup) {
             Text('Group')
-              .fontSize(T.typography.caption2.fontSize)
+              .fontSize(T.typography.caption.fontSize)
               .fontColor(T.colors.textSecondary)
               .padding({ left: T.spacing.xs, right: T.spacing.xs })
               .backgroundColor(T.colors.surfaceVariant)
-              .borderRadius(T.radius.xs)
+              .borderRadius(T.radius.sm)
               .margin({ left: T.spacing.xs })
           }
         }
@@ -485,7 +496,7 @@ export struct SearchPage {
             .layoutWeight(1)
 
           Text(item.dateFormatted)
-            .fontSize(T.typography.caption1.fontSize)
+            .fontSize(T.typography.caption.fontSize)
             .fontColor(T.colors.textSecondary)
             .margin({ left: T.spacing.xs })
         }

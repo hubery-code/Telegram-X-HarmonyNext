@@ -1,6 +1,6 @@
 /**
- * entry — Index 页面：真机授权流程 + 会话列表 + 会话消息页 + 设置页
- * （SPIKE-001 + CHATLIST-003 + CHAT-001/CHAT-002 + INTEG-001）。
+ * entry — Index 页面：真机授权流程 + 会话列表 + 会话消息页 + 设置页 + 搜索页
+ * （SPIKE-001 + CHATLIST-003 + CHAT-001/CHAT-002 + INTEG-001 + INTEG-002）。
  *
  * EntryAbility.onCreate → bootstrap() → AuthCoordinator.start()
  * 本页面从 AppStorage 读取 BootstrapResult，订阅 AuthCoordinator 状态变化，
@@ -18,6 +18,12 @@
  * onOpenForwardPicker 回调把待转发消息 id 交上来，本层把会话列表映射为
  * ForwardTarget[] 并覆盖渲染 ForwardPickerPage；选定目标后回灌
  * ForwardSelectedToChat 触发真正的 forwardMessages。
+ *
+ * INTEG-002：会话列表搜索入口 → SearchPage（SEARCH-101 模块此前不可达）。
+ * 导航优先级 chat > settings > search > chatList > auth。
+ * **从搜索结果打开会话时故意不清 showSearch**：build() 里 chat 分支优先级更高，
+ * 所以进会话后返回会自然落回搜索结果（保留查询与结果，对齐 Telegram X），
+ * 因此 searchCoordinator 也必须活到搜索页真正关闭为止，不能在 openChat 里销毁。
  */
 
 import { LightTheme } from '@tgx/core-design-system';
@@ -52,6 +58,12 @@ import {
   SettingsIntent,
   SettingsCoordinator
 } from '@tgx/feature-settings';
+import {
+  SearchPage,
+  SearchUiState,
+  SearchIntent,
+  SearchCoordinator
+} from '@tgx/feature-search';
 import { BootstrapResult } from '../Bootstrap';
 
 const T = LightTheme;
@@ -71,6 +83,9 @@ struct Index {
   /** MSG-106：转发目标选择器是否覆盖显示 + 本次候选目标。 */
   @State showForwardPicker: boolean = false;
   @State forwardTargets: ForwardTarget[] = [];
+  /** INTEG-002：搜索页是否显示 + 其可观察状态。 */
+  @State showSearch: boolean = false;
+  @State searchUiState: SearchUiState = SearchUiState.initial();
   @State bootstrapError: string | null = null;
 
   private coordinator: AuthCoordinator | null = null;
@@ -81,6 +96,8 @@ struct Index {
   private unsubscribeChatFn: (() => void) | null = null;
   private settingsCoordinator: SettingsCoordinator | null = null;
   private unsubscribeSettingsFn: (() => void) | null = null;
+  private searchCoordinator: SearchCoordinator | null = null;
+  private unsubscribeSearchFn: (() => void) | null = null;
   private accountScope: AccountScope | null = null;
 
   aboutToAppear(): void {
@@ -118,6 +135,7 @@ struct Index {
   aboutToDisappear(): void {
     this.closeChat();
     this.closeSettings();
+    this.closeSearch();
     if (this.unsubscribeChatListFn !== null) {
       this.unsubscribeChatListFn();
       this.unsubscribeChatListFn = null;
@@ -139,11 +157,18 @@ struct Index {
         this.closeForwardPicker();
         return true;
       }
+      // INTEG-002：从搜索结果进来的会话，返回后 showSearch 仍为 true，
+      // 于是自然落回搜索结果（查询与结果都还在）。
       this.chatDispatch(new BackToChatList());
       return true;
     }
     if (this.showSettings) {
       this.closeSettings();
+      return true;
+    }
+    // INTEG-002：搜索页返回 → 关搜索回会话列表。
+    if (this.showSearch) {
+      this.closeSearch();
       return true;
     }
     return false;
@@ -175,11 +200,12 @@ struct Index {
 
   /**
    * 授权离开 ready（登出/会话关闭）时的整体退场：
-   * 销毁会话与设置协调器并回到登录页；再次 ready 时会话列表协调器重建。
+   * 销毁会话、设置与搜索协调器并回到登录页；再次 ready 时会话列表协调器重建。
    */
   private handleSessionEnded(): void {
     this.closeChat();
     this.closeSettings();
+    this.closeSearch();
     if (this.unsubscribeChatListFn !== null) {
       this.unsubscribeChatListFn();
       this.unsubscribeChatListFn = null;
@@ -190,6 +216,67 @@ struct Index {
     }
     this.showChatList = false;
     hilog.info(DOMAIN, TAG, 'session ended, back to auth page');
+  }
+
+  /**
+   * INTEG-002：打开搜索页。
+   * SearchCoordinator 用 scope 构造 → 内部走 TdlibSearchQueryProvider（真实
+   * TDLib SearchChats / SearchMessages）；search 无 start 生命周期，构造即用。
+   * 协调器活到搜索页关闭为止——从结果进会话时**不销毁**，这样返回能落回结果。
+   */
+  private openSearch(): void {
+    if (this.accountScope === null || this.searchCoordinator !== null) {
+      return;
+    }
+    const coordinator: SearchCoordinator = new SearchCoordinator({
+      scope: this.accountScope,
+      onNavigateToChat: (chatId: number, messageId?: number) => {
+        this.navigateToChatFromSearch(chatId, messageId);
+      }
+    });
+    this.searchCoordinator = coordinator;
+    this.unsubscribeSearchFn = coordinator.subscribe((uiState: SearchUiState) => {
+      this.searchUiState = uiState;
+    });
+    this.showSearch = true;
+    hilog.info(DOMAIN, TAG, 'search coordinator started');
+  }
+
+  private closeSearch(): void {
+    if (this.unsubscribeSearchFn !== null) {
+      this.unsubscribeSearchFn();
+      this.unsubscribeSearchFn = null;
+    }
+    if (this.searchCoordinator !== null) {
+      this.searchCoordinator.destroy();
+      this.searchCoordinator = null;
+    }
+    this.showSearch = false;
+  }
+
+  /**
+   * 搜索结果 → 会话。故意不清 showSearch：build() 里 chat 优先级高于 search，
+   * 所以进会话后按返回会自然回到搜索结果。
+   * messageId 目前只记录不改行为——把会话滚到指定消息需要"围绕该消息拉历史"
+   * 的能力（现有 ChatPage.scrollToMessageId 只对已加载消息有效），属 SEARCH-102
+   * 「聊天内搜索 + 结果跳转定位」范围。
+   */
+  private navigateToChatFromSearch(chatId: number, messageId?: number): void {
+    hilog.info(DOMAIN, TAG, 'navigate from search chatId=%{public}s messageId=%{public}s',
+      `${chatId}`, `${messageId !== undefined ? messageId : 0}`);
+    const title: string = this.chatTitleOf(chatId);
+    this.openChat(chatId, title);
+  }
+
+  /** 从会话列表数据里取标题（搜索结果只给 chatId）；未命中回退空串，ChatPage 会显示空标题。 */
+  private chatTitleOf(chatId: number): string {
+    const items: readonly ChatListItem[] = this.chatListUiState.items;
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].chatId === chatId) {
+        return items[i].title;
+      }
+    }
+    return '';
   }
 
   private openSettings(): void {
@@ -309,7 +396,7 @@ struct Index {
           Text('Bootstrap Error')
             .fontSize(T.typography.title.fontSize)
             .fontWeight(T.typography.title.fontWeight)
-            .fontColor(T.colors.error)
+            .fontColor(T.colors.destructive)
             .margin({ bottom: T.spacing.sm })
 
           Text(this.bootstrapError)
@@ -356,6 +443,21 @@ struct Index {
             this.closeSettings();
           }
         })
+      } else if (this.showSearch) {
+        // INTEG-002：搜索结果页。onDispatch 作为协调器缺席时的降级路径保留；
+        // coordinator 非空时页面内部直调协调器（不会双发，见 SearchPage 注释）。
+        SearchPage({
+          uiState: this.searchUiState,
+          coordinator: this.searchCoordinator,
+          onDispatch: (intent: Object) => {
+            if (this.searchCoordinator !== null) {
+              this.searchCoordinator.dispatch(intent as SearchIntent);
+            }
+          },
+          onNavigateToChat: (chatId: number, messageId?: number) => {
+            this.navigateToChatFromSearch(chatId, messageId);
+          }
+        })
       } else if (this.showChatList) {
         ChatListPage({
           uiState: this.chatListUiState,
@@ -364,6 +466,9 @@ struct Index {
           },
           onOpenSettings: () => {
             this.openSettings();
+          },
+          onOpenSearch: () => {
+            this.openSearch();
           }
         })
       } else {
