@@ -154,6 +154,20 @@ export class ResendMessage implements Effect {
   }
 }
 
+/**
+ * MSG-105：复制文本到系统剪贴板（pasteboard）并弹出轻提示。
+ */
+export class CopyTextToClipboard implements Effect {
+  readonly kind: 'copyTextToClipboard' = 'copyTextToClipboard';
+  readonly text: string;
+  readonly toastMessage: string;
+
+  constructor(text: string, toastMessage: string = '已复制到剪贴板') {
+    this.text = text;
+    this.toastMessage = toastMessage;
+  }
+}
+
 export type ChatEffect =
   | FetchInitialMessages
   | FetchOlderMessages
@@ -165,4 +179,5 @@ export type ChatEffect =
   | OpenForwardPicker
   | ForwardMessages
   | ReportMessagesRead
-  | ResendMessage;
+  | ResendMessage
+  | CopyTextToClipboard;

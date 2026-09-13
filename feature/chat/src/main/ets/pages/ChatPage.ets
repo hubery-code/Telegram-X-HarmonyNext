@@ -62,6 +62,8 @@ import {
   SendCurrentMessage,
   MessageActionRequested,
   ReplyToMessage,
+  CopyMessageText,
+  CopyMessageLink,
   EditMessage,
   DeleteMessage,
   CancelComposerMode,
@@ -1192,6 +1194,40 @@ export struct ChatPage {
             })
         }
 
+        // MSG-105：复制文本到系统剪贴板（对齐 Telegram X 菜单顺序：Reply → Copy → Copy Link → Forward → Edit → Delete）。
+        if (menu.showCopy) {
+          Text('Copy')
+            .fontSize(T.typography.body.fontSize)
+            .fontColor(T.colors.textPrimary)
+            .width('100%')
+            .padding({
+              left: T.spacing.screenInset,
+              right: T.spacing.screenInset,
+              top: T.spacing.md,
+              bottom: T.spacing.md
+            })
+            .onClick(() => {
+              this.onDispatch(new CopyMessageText());
+            })
+        }
+
+        // MSG-105：复制消息中的链接到系统剪贴板。
+        if (menu.showCopyLink) {
+          Text('Copy Link')
+            .fontSize(T.typography.body.fontSize)
+            .fontColor(T.colors.textPrimary)
+            .width('100%')
+            .padding({
+              left: T.spacing.screenInset,
+              right: T.spacing.screenInset,
+              top: T.spacing.md,
+              bottom: T.spacing.md
+            })
+            .onClick(() => {
+              this.onDispatch(new CopyMessageLink());
+            })
+        }
+
         // MSG-106：Forward 进入多选转发态（仅 can_be_forwarded 时出现）。
         if (menu.showForward) {
           Text('Forward')
@@ -1705,6 +1741,14 @@ export struct ChatPage {
   }
 
   private openLink(url: string): void {
+    let targetUrl: string = url.trim();
+    if (targetUrl.length === 0) {
+      return;
+    }
+    // MSG-105：协议前缀容错（若既无 :// 且非 mailto:/tel:，自动补全 https://）
+    if (!targetUrl.includes('://') && !targetUrl.startsWith('mailto:') && !targetUrl.startsWith('tel:')) {
+      targetUrl = 'https://' + targetUrl;
+    }
     const hostContext = this.getUIContext().getHostContext();
     if (hostContext === undefined) {
       // 只记失败事件，不记 URL 正文。
@@ -1712,12 +1756,20 @@ export struct ChatPage {
       return;
     }
     const context = hostContext as common.UIAbilityContext;
-    context.openLink(url, { appLinkingOnly: false })
+    context.openLink(targetUrl, { appLinkingOnly: false })
       .then(() => {
+        hilog.info(DOMAIN, TAG, 'openLink succeeded');
       })
       .catch((err: BusinessError) => {
         // 只记失败事件与错误码，不记 URL 正文。
         hilog.warn(DOMAIN, TAG, 'openLink failed: %{public}d', err.code);
+        try {
+          this.getUIContext().getPromptAction().showToast({
+            message: '无法打开链接',
+            duration: 2000
+          });
+        } catch (toastErr) {
+        }
       });
   }
 

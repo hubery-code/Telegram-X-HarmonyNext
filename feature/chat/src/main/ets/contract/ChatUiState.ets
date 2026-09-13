@@ -61,7 +61,9 @@ export type ComposerMode = ComposerReplyMode | ComposerEditMode;
  * - showEdit 仅自己发出的文本消息且 canBeEdited；
  * - showDelete 仅 canBeDeletedOnlyForSelf || canBeDeletedForAllUsers；
  * - deleteRevoke 为删除时使用的 revoke 参数（= canBeDeletedForAllUsers）；
- * - showForward 仅 canBeForwarded（MSG-106）。
+ * - showForward 仅 canBeForwarded（MSG-106）；
+ * - showCopy 仅 canBeSaved 且消息含有非空文本（MSG-105）；
+ * - showCopyLink 仅 canBeSaved 且消息含有可复制链接（MSG-105）。
  */
 export class MessageActionMenuState {
   readonly messageId: number;
@@ -70,6 +72,9 @@ export class MessageActionMenuState {
   readonly showDelete: boolean;
   readonly deleteRevoke: boolean;
   readonly showForward: boolean;
+  readonly showCopy: boolean;
+  readonly showCopyLink: boolean;
+  readonly linkUrlToCopy: string | null;
 
   constructor(
     messageId: number,
@@ -77,7 +82,10 @@ export class MessageActionMenuState {
     showEdit: boolean,
     showDelete: boolean,
     deleteRevoke: boolean,
-    showForward: boolean = false
+    showForward: boolean = false,
+    showCopy: boolean = false,
+    showCopyLink: boolean = false,
+    linkUrlToCopy: string | null = null
   ) {
     this.messageId = messageId;
     this.showReply = showReply;
@@ -85,6 +93,9 @@ export class MessageActionMenuState {
     this.showDelete = showDelete;
     this.deleteRevoke = deleteRevoke;
     this.showForward = showForward;
+    this.showCopy = showCopy;
+    this.showCopyLink = showCopyLink;
+    this.linkUrlToCopy = linkUrlToCopy;
   }
 }
 

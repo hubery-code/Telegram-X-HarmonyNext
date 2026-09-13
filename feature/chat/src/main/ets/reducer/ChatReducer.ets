@@ -51,6 +51,8 @@ import {
   MessageActionRequested,
   OnMessageActionMenuLoaded,
   OnMessageActionFailed,
+  CopyMessageText,
+  CopyMessageLink,
   ForwardMessagesRequested,
   ToggleMessageSelection,
   ForwardSelectedToChat,
@@ -74,7 +76,8 @@ import {
   OpenForwardPicker,
   ForwardMessages,
   ReportMessagesRead,
-  ResendMessage
+  ResendMessage,
+  CopyTextToClipboard
 } from '../contract/ChatEffect';
 import { incomingIdUpTo } from '../model/ReadReceipt';
 import {
@@ -95,6 +98,25 @@ export function buildViewerItems(messages: readonly MessageItem[]): MediaViewerI
     }
   }
   return list;
+}
+
+/** 提取消息中第一个可复制的链接 URL（MSG-105）。 */
+export function extractFirstLink(item: MessageItem): string | null {
+  if (item.spans.length > 0) {
+    for (let i = 0; i < item.spans.length; i++) {
+      const span = item.spans[i];
+      if (span.linkUrl !== null && span.linkUrl.length > 0) {
+        return span.linkUrl;
+      }
+    }
+  }
+  // 兜底扫描文本中的 http:// 或 https:// 或 www.
+  const text: string = item.text;
+  const match: RegExpMatchArray | null = text.match(/https?:\/\/[^\s]+|www\.[^\s]+/);
+  if (match !== null && match[0] !== undefined) {
+    return match[0];
+  }
+  return null;
 }
 
 /** 菜单/预览条用的正文摘要：压成单行并截断。 */
@@ -316,16 +338,23 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
       // 权限过滤：回复恒可；编辑仅己方文本消息且 canBeEdited；
       // 删除需 canBeDeletedOnlyForSelf || canBeDeletedForAllUsers，
       // revoke 取 canBeDeletedForAllUsers（可对所有人删则对所有人删）；
-      // MSG-106：转发需 canBeForwarded。
+      // MSG-106：转发需 canBeForwarded；
+      // MSG-105：复制文本需 canBeSaved 且非空文本；复制链接需 canBeSaved 且存在链接。
       const showEdit: boolean = item.isOutgoing && item.isTextMessage && loaded.canBeEdited;
       const showDelete: boolean = loaded.canBeDeletedOnlyForSelf || loaded.canBeDeletedForAllUsers;
+      const showCopy: boolean = loaded.canBeSaved && item.text.trim().length > 0;
+      const firstLink: string | null = extractFirstLink(item);
+      const showCopyLink: boolean = loaded.canBeSaved && firstLink !== null;
       const menu: MessageActionMenuState = new MessageActionMenuState(
         loaded.messageId,
         true,
         showEdit,
         showDelete,
         loaded.canBeDeletedForAllUsers,
-        loaded.canBeForwarded
+        loaded.canBeForwarded,
+        showCopy,
+        showCopyLink,
+        firstLink
       );
       const nextState: ChatUiState = state.copyWith({ actionMenu: menu });
       return reduced(nextState);
@@ -336,6 +365,30 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
         return reduced(state);
       }
       return reduced(state.copyWith({ actionMenu: null }));
+    }
+
+    case 'copyMessageText': {
+      const menu: MessageActionMenuState | null = state.actionMenu;
+      if (menu === null || !menu.showCopy) {
+        return reduced(state);
+      }
+      const item: MessageItem | null = findMessage(state, menu.messageId);
+      if (item === null || item.text.trim().length === 0) {
+        return reduced(state.copyWith({ actionMenu: null }));
+      }
+      const nextState: ChatUiState = state.copyWith({ actionMenu: null });
+      const effects: ChatEffect[] = [new CopyTextToClipboard(item.text, '已复制到剪贴板')];
+      return reduced(nextState, effects);
+    }
+
+    case 'copyMessageLink': {
+      const menu: MessageActionMenuState | null = state.actionMenu;
+      if (menu === null || !menu.showCopyLink || menu.linkUrlToCopy === null) {
+        return reduced(state);
+      }
+      const nextState: ChatUiState = state.copyWith({ actionMenu: null });
+      const effects: ChatEffect[] = [new CopyTextToClipboard(menu.linkUrlToCopy, '已复制链接')];
+      return reduced(nextState, effects);
     }
 
     case 'replyToMessage': {

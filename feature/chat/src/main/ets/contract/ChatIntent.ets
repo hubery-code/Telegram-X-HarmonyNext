@@ -108,25 +108,39 @@ export class OnMessageActionMenuLoaded implements Intent {
   readonly canBeDeletedForAllUsers: boolean;
   /** MSG-106：can_be_forwarded，决定菜单是否出现 Forward。 */
   readonly canBeForwarded: boolean;
+  /** MSG-105：can_be_saved，决定消息内容是否允许在本地保存/复制。 */
+  readonly canBeSaved: boolean;
 
   constructor(
     messageId: number,
     canBeEdited: boolean,
     canBeDeletedOnlyForSelf: boolean,
     canBeDeletedForAllUsers: boolean,
-    canBeForwarded: boolean = false
+    canBeForwarded: boolean = false,
+    canBeSaved: boolean = true
   ) {
     this.messageId = messageId;
     this.canBeEdited = canBeEdited;
     this.canBeDeletedOnlyForSelf = canBeDeletedOnlyForSelf;
     this.canBeDeletedForAllUsers = canBeDeletedForAllUsers;
     this.canBeForwarded = canBeForwarded;
+    this.canBeSaved = canBeSaved;
   }
 }
 
 /** 菜单点选：回复 actionMenu.messageId 指定的消息。 */
 export class ReplyToMessage implements Intent {
   readonly kind: 'replyToMessage' = 'replyToMessage';
+}
+
+/** MSG-105：菜单点选：复制 actionMenu.messageId 指定的消息文本到系统剪贴板。 */
+export class CopyMessageText implements Intent {
+  readonly kind: 'copyMessageText' = 'copyMessageText';
+}
+
+/** MSG-105：菜单点选：复制 actionMenu.messageId 消息中的链接到系统剪贴板。 */
+export class CopyMessageLink implements Intent {
+  readonly kind: 'copyMessageLink' = 'copyMessageLink';
 }
 
 /** 菜单点选：编辑 actionMenu.messageId 指定的消息。 */
@@ -295,6 +309,8 @@ export type ChatIntent =
   | MessageActionRequested
   | OnMessageActionMenuLoaded
   | ReplyToMessage
+  | CopyMessageText
+  | CopyMessageLink
   | EditMessage
   | DeleteMessage
   | CancelComposerMode

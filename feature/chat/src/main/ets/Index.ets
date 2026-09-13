@@ -52,6 +52,8 @@ export {
   MessageActionRequested,
   OnMessageActionMenuLoaded,
   ReplyToMessage,
+  CopyMessageText,
+  CopyMessageLink,
   EditMessage,
   DeleteMessage,
   CancelComposerMode,
@@ -85,6 +87,7 @@ export {
   ForwardMessages,
   ReportMessagesRead,
   ResendMessage,
+  CopyTextToClipboard,
   ChatEffect
 } from './contract/ChatEffect';
 
@@ -94,7 +97,7 @@ export {
   ReadReportThrottle
 } from './model/ReadReceipt';
 
-export { chatReducer, messageSnippet } from './reducer/ChatReducer';
+export { chatReducer, messageSnippet, extractFirstLink } from './reducer/ChatReducer';
 
 export {
   ChatUiStateListener,

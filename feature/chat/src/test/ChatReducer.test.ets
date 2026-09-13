@@ -19,6 +19,8 @@ import {
   MessageActionRequested,
   OnMessageActionMenuLoaded,
   ReplyToMessage,
+  CopyMessageText,
+  CopyMessageLink,
   EditMessage,
   DeleteMessage,
   CancelComposerMode,
@@ -39,9 +41,11 @@ import {
   DeleteMessages,
   NavigateBack,
   OpenForwardPicker,
-  ForwardMessages
+  ForwardMessages,
+  CopyTextToClipboard
 } from '../main/ets/contract/ChatEffect';
-import { chatReducer } from '../main/ets/reducer/ChatReducer';
+import { chatReducer, extractFirstLink } from '../main/ets/reducer/ChatReducer';
+import { MessageTextSpan } from '../main/ets/model/MessageTextSpan';
 
 function makeEnv(nowMillis: number = 1000, monotonicMillis: number = 500): ReducerEnv {
   const env: ReducerEnv = {
@@ -178,6 +182,100 @@ export default function chatReducerTest() {
       expect(menu.showReply).assertTrue();
       expect(menu.showEdit).assertFalse();
       expect(menu.showDelete).assertFalse();
+    });
+
+    it('onMessageActionMenuLoaded_textMessage_showsCopy', 0, () => {
+      const state: ChatUiState = makeStateWith([makeTextMessage(7, true, 'Hello copy')]);
+      const result: ReducerResult<ChatUiState, ChatEffect> =
+        chatReducer(state, new OnMessageActionMenuLoaded(7, false, false, false, false, true), makeEnv());
+      const menu: MessageActionMenuState = result.state.actionMenu as MessageActionMenuState;
+      expect(menu.showCopy).assertTrue();
+      expect(menu.showCopyLink).assertFalse();
+      expect(menu.linkUrlToCopy).assertNull();
+    });
+
+    it('onMessageActionMenuLoaded_emptyTextMessage_hidesCopy', 0, () => {
+      const state: ChatUiState = makeStateWith([makeTextMessage(7, true, '   ')]);
+      const result: ReducerResult<ChatUiState, ChatEffect> =
+        chatReducer(state, new OnMessageActionMenuLoaded(7, false, false, false, false, true), makeEnv());
+      const menu: MessageActionMenuState = result.state.actionMenu as MessageActionMenuState;
+      expect(menu.showCopy).assertFalse();
+    });
+
+    it('onMessageActionMenuLoaded_protectedMessage_hidesCopyAndCopyLink', 0, () => {
+      const state: ChatUiState = makeStateWith([makeTextMessage(7, false, 'Protected https://example.com')]);
+      const result: ReducerResult<ChatUiState, ChatEffect> =
+        chatReducer(state, new OnMessageActionMenuLoaded(7, false, false, false, false, false), makeEnv());
+      const menu: MessageActionMenuState = result.state.actionMenu as MessageActionMenuState;
+      expect(menu.showCopy).assertFalse();
+      expect(menu.showCopyLink).assertFalse();
+    });
+
+    it('onMessageActionMenuLoaded_messageWithSpanLink_showsCopyLink', 0, () => {
+      const span: MessageTextSpan = new MessageTextSpan(
+        'website', false, false, false, false, false, false, false, false, 'https://telegram.org'
+      );
+      const msg: MessageItem = new MessageItem(
+        7, 'Visit website', 1000, false, '', 'none', true, false, null, '', [span]
+      );
+      const state: ChatUiState = makeStateWith([msg]);
+      const result: ReducerResult<ChatUiState, ChatEffect> =
+        chatReducer(state, new OnMessageActionMenuLoaded(7, false, false, false, false, true), makeEnv());
+      const menu: MessageActionMenuState = result.state.actionMenu as MessageActionMenuState;
+      expect(menu.showCopy).assertTrue();
+      expect(menu.showCopyLink).assertTrue();
+      expect(menu.linkUrlToCopy).assertEqual('https://telegram.org');
+    });
+
+    it('onMessageActionMenuLoaded_messageWithRawUrl_showsCopyLink', 0, () => {
+      const state: ChatUiState = makeStateWith([makeTextMessage(7, false, 'check https://t.me/telegram')]);
+      const result: ReducerResult<ChatUiState, ChatEffect> =
+        chatReducer(state, new OnMessageActionMenuLoaded(7, false, false, false, false, true), makeEnv());
+      const menu: MessageActionMenuState = result.state.actionMenu as MessageActionMenuState;
+      expect(menu.showCopy).assertTrue();
+      expect(menu.showCopyLink).assertTrue();
+      expect(menu.linkUrlToCopy).assertEqual('https://t.me/telegram');
+    });
+
+    it('copyMessageText_validMessage_closesMenuAndEmitsCopyEffect', 0, () => {
+      const menu: MessageActionMenuState = new MessageActionMenuState(
+        7, true, false, false, false, false, true, false, null
+      );
+      const state: ChatUiState = makeStateWith([makeTextMessage(7, false, 'Copy me!')], '', null, menu);
+      const result: ReducerResult<ChatUiState, ChatEffect> =
+        chatReducer(state, new CopyMessageText(), makeEnv());
+      expect(result.state.actionMenu).assertNull();
+      expect(result.effects.length).assertEqual(1);
+      const effect: CopyTextToClipboard = result.effects[0] as CopyTextToClipboard;
+      expect(effect.kind).assertEqual('copyTextToClipboard');
+      expect(effect.text).assertEqual('Copy me!');
+      expect(effect.toastMessage).assertEqual('已复制到剪贴板');
+    });
+
+    it('copyMessageText_whenNotAllowed_doesNothing', 0, () => {
+      const menu: MessageActionMenuState = new MessageActionMenuState(
+        7, true, false, false, false, false, false, false, null
+      );
+      const state: ChatUiState = makeStateWith([makeTextMessage(7, false, 'No copy')], '', null, menu);
+      const result: ReducerResult<ChatUiState, ChatEffect> =
+        chatReducer(state, new CopyMessageText(), makeEnv());
+      expect(result.state.actionMenu !== null).assertTrue();
+      expect(result.effects.length).assertEqual(0);
+    });
+
+    it('copyMessageLink_validLink_closesMenuAndEmitsCopyEffect', 0, () => {
+      const menu: MessageActionMenuState = new MessageActionMenuState(
+        7, true, false, false, false, false, true, true, 'https://tgx.org'
+      );
+      const state: ChatUiState = makeStateWith([makeTextMessage(7, false, 'Visit https://tgx.org')], '', null, menu);
+      const result: ReducerResult<ChatUiState, ChatEffect> =
+        chatReducer(state, new CopyMessageLink(), makeEnv());
+      expect(result.state.actionMenu).assertNull();
+      expect(result.effects.length).assertEqual(1);
+      const effect: CopyTextToClipboard = result.effects[0] as CopyTextToClipboard;
+      expect(effect.kind).assertEqual('copyTextToClipboard');
+      expect(effect.text).assertEqual('https://tgx.org');
+      expect(effect.toastMessage).assertEqual('已复制链接');
     });
 
     it('replyToMessage_setsReplyMode_keepsComposerDraft', 0, () => {
@@ -531,6 +629,29 @@ export default function chatReducerTest() {
 
       expect(result.state.selectionMode).assertFalse();
       expect(result.state.selectedMessageIds.length).assertEqual(0);
+    });
+
+    it('extractFirstLink_prefersSpanLink_fallbacksToRawUrl', 0, () => {
+      // 无链接
+      const msgNoLink: MessageItem = makeTextMessage(1, false, 'hello world');
+      expect(extractFirstLink(msgNoLink)).assertNull();
+
+      // 正文包含裸链接
+      const msgRaw: MessageItem = makeTextMessage(2, false, 'check https://example.com/test now');
+      expect(extractFirstLink(msgRaw)).assertEqual('https://example.com/test');
+
+      // 正文 www 开头
+      const msgWww: MessageItem = makeTextMessage(3, false, 'visit www.example.org today');
+      expect(extractFirstLink(msgWww)).assertEqual('www.example.org');
+
+      // span 链接优先于文本匹配
+      const span: MessageTextSpan = new MessageTextSpan(
+        'click', false, false, false, false, false, false, false, false, 'https://span-link.com'
+      );
+      const msgSpan: MessageItem = new MessageItem(
+        4, 'click here https://raw-link.com', 1000, false, '', 'none', true, false, null, '', [span]
+      );
+      expect(extractFirstLink(msgSpan)).assertEqual('https://span-link.com');
     });
   });
 }

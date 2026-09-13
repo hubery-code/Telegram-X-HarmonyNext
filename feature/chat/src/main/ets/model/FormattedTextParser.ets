@@ -87,13 +87,23 @@ class SpanStyleAccumulator {
           this.linkUrl = segmentText;
         }
         break;
+      case 'textEntityTypeEmailAddress':
+        if (this.linkUrl === null && segmentText.length > 0) {
+          this.linkUrl = segmentText.startsWith('mailto:') ? segmentText : `mailto:${segmentText}`;
+        }
+        this.isAccent = true;
+        break;
+      case 'textEntityTypePhoneNumber':
+        if (this.linkUrl === null && segmentText.length > 0) {
+          this.linkUrl = segmentText.startsWith('tel:') ? segmentText : `tel:${segmentText}`;
+        }
+        this.isAccent = true;
+        break;
       case 'textEntityTypeMention':
       case 'textEntityTypeMentionName':
       case 'textEntityTypeHashtag':
       case 'textEntityTypeCashtag':
       case 'textEntityTypeBotCommand':
-      case 'textEntityTypeEmailAddress':
-      case 'textEntityTypePhoneNumber':
       case 'textEntityTypeBankCardNumber':
       case 'textEntityTypeMediaTimestamp':
         this.isAccent = true;

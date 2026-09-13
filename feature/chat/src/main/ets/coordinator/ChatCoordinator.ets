@@ -28,6 +28,9 @@
  */
 
 import { hilog } from '@kit.PerformanceAnalysisKit';
+import { pasteboard } from '@kit.BasicServicesKit';
+import { promptAction } from '@kit.ArkUI';
+import { BusinessError } from '@kit.BasicServicesKit';
 import { ManualClock, SequentialIdGenerator, AppError, AppErrors } from '@tgx/core-common';
 import { AccountScope } from '@tgx/core-account';
 import {
@@ -100,7 +103,8 @@ import {
   OpenForwardPicker,
   ForwardMessages,
   ReportMessagesRead,
-  ResendMessage
+  ResendMessage,
+  CopyTextToClipboard
 } from '../contract/ChatEffect';
 import { isOutgoingMessageRead, ReadReportThrottle } from '../model/ReadReceipt';
 import { chatReducer } from '../reducer/ChatReducer';
@@ -1226,7 +1230,8 @@ export class ChatCoordinator {
                 props.can_be_edited,
                 props.can_be_deleted_only_for_self,
                 props.can_be_deleted_for_all_users,
-                props.can_be_forwarded
+                props.can_be_forwarded,
+                props.can_be_saved
               ));
             }
           }).catch(() => {
@@ -1387,8 +1392,35 @@ export class ChatCoordinator {
         break;
       }
 
+      case 'copyTextToClipboard': {
+        // MSG-105：复制文本到系统剪贴板并弹出轻提示。
+        const copy: CopyTextToClipboard = effect as CopyTextToClipboard;
+        this.copyToClipboard(copy.text, copy.toastMessage);
+        break;
+      }
+
       default:
         break;
+    }
+  }
+
+  /** MSG-105：复制文本到系统剪贴板并弹出 Toast 提示。 */
+  private copyToClipboard(text: string, toastMessage: string): void {
+    try {
+      const pasteData: pasteboard.PasteData = pasteboard.createData(pasteboard.MIMETYPE_TEXT_PLAIN, text);
+      const systemPasteboard: pasteboard.SystemPasteboard = pasteboard.getSystemPasteboard();
+      systemPasteboard.setData(pasteData).then(() => {
+        hilog.info(DOMAIN, TAG, 'copyToClipboard success, len=%{public}d', text.length);
+        try {
+          promptAction.showToast({ message: toastMessage, duration: 2000 });
+        } catch (toastErr) {
+          hilog.warn(DOMAIN, TAG, 'promptAction.showToast error: %{public}s', JSON.stringify(toastErr));
+        }
+      }).catch((err: BusinessError) => {
+        hilog.error(DOMAIN, TAG, 'systemPasteboard.setData error: %{public}s', JSON.stringify(err));
+      });
+    } catch (err) {
+      hilog.error(DOMAIN, TAG, 'copyToClipboard exception: %{public}s', JSON.stringify(err));
     }
   }
 
