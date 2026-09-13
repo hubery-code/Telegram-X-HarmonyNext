@@ -31,6 +31,8 @@ export {
   SearchQueryProvider,
   TdlibSearchQueryProvider,
   MockSearchQueryProvider,
+  SearchChatMetadata,
+  SearchChatMetadataResolver,
   SearchCoordinatorOptions,
   SearchUiStateListener,
   SearchCoordinator

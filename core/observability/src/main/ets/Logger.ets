@@ -14,9 +14,9 @@
  */
 
 import { AppError, AppErrors } from '@tgx/core-common';
-import { TdJsonRaw } from '@tgx/td-api-generated/src/main/ets/runtime/TdJson';
-import { TdObject, encodeTdObject } from '@tgx/td-api-generated/src/main/ets/types/TdEntries';
-import { redactTdJson } from '@tgx/td-api-generated/src/main/ets/redaction/TdRedact';
+import { TdJsonRaw } from '@tgx/core-td-api-generated/src/main/ets/runtime/TdJson';
+import { TdObject, encodeTdObject } from '@tgx/core-td-api-generated/src/main/ets/types/TdEntries';
+import { redactTdJson } from '@tgx/core-td-api-generated/src/main/ets/redaction/TdRedact';
 
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 

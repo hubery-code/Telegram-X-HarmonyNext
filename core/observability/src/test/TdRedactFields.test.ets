@@ -10,8 +10,8 @@ import {
   ProxyTypeSocks5,
   User,
   decodeTdObject,
-} from '@tgx/td-api-generated';
-import { redactFields, redactTdJson } from '@tgx/td-api-generated/src/main/ets/redaction/TdRedact';
+} from '@tgx/core-td-api-generated';
+import { redactFields, redactTdJson } from '@tgx/core-td-api-generated/src/main/ets/redaction/TdRedact';
 import { FIXTURES, ALL_SECRETS } from './SensitiveFixtures';
 import { jsonObj } from './TestJson';
 

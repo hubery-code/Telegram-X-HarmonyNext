@@ -139,6 +139,23 @@ export class ChatListCoordinator {
     return this.currentState;
   }
 
+  /**
+   * FIX-001：按 chatId 查已注册会话的标题。
+   *
+   * 存在的意义是给**跨 feature** 的只读查询当桥：搜索结果（feature/search）
+   * 只从 TDLib 拿到 chat_ids，自己没有会话元数据；而 feature/* 之间禁止互相
+   * 依赖，所以由装配层把本方法包成回调注入 SearchCoordinator（见 entry）。
+   * 命中 TDLib 通过 updateNewChat 推来的本地缓存，无网络往返。
+   * 未注册（如按用户名搜到的、还不在会话列表里的公开会话）返回 null。
+   *
+   * 注：本版 TDLib 的 `Chat` 没有 `username` 字段（已移到 full-info 类），
+   * 因此只提供标题；搜索结果的 @用户名此前显示的是伪值 `chat_<id>`，现留空。
+   */
+  getChatTitle(chatId: number): string | null {
+    const chat: Chat | undefined = this.registry.getChat(chatId);
+    return chat !== undefined ? chat.title : null;
+  }
+
   start(): void {
     this.projection.setOnStateChanged(() => {
       this.scheduleSyncFromProjection();
@@ -235,11 +252,29 @@ export class ChatListCoordinator {
     switch (effect.kind) {
       case 'fetchChatList': {
         const fetchEffect: FetchChatList = effect as FetchChatList;
-        hilog.info(DOMAIN, TAG, 'executing loadChats limit=%{public}d', fetchEffect.limit);
         const result = this.projection.loadNextPage(fetchEffect.limit);
+        // FIX-001：null = 投影正在加载或已到末尾，属正常跳过——不打日志、不报错、
+        // 不弹 toast（此前把守卫当错误，冷启动必留一条假错误）。
+        if (result === null) {
+          break;
+        }
+        hilog.info(DOMAIN, TAG, 'executing loadChats limit=%{public}d', fetchEffect.limit);
         if (result.err) {
           hilog.error(DOMAIN, TAG, 'loadChats rejected: %{public}s', result.error.message);
           this.dispatch(new OnChatsLoadFailed(result.error));
+        }
+        if (result.ok) {
+          // 请求级成功但响应级可能失败：回灌 OnChatsLoadFailed，避免静默卡在 loading。
+          result.value.promise.then((res: Result<TdWireObject, AppError>) => {
+            if (this.destroyed) {
+              return;
+            }
+            if (res.err) {
+              hilog.error(DOMAIN, TAG, 'loadChats failed: %{public}s', AppErrors.toLogString(res.error));
+              this.dispatch(new OnChatsLoadFailed(res.error));
+            }
+          }).catch(() => {
+          });
         }
         break;
       }

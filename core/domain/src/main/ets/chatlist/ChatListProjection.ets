@@ -135,10 +135,23 @@ export class ChatListProjection {
     };
   }
   
-  /** 分页请求 */
-  loadNextPage(limit: number = 20): Result<TdPendingRequest, AppError> {
+  /**
+   * 分页请求（FIX-001：良性跳过返回 null，不再当错误）。
+   *
+   * 「正在加载」与「已到末尾」都是**正常状态**，不是失败。此前这里返回
+   * `err(AppErrors.internal('domain','Cannot load next page'))`，导致
+   * ChatListCoordinator 把它当请求失败 → 打 error 日志 + 弹 "Cannot load
+   * next page" toast。触发路径很常见：`start()` 派发 LoadChats 后，
+   * ChatListPage 首次挂载时也可能再派发一次（它的守卫看的是 UI 状态
+   * isLoading，而该值在投影 notify → sync 后就立刻回落 false，投影自己的
+   * 请求其实还在飞），第二次必然撞上这里的守卫 → 每次冷启动都留一条假错误。
+   *
+   * 现对齐 MessageProjection.loadInitialMessages/loadOlderMessages 的既有约定：
+   * `null` = 本次跳过、无需任何提示；调用方直接 return。
+   */
+  loadNextPage(limit: number = 20): Result<TdPendingRequest, AppError> | null {
     if (this.isLoading || !this.hasMore) {
-      return err(AppErrors.internal('domain', 'Cannot load next page'));
+      return null;
     }
     
     this.isLoading = true;

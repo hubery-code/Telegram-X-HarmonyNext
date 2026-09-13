@@ -62,6 +62,7 @@ import {
   SearchPage,
   SearchUiState,
   SearchIntent,
+  SearchChatMetadata,
   SearchCoordinator
 } from '@tgx/feature-search';
 import { BootstrapResult } from '../Bootstrap';
@@ -232,6 +233,11 @@ struct Index {
       scope: this.accountScope,
       onNavigateToChat: (chatId: number, messageId?: number) => {
         this.navigateToChatFromSearch(chatId, messageId);
+      },
+      // FIX-001：搜索结果只拿得到 chat_ids，标题/用户名要从会话列表的本地缓存取。
+      // feature/search 不能依赖 feature/chat_list，所以由本层（装配层）注入查询。
+      resolveChatMetadata: (chatId: number) => {
+        return this.resolveSearchChatMetadata(chatId);
       }
     });
     this.searchCoordinator = coordinator;
@@ -277,6 +283,27 @@ struct Index {
       }
     }
     return '';
+  }
+
+  /**
+   * FIX-001：搜索结果标题/用户名解析。
+   * 优先用 ChatListCoordinator 的 ChatRegistry（TDLib 经 updateNewChat 推来的
+   * 全量本地缓存，无网络往返）；会话列表协调器尚未建立时回退到已渲染的列表行
+   * （至少覆盖当前一页）；都没有则返回 null，由 provider 退回 `Chat <id>` 占位。
+   */
+  private resolveSearchChatMetadata(chatId: number): SearchChatMetadata | null {
+    if (this.chatListCoordinator !== null) {
+      const title: string | null = this.chatListCoordinator.getChatTitle(chatId);
+      if (title !== null) {
+        // username 留空：本版 TDLib 的 Chat 无该字段，SearchPage 对空串不渲染 @行。
+        return { title: title, username: '' };
+      }
+    }
+    const fallbackTitle: string = this.chatTitleOf(chatId);
+    if (fallbackTitle.length > 0) {
+      return { title: fallbackTitle, username: '' };
+    }
+    return null;
   }
 
   private openSettings(): void {

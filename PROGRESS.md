@@ -22,7 +22,14 @@
 
 | 工作包 | 负责人(AI) | 开始时间 | 说明 |
 |---|---|---|---|
-| （暂无） | — | — | — |
+| FIX-001 | 主会话（DSH） | 2026-09-13 | 现有缺陷清理（用户指示：先修问题、不开新功能）。三项：① `loadChats` 双发假错误；② 搜索结果显示 `Chat <id>` 占位标题；③ `@tgx/core-td-api-generated` 包名不一致。均非新功能。**实现完成，待真机验证** |
+
+**FIX-001 交付内容**（详细验收证据待真机验证后补「已完成」表）：
+
+- **① `loadChats` 双发假错误**：根因是 `ChatListProjection.loadNextPage` 把「正在加载 / 已到末尾」当成**错误**返回（`err(AppErrors.internal('domain','Cannot load next page'))`），而 `MessageProjection.loadInitialMessages/loadOlderMessages` 早就确立了 **`null` = 良性跳过**的约定——同一个 core/domain 里两套语义。触发路径：`start()` 派发 LoadChats 后 `ChatListPage` 首次挂载可能再派发一次（它的守卫看 UI 状态 `isLoading`，而该值在投影 notify→sync 后立刻回落 false，投影自己的请求其实还在飞），第二次必撞守卫 → **每次冷启动都留一条 error 日志 + 一条 "Cannot load next page" toast**。修法：`loadNextPage` 返回类型改为 `Result<...> | null`，busy/exhausted 返回 `null`；协调器对 `null` 静默 return（不打日志不提示），并对响应级失败补 `OnChatsLoadFailed`（此前只处理请求级失败，响应失败会静默卡在 loading）。
+- **② 搜索结果占位标题**：`TdlibSearchQueryProvider` 只用了 `SearchChats` 返回的 `chat_ids`，标题硬编码 `` `Chat ${chatId}` ``、用户名 `` `chat_${chatId}` ``，而 TDLib 的 `Chats` 对象**不含标题**（只有 id 数组）。修法：新增 `SearchChatMetadataResolver` 注入面，由装配层（entry）把 `ChatListCoordinator` 的 `ChatRegistry` 查询包成回调注入——`feature/*` 之间禁止互相依赖，所以走 entry 桥接；命中 TDLib 经 `updateNewChat` 推来的本地缓存，**无网络往返**；未注册（如按用户名搜到的、还不在会话列表里的公开会话）仍回退占位符。会话与消息两处结果的 `chatTitle` 都接了。
+- **③ 包名不一致**：`core/td_api_generated` 自身 `name` 是 `@tgx/td-api-generated`，但**全仓 22 个文件 / 7 个模块清单声明的都是 `@tgx/core-td-api-generated`**（ohpm 靠 `file:` 路径解析，只告警不报错）。修法是**改包名去就主流**（1 行），而不是动 22 个文件；连带把唯一的少数派 `core/observability`（含 5 处**深路径 import** `@tgx/td-api-generated/src/main/ets/...`）与其 `oh_modules` 链接名统一，并重生成 7 个模块的 `oh-package-lock.json5`。**效果：ohpm 的名称不一致告警从 6 条降到 0 条**。
+- **代价提示**：包名重命名会让 16 个依赖模块的 hvigor 依赖图与构建缓存**整体失效**，首次全量冷编译每模块 7–9 分钟（热缓存下 30–55 秒），属一次性成本。
 
 > ⚠️ 并行约定：**不要执行 git commit**，完成后报告文件清单由主会话统一提交。core/account 禁止 import ArkUI/Kit。项目内有 `.agents/skills/harmony-next/` 离线参考（API 12-23 快照），编码遇 API 问题可查。
 >

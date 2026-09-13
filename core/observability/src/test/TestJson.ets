@@ -1,4 +1,4 @@
-import { TdJsonRaw } from '@tgx/td-api-generated/src/main/ets/runtime/TdJson';
+import { TdJsonRaw } from '@tgx/core-td-api-generated/src/main/ets/runtime/TdJson';
 
 /**
  * Test helper: builds a TDLib-shaped JSON object without inline object

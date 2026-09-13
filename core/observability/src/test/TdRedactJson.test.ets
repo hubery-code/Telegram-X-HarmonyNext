@@ -1,6 +1,6 @@
 import { describe, it, expect } from '@ohos/hypium';
-import { redactTdJson } from '@tgx/td-api-generated/src/main/ets/redaction/TdRedact';
-import { TdJsonRaw } from '@tgx/td-api-generated/src/main/ets/runtime/TdJson';
+import { redactTdJson } from '@tgx/core-td-api-generated/src/main/ets/redaction/TdRedact';
+import { TdJsonRaw } from '@tgx/core-td-api-generated/src/main/ets/runtime/TdJson';
 import { FIXTURES, ALL_SECRETS } from './SensitiveFixtures';
 import { jsonObj, jsonArr } from './TestJson';
 

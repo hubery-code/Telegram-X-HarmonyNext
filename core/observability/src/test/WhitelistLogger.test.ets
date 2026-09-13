@@ -1,7 +1,7 @@
 import { describe, it, expect } from '@ohos/hypium';
 import { AppErrors } from '@tgx/core-common';
-import { UpdateOption } from '@tgx/td-api-generated';
-import { TdJsonRaw } from '@tgx/td-api-generated/src/main/ets/runtime/TdJson';
+import { UpdateOption } from '@tgx/core-td-api-generated';
+import { TdJsonRaw } from '@tgx/core-td-api-generated/src/main/ets/runtime/TdJson';
 import { Logger, DEFAULT_TD_LOG_WHITELIST, filterByWhitelist, TdLogWhitelist, LogLevel } from '../main/ets/Index';
 import { FIXTURES, ALL_SECRETS } from './SensitiveFixtures';
 import { jsonObj } from './TestJson';

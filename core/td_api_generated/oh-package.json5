@@ -1,5 +1,5 @@
 {
-  "name": "@tgx/td-api-generated",
+  "name": "@tgx/core-td-api-generated",
   "version": "0.1.0",
   "description": "Telegram X HarmonyOS core/td_api_generated: code-generated TDLib ArkTS DTOs, discriminated unions, JSON codec and request response map (GEN-002). Pure ArkTS, no Kit / TDLib / platform dependency. DO NOT hand-edit generated files.",
   "main": "./src/main/ets/Index.ets",

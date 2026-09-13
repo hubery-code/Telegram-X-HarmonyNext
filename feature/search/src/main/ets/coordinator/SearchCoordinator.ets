@@ -61,11 +61,42 @@ export interface SearchQueryProvider {
   searchMessages(query: string, limit: number): Promise<SearchMessageItem[]>;
 }
 
+/**
+ * FIX-001：会话元数据解析回调。
+ * TDLib 的 searchChats 只回 chat_ids（Chats 对象里没有标题），而会话标题/用户名
+ * 在会话列表的本地缓存里。feature/search 不能直接依赖 feature/chat_list，
+ * 所以由装配层（entry）注入——命中本地缓存、无网络往返；返回 null 表示该
+ * 会话尚未注册（如按用户名搜到的、还不在会话列表里的公开会话）。
+ */
+export interface SearchChatMetadata {
+  readonly title: string;
+  readonly username: string;
+}
+
+export type SearchChatMetadataResolver = (chatId: number) => SearchChatMetadata | null;
+
 export class TdlibSearchQueryProvider implements SearchQueryProvider {
   private readonly scope: AccountScope;
+  private readonly resolveChatMetadata: SearchChatMetadataResolver | null;
 
-  constructor(scope: AccountScope) {
+  constructor(scope: AccountScope, resolveChatMetadata?: SearchChatMetadataResolver) {
     this.scope = scope;
+    this.resolveChatMetadata = resolveChatMetadata !== undefined ? resolveChatMetadata : null;
+  }
+
+  /** 标题/用户名：本地缓存命中就用真值，未命中回退占位符（保证列表仍可用）。 */
+  private titleOf(chatId: number): string {
+    const meta: SearchChatMetadata | null = this.metadataOf(chatId);
+    return meta !== null && meta.title.length > 0 ? meta.title : `Chat ${chatId}`;
+  }
+
+  private usernameOf(chatId: number): string {
+    const meta: SearchChatMetadata | null = this.metadataOf(chatId);
+    return meta !== null ? meta.username : '';
+  }
+
+  private metadataOf(chatId: number): SearchChatMetadata | null {
+    return this.resolveChatMetadata !== null ? this.resolveChatMetadata(chatId) : null;
   }
 
   async searchChats(query: string, limit: number): Promise<SearchChatItem[]> {
@@ -86,8 +117,8 @@ export class TdlibSearchQueryProvider implements SearchQueryProvider {
             const chatId: number = chatsObj.chat_ids[i];
             items.push(new SearchChatItem(
               chatId,
-              `Chat ${chatId}`,
-              `chat_${chatId}`,
+              this.titleOf(chatId),
+              this.usernameOf(chatId),
               null,
               false,
               false
@@ -132,7 +163,7 @@ export class TdlibSearchQueryProvider implements SearchQueryProvider {
             items.push(new SearchMessageItem(
               msg.id,
               msg.chat_id,
-              `Chat ${msg.chat_id}`,
+              this.titleOf(msg.chat_id),
               'Sender',
               textSnippet,
               formatMessageDate(msg.date)
@@ -212,6 +243,8 @@ export interface SearchCoordinatorOptions {
   readonly env?: ReducerEnv;
   readonly onNavigateToChat?: (chatId: number, messageId?: number) => void;
   readonly debounceMs?: number;
+  /** FIX-001：会话元数据解析（由装配层注入会话列表的本地缓存查询）。 */
+  readonly resolveChatMetadata?: SearchChatMetadataResolver;
 }
 
 export type SearchUiStateListener = (state: SearchUiState) => void;
@@ -231,7 +264,7 @@ export class SearchCoordinator {
     if (options !== undefined && options.provider !== undefined) {
       this.provider = options.provider;
     } else if (options !== undefined && options.scope !== undefined) {
-      this.provider = new TdlibSearchQueryProvider(options.scope);
+      this.provider = new TdlibSearchQueryProvider(options.scope, options.resolveChatMetadata);
     } else {
       this.provider = new MockSearchQueryProvider();
     }
