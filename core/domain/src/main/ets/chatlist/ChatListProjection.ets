@@ -1,20 +1,28 @@
 import { encodeLoadChats, decodeTdUpdate,
+ encodeToggleChatIsPinned,
+ encodeToggleChatIsMarkedAsUnread,
+ encodeViewMessages,
 
  ChatListFolder,
 
   Chat,
   ChatPosition,
+  MessageSourceChatList,
   TdChatList,
   TdUpdate,
+  ToggleChatIsPinned,
+  ToggleChatIsMarkedAsUnread,
   UpdateNewChat,
   UpdateChatPosition,
   UpdateChatLastMessage,
   UpdateChatReadInbox,
+  UpdateChatIsMarkedAsUnread,
+  ViewMessages,
   LoadChats,
 } from '@tgx/core-td-api-generated';
 import { ChatRegistry } from './ChatRegistry';
 import { AccountScope } from '@tgx/core-account';
-import { TdPendingRequest } from '@tgx/td-gateway';
+import { TdPendingRequest, TdWireObject } from '@tgx/td-gateway';
 import { Result, AppError, AppErrors, err } from '@tgx/core-common';
 import { TdUpdateSubscription } from '@tgx/td-gateway';
 
@@ -49,6 +57,18 @@ export function compareChatOrder(orderA: string, idA: number, orderB: string, id
   if (iA > iB) return -1;
   if (iA < iB) return 1;
   return 0;
+}
+
+/**
+ * 会话在指定列表中的置顶态（MSG-108 / FEAT-CHAT-002）。
+ * 权威来源是 TDLib `ChatPosition.is_pinned`——不靠客户端自行推断"排在最前即置顶"，
+ * 因为置顶区与普通区之间还有 order 断层，归档区也不在同一列表。
+ * 该会话在此列表中没有 position（未入列/已移出）时视为未置顶。
+ */
+export function isChatPinnedInList(chat: Chat, chatList: TdChatList | null): boolean {
+  const position: ChatPosition | undefined =
+    chat.positions.find((p: ChatPosition) => chatListEquals(p.list, chatList));
+  return position !== undefined ? position.is_pinned : false;
 }
 
 /**
@@ -147,6 +167,61 @@ export class ChatListProjection {
     return result; // Type workaround for now
   }
   
+  /**
+   * 置顶/取消置顶会话（MSG-108 / FEAT-CHAT-002）：
+   * toggleChatIsPinned(chat_list=本投影的列表, chat_id, is_pinned)。
+   * 成功后 TDLib 推 updateChatPosition（新 order + is_pinned），本投影的
+   * setChatPosition 会按 (order, id) 降序重排——置顶区自然浮到最前，
+   * 因此这里不做乐观本地重排，避免与推送竞争产生二次跳动。
+   */
+  toggleChatIsPinned(chatId: number, isPinned: boolean): Result<TdPendingRequest, AppError> {
+    const req: ToggleChatIsPinned = new ToggleChatIsPinned();
+    req.chat_list = this.chatList;
+    req.chat_id = chatId;
+    req.is_pinned = isPinned;
+    return this.scope.request('toggleChatIsPinned', encodeToggleChatIsPinned(req) as TdWireObject);
+  }
+
+  /**
+   * 手动标未读/取消标未读（MSG-108 / FEAT-CHAT-004 部分）：
+   * toggleChatIsMarkedAsUnread(chat_id, is_marked_as_unread)。
+   * 它只改"手动未读"标记，不产生未读消息数——未读徽标的数字仍由
+   * unread_count 决定；标记置位且无未读消息时由 UI 出圆点徽标。
+   * 成功后 TDLib 推 updateChatIsMarkedAsUnread，由 handleUpdate 就地刷新。
+   */
+  toggleChatIsMarkedAsUnread(chatId: number, isMarkedAsUnread: boolean): Result<TdPendingRequest, AppError> {
+    const req: ToggleChatIsMarkedAsUnread = new ToggleChatIsMarkedAsUnread();
+    req.chat_id = chatId;
+    req.is_marked_as_unread = isMarkedAsUnread;
+    return this.scope.request(
+      'toggleChatIsMarkedAsUnread',
+      encodeToggleChatIsMarkedAsUnread(req) as TdWireObject
+    );
+  }
+
+  /**
+   * 从会话列表把会话标记为已读（MSG-108）：
+   * viewMessages(chat_id, [last_message_id], source=MessageSourceChatList, force_read=true)。
+   *
+   * force_read=true 是必需的——此刻会话是关闭的（用户在列表页），
+   * 传 false 时 TDLib 会按"会话是否打开"判定而不入账。source 显式给
+   * MessageSourceChatList 对齐 Android Tdlib.markAllAsRead 的读来源语义。
+   * 成功后 TDLib 推 updateChatReadInbox（unread_count → 0），现有分支已处理。
+   */
+  markChatRead(chatId: number, lastMessageId: number): Result<TdPendingRequest, AppError> {
+    if (lastMessageId <= 0) {
+      return err<TdPendingRequest, AppError>(
+        AppErrors.parameter('missing', 'last_message_id', 'chat has no last message to read')
+      );
+    }
+    const req: ViewMessages = new ViewMessages();
+    req.chat_id = chatId;
+    req.message_ids = [lastMessageId];
+    req.source = new MessageSourceChatList();
+    req.force_read = true;
+    return this.scope.request('viewMessages', encodeViewMessages(req) as TdWireObject);
+  }
+
   private handleUpdate(update: TdUpdate): void {
     if (update.type === 'updateNewChat') {
       const chat = (update as UpdateNewChat).chat;
@@ -190,6 +265,15 @@ export class ChatListProjection {
       const chat = this.registry.getChat(readUpdate.chat_id);
       if (chat) {
         chat.unread_count = readUpdate.unread_count;
+        this.notifyStateChanged();
+      }
+    } else if (update.type === 'updateChatIsMarkedAsUnread') {
+      // MSG-108：手动标未读标记变更（本端操作回执或他端同步）。就地刷新聊天
+      // 列表行；列表顺序不受影响（标未读不改 order），因此无需重排。
+      const markedUpdate = update as UpdateChatIsMarkedAsUnread;
+      const chat = this.registry.getChat(markedUpdate.chat_id);
+      if (chat) {
+        chat.is_marked_as_unread = markedUpdate.is_marked_as_unread;
         this.notifyStateChanged();
       }
     }

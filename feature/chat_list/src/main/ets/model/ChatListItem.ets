@@ -5,6 +5,13 @@
  * （CHATLIST-001 的 ChatRegistry / ChatListProjection）或 Mock 生成器产出。
  * 头像占位色与首字母在这里派生：颜色按 chatId 稳定取色板，
  * 字母取标题首字符大写；色板是装饰性数据，不进 design token。
+ *
+ * MSG-108 新增：
+ * - isPinned：该会话在当前列表中被置顶（TDLib ChatPosition.is_pinned），
+ *   行内时间戳左侧出置顶标；
+ * - isMarkedAsUnread：手动标未读标记。它与 unreadCount 独立——标未读不产生
+ *   未读消息数，所以"标记置位 + 未读数 0"时用圆点徽标表达。
+ * 两个字段都带默认值 false，保持既有调用点向后兼容。
  */
 
 export class ChatListItem {
@@ -15,6 +22,8 @@ export class ChatListItem {
   readonly unreadCount: number;
   readonly avatarColor: string;
   readonly avatarLetter: string;
+  readonly isPinned: boolean;
+  readonly isMarkedAsUnread: boolean;
 
   constructor(
     chatId: number,
@@ -23,7 +32,9 @@ export class ChatListItem {
     timestampMs: number,
     unreadCount: number,
     avatarColor: string,
-    avatarLetter: string
+    avatarLetter: string,
+    isPinned: boolean = false,
+    isMarkedAsUnread: boolean = false
   ) {
     this.chatId = chatId;
     this.title = title;
@@ -32,6 +43,8 @@ export class ChatListItem {
     this.unreadCount = unreadCount;
     this.avatarColor = avatarColor;
     this.avatarLetter = avatarLetter;
+    this.isPinned = isPinned;
+    this.isMarkedAsUnread = isMarkedAsUnread;
   }
 }
 

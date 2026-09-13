@@ -1,5 +1,5 @@
 /**
- * feature/chat_list — 导出入口（CHATLIST-002）。
+ * feature/chat_list — 导出入口（CHATLIST-002 + MSG-108）。
  */
 
 export {
@@ -11,7 +11,11 @@ export {
 
 export { generateMockChats } from './model/MockChatData';
 
-export { ChatListUiStateOptions, ChatListUiState } from './contract/ChatListUiState';
+export {
+  ChatListUiStateOptions,
+  ChatListUiState,
+  ChatActionMenuState
+} from './contract/ChatListUiState';
 
 export {
   LoadChats,
@@ -19,6 +23,11 @@ export {
   ChatSelected,
   OnChatsLoaded,
   OnChatsLoadFailed,
+  ChatActionRequested,
+  ToggleChatPinned,
+  ToggleChatMarkedUnread,
+  DismissChatActionMenu,
+  OnChatActionFailed,
   ChatListIntent
 } from './contract/ChatListIntent';
 
@@ -26,10 +35,12 @@ export {
   FetchChatList,
   NavigateToChat,
   ShowToast,
+  SetChatPinned,
+  SetChatReadState,
   ChatListEffect
 } from './contract/ChatListEffect';
 
-export { CHAT_LIST_PAGE_SIZE, chatListReducer } from './reducer/ChatListReducer';
+export { CHAT_LIST_PAGE_SIZE, chatListReducer, canMarkChatAsRead } from './reducer/ChatListReducer';
 
 export { ChatListUiStateListener, ChatListCoordinator } from './coordinator/ChatListCoordinator';
 

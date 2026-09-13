@@ -1,17 +1,29 @@
 /**
- * feature/chat_list — ChatListPage：会话列表页（CHATLIST-002）。
+ * feature/chat_list — ChatListPage：会话列表页（CHATLIST-002 + MSG-108）。
  *
  * LazyForEach 懒加载列表，每行：头像占位（色板圆 + 首字母）、标题、
  * 最后一条消息预览（单行截断）、时间戳、未读徽标（>99 显示 99+）。
  * 支持下拉刷新（RefreshChats）、点击行（ChatSelected）、空/加载/错误三态。
  * header 右侧齿轮按钮经 onOpenSettings 回调打开设置页（INTEG-001，纯导航，
  * 不经 reducer）。全部色彩/字号/间距用 design_system token，不硬编码。
+ *
+ * MSG-108：长按行出操作菜单（Pin/Unpin、Mark as read/unread，文案由 reducer
+ * 按当前状态定稿）。置顶行在时间戳左侧出置顶标；手动标未读且未读数为 0 时
+ * 未读徽标退化为圆点（标未读不产生未读消息数）。
  */
 
 import { LightTheme } from '@tgx/core-design-system';
 import { ChatListItem } from '../model/ChatListItem';
-import { ChatListUiState } from '../contract/ChatListUiState';
-import { LoadChats, RefreshChats, ChatSelected } from '../contract/ChatListIntent';
+import { ChatListUiState, ChatActionMenuState } from '../contract/ChatListUiState';
+import {
+  LoadChats,
+  RefreshChats,
+  ChatSelected,
+  ChatActionRequested,
+  ToggleChatPinned,
+  ToggleChatMarkedUnread,
+  DismissChatActionMenu
+} from '../contract/ChatListIntent';
 
 const T = LightTheme;
 
@@ -55,10 +67,18 @@ function fnv1a32(input: string): string {
   return (hash >>> 0).toString(16);
 }
 
-/** 会话行的 LazyForEach key：chatId + 展示相关内容散列（标题/预览/未读数/时间戳）。 */
+/**
+ * 会话行的 LazyForEach key：chatId + 展示相关内容散列
+ * （标题/预览/未读数/时间戳/置顶态/手动未读标记）。
+ *
+ * MSG-108：置顶标与未读圆点都是"同一 chatId 的原地变更"（置顶时 chatId 不变），
+ * 必须进 key 才会重渲——与 MSG-104 已读勾/ MSG-106 勾选圈同源的坑。
+ * 注意置顶导致的**重排序**由 items 顺序变化驱动，不依赖 key。
+ */
 function chatRowKey(item: ChatListItem): string {
   const signature: string =
-    `${item.title}|${item.lastMessagePreview}|${item.unreadCount}|${item.timestampMs}`;
+    `${item.title}|${item.lastMessagePreview}|${item.unreadCount}|${item.timestampMs}|` +
+    `${item.isPinned}|${item.isMarkedAsUnread}`;
   return `${item.chatId}:${fnv1a32(signature)}`;
 }
 
@@ -123,73 +143,166 @@ export struct ChatListPage {
   }
 
   build() {
-    Column() {
-      Row() {
-        Text('Chats')
-          .fontSize(T.typography.largeTitle.fontSize)
-          .fontWeight(T.typography.largeTitle.fontWeight)
-          .fontColor(T.colors.textPrimary)
-          .layoutWeight(1)
+    Stack() {
+      Column() {
+        Row() {
+          Text('Chats')
+            .fontSize(T.typography.largeTitle.fontSize)
+            .fontWeight(T.typography.largeTitle.fontWeight)
+            .fontColor(T.colors.textPrimary)
+            .layoutWeight(1)
 
-        Text('⚙')
-          .fontSize(T.typography.largeTitle.fontSize)
-          .fontWeight(T.typography.title.fontWeight)
-          .fontColor(T.colors.accent)
-          .width(SETTINGS_BUTTON_SIZE)
-          .height(SETTINGS_BUTTON_SIZE)
-          .textAlign(TextAlign.Center)
-          .onClick(() => {
-            this.onOpenSettings();
-          })
-      }
-      .width('100%')
-      .alignItems(VerticalAlign.Center)
-      .padding({
-        left: T.spacing.screenInset,
-        right: T.spacing.screenInset,
-        top: T.spacing.lg,
-        bottom: T.spacing.md
-      })
+          Text('⚙')
+            .fontSize(T.typography.largeTitle.fontSize)
+            .fontWeight(T.typography.title.fontWeight)
+            .fontColor(T.colors.accent)
+            .width(SETTINGS_BUTTON_SIZE)
+            .height(SETTINGS_BUTTON_SIZE)
+            .textAlign(TextAlign.Center)
+            .onClick(() => {
+              this.onOpenSettings();
+            })
+        }
+        .width('100%')
+        .alignItems(VerticalAlign.Center)
+        .padding({
+          left: T.spacing.screenInset,
+          right: T.spacing.screenInset,
+          top: T.spacing.lg,
+          bottom: T.spacing.md
+        })
 
-      if (this.uiState.errorMessage !== null && this.uiState.items.length === 0) {
-        this.ErrorView(this.uiState.errorMessage)
-      } else if (this.uiState.isLoading && this.uiState.items.length === 0) {
-        this.LoadingView()
-      } else if (this.uiState.items.length === 0) {
-        this.EmptyView()
-      } else {
-        Refresh({ refreshing: $$this.isRefreshing }) {
-          List() {
-            LazyForEach(this.dataSource, (item: ChatListItem) => {
-              ListItem() {
-                this.ChatRow(item)
-              }
-            }, (item: ChatListItem) => chatRowKey(item))
+        // MSG-108：置顶/标未读失败的错误细条（不挡列表）。
+        if (this.uiState.errorMessage !== null && this.uiState.items.length > 0) {
+          Text(this.uiState.errorMessage)
+            .fontSize(T.typography.footnote.fontSize)
+            .fontColor(T.colors.destructive)
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+            .width('100%')
+            .padding({
+              left: T.spacing.screenInset,
+              right: T.spacing.screenInset,
+              bottom: T.spacing.xs
+            })
+        }
+
+        if (this.uiState.errorMessage !== null && this.uiState.items.length === 0) {
+          this.ErrorView(this.uiState.errorMessage)
+        } else if (this.uiState.isLoading && this.uiState.items.length === 0) {
+          this.LoadingView()
+        } else if (this.uiState.items.length === 0) {
+          this.EmptyView()
+        } else {
+          Refresh({ refreshing: $$this.isRefreshing }) {
+            List() {
+              LazyForEach(this.dataSource, (item: ChatListItem) => {
+                ListItem() {
+                  this.ChatRow(item)
+                }
+              }, (item: ChatListItem) => chatRowKey(item))
+            }
+            .width('100%')
+            .height('100%')
+            .cachedCount(5)
+            .scrollBar(BarState.Off)
+            .divider({
+              strokeWidth: 1,
+              color: T.colors.divider,
+              startMargin: T.spacing.screenInset + AVATAR_SIZE + T.spacing.md,
+              endMargin: T.spacing.none
+            })
           }
-          .width('100%')
-          .height('100%')
-          .cachedCount(5)
-          .scrollBar(BarState.Off)
-          .divider({
-            strokeWidth: 1,
-            color: T.colors.divider,
-            startMargin: T.spacing.screenInset + AVATAR_SIZE + T.spacing.md,
-            endMargin: T.spacing.none
+          .layoutWeight(1)
+          .onRefreshing(() => {
+            if (this.uiState.isLoading) {
+              this.isRefreshing = false;
+              return;
+            }
+            this.onDispatch(new RefreshChats());
           })
         }
-        .layoutWeight(1)
-        .onRefreshing(() => {
-          if (this.uiState.isLoading) {
-            this.isRefreshing = false;
-            return;
-          }
-          this.onDispatch(new RefreshChats());
-        })
+      }
+      .width('100%')
+      .height('100%')
+      .backgroundColor(T.colors.background)
+
+      // MSG-108：长按会话行的操作菜单（遮罩 + 底部动作面板）。
+      if (this.uiState.actionMenu !== null) {
+        this.ChatActionSheet(this.uiState.actionMenu)
       }
     }
     .width('100%')
     .height('100%')
     .backgroundColor(T.colors.background)
+  }
+
+  /**
+   * MSG-108：单会话操作菜单。
+   * 项与文案对齐 Android ChatsController 单会话菜单：
+   * Pin/Unpin（依 isPinned）+ Mark as read/Mark as unread（依 canMarkAsRead）。
+   */
+  @Builder
+  ChatActionSheet(menu: ChatActionMenuState) {
+    Stack() {
+      Column()
+        .width('100%')
+        .height('100%')
+        .backgroundColor(T.colors.scrim)
+        .onClick(() => {
+          this.onDispatch(new DismissChatActionMenu());
+        })
+
+      Column() {
+        Text(menu.title)
+          .fontSize(T.typography.footnote.fontSize)
+          .fontColor(T.colors.textSecondary)
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .width('100%')
+          .padding({
+            left: T.spacing.screenInset,
+            right: T.spacing.screenInset,
+            top: T.spacing.md,
+            bottom: T.spacing.xs
+          })
+
+        Text(menu.isPinned ? 'Unpin' : 'Pin')
+          .fontSize(T.typography.body.fontSize)
+          .fontColor(T.colors.textPrimary)
+          .width('100%')
+          .padding({
+            left: T.spacing.screenInset,
+            right: T.spacing.screenInset,
+            top: T.spacing.md,
+            bottom: T.spacing.md
+          })
+          .onClick(() => {
+            this.onDispatch(new ToggleChatPinned());
+          })
+
+        Text(menu.canMarkAsRead ? 'Mark as read' : 'Mark as unread')
+          .fontSize(T.typography.body.fontSize)
+          .fontColor(T.colors.textPrimary)
+          .width('100%')
+          .padding({
+            left: T.spacing.screenInset,
+            right: T.spacing.screenInset,
+            top: T.spacing.md,
+            bottom: T.spacing.md
+          })
+          .onClick(() => {
+            this.onDispatch(new ToggleChatMarkedUnread());
+          })
+      }
+      .width('100%')
+      .backgroundColor(T.colors.surface)
+      .borderRadius({ topLeft: T.radius.xl, topRight: T.radius.xl })
+      .padding({ top: T.spacing.sm, bottom: T.spacing.lg })
+    }
+    .width('100%')
+    .height('100%')
+    .alignContent(Alignment.Bottom)
   }
 
   @Builder
@@ -215,6 +328,13 @@ export struct ChatListPage {
             .maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
             .layoutWeight(1)
+
+          // MSG-108：置顶标（时间戳左侧，对齐 Telegram X 的位置）。
+          if (item.isPinned) {
+            Text('📌')
+              .fontSize(T.typography.caption.fontSize)
+              .margin({ left: T.spacing.sm })
+          }
 
           Text(formatChatTimestamp(item.timestampMs))
             .fontSize(T.typography.footnote.fontSize)
@@ -244,6 +364,14 @@ export struct ChatListPage {
               .padding({ left: T.spacing.xs + T.spacing.hairline, right: T.spacing.xs + T.spacing.hairline })
               .textAlign(TextAlign.Center)
               .margin({ left: T.spacing.sm })
+          } else if (item.isMarkedAsUnread) {
+            // MSG-108：手动标未读但不含未读消息 → 实心圆点（标未读不产生未读数）。
+            Text('')
+              .width(BADGE_HEIGHT - 8)
+              .height(BADGE_HEIGHT - 8)
+              .borderRadius(T.radius.full)
+              .backgroundColor(T.colors.accent)
+              .margin({ left: T.spacing.sm })
           }
         }
         .width('100%')
@@ -261,6 +389,13 @@ export struct ChatListPage {
     .onClick(() => {
       this.onDispatch(new ChatSelected(item.chatId));
     })
+    .gesture(
+      LongPressGesture({ duration: 350 })
+        .onAction(() => {
+          // MSG-108：长按出单会话操作菜单（Pin / Mark as unread）。
+          this.onDispatch(new ChatActionRequested(item.chatId));
+        })
+    )
   }
 
   @Builder

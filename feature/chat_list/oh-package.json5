@@ -1,7 +1,7 @@
 {
   "name": "@tgx/feature-chat-list",
   "version": "0.1.0",
-  "description": "Telegram X HarmonyOS feature/chat_list: chat list page (LazyForEach rows with avatar placeholder, title, preview, timestamp, unread badge), MVI UiState/Intent/Effect + pure reducer, deterministic mock data (CHATLIST-002).",
+  "description": "Telegram X HarmonyOS feature/chat_list: chat list page (LazyForEach rows with avatar placeholder, title, preview, timestamp, unread badge), MVI UiState/Intent/Effect + pure reducer, deterministic mock data (CHATLIST-002 + MSG-108 pin/mark-unread).",
   "main": "./src/main/ets/Index.ets",
   "author": "telegram-x",
   "license": "GPL-3.0",
@@ -11,6 +11,7 @@
     "@tgx/core-account": "file:../../core/account",
     "@tgx/core-domain": "file:../../core/domain",
     "@tgx/core-td-api-generated": "file:../../core/td_api_generated",
+    "@tgx/td-gateway": "file:../../core/td_gateway",
     "@tgx/feature-template": "file:../_template"
   },
   "devDependencies": {
