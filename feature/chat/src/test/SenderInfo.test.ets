@@ -3,8 +3,10 @@ import {
   ChatTypeBasicGroup,
   ChatTypePrivate,
   ChatTypeSupergroup,
+  File,
   MessageSenderChat,
   MessageSenderUser,
+  ProfilePhoto,
   TdMessageSender,
   User
 } from '@tgx/core-td-api-generated';
@@ -26,6 +28,16 @@ function makeUser(userId: number, firstName: string, lastName: string = ''): Use
   return user;
 }
 
+function makeUserWithAvatar(userId: number, firstName: string, fileId: number): User {
+  const user = makeUser(userId, firstName);
+  const photo = new ProfilePhoto();
+  const file = new File();
+  file.id = fileId;
+  photo.small = file;
+  user.profile_photo = photo;
+  return user;
+}
+
 function makeSenderUser(userId: number): MessageSenderUser {
   const sender = new MessageSenderUser();
   sender.user_id = userId;
@@ -38,10 +50,12 @@ function makeSenderChat(chatId: number): MessageSenderChat {
   return sender;
 }
 
-/** 记录 requestUser 调用的假依赖。 */
+/** 记录 requestUser 与 requestAvatarDownload 调用的假依赖。 */
 class FakeDeps implements SenderInfoDeps {
   users: Map<number, User> = new Map();
   requestedIds: number[] = [];
+  filePaths: Map<number, string> = new Map();
+  downloadRequestedFileIds: number[] = [];
 
   lookupUser(userId: number): User | null {
     const user: User | undefined = this.users.get(userId);
@@ -51,6 +65,15 @@ class FakeDeps implements SenderInfoDeps {
   requestUser(userId: number): void {
     this.requestedIds.push(userId);
   }
+
+  lookupFilePath = (fileId: number): string | null => {
+    const path: string | undefined = this.filePaths.get(fileId);
+    return path !== undefined ? path : null;
+  };
+
+  requestAvatarDownload = (fileId: number): void => {
+    this.downloadRequestedFileIds.push(fileId);
+  };
 }
 
 export default function senderInfoTest() {
@@ -140,6 +163,38 @@ export default function senderInfoTest() {
       expect(nameColorForIndex(0)).assertEqual(NAME_PALETTE[0]);
       expect(nameColorForIndex(6)).assertEqual(NAME_PALETTE[6]);
       expect(nameColorForIndex(7)).assertEqual(NAME_PALETTE[0]);
+    });
+
+    it('groupUserWithAvatar_hitCache_returnsAvatarPath', 0, () => {
+      const deps = new FakeDeps();
+      deps.users.set(7, makeUserWithAvatar(7, 'Alice', 101));
+      deps.filePaths.set(101, '/data/storage/el2/base/files/avatars/101.jpg');
+      const info: SenderInfo =
+        resolveSenderInfo(false, 'group', makeSenderUser(7), deps);
+      expect(info.name).assertEqual('Alice');
+      expect(info.avatarPath).assertEqual('/data/storage/el2/base/files/avatars/101.jpg');
+      expect(deps.downloadRequestedFileIds.length).assertEqual(0);
+    });
+
+    it('groupUserWithAvatar_cacheMiss_requestsDownloadAndReturnsNullPath', 0, () => {
+      const deps = new FakeDeps();
+      deps.users.set(7, makeUserWithAvatar(7, 'Alice', 101));
+      const info: SenderInfo =
+        resolveSenderInfo(false, 'group', makeSenderUser(7), deps);
+      expect(info.name).assertEqual('Alice');
+      expect(info.avatarPath).assertNull();
+      expect(deps.downloadRequestedFileIds.length).assertEqual(1);
+      expect(deps.downloadRequestedFileIds[0]).assertEqual(101);
+    });
+
+    it('groupUserWithoutAvatar_returnsNullPath', 0, () => {
+      const deps = new FakeDeps();
+      deps.users.set(7, makeUser(7, 'Alice'));
+      const info: SenderInfo =
+        resolveSenderInfo(false, 'group', makeSenderUser(7), deps);
+      expect(info.name).assertEqual('Alice');
+      expect(info.avatarPath).assertNull();
+      expect(deps.downloadRequestedFileIds.length).assertEqual(0);
     });
 
     it('avatarLettersForName_extractsInitials', 0, () => {

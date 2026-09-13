@@ -54,6 +54,9 @@ export class MessageItem {
   readonly showDateHeader: boolean;
   readonly dateHeaderText: string;
   readonly showUnreadSeparator: boolean;
+  readonly senderAvatarPath: string | null;
+  readonly albumItems: MediaAttachment[];
+  readonly albumMessageIds: number[];
 
   constructor(
     messageId: number,
@@ -76,7 +79,10 @@ export class MessageItem {
     replyIsSticker: boolean = false,
     showDateHeader: boolean = false,
     dateHeaderText: string = '',
-    showUnreadSeparator: boolean = false
+    showUnreadSeparator: boolean = false,
+    senderAvatarPath: string | null = null,
+    albumItems: MediaAttachment[] = [],
+    albumMessageIds: number[] = []
   ) {
     this.messageId = messageId;
     this.text = text;
@@ -99,6 +105,9 @@ export class MessageItem {
     this.showDateHeader = showDateHeader;
     this.dateHeaderText = dateHeaderText;
     this.showUnreadSeparator = showUnreadSeparator;
+    this.senderAvatarPath = senderAvatarPath;
+    this.albumItems = albumItems;
+    this.albumMessageIds = albumMessageIds;
   }
 }
 

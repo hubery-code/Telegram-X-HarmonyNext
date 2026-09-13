@@ -47,6 +47,12 @@ import { MessageItem } from '../model/MessageItem';
 import { MessageTextSpan } from '../model/MessageTextSpan';
 import { MediaAttachment } from '../model/MediaAttachment';
 import { MediaViewerItem } from '../model/MediaViewerItem';
+import {
+  calculateMosaicLayout,
+  MosaicLayoutResult,
+  MosaicLine,
+  MosaicItemGeometry
+} from '../model/MosaicLayout';
 import { avatarLettersForName, nameColorForIndex } from '../model/SenderInfo';
 import {
   ChatUiState,
@@ -159,7 +165,16 @@ function formatDuration(seconds: number): string {
  */
 function messageRowKey(item: MessageItem, selected: boolean): string {
   let mediaSig: string = '';
-  if (item.media !== null) {
+  if (item.albumItems.length > 0) {
+    const parts: string[] = [];
+    for (let k = 0; k < item.albumItems.length; k++) {
+      const m: MediaAttachment = item.albumItems[k];
+      const path: string = m.localPath !== null ? m.localPath : '';
+      const thumb: string = m.thumbnailPath !== null ? m.thumbnailPath : '';
+      parts.push(`${m.fileId}|${path}|${thumb}|${m.isDownloaded}|${m.isDownloading}`);
+    }
+    mediaSig = `album:${parts.join(';')}`;
+  } else if (item.media !== null) {
     const m: MediaAttachment = item.media;
     const path: string = m.localPath !== null ? m.localPath : '';
     const thumb: string = m.thumbnailPath !== null ? m.thumbnailPath : '';
@@ -170,7 +185,8 @@ function messageRowKey(item: MessageItem, selected: boolean): string {
     `${item.replyThumbnailPath !== null ? item.replyThumbnailPath : ''}|${item.replyIsSticker}`;
   const signature: string =
     `${item.sendState}|${item.isRead}|${item.isEdited}|${item.senderColorIndex}|` +
-    `${item.text}|${item.senderName}|${item.replyToSummary}|${mediaSig}|${replySig}|${selected}|` +
+    `${item.text}|${item.senderName}|${item.senderAvatarPath !== null ? item.senderAvatarPath : ''}|` +
+    `${item.replyToSummary}|${mediaSig}|${replySig}|${selected}|` +
     `${item.showDateHeader ? item.dateHeaderText : ''}|${item.showUnreadSeparator}`;
   return `${item.messageId}:${fnv1a32(signature)}`;
 }
@@ -582,17 +598,26 @@ export struct ChatPage {
           this.SelectionMark(item)
         }
 
-      // MSG-102：群聊收到的消息在气泡左侧出小圆头像（彩色底 + 首字母，配色同会话列表）。
+      // MSG-102 & MSG-102-AVATAR：群聊收到的消息在气泡左侧出小圆头像（真实头像 Cover 裁剪，缺省或下载中出彩色底 + 首字母）。
       if (this.showSenderUi(item)) {
-        Text(avatarLettersForName(item.senderName))
-          .width(SENDER_AVATAR_SIZE)
-          .height(SENDER_AVATAR_SIZE)
-          .borderRadius(T.radius.full)
-          .backgroundColor(this.senderAvatarColor(item))
-          .fontColor(T.colors.textOnAccent)
-          .fontSize(T.typography.footnote.fontSize)
-          .textAlign(TextAlign.Center)
-          .margin({ right: T.spacing.xs })
+        if (item.senderAvatarPath !== null && item.senderAvatarPath.length > 0) {
+          Image(toSandboxUri(item.senderAvatarPath))
+            .width(SENDER_AVATAR_SIZE)
+            .height(SENDER_AVATAR_SIZE)
+            .borderRadius(T.radius.full)
+            .objectFit(ImageFit.Cover)
+            .margin({ right: T.spacing.xs })
+        } else {
+          Text(avatarLettersForName(item.senderName))
+            .width(SENDER_AVATAR_SIZE)
+            .height(SENDER_AVATAR_SIZE)
+            .borderRadius(T.radius.full)
+            .backgroundColor(this.senderAvatarColor(item))
+            .fontColor(T.colors.textOnAccent)
+            .fontSize(T.typography.footnote.fontSize)
+            .textAlign(TextAlign.Center)
+            .margin({ right: T.spacing.xs })
+        }
       }
 
       Column() {
@@ -613,8 +638,10 @@ export struct ChatPage {
           this.ReplyReference(item)
         }
 
-        // 多媒体附件（MEDIA-101 / MEDIA-105）：图片、视频、GIF 动图；贴纸（STICKER-101）。
-        if (item.media !== null) {
+        // 多媒体附件（MEDIA-101 / MEDIA-105）：图片、视频、GIF 动图；贴纸（STICKER-101）；相册九宫格（MSG-107）。
+        if (item.albumItems.length > 1) {
+          this.MediaAlbumBubble(item)
+        } else if (item.media !== null) {
           if (this.isSticker(item)) {
             this.StickerBubble(item.media, item)
           } else {
@@ -863,6 +890,107 @@ export struct ChatPage {
     }
     .width(this.stickerWidth(media))
     .height(this.stickerHeight(media))
+  }
+
+  private getMosaicLayout(item: MessageItem): MosaicLayoutResult {
+    return calculateMosaicLayout(item.albumItems, 256, 2, item.text.length > 0);
+  }
+
+  /** 相册多图九宫格气泡渲染（FEAT-MEDIA-002 / MSG-107）。 */
+  @Builder
+  MediaAlbumBubble(item: MessageItem) {
+    Column({ space: 2 }) {
+      ForEach(this.getMosaicLayout(item).lines, (line: MosaicLine) => {
+        Row({ space: 2 }) {
+          ForEach(line.items, (geom: MosaicItemGeometry) => {
+            Stack({ alignContent: Alignment.Center }) {
+              if (item.albumItems[geom.index].localPath !== null && item.albumItems[geom.index].isDownloaded) {
+                Image(toSandboxUri(item.albumItems[geom.index].localPath))
+                  .width('100%')
+                  .height('100%')
+                  .objectFit(ImageFit.Cover)
+              } else if (item.albumItems[geom.index].thumbnailPath !== null) {
+                Image(toSandboxUri(item.albumItems[geom.index].thumbnailPath))
+                  .width('100%')
+                  .height('100%')
+                  .objectFit(ImageFit.Cover)
+              } else {
+                Column() {
+                  Text('🖼️')
+                    .fontSize(20)
+                }
+                .width('100%')
+                .height('100%')
+                .justifyContent(FlexAlign.Center)
+                .alignItems(HorizontalAlign.Center)
+                .backgroundColor(T.colors.surfaceVariant)
+              }
+
+              if (!item.albumItems[geom.index].isDownloaded) {
+                if (item.albumItems[geom.index].isDownloading) {
+                  Column() {
+                    LoadingProgress()
+                      .width(28)
+                      .height(28)
+                      .color(Color.White)
+                  }
+                  .width(36)
+                  .height(36)
+                  .borderRadius(T.radius.full)
+                  .backgroundColor('#80000000')
+                  .justifyContent(FlexAlign.Center)
+                  .alignItems(HorizontalAlign.Center)
+                } else {
+                  Column() {
+                    Text('⬇')
+                      .fontSize(16)
+                      .fontColor(Color.White)
+                  }
+                  .width(32)
+                  .height(32)
+                  .borderRadius(T.radius.full)
+                  .backgroundColor('#80000000')
+                  .justifyContent(FlexAlign.Center)
+                  .alignItems(HorizontalAlign.Center)
+                }
+              }
+
+              if (item.albumItems[geom.index].kind === 'video') {
+                Row() {
+                  Text(formatDuration(item.albumItems[geom.index].duration))
+                    .fontSize(10)
+                    .fontWeight(FontWeight.Medium)
+                    .fontColor(Color.White)
+                    .backgroundColor('#80000000')
+                    .padding({ left: 4, right: 4, top: 1, bottom: 1 })
+                    .borderRadius(3)
+                }
+                .width('100%')
+                .height('100%')
+                .alignItems(VerticalAlign.Bottom)
+                .justifyContent(FlexAlign.End)
+                .padding(4)
+              }
+            }
+            .width(geom.width)
+            .height(geom.height)
+            .borderRadius({
+              topLeft: geom.needTopLeftRound ? T.radius.md : 0,
+              topRight: geom.needTopRightRound ? T.radius.md : 0,
+              bottomLeft: geom.needBottomLeftRound ? T.radius.md : 0,
+              bottomRight: geom.needBottomRightRound ? T.radius.md : 0
+            })
+            .clip(true)
+            .onClick(() => {
+              this.onDispatch(new OpenMediaViewer(item.messageId, item.albumItems[geom.index].fileId));
+            })
+          }, (geom: MosaicItemGeometry) => `${geom.index}:${geom.width}x${geom.height}`)
+        }
+        .height(line.lineHeight)
+      }, (line: MosaicLine, idx: number) => `line_${idx}_${line.lineHeight}`)
+    }
+    .width(this.getMosaicLayout(item).width)
+    .margin({ bottom: item.text.length > 0 ? T.spacing.xs : 0 })
   }
 
   /** 多媒体气泡渲染（MEDIA-101 / MEDIA-105）：图片/视频/GIF 动图。 */

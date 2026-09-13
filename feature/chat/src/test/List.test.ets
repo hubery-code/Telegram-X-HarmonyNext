@@ -6,6 +6,8 @@ import mediaAttachmentTest from './MediaAttachment.test';
 import mediaViewerTest from './MediaViewer.test';
 import forwardSelectionTest from './ForwardSelection.test';
 import dateAndUnreadSeparatorTest from './DateAndUnreadSeparator.test';
+import mosaicLayoutTest from './MosaicLayout.test';
+import mediaAlbumTest from './MediaAlbum.test';
 
 export default function testsuite(): void {
   chatReducerTest();
@@ -16,4 +18,6 @@ export default function testsuite(): void {
   mediaViewerTest();
   forwardSelectionTest();
   dateAndUnreadSeparatorTest();
+  mosaicLayoutTest();
+  mediaAlbumTest();
 }

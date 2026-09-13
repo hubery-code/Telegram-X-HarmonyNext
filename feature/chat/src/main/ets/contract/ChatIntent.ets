@@ -266,9 +266,11 @@ export class TapFailedMessage implements Intent {
 export class OpenMediaViewer implements Intent {
   readonly kind: 'openMediaViewer' = 'openMediaViewer';
   readonly messageId: number;
+  readonly targetFileId?: number;
 
-  constructor(messageId: number) {
+  constructor(messageId: number, targetFileId?: number) {
     this.messageId = messageId;
+    this.targetFileId = targetFileId;
   }
 }
 

@@ -120,6 +120,18 @@ const BACKFILL_DELAY_MS: number = 900;
 
 export type ChatUiStateListener = (state: ChatUiState) => void;
 
+/** 判定消息是否可作为相册聚合候选（同向、带有效 media_album_id 且为图片/视频/动图）。 */
+export function isMediaAlbumCandidate(msg: Message): boolean {
+  if (msg.media_album_id.length === 0 || msg.media_album_id === '0') {
+    return false;
+  }
+  if (msg.content === null) {
+    return false;
+  }
+  const t: string = msg.content.type;
+  return t === 'messagePhoto' || t === 'messageVideo' || t === 'messageAnimation';
+}
+
 /** 气泡正文：文本消息取原文；多媒体/服务消息用占位标签（CHAT-002 后续替换为真实 renderer）。 */
 export function messageContentText(content: TdMessageContent | null): string {
   if (content === null) {
@@ -340,7 +352,7 @@ export class ChatCoordinator {
   dispatch(intent: ChatIntent): void {
     if (intent.kind === 'openMediaViewer') {
       const openIntent: OpenMediaViewer = intent as OpenMediaViewer;
-      this.handleOpenMediaViewer(openIntent.messageId);
+      this.handleOpenMediaViewer(openIntent.messageId, openIntent.targetFileId);
     } else if (intent.kind === 'requestMediaDownload') {
       const reqIntent: RequestMediaDownload = intent as RequestMediaDownload;
       this.requestMediaDownload(reqIntent.fileId, 32);
@@ -368,11 +380,18 @@ export class ChatCoordinator {
     }
   }
 
-  private handleOpenMediaViewer(messageId: number): void {
+  private handleOpenMediaViewer(messageId: number, targetFileId?: number): void {
     for (let i = 0; i < this.currentState.messages.length; i++) {
       const item: MessageItem = this.currentState.messages[i];
-      if (item.messageId === messageId && item.media !== null) {
-        if (!item.media.isDownloaded) {
+      if (item.messageId === messageId) {
+        if (item.albumItems.length > 0) {
+          for (let j = 0; j < item.albumItems.length; j++) {
+            const m: MediaAttachment = item.albumItems[j];
+            if (!m.isDownloaded && (targetFileId === undefined || m.fileId === targetFileId)) {
+              this.requestMediaDownload(m.fileId, 32);
+            }
+          }
+        } else if (item.media !== null && !item.media.isDownloaded) {
           this.requestMediaDownload(item.media.fileId, 32);
         }
         break;
@@ -432,8 +451,25 @@ export class ChatCoordinator {
     }
 
     const items: MessageItem[] = [];
-    for (let i = 0; i < projectionState.messages.length; i++) {
+    let i = 0;
+    while (i < projectionState.messages.length) {
       const currentMsg: Message = projectionState.messages[i];
+      const isCandidate: boolean = isMediaAlbumCandidate(currentMsg);
+
+      let albumEnd: number = i + 1;
+      if (isCandidate) {
+        while (
+          albumEnd < projectionState.messages.length &&
+          isMediaAlbumCandidate(projectionState.messages[albumEnd]) &&
+          projectionState.messages[albumEnd].media_album_id === currentMsg.media_album_id &&
+          projectionState.messages[albumEnd].is_outgoing === currentMsg.is_outgoing
+        ) {
+          albumEnd++;
+        }
+      }
+
+      const isAlbum: boolean = isCandidate && (albumEnd - i >= 2);
+
       let showDateHeader: boolean = false;
       let dateHeaderText: string = '';
       if (i === 0) {
@@ -447,17 +483,45 @@ export class ChatCoordinator {
         }
       }
 
-      const showUnreadSeparator: boolean =
-        this.firstUnreadMessageId !== null && currentMsg.id === this.firstUnreadMessageId;
+      let showUnreadSeparator: boolean = false;
+      if (this.firstUnreadMessageId !== null) {
+        if (isAlbum) {
+          for (let k = i; k < albumEnd; k++) {
+            if (projectionState.messages[k].id === this.firstUnreadMessageId) {
+              showUnreadSeparator = true;
+              break;
+            }
+          }
+        } else {
+          showUnreadSeparator = (currentMsg.id === this.firstUnreadMessageId);
+        }
+      }
 
-      items.push(this.mapMessageToItem(
-        currentMsg,
-        replyInfoById,
-        projectionState.lastReadOutboxMessageId,
-        showDateHeader,
-        dateHeaderText,
-        showUnreadSeparator
-      ));
+      if (isAlbum) {
+        const albumMessages: Message[] = [];
+        for (let k = i; k < albumEnd; k++) {
+          albumMessages.push(projectionState.messages[k]);
+        }
+        items.push(this.mapAlbumToItem(
+          albumMessages,
+          replyInfoById,
+          projectionState.lastReadOutboxMessageId,
+          showDateHeader,
+          dateHeaderText,
+          showUnreadSeparator
+        ));
+        i = albumEnd;
+      } else {
+        items.push(this.mapMessageToItem(
+          currentMsg,
+          replyInfoById,
+          projectionState.lastReadOutboxMessageId,
+          showDateHeader,
+          dateHeaderText,
+          showUnreadSeparator
+        ));
+        i++;
+      }
     }
     this.dispatch(new OnMessagesLoaded(
       items,
@@ -483,7 +547,13 @@ export class ChatCoordinator {
     for (let i = 0; i <= limitIndex; i++) {
       const it: MessageItem = items[i];
       if (!it.isOutgoing && it.messageId <= target) {
-        unreadIds.push(it.messageId);
+        if (it.albumMessageIds.length > 0) {
+          for (let j = 0; j < it.albumMessageIds.length; j++) {
+            unreadIds.push(it.albumMessageIds[j]);
+          }
+        } else {
+          unreadIds.push(it.messageId);
+        }
       }
     }
     if (unreadIds.length === 0) {
@@ -1037,14 +1107,18 @@ export class ChatCoordinator {
       displayText = messageContentText(message.content);
     }
 
-    // MSG-102：群聊收到的用户消息出署名；未命中缓存时 requestSenderUser 拉取并订阅刷新。
+    // MSG-102 & MSG-102-AVATAR：群聊收到的用户消息出署名与真实头像；未命中缓存时拉取并订阅刷新。
     const senderInfo: SenderInfo = resolveSenderInfo(
       message.is_outgoing,
       this.chatKind,
       message.sender_id,
       {
         lookupUser: (userId: number): User | null => this.userRegistry.getUser(userId),
-        requestUser: (userId: number): void => this.requestSenderUser(userId)
+        requestUser: (userId: number): void => this.requestSenderUser(userId),
+        lookupFilePath: (fileId: number): string | null => this.fileRegistry.getLocalPath(fileId),
+        requestAvatarDownload: (fileId: number): void => {
+          this.requestMediaDownload(fileId, 2);
+        }
       }
     );
     return new MessageItem(
@@ -1068,7 +1142,117 @@ export class ChatCoordinator {
       replyIsSticker,
       showDateHeader,
       dateHeaderText,
-      showUnreadSeparator
+      showUnreadSeparator,
+      senderInfo.avatarPath
+    );
+  }
+
+  private mapAlbumToItem(
+    messages: Message[],
+    replyInfoById: Map<number, ReplyInfo>,
+    lastReadOutboxMessageId: number,
+    showDateHeader: boolean = false,
+    dateHeaderText: string = '',
+    showUnreadSeparator: boolean = false
+  ): MessageItem {
+    const lastMsg: Message = messages[messages.length - 1];
+    const albumMessageIds: number[] = [];
+    const albumItems: MediaAttachment[] = [];
+    let commonCaption: string = '';
+    let commonSpans: MessageTextSpan[] = [];
+    let isEdited: boolean = false;
+
+    for (let i = 0; i < messages.length; i++) {
+      const msg: Message = messages[i];
+      albumMessageIds.push(msg.id);
+      if (msg.edit_date > 0) {
+        isEdited = true;
+      }
+      const media: MediaAttachment | null = this.resolveMediaAttachment(msg);
+      if (media !== null) {
+        albumItems.push(media);
+        if (commonCaption.length === 0 && media.caption.length > 0) {
+          commonCaption = media.caption;
+          commonSpans = media.captionSpans;
+        }
+      }
+    }
+
+    let replyToId: number | null = null;
+    for (let i = 0; i < messages.length; i++) {
+      const rId: number | null = repliedMessageIdOf(messages[i].reply_to);
+      if (rId !== null) {
+        replyToId = rId;
+        break;
+      }
+    }
+
+    let replyToSummary: string = '';
+    let replySenderName: string = '';
+    let replySenderColorIndex: number = -1;
+    let replyThumbnailPath: string | null = null;
+    let replyIsSticker: boolean = false;
+
+    if (replyToId !== null) {
+      let replyInfo: ReplyInfo | undefined = replyInfoById.get(replyToId);
+      if (replyInfo === undefined) {
+        const cachedMsg: Message | undefined = this.projection.getMessageById(replyToId);
+        if (cachedMsg !== undefined) {
+          replyInfo = this.resolveReplyInfo(cachedMsg);
+        } else {
+          this.requestMissingReplyMessage(replyToId);
+        }
+      }
+      if (replyInfo !== undefined) {
+        replyToSummary = replyInfo.summary;
+        replySenderName = replyInfo.senderName;
+        replySenderColorIndex = replyInfo.senderColorIndex;
+        replyThumbnailPath = replyInfo.thumbnailPath;
+        replyIsSticker = replyInfo.isSticker;
+      }
+    }
+
+    const senderInfo: SenderInfo = resolveSenderInfo(
+      lastMsg.is_outgoing,
+      this.chatKind,
+      lastMsg.sender_id,
+      {
+        lookupUser: (userId: number): User | null => this.userRegistry.getUser(userId),
+        requestUser: (userId: number): void => this.requestSenderUser(userId),
+        lookupFilePath: (fileId: number): string | null => this.fileRegistry.getLocalPath(fileId),
+        requestAvatarDownload: (fileId: number): void => {
+          this.requestMediaDownload(fileId, 2);
+        }
+      }
+    );
+
+    const primaryMedia: MediaAttachment | null = albumItems.length > 0 ? albumItems[0] : null;
+
+    return new MessageItem(
+      lastMsg.id,
+      commonCaption,
+      lastMsg.date * 1000,
+      lastMsg.is_outgoing,
+      senderInfo.name,
+      messageSendStateOf(lastMsg.sending_state),
+      false,
+      isEdited,
+      replyToId,
+      replyToSummary,
+      commonSpans,
+      senderInfo.colorIndex,
+      isOutgoingMessageRead(lastMsg.is_outgoing, lastMsg.id, lastReadOutboxMessageId),
+      primaryMedia,
+      replySenderName,
+      replySenderColorIndex,
+      replyThumbnailPath,
+      replyIsSticker,
+      showDateHeader,
+      dateHeaderText,
+      showUnreadSeparator,
+      senderInfo.avatarPath,
+      albumItems,
+      albumMessageIds
     );
   }
 

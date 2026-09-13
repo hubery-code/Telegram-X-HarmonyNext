@@ -42,6 +42,7 @@ import {
 } from '../contract/ChatUiState';
 import { MessageItem } from '../model/MessageItem';
 import { MediaViewerItem } from '../model/MediaViewerItem';
+import { MediaAttachment } from '../model/MediaAttachment';
 import {
   ChatIntent,
   OnMessagesLoaded,
@@ -92,8 +93,15 @@ export function buildViewerItems(messages: readonly MessageItem[]): MediaViewerI
   const list: MediaViewerItem[] = [];
   for (let i = 0; i < messages.length; i++) {
     const item: MessageItem = messages[i];
-    if (item.media !== null && (item.media.kind === 'photo' || item.media.kind === 'animation' || item.media.kind === 'video')) {
-      const sender: string = item.isOutgoing ? 'You' : (item.senderName.length > 0 ? item.senderName : '');
+    const sender: string = item.isOutgoing ? 'You' : (item.senderName.length > 0 ? item.senderName : '');
+    if (item.albumItems.length > 0) {
+      for (let j = 0; j < item.albumItems.length; j++) {
+        const media: MediaAttachment = item.albumItems[j];
+        if (media.kind === 'photo' || media.kind === 'animation' || media.kind === 'video') {
+          list.push(new MediaViewerItem(item.messageId, sender, item.timestampMs, media));
+        }
+      }
+    } else if (item.media !== null && (item.media.kind === 'photo' || item.media.kind === 'animation' || item.media.kind === 'video')) {
       list.push(new MediaViewerItem(item.messageId, sender, item.timestampMs, item.media));
     }
   }
@@ -446,7 +454,11 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
       if (mode !== null && mode.targetMessageId === menu.messageId) {
         nextState = cancelMode(nextState);
       }
-      const effects: ChatEffect[] = [new DeleteMessages(state.chatId, [menu.messageId], menu.deleteRevoke)];
+      const targetItem: MessageItem | null = findMessage(state, menu.messageId);
+      const idsToDelete: number[] = (targetItem !== null && targetItem.albumMessageIds.length > 0)
+        ? targetItem.albumMessageIds
+        : [menu.messageId];
+      const effects: ChatEffect[] = [new DeleteMessages(state.chatId, idsToDelete, menu.deleteRevoke)];
       return reduced(nextState, effects);
     }
 
@@ -513,8 +525,20 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
       if (!state.selectionMode || state.selectedMessageIds.length === 0) {
         return reduced(state);
       }
+      const expandedIds: number[] = [];
+      for (let i = 0; i < state.selectedMessageIds.length; i++) {
+        const selId: number = state.selectedMessageIds[i];
+        const msgItem: MessageItem | null = findMessage(state, selId);
+        if (msgItem !== null && msgItem.albumMessageIds.length > 0) {
+          for (let j = 0; j < msgItem.albumMessageIds.length; j++) {
+            expandedIds.push(msgItem.albumMessageIds[j]);
+          }
+        } else {
+          expandedIds.push(selId);
+        }
+      }
       const effects: ChatEffect[] = [
-        new OpenForwardPicker(state.chatId, state.selectedMessageIds.slice())
+        new OpenForwardPicker(state.chatId, expandedIds)
       ];
       return reduced(state, effects);
     }
@@ -527,9 +551,21 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
       if (pick.toChatId === 0) {
         return reduced(state);
       }
+      const expandedIds: number[] = [];
+      for (let i = 0; i < state.selectedMessageIds.length; i++) {
+        const selId: number = state.selectedMessageIds[i];
+        const msgItem: MessageItem | null = findMessage(state, selId);
+        if (msgItem !== null && msgItem.albumMessageIds.length > 0) {
+          for (let j = 0; j < msgItem.albumMessageIds.length; j++) {
+            expandedIds.push(msgItem.albumMessageIds[j]);
+          }
+        } else {
+          expandedIds.push(selId);
+        }
+      }
       // 选择态保留到 OnForwardCompleted：失败时用户可直接换目标重试。
       const effects: ChatEffect[] = [
-        new ForwardMessages(state.chatId, pick.toChatId, state.selectedMessageIds.slice(), pick.sendCopy)
+        new ForwardMessages(state.chatId, pick.toChatId, expandedIds, pick.sendCopy)
       ];
       return reduced(state, effects);
     }
@@ -587,8 +623,15 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
       let targetIndex: number = -1;
       for (let i = 0; i < viewerItems.length; i++) {
         if (viewerItems[i].messageId === openIntent.messageId) {
-          targetIndex = i;
-          break;
+          if (openIntent.targetFileId !== undefined && openIntent.targetFileId > 0) {
+            if (viewerItems[i].media.fileId === openIntent.targetFileId) {
+              targetIndex = i;
+              break;
+            }
+          } else {
+            targetIndex = i;
+            break;
+          }
         }
       }
       if (targetIndex < 0) {

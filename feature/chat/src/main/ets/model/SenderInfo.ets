@@ -25,23 +25,27 @@ import { formatFullName, getAvatarColorIndex } from '@tgx/core-domain';
 /** 会话种类：署名只对 'group' 生效。 */
 export type ChatKind = 'private' | 'group' | 'channel' | 'unknown';
 
-/** 署名解析结果；colorIndex -1 = 无署名/默认色。 */
+/** 署名与头像解析结果；colorIndex -1 = 无署名/默认色。 */
 export class SenderInfo {
   readonly name: string;
   readonly colorIndex: number;
+  readonly avatarPath: string | null;
 
-  constructor(name: string = '', colorIndex: number = -1) {
+  constructor(name: string = '', colorIndex: number = -1, avatarPath: string | null = null) {
     this.name = name;
     this.colorIndex = colorIndex;
+    this.avatarPath = avatarPath;
   }
 }
 
 export const EMPTY_SENDER_INFO: SenderInfo = new SenderInfo();
 
-/** 注入的用户查询/请求面：由 ChatCoordinator 桥接 UserRegistry。 */
+/** 注入的用户查询/请求面：由 ChatCoordinator 桥接 UserRegistry 与 FileRegistry。 */
 export interface SenderInfoDeps {
   lookupUser: (userId: number) => User | null;
   requestUser: (userId: number) => void;
+  lookupFilePath?: (fileId: number) => string | null;
+  requestAvatarDownload?: (fileId: number) => void;
 }
 
 export function chatKindOf(chatType: TdChatType | null): ChatKind {
@@ -62,8 +66,8 @@ export function chatKindOf(chatType: TdChatType | null): ChatKind {
 }
 
 /**
- * 解析消息署名：收到的群聊消息且 sender 是用户 → 命中缓存返回
- * {formatFullName, getAvatarColorIndex}；未命中返回空署名并触发 requestUser
+ * 解析消息署名与头像：收到的群聊消息且 sender 是用户 → 命中缓存返回
+ * {formatFullName, getAvatarColorIndex, avatarPath}；未命中返回空署名并触发 requestUser
  * （晚到的 User 经订阅回调刷新上屏）。自己的消息、私聊/频道、
  * MessageSenderChat（频道身份发帖）一律返回空署名。
  */
@@ -89,7 +93,22 @@ export function resolveSenderInfo(
   if (name.length === 0) {
     return EMPTY_SENDER_INFO;
   }
-  return new SenderInfo(name, getAvatarColorIndex(userId));
+
+  let avatarPath: string | null = null;
+  if (
+    user.profile_photo !== null &&
+    user.profile_photo.small !== null
+  ) {
+    const fileId: number = user.profile_photo.small.id;
+    if (deps.lookupFilePath) {
+      avatarPath = deps.lookupFilePath(fileId);
+    }
+    if (avatarPath === null && deps.requestAvatarDownload) {
+      deps.requestAvatarDownload(fileId);
+    }
+  }
+
+  return new SenderInfo(name, getAvatarColorIndex(userId), avatarPath);
 }
 
 /** Telegram 经典头像/署名调色板（'#AARRGGBB'），与 chat_list 的 AVATAR_PALETTE 同色值。 */
