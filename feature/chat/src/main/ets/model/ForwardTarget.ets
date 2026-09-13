@@ -16,19 +16,22 @@ export class ForwardTarget {
   readonly avatarLetter: string;
   /** true = 就是当前正在浏览的会话（可转发给自己所在的会话，Telegram X 允许）。 */
   readonly isSourceChat: boolean;
+  readonly avatarPath: string | null;
 
   constructor(
     chatId: number,
     title: string,
     avatarColor: string,
     avatarLetter: string,
-    isSourceChat: boolean = false
+    isSourceChat: boolean = false,
+    avatarPath: string | null = null
   ) {
     this.chatId = chatId;
     this.title = title;
     this.avatarColor = avatarColor;
     this.avatarLetter = avatarLetter;
     this.isSourceChat = isSourceChat;
+    this.avatarPath = avatarPath;
   }
 }
 

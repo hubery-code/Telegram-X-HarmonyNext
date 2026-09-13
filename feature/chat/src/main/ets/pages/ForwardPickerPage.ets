@@ -27,6 +27,16 @@ const AVATAR_SIZE: number = 44;
 const CHECKBOX_SIZE: number = 22;
 const HEADER_BUTTON_WIDTH: number = 72;
 
+function toSandboxUri(path: string | null): string {
+  if (path === null || path.length === 0) {
+    return '';
+  }
+  if (path.startsWith('file://')) {
+    return path;
+  }
+  return 'file://' + path;
+}
+
 @Component
 export struct ForwardPickerPage {
   @Prop targets: ForwardTarget[] = [];
@@ -151,15 +161,24 @@ export struct ForwardPickerPage {
           ForEach(this.filteredTargets(), (target: ForwardTarget) => {
             ListItem() {
               Row() {
-                Text(target.avatarLetter)
-                  .width(AVATAR_SIZE)
-                  .height(AVATAR_SIZE)
-                  .borderRadius(T.radius.full)
-                  .backgroundColor(target.avatarColor)
-                  .fontColor(T.colors.textOnAccent)
-                  .fontSize(T.typography.subheadline.fontSize)
-                  .textAlign(TextAlign.Center)
-                  .margin({ right: T.spacing.sm })
+                if (target.avatarPath !== null && target.avatarPath.length > 0) {
+                  Image(toSandboxUri(target.avatarPath))
+                    .width(AVATAR_SIZE)
+                    .height(AVATAR_SIZE)
+                    .borderRadius(T.radius.full)
+                    .objectFit(ImageFit.Cover)
+                    .margin({ right: T.spacing.sm })
+                } else {
+                  Text(target.avatarLetter)
+                    .width(AVATAR_SIZE)
+                    .height(AVATAR_SIZE)
+                    .borderRadius(T.radius.full)
+                    .backgroundColor(target.avatarColor)
+                    .fontColor(T.colors.textOnAccent)
+                    .fontSize(T.typography.subheadline.fontSize)
+                    .textAlign(TextAlign.Center)
+                    .margin({ right: T.spacing.sm })
+                }
 
                 Text(target.title)
                   .fontSize(T.typography.body.fontSize)

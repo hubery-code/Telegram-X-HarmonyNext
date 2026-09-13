@@ -17,6 +17,8 @@ import { encodeLoadChats, decodeTdUpdate,
   UpdateChatLastMessage,
   UpdateChatReadInbox,
   UpdateChatIsMarkedAsUnread,
+  UpdateChatPhoto,
+  UpdateChatTitle,
   ViewMessages,
   LoadChats,
 } from '@tgx/core-td-api-generated';
@@ -287,6 +289,20 @@ export class ChatListProjection {
       const chat = this.registry.getChat(markedUpdate.chat_id);
       if (chat) {
         chat.is_marked_as_unread = markedUpdate.is_marked_as_unread;
+        this.notifyStateChanged();
+      }
+    } else if (update.type === 'updateChatPhoto') {
+      const photoUpdate = update as UpdateChatPhoto;
+      const chat = this.registry.getChat(photoUpdate.chat_id);
+      if (chat) {
+        chat.photo = photoUpdate.photo;
+        this.notifyStateChanged();
+      }
+    } else if (update.type === 'updateChatTitle') {
+      const titleUpdate = update as UpdateChatTitle;
+      const chat = this.registry.getChat(titleUpdate.chat_id);
+      if (chat) {
+        chat.title = titleUpdate.title;
         this.notifyStateChanged();
       }
     }

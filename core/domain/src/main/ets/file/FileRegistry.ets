@@ -28,6 +28,7 @@ import { AccountScope } from '@tgx/core-account';
 import { TdPendingRequest, TdRoutedEvent, TdUpdateFilter, TdUpdateSubscription, TdWireObject } from '@tgx/td-gateway';
 import { Result, AppError } from '@tgx/core-common';
 import { Subscription } from '@tgx/platform-ports';
+export { Subscription };
 
 class FileSubscription implements Subscription {
   private active: boolean = true;

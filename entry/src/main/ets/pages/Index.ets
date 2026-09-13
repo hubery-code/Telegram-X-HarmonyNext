@@ -394,7 +394,8 @@ struct Index {
         item.title,
         item.avatarColor,
         item.avatarLetter,
-        item.chatId === fromChatId
+        item.chatId === fromChatId,
+        item.avatarPath
       ));
     }
     this.forwardTargets = targets;

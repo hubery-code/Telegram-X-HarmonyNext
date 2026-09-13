@@ -20,12 +20,20 @@ import { AccountScope } from '@tgx/core-account';
 import {
   Chat,
   ChatListMain,
+  File,
   Message,
   MessageSticker,
   MessageText,
   TdMessageContent
 } from '@tgx/core-td-api-generated';
-import { ChatListProjection, ChatListState, ChatRegistry, isChatPinnedInList } from '@tgx/core-domain';
+import {
+  ChatListProjection,
+  ChatListState,
+  ChatRegistry,
+  FileRegistry,
+  isChatPinnedInList,
+  Subscription
+} from '@tgx/core-domain';
 import { TdPendingRequest, TdWireObject } from '@tgx/td-gateway';
 import { Result } from '@tgx/core-common';
 import { ReducerEnv, ReducerResult } from '@tgx/feature-template';
@@ -106,11 +114,14 @@ function messagePreview(message: Message | null): string {
 export class ChatListCoordinator {
   private readonly registry: ChatRegistry;
   private readonly projection: ChatListProjection;
+  private readonly fileRegistry: FileRegistry;
   private readonly scope: AccountScope;
   private readonly env: ReducerEnv;
   private readonly onNavigateToChat: (chatId: number, chatTitle: string) => void;
   private currentState: ChatListUiState;
   private readonly listeners: ChatListUiStateListener[] = [];
+  private readonly requestedAvatarFileIds: Set<number> = new Set();
+  private readonly avatarSubscriptions: Map<number, Subscription> = new Map();
   private syncScheduled: boolean = false;
   private destroyed: boolean = false;
   /** MSG-108：本页对应的 TDLib 会话列表（置顶态要按列表判定，不能只看 chat 自身）。 */
@@ -124,6 +135,7 @@ export class ChatListCoordinator {
     this.registry = new ChatRegistry();
     this.chatList = new ChatListMain();
     this.projection = new ChatListProjection(this.chatList, this.registry, scope);
+    this.fileRegistry = new FileRegistry(scope);
     // MSG-108：置顶/标未读是"改现状"的操作，请求级失败要回灌到操作菜单调用方，
     // 所以这里保留 scope 引用（投影只暴露状态，不暴露请求能力）。
     this.scope = scope;
@@ -168,6 +180,13 @@ export class ChatListCoordinator {
     this.destroyed = true;
     this.projection.setOnStateChanged(null);
     this.projection.stop();
+    this.fileRegistry.stop();
+    const subs: Subscription[] = Array.from(this.avatarSubscriptions.values());
+    for (let i = 0; i < subs.length; i++) {
+      subs[i].unsubscribe();
+    }
+    this.avatarSubscriptions.clear();
+    this.requestedAvatarFileIds.clear();
     this.listeners.length = 0;
   }
 
@@ -224,12 +243,48 @@ export class ChatListCoordinator {
     this.dispatch(new OnChatsLoaded(items));
   }
 
+  private requestAvatarDownload(fileId: number): void {
+    if (this.destroyed || fileId <= 0) {
+      return;
+    }
+    if (this.fileRegistry.isDownloaded(fileId)) {
+      return;
+    }
+    if (this.requestedAvatarFileIds.has(fileId)) {
+      return;
+    }
+    this.requestedAvatarFileIds.add(fileId);
+
+    if (!this.avatarSubscriptions.has(fileId)) {
+      const sub: Subscription = this.fileRegistry.subscribeFile(fileId, (file: File) => {
+        if (!this.destroyed && file.local !== null && file.local.is_downloading_completed) {
+          this.scheduleSyncFromProjection();
+        }
+      });
+      this.avatarSubscriptions.set(fileId, sub);
+    }
+    this.fileRegistry.downloadFile(fileId, 2);
+  }
+
   private mapChatsToItems(chatIds: readonly number[]): ChatListItem[] {
     const items: ChatListItem[] = [];
     for (let i = 0; i < chatIds.length; i++) {
       const chat: Chat | undefined = this.registry.getChat(chatIds[i]);
       if (chat === undefined) {
         continue;
+      }
+      let avatarPath: string | null = null;
+      if (chat.photo !== null && chat.photo.small !== null) {
+        const smallFile: File = chat.photo.small;
+        this.fileRegistry.putFile(smallFile);
+        if (smallFile.local !== null && smallFile.local.is_downloading_completed && smallFile.local.path.length > 0) {
+          avatarPath = smallFile.local.path;
+        } else if (this.fileRegistry.isDownloaded(smallFile.id)) {
+          avatarPath = this.fileRegistry.getLocalPath(smallFile.id);
+        }
+        if (avatarPath === null) {
+          this.requestAvatarDownload(smallFile.id);
+        }
       }
       items.push(new ChatListItem(
         chat.id,
@@ -242,7 +297,8 @@ export class ChatListCoordinator {
         // MSG-108：置顶态取 ChatPosition.is_pinned（按本页的 chatList 判定），
         // 手动未读标记独立于 unread_count。
         isChatPinnedInList(chat, this.chatList),
-        chat.is_marked_as_unread
+        chat.is_marked_as_unread,
+        avatarPath
       ));
     }
     return items;

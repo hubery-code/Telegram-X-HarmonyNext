@@ -72,6 +72,14 @@ export default function chatListReducerTest() {
       expect(canMarkChatAsRead(makeItem(1, 0, true, false))).assertFalse();
     });
 
+    it('chatListItem_preservesAvatarPath', 0, () => {
+      const itemWithAvatar = new ChatListItem(1, 'Test', 'msg', 1000, 0, '#FF0000', 'T', false, false, '/data/avatars/1.jpg');
+      expect(itemWithAvatar.avatarPath).assertEqual('/data/avatars/1.jpg');
+
+      const itemWithoutAvatar = new ChatListItem(2, 'Test 2', 'msg', 1000, 0, '#FF0000', 'T');
+      expect(itemWithoutAvatar.avatarPath).assertNull();
+    });
+
     it('chatActionRequested_opensMenuWithCurrentPinAndReadState', 0, () => {
       const state: ChatListUiState = makeState([makeItem(7, 3, true, false)]);
       const result: ReducerResult<ChatListUiState, ChatListEffect> =

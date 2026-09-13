@@ -72,9 +72,19 @@ function fnv1a32(input: string): string {
   return (hash >>> 0).toString(16);
 }
 
+function toSandboxUri(path: string | null): string {
+  if (path === null || path.length === 0) {
+    return '';
+  }
+  if (path.startsWith('file://')) {
+    return path;
+  }
+  return 'file://' + path;
+}
+
 /**
  * 会话行的 LazyForEach key：chatId + 展示相关内容散列
- * （标题/预览/未读数/时间戳/置顶态/手动未读标记）。
+ * （标题/预览/未读数/时间戳/置顶态/手动未读标记/头像路径）。
  *
  * MSG-108：置顶标与未读圆点都是"同一 chatId 的原地变更"（置顶时 chatId 不变），
  * 必须进 key 才会重渲——与 MSG-104 已读勾/ MSG-106 勾选圈同源的坑。
@@ -83,7 +93,7 @@ function fnv1a32(input: string): string {
 function chatRowKey(item: ChatListItem): string {
   const signature: string =
     `${item.title}|${item.lastMessagePreview}|${item.unreadCount}|${item.timestampMs}|` +
-    `${item.isPinned}|${item.isMarkedAsUnread}`;
+    `${item.isPinned}|${item.isMarkedAsUnread}|${item.avatarPath !== null ? item.avatarPath : ''}`;
   return `${item.chatId}:${fnv1a32(signature)}`;
 }
 
@@ -344,16 +354,25 @@ export struct ChatListPage {
   @Builder
   ChatRow(item: ChatListItem) {
     Row() {
-      Text(item.avatarLetter)
-        .width(AVATAR_SIZE)
-        .height(AVATAR_SIZE)
-        .borderRadius(T.radius.full)
-        .backgroundColor(item.avatarColor)
-        .fontColor(T.colors.textOnAccent)
-        .fontSize(T.typography.title.fontSize)
-        .fontWeight(T.typography.title.fontWeight)
-        .textAlign(TextAlign.Center)
-        .margin({ right: T.spacing.md })
+      if (item.avatarPath !== null && item.avatarPath.length > 0) {
+        Image(toSandboxUri(item.avatarPath))
+          .width(AVATAR_SIZE)
+          .height(AVATAR_SIZE)
+          .borderRadius(T.radius.full)
+          .objectFit(ImageFit.Cover)
+          .margin({ right: T.spacing.md })
+      } else {
+        Text(item.avatarLetter)
+          .width(AVATAR_SIZE)
+          .height(AVATAR_SIZE)
+          .borderRadius(T.radius.full)
+          .backgroundColor(item.avatarColor)
+          .fontColor(T.colors.textOnAccent)
+          .fontSize(T.typography.title.fontSize)
+          .fontWeight(T.typography.title.fontWeight)
+          .textAlign(TextAlign.Center)
+          .margin({ right: T.spacing.md })
+      }
 
       Column() {
         Row() {
