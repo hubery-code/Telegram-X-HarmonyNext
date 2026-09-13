@@ -11,6 +11,13 @@
  * ChatPage，返回时销毁并切回会话列表；会话列表 header 齿轮经 onOpenSettings
  * 回调创建 SettingsCoordinator 并切换渲染 SettingsPage（返回时销毁）；授权
  * 离开 ready（登出/会话关闭）时销毁会话与设置协调器并回到登录页。
+ *
+ * MSG-106：转发目标选择器由本层渲染——entry 同时持有会话列表数据
+ * （ChatListCoordinator 的 ChatListItem）与 ChatCoordinator，是唯一能组合
+ * 两者的地方（feature/* 之间禁止互相依赖）。ChatCoordinator 经
+ * onOpenForwardPicker 回调把待转发消息 id 交上来，本层把会话列表映射为
+ * ForwardTarget[] 并覆盖渲染 ForwardPickerPage；选定目标后回灌
+ * ForwardSelectedToChat 触发真正的 forwardMessages。
  */
 
 import { LightTheme } from '@tgx/core-design-system';
@@ -26,6 +33,7 @@ import {
   ChatListPage,
   ChatListUiState,
   ChatListIntent,
+  ChatListItem,
   ChatListCoordinator
 } from '@tgx/feature-chat-list';
 import {
@@ -33,7 +41,10 @@ import {
   ChatUiState,
   ChatIntent,
   BackToChatList,
-  ChatCoordinator
+  ChatCoordinator,
+  ForwardPickerPage,
+  ForwardTarget,
+  ForwardSelectedToChat
 } from '@tgx/feature-chat';
 import {
   SettingsPage,
@@ -57,6 +68,9 @@ struct Index {
   @State chatUiState: ChatUiState = ChatUiState.initial();
   @State showSettings: boolean = false;
   @State settingsUiState: SettingsUiState = SettingsUiState.initial();
+  /** MSG-106：转发目标选择器是否覆盖显示 + 本次候选目标。 */
+  @State showForwardPicker: boolean = false;
+  @State forwardTargets: ForwardTarget[] = [];
   @State bootstrapError: string | null = null;
 
   private coordinator: AuthCoordinator | null = null;
@@ -120,6 +134,11 @@ struct Index {
 
   onBackPress(): boolean {
     if (this.currentChatId !== null) {
+      // MSG-106：选择器打开时返回只关选择器，不退出会话页也不退出多选态。
+      if (this.showForwardPicker) {
+        this.closeForwardPicker();
+        return true;
+      }
       this.chatDispatch(new BackToChatList());
       return true;
     }
@@ -219,6 +238,9 @@ struct Index {
       chatTitle,
       () => {
         this.closeChat();
+      },
+      (messageIds: number[]) => {
+        this.openForwardPicker(chatId, messageIds);
       }
     );
     this.chatCoordinator = coordinator;
@@ -231,6 +253,7 @@ struct Index {
   }
 
   private closeChat(): void {
+    this.closeForwardPicker();
     if (this.unsubscribeChatFn !== null) {
       this.unsubscribeChatFn();
       this.unsubscribeChatFn = null;
@@ -240,6 +263,43 @@ struct Index {
       this.chatCoordinator = null;
     }
     this.currentChatId = null;
+  }
+
+  /**
+   * MSG-106：把会话列表映射为转发候选目标并弹出选择器。
+   * 映射在装配层完成——feature/chat 不认识 feature-chat-list 的 ChatListItem，
+   * 只认自己的 ForwardTarget（ARCHITECTURE §2 规则 1）。
+   */
+  private openForwardPicker(fromChatId: number, messageIds: number[]): void {
+    const items: readonly ChatListItem[] = this.chatListUiState.items;
+    const targets: ForwardTarget[] = [];
+    for (let i = 0; i < items.length; i++) {
+      const item: ChatListItem = items[i];
+      targets.push(new ForwardTarget(
+        item.chatId,
+        item.title,
+        item.avatarColor,
+        item.avatarLetter,
+        item.chatId === fromChatId
+      ));
+    }
+    this.forwardTargets = targets;
+    this.showForwardPicker = true;
+    hilog.info(DOMAIN, TAG, 'forward picker opened: %{public}d messages, %{public}d targets',
+      messageIds.length, targets.length);
+  }
+
+  private closeForwardPicker(): void {
+    this.showForwardPicker = false;
+    this.forwardTargets = [];
+  }
+
+  /** 选定目标会话 → 回灌 ChatIntent 触发 forwardMessages。 */
+  private pickForwardTarget(chatId: number, sendCopy: boolean): void {
+    hilog.info(DOMAIN, TAG, 'forward target picked chatId=%{public}s copy=%{public}s',
+      `${chatId}`, `${sendCopy}`);
+    this.chatDispatch(new ForwardSelectedToChat(chatId, sendCopy));
+    this.closeForwardPicker();
   }
 
   build() {
@@ -262,12 +322,30 @@ struct Index {
         .alignItems(HorizontalAlign.Center)
         .backgroundColor(T.colors.background)
       } else if (this.currentChatId !== null) {
-        ChatPage({
-          uiState: this.chatUiState,
-          onDispatch: (intent: Object) => {
-            this.chatDispatch(intent as ChatIntent);
+        Stack() {
+          ChatPage({
+            uiState: this.chatUiState,
+            onDispatch: (intent: Object) => {
+              this.chatDispatch(intent as ChatIntent);
+            }
+          })
+
+          // MSG-106：转发目标选择器覆盖在会话页之上（顶栏 Cancel + Send as
+          // copy 开关 + 目标会话列表）。
+          if (this.showForwardPicker) {
+            ForwardPickerPage({
+              targets: this.forwardTargets,
+              onPick: (chatId: number, sendCopy: boolean) => {
+                this.pickForwardTarget(chatId, sendCopy);
+              },
+              onCancel: () => {
+                this.closeForwardPicker();
+              }
+            })
           }
-        })
+        }
+        .width('100%')
+        .height('100%')
       } else if (this.showSettings) {
         SettingsPage({
           uiState: this.settingsUiState,

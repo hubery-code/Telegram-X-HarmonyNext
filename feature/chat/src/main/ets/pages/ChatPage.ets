@@ -29,6 +29,13 @@
  * ReportMessagesRead（入屏即读，节流在 coordinator）；己方消息时间戳旁
  * 显 ✓/✓✓（isRead）；点击 sendState=failed 的气泡 → TapFailedMessage →
  * ResendMessage 重发。
+ *
+ * MSG-106：多选转发。长按菜单 Forward → 进入选择态（顶栏变成
+ * "N selected" + Cancel/Forward，气泡左侧出勾选圈）；点击气泡切换选中，
+ * 取消最后一条自动退出；顶栏 Forward → ConfirmForwardSelection →
+ * 装配层弹出 ForwardPickerPage 选目标会话（含 Send as copy 隐藏来源）。
+ * 注意：勾选圈是原地变更，selection 必须进 LazyForEach 的 key 才会重渲
+ * （见 messageRowKey 与 onUiStateChanged 的 selectionSignature 分支）。
  */
 
 import { LightTheme } from '@tgx/core-design-system';
@@ -59,6 +66,10 @@ import {
   DeleteMessage,
   CancelComposerMode,
   DismissMessageActionMenu,
+  ForwardMessagesRequested,
+  ToggleMessageSelection,
+  ExitMessageSelection,
+  ConfirmForwardSelection,
   OnVisibleRangeChanged,
   TapFailedMessage,
   OpenMediaViewer,
@@ -66,6 +77,7 @@ import {
   ChangeViewerIndex,
   RequestMediaDownload
 } from '../contract/ChatIntent';
+import { isMessageSelected } from '../model/ForwardSelection';
 
 const T = LightTheme;
 
@@ -82,6 +94,8 @@ const CODE_FONT_SIZE: number = T.typography.body.fontSize - 2;
 const SPOILER_MASK_COLOR: string = T.colors.textPrimary;
 /** 群聊署名小圆头像直径（vp）。 */
 const SENDER_AVATAR_SIZE: number = 28;
+/** MSG-106：多选勾选圈直径（vp）。 */
+const SELECTION_MARK_SIZE: number = 22;
 
 function pad2(value: number): string {
   return value < 10 ? `0${value}` : `${value}`;
@@ -134,8 +148,14 @@ function formatDuration(seconds: number): string {
   return `${mins}:${secsStr}`;
 }
 
-/** 消息行的 LazyForEach key：messageId + 展示相关内容散列（正文/署名/回复摘要/回复缩略图/发送态/已读/编辑标记/多媒体）。 */
-function messageRowKey(item: MessageItem): string {
+/**
+ * 消息行的 LazyForEach key：messageId + 展示相关内容散列
+ * （正文/署名/回复摘要/回复缩略图/发送态/已读/编辑标记/多媒体/多选态）。
+ *
+ * selected 必须参与签名（MSG-106）：多选勾选圈是"同一 messageId 的原地变更"，
+ * key 不含它就永远不重渲——这正是 MSG-104 已读勾踩过的坑。
+ */
+function messageRowKey(item: MessageItem, selected: boolean): string {
   let mediaSig: string = '';
   if (item.media !== null) {
     const m: MediaAttachment = item.media;
@@ -148,7 +168,8 @@ function messageRowKey(item: MessageItem): string {
     `${item.replyThumbnailPath !== null ? item.replyThumbnailPath : ''}|${item.replyIsSticker}`;
   const signature: string =
     `${item.sendState}|${item.isRead}|${item.isEdited}|${item.senderColorIndex}|` +
-    `${item.text}|${item.senderName}|${item.replyToSummary}|${mediaSig}|${replySig}`;
+    `${item.text}|${item.senderName}|${item.replyToSummary}|${mediaSig}|${replySig}|${selected}|` +
+    `${item.showDateHeader ? item.dateHeaderText : ''}|${item.showUnreadSeparator}`;
   return `${item.messageId}:${fnv1a32(signature)}`;
 }
 
@@ -220,6 +241,24 @@ export struct ChatPage {
   private swiperController: SwiperController = new SwiperController();
   /** 标记用户是否已手动滑动过列表；为 false 时新拉取历史保持目标定位。 */
   private hasUserScrolled: boolean = false;
+  /** MSG-106：上次渲染的选择集签名，用于在多选态变化时触发列表重载。 */
+  private shownSelectionSignature: string = '';
+
+  /** MSG-106：当前选择集签名（含模式开关；未进入多选态恒为空串）。 */
+  private selectionSignature(): string {
+    if (!this.uiState.selectionMode) {
+      return '';
+    }
+    return `${this.uiState.selectedMessageIds.join(',')}`;
+  }
+
+  /** MSG-106：该消息是否被勾选（未进入多选态恒 false）。 */
+  private isSelected(messageId: number): boolean {
+    if (!this.uiState.selectionMode) {
+      return false;
+    }
+    return isMessageSelected(this.uiState.selectedMessageIds, messageId);
+  }
 
   /** 对齐 Telegram X（canGoUnread）：未读数 > 0 且存在已读水位时才定位未读。 */
   private canGoUnread(): boolean {
@@ -230,8 +269,13 @@ export struct ChatPage {
     if (messages.length === 0) {
       return 0;
     }
-    // 未读会话：定位到第一条未读消息
+    // 未读会话：优先定位到带有未读分隔线的消息，次选首条未读消息
     if (this.canGoUnread()) {
+      for (let i = 0; i < messages.length; i++) {
+        if (messages[i].showUnreadSeparator) {
+          return i;
+        }
+      }
       const lastReadInbox: number = this.uiState.lastReadInboxMessageId;
       for (let i = 0; i < messages.length; i++) {
         const item: MessageItem = messages[i];
@@ -248,6 +292,7 @@ export struct ChatPage {
     this.hasUserScrolled = false;
     this.dataSource.setItems(this.uiState.messages);
     this.shownMessages = this.uiState.messages;
+    this.shownSelectionSignature = this.selectionSignature();
     this.shownCount = this.uiState.messages.length;
     if (this.shownCount > 0) {
       this.lastTailMessageId = this.uiState.messages[this.shownCount - 1].messageId;
@@ -267,7 +312,21 @@ export struct ChatPage {
     const messages: readonly MessageItem[] = this.uiState.messages;
     // composerText 等变化不触碰列表：仅 messages 引用变化才刷新数据源，
     // 避免输入栏每次击键都触发 LazyForEach 全量重载。
-    if (messages === this.shownMessages) {
+    // MSG-106 例外：多选态变化也是"原地变更"，必须重载列表让勾选圈上屏
+    // （messages 数组引用不变，但 row key 含 selected，需重新求 key）。
+    const selectionSignature: string = this.selectionSignature();
+    const selectionChanged: boolean = selectionSignature !== this.shownSelectionSignature;
+    const messagesChanged: boolean = messages !== this.shownMessages;
+    if (!messagesChanged && !selectionChanged) {
+      return;
+    }
+    if (selectionChanged) {
+      this.shownSelectionSignature = selectionSignature;
+    }
+    if (!messagesChanged) {
+      // 只变了选择态：重载数据源让 row key 重算，但不触碰滚动位置，
+      // 否则勾选时列表会跳到首条未读/末尾。
+      this.dataSource.setItems(messages);
       return;
     }
     const count: number = messages.length;
@@ -328,7 +387,7 @@ export struct ChatPage {
               ListItem() {
                 this.MessageRow(item)
               }
-            }, (item: MessageItem) => messageRowKey(item))
+            }, (item: MessageItem) => messageRowKey(item, this.isSelected(item.messageId)))
           }
           .width('100%')
           .layoutWeight(1)
@@ -364,11 +423,14 @@ export struct ChatPage {
         }
 
         // 回复/编辑预览条（CHAT-004）：标题 + 摘要 + 取消 X。
-        if (this.uiState.composerMode !== null) {
+        // MSG-106：多选态下不显示输入相关 UI（对齐 Telegram X 的选择态）。
+        if (this.uiState.composerMode !== null && !this.uiState.selectionMode) {
           this.ComposerModeBar(this.uiState.composerMode)
         }
 
-        this.ComposerBar()
+        if (!this.uiState.selectionMode) {
+          this.ComposerBar()
+        }
       }
       .width('100%')
       .height('100%')
@@ -391,24 +453,51 @@ export struct ChatPage {
   @Builder
   Header() {
     Row() {
-      Text('‹')
-        .fontSize(T.typography.largeTitle.fontSize)
-        .fontWeight(T.typography.title.fontWeight)
-        .fontColor(T.colors.accent)
-        .width(BACK_ARROW_SIZE)
-        .height(BACK_ARROW_SIZE)
-        .textAlign(TextAlign.Center)
-        .onClick(() => {
-          this.onDispatch(new BackToChatList());
-        })
+      if (this.uiState.selectionMode) {
+        // MSG-106 多选态顶栏：Cancel + "N selected" + Forward
+        Text('Cancel')
+          .fontSize(T.typography.body.fontSize)
+          .fontColor(T.colors.accent)
+          .padding({ left: T.spacing.sm, right: T.spacing.sm })
+          .onClick(() => {
+            this.onDispatch(new ExitMessageSelection());
+          })
 
-      Text(this.uiState.chatTitle)
-        .fontSize(T.typography.title.fontSize)
-        .fontWeight(T.typography.title.fontWeight)
-        .fontColor(T.colors.textPrimary)
-        .maxLines(1)
-        .textOverflow({ overflow: TextOverflow.Ellipsis })
-        .layoutWeight(1)
+        Text(`${this.uiState.selectedMessageIds.length} selected`)
+          .fontSize(T.typography.title.fontSize)
+          .fontWeight(T.typography.title.fontWeight)
+          .fontColor(T.colors.textPrimary)
+          .textAlign(TextAlign.Center)
+          .layoutWeight(1)
+
+        Text('Forward')
+          .fontSize(T.typography.body.fontSize)
+          .fontWeight(FontWeight.Medium)
+          .fontColor(this.uiState.selectedMessageIds.length > 0 ? T.colors.accent : T.colors.textSecondary)
+          .padding({ left: T.spacing.sm, right: T.spacing.sm })
+          .onClick(() => {
+            this.onDispatch(new ConfirmForwardSelection());
+          })
+      } else {
+        Text('‹')
+          .fontSize(T.typography.largeTitle.fontSize)
+          .fontWeight(T.typography.title.fontWeight)
+          .fontColor(T.colors.accent)
+          .width(BACK_ARROW_SIZE)
+          .height(BACK_ARROW_SIZE)
+          .textAlign(TextAlign.Center)
+          .onClick(() => {
+            this.onDispatch(new BackToChatList());
+          })
+
+        Text(this.uiState.chatTitle)
+          .fontSize(T.typography.title.fontSize)
+          .fontWeight(T.typography.title.fontWeight)
+          .fontColor(T.colors.textPrimary)
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .layoutWeight(1)
+      }
     }
     .width('100%')
     .alignItems(VerticalAlign.Center)
@@ -422,9 +511,75 @@ export struct ChatPage {
     .borderColor(T.colors.divider)
   }
 
+  /** MSG-103：日期胶囊头（居中展示半透明灰色胶囊卡片，如 9月11日 或 2024年9月11日）。 */
+  @Builder
+  DateHeader(dateText: string) {
+    Row() {
+      Text(dateText)
+        .fontSize(12)
+        .fontWeight(FontWeight.Medium)
+        .fontColor('#FFFFFFFF')
+        .backgroundColor('#4D000000')
+        .borderRadius(T.radius.full)
+        .padding({
+          left: 10,
+          right: 10,
+          top: 4,
+          bottom: 4
+        })
+    }
+    .width('100%')
+    .justifyContent(FlexAlign.Center)
+    .margin({ top: 10, bottom: 6 })
+  }
+
+  /** MSG-103：未读消息分隔线（全宽浅灰蓝背景横条 + 居中 Telegram 蓝 "新消息 ∨"）。 */
+  @Builder
+  UnreadSeparator() {
+    Row() {
+      Text('新消息')
+        .fontSize(13)
+        .fontWeight(FontWeight.Medium)
+        .fontColor(T.colors.accent)
+
+      Text(' ∨')
+        .fontSize(13)
+        .fontWeight(FontWeight.Bold)
+        .fontColor(T.colors.accent)
+    }
+    .width('100%')
+    .height(32)
+    .backgroundColor('#E8EEF5')
+    .borderWidth({ top: 0.5, bottom: 0.5 })
+    .borderColor(T.colors.divider)
+    .justifyContent(FlexAlign.Center)
+    .alignItems(VerticalAlign.Center)
+    .margin({ top: 6, bottom: 6 })
+    .onClick(() => {
+      this.scroller.scrollToIndex(this.shownCount - 1, true, ScrollAlign.END);
+    })
+  }
+
   @Builder
   MessageRow(item: MessageItem) {
-    Row() {
+    Column() {
+      // MSG-103：日期胶囊头（跨天或列表顶端最旧消息）
+      if (item.showDateHeader) {
+        this.DateHeader(item.dateHeaderText)
+      }
+
+      // MSG-103：未读消息分隔线（进入会话时的首条未读）
+      if (item.showUnreadSeparator) {
+        this.UnreadSeparator()
+      }
+
+      Row() {
+        // MSG-106：多选态下勾选圈落在气泡外侧（收到的在左、发出的在右），
+        // 与 Telegram X 的选择态一致；非多选态不占位。
+        if (this.uiState.selectionMode && !item.isOutgoing) {
+          this.SelectionMark(item)
+        }
+
       // MSG-102：群聊收到的消息在气泡左侧出小圆头像（彩色底 + 首字母，配色同会话列表）。
       if (this.showSenderUi(item)) {
         Text(avatarLettersForName(item.senderName))
@@ -537,6 +692,11 @@ export struct ChatPage {
       })
       .constraintSize({ maxWidth: BUBBLE_MAX_WIDTH })
       .onClick(() => {
+        // MSG-106：多选态下点击气泡 = 切换勾选（不再触发重发）。
+        if (this.uiState.selectionMode) {
+          this.onDispatch(new ToggleMessageSelection(item.messageId));
+          return;
+        }
         // MSG-104：点击发送失败的气泡重发；正常气泡点击无动作。
         if (item.sendState === 'failed') {
           this.onDispatch(new TapFailedMessage(item.messageId));
@@ -545,9 +705,18 @@ export struct ChatPage {
       .gesture(
         LongPressGesture({ duration: 350 })
           .onAction(() => {
+            // MSG-106：多选态下长按不弹菜单，与点击一致地切换勾选。
+            if (this.uiState.selectionMode) {
+              this.onDispatch(new ToggleMessageSelection(item.messageId));
+              return;
+            }
             this.onDispatch(new MessageActionRequested(item.messageId));
           })
       )
+
+      if (this.uiState.selectionMode && item.isOutgoing) {
+        this.SelectionMark(item)
+      }
     }
     .width('100%')
     .justifyContent(item.isOutgoing ? FlexAlign.End : FlexAlign.Start)
@@ -557,6 +726,27 @@ export struct ChatPage {
       right: T.spacing.screenInset,
       top: T.spacing.xs
     })
+    }
+    .width('100%')
+  }
+
+  /** MSG-106：一条消息的勾选圈（选中实心 + ✓，未选中空心）。 */
+  @Builder
+  SelectionMark(item: MessageItem) {
+    Text(this.isSelected(item.messageId) ? '✓' : '')
+      .width(SELECTION_MARK_SIZE)
+      .height(SELECTION_MARK_SIZE)
+      .borderRadius(T.radius.full)
+      .borderWidth(1)
+      .borderColor(this.isSelected(item.messageId) ? T.colors.accent : T.colors.textSecondary)
+      .backgroundColor(this.isSelected(item.messageId) ? T.colors.accent : Color.Transparent)
+      .fontColor(T.colors.textOnAccent)
+      .fontSize(T.typography.footnote.fontSize)
+      .textAlign(TextAlign.Center)
+      .margin({ left: T.spacing.xs, right: T.spacing.xs })
+      .onClick(() => {
+        this.onDispatch(new ToggleMessageSelection(item.messageId));
+      })
   }
 
   private mediaCardWidth(media: MediaAttachment): number {
@@ -999,6 +1189,23 @@ export struct ChatPage {
             })
             .onClick(() => {
               this.onDispatch(new ReplyToMessage());
+            })
+        }
+
+        // MSG-106：Forward 进入多选转发态（仅 can_be_forwarded 时出现）。
+        if (menu.showForward) {
+          Text('Forward')
+            .fontSize(T.typography.body.fontSize)
+            .fontColor(T.colors.textPrimary)
+            .width('100%')
+            .padding({
+              left: T.spacing.screenInset,
+              right: T.spacing.screenInset,
+              top: T.spacing.md,
+              bottom: T.spacing.md
+            })
+            .onClick(() => {
+              this.onDispatch(new ForwardMessagesRequested());
             })
         }
 

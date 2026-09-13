@@ -27,6 +27,9 @@
  * chat.last_read_outbox_message_id 灌为水位初值——历史已读不会补推
  * updateChatReadOutbox，只靠增量推送会把"进入会话前已读"的消息错显为单勾。
  * openChat 后 chat 已命中 TDLib 本地缓存，这次请求无网络往返。
+ *
+ * MSG-106 新增：forwardMessages（多选消息转发到目标会话，含 send_copy
+ * "以副本发送"隐藏原发送者选项）。
  */
 
 import {
@@ -43,6 +46,7 @@ import {
   encodeViewMessages,
   encodeResendMessages,
   encodeGetChat,
+  encodeForwardMessages,
   GetChatHistory,
   OpenChat,
   CloseChat,
@@ -53,6 +57,7 @@ import {
   ViewMessages,
   ResendMessages,
   GetChat,
+  ForwardMessages,
   Chat,
   InputMessageReplyToMessage,
   InputMessageText,
@@ -98,6 +103,9 @@ class HistoryIngest {
 
 /** 连续无新增页数达到该值才判定历史到顶（容忍 TDLib 后台 preload 在飞的空窗期）。 */
 const MAX_EMPTY_PAGES: number = 3;
+
+/** TDLib forwardMessages 单次可转发的消息条数上限（超出会被服务端拒绝）。 */
+const MAX_FORWARD_IDS: number = 100;
 
 export class MessageProjection {
   private readonly chatId: number;
@@ -382,6 +390,59 @@ export class MessageProjection {
     req.message_ids = messageIds;
 
     return this.scope.request('resendMessages', encodeResendMessages(req) as TdWireObject);
+  }
+
+  /**
+   * 转发消息（MSG-106 / FEAT-COMP-004）：forwardMessages(from_chat_id=this.chatId,
+   * chat_id=toChatId, message_ids, send_copy, remove_caption)。
+   *
+   * - message_ids 必须严格递增，这里做升序去重（调用方传来的选择顺序不可信）；
+   *   TDLib 上限 100 条，超出直接判 parameter/invalid 不发起请求；
+   * - send_copy=true 即"以副本发送"（隐藏原发送者，Android 侧 R.string.SendAsCopy）；
+   * - remove_caption 仅在 send_copy 为真时被 TDLib 采纳；
+   * - 本端所有待转发消息同属 this.chatId，因此单次请求足够——Android 的
+   *   TD.forwardMessages 按来源 chatId 分组多次调用，是为跨会话多选（分享流）准备的，
+   *   单会话内多选无需分组；
+   * - 成功无本地乐观插入：目标会话不在当前投影内，转出的气泡由目标会话自己的
+   *   投影经 updateNewMessage 呈现（若用户随后进入该会话）。
+   */
+  forwardMessages(
+    toChatId: number,
+    messageIds: number[],
+    sendCopy: boolean,
+    removeCaption: boolean = false
+  ): Result<TdPendingRequest, AppError> {
+    if (messageIds.length === 0) {
+      return err<TdPendingRequest, AppError>(
+        AppErrors.parameter('missing', 'message_ids', 'no message ids to forward')
+      );
+    }
+    if (messageIds.length > MAX_FORWARD_IDS) {
+      return err<TdPendingRequest, AppError>(
+        AppErrors.parameter('invalid', 'message_ids', `at most ${MAX_FORWARD_IDS} messages can be forwarded`)
+      );
+    }
+    // 严格递增：升序 + 去重（TDLib 对乱序/重复的 message_ids 直接报错）。
+    const sorted: number[] = [];
+    const seen: Set<number> = new Set();
+    const ascending: number[] = messageIds.slice().sort((a: number, b: number): number => a - b);
+    for (let i = 0; i < ascending.length; i++) {
+      if (!seen.has(ascending[i])) {
+        seen.add(ascending[i]);
+        sorted.push(ascending[i]);
+      }
+    }
+
+    const req: ForwardMessages = new ForwardMessages();
+    req.chat_id = toChatId;
+    req.topic_id = null;
+    req.from_chat_id = this.chatId;
+    req.message_ids = sorted;
+    req.options = null;
+    req.send_copy = sendCopy;
+    req.remove_caption = removeCaption;
+
+    return this.scope.request('forwardMessages', encodeForwardMessages(req) as TdWireObject);
   }
 
   private requestHistory(fromMessageId: number, offset: number, limit: number): Result<TdPendingRequest, AppError> {

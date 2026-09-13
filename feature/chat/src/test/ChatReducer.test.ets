@@ -14,6 +14,7 @@ import {
   ComposerTextChanged,
   SendCurrentMessage,
   OnMessageSendFailed,
+  OnMessagesLoaded,
   BackToChatList,
   MessageActionRequested,
   OnMessageActionMenuLoaded,
@@ -22,7 +23,13 @@ import {
   DeleteMessage,
   CancelComposerMode,
   DismissMessageActionMenu,
-  OnMessageActionFailed
+  OnMessageActionFailed,
+  ForwardMessagesRequested,
+  ToggleMessageSelection,
+  ConfirmForwardSelection,
+  ForwardSelectedToChat,
+  OnForwardCompleted,
+  OnForwardFailed
 } from '../main/ets/contract/ChatIntent';
 import {
   ChatEffect,
@@ -30,7 +37,9 @@ import {
   FetchMessagePermissions,
   EditMessageText,
   DeleteMessages,
-  NavigateBack
+  NavigateBack,
+  OpenForwardPicker,
+  ForwardMessages
 } from '../main/ets/contract/ChatEffect';
 import { chatReducer } from '../main/ets/reducer/ChatReducer';
 
@@ -57,6 +66,12 @@ function makeStateWith(
 
 function makeTextMessage(messageId: number, isOutgoing: boolean, text: string = 'hello'): MessageItem {
   return new MessageItem(messageId, text, 1000, isOutgoing, '', 'none', true, false, null, '');
+}
+
+/** 取菜单的 showForward（菜单为 null 时返回 false），避免非空断言。 */
+function menuShowForward(state: ChatUiState): boolean {
+  const menu: MessageActionMenuState | null = state.actionMenu;
+  return menu !== null ? menu.showForward : false;
 }
 
 export default function chatReducerTest() {
@@ -304,6 +319,218 @@ export default function chatReducerTest() {
       );
       expect(result.state.errorMessage).assertEqual('TDLib rejected the request');
       expect(result.effects.length).assertEqual(0);
+    });
+
+    // ---- MSG-106 转发多选流（FEAT-COMP-004）----
+
+    it('onMessageActionMenuLoaded_exposesForwardOnlyWhenCanBeForwarded', 0, () => {
+      const messages: readonly MessageItem[] = [makeTextMessage(7, false)];
+      const state: ChatUiState = makeStateWith(messages);
+
+      const allowed: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        state,
+        new OnMessageActionMenuLoaded(7, false, false, false, true),
+        makeEnv()
+      );
+      expect(menuShowForward(allowed.state)).assertTrue();
+
+      const denied: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        state,
+        new OnMessageActionMenuLoaded(7, false, false, false, false),
+        makeEnv()
+      );
+      expect(menuShowForward(denied.state)).assertFalse();
+    });
+
+    it('forwardMessagesRequested_entersSelectionModeWithPressedMessage', 0, () => {
+      const messages: readonly MessageItem[] = [makeTextMessage(7, false), makeTextMessage(8, false)];
+      const menu: MessageActionMenuState = new MessageActionMenuState(7, true, false, false, false, true);
+      const state: ChatUiState = makeStateWith(messages, '', null, menu);
+
+      const result: ReducerResult<ChatUiState, ChatEffect> =
+        chatReducer(state, new ForwardMessagesRequested(), makeEnv());
+
+      expect(result.state.selectionMode).assertTrue();
+      expect(result.state.selectedMessageIds.length).assertEqual(1);
+      expect(result.state.selectedMessageIds[0]).assertEqual(7);
+      // 菜单关闭，且进入选择态本身不发请求
+      expect(result.state.actionMenu).assertNull();
+      expect(result.effects.length).assertEqual(0);
+    });
+
+    it('forwardMessagesRequested_isNoOpWhenForwardNotAllowed', 0, () => {
+      const messages: readonly MessageItem[] = [makeTextMessage(7, false)];
+      const menu: MessageActionMenuState = new MessageActionMenuState(7, true, false, false, false, false);
+      const state: ChatUiState = makeStateWith(messages, '', null, menu);
+
+      const result: ReducerResult<ChatUiState, ChatEffect> =
+        chatReducer(state, new ForwardMessagesRequested(), makeEnv());
+
+      expect(result.state === state).assertTrue();
+      expect(result.state.selectionMode).assertFalse();
+      expect(result.effects.length).assertEqual(0);
+    });
+
+    it('toggleMessageSelection_deselectingLastItemExitsSelectionMode', 0, () => {
+      const messages: readonly MessageItem[] = [makeTextMessage(7, false)];
+      const state: ChatUiState = new ChatUiState(
+        42, 'chat', messages, false, true, null, '', null, null,
+        -1, [], 0, 0, true, [7]
+      );
+
+      const result: ReducerResult<ChatUiState, ChatEffect> =
+        chatReducer(state, new ToggleMessageSelection(7), makeEnv());
+
+      expect(result.state.selectionMode).assertFalse();
+      expect(result.state.selectedMessageIds.length).assertEqual(0);
+      expect(result.effects.length).assertEqual(0);
+    });
+
+    it('toggleMessageSelection_isNoOpWhenNotInSelectionMode', 0, () => {
+      const messages: readonly MessageItem[] = [makeTextMessage(7, false)];
+      const state: ChatUiState = makeStateWith(messages);
+
+      const result: ReducerResult<ChatUiState, ChatEffect> =
+        chatReducer(state, new ToggleMessageSelection(7), makeEnv());
+
+      expect(result.state === state).assertTrue();
+      expect(result.effects.length).assertEqual(0);
+    });
+
+    it('confirmForwardSelection_emitsOpenForwardPickerWithSelection', 0, () => {
+      const messages: readonly MessageItem[] = [makeTextMessage(7, false), makeTextMessage(9, false)];
+      const state: ChatUiState = new ChatUiState(
+        42, 'chat', messages, false, true, null, '', null, null,
+        -1, [], 0, 0, true, [7, 9]
+      );
+
+      const result: ReducerResult<ChatUiState, ChatEffect> =
+        chatReducer(state, new ConfirmForwardSelection(), makeEnv());
+
+      expect(result.effects.length).assertEqual(1);
+      expect(result.effects[0].kind).assertEqual('openForwardPicker');
+      const effect: OpenForwardPicker = result.effects[0] as OpenForwardPicker;
+      expect(effect.fromChatId).assertEqual(42);
+      expect(effect.messageIds.length).assertEqual(2);
+      expect(effect.messageIds[0]).assertEqual(7);
+      expect(effect.messageIds[1]).assertEqual(9);
+    });
+
+    it('confirmForwardSelection_isNoOpWithEmptySelection', 0, () => {
+      const state: ChatUiState = makeStateWith([]);
+
+      const result: ReducerResult<ChatUiState, ChatEffect> =
+        chatReducer(state, new ConfirmForwardSelection(), makeEnv());
+
+      expect(result.state === state).assertTrue();
+      expect(result.effects.length).assertEqual(0);
+    });
+
+    it('forwardSelectedToChat_emitsForwardMessagesKeepingSelectionUntilCompletion', 0, () => {
+      const messages: readonly MessageItem[] = [makeTextMessage(7, false)];
+      const state: ChatUiState = new ChatUiState(
+        42, 'chat', messages, false, true, null, '', null, null,
+        -1, [], 0, 0, true, [7]
+      );
+
+      const result: ReducerResult<ChatUiState, ChatEffect> =
+        chatReducer(state, new ForwardSelectedToChat(777, true), makeEnv());
+
+      expect(result.effects.length).assertEqual(1);
+      expect(result.effects[0].kind).assertEqual('forwardMessages');
+      const effect: ForwardMessages = result.effects[0] as ForwardMessages;
+      expect(effect.fromChatId).assertEqual(42);
+      expect(effect.toChatId).assertEqual(777);
+      expect(effect.sendCopy).assertTrue();
+      expect(effect.messageIds[0]).assertEqual(7);
+      // 失败要能换目标重试：请求发出时不收起选择态
+      expect(result.state.selectionMode).assertTrue();
+    });
+
+    it('onForwardCompleted_exitsSelectionModeAndClearsError', 0, () => {
+      const messages: readonly MessageItem[] = [makeTextMessage(7, false)];
+      const state: ChatUiState = new ChatUiState(
+        42, 'chat', messages, false, true, 'previous failure', '', null, null,
+        -1, [], 0, 0, true, [7]
+      );
+
+      const result: ReducerResult<ChatUiState, ChatEffect> =
+        chatReducer(state, new OnForwardCompleted(1), makeEnv());
+
+      expect(result.state.selectionMode).assertFalse();
+      expect(result.state.selectedMessageIds.length).assertEqual(0);
+      expect(result.state.errorMessage).assertNull();
+    });
+
+    it('onForwardFailed_setsErrorAndKeepsSelection', 0, () => {
+      const messages: readonly MessageItem[] = [makeTextMessage(7, false)];
+      const state: ChatUiState = new ChatUiState(
+        42, 'chat', messages, false, true, null, '', null, null,
+        -1, [], 0, 0, true, [7]
+      );
+
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        state,
+        new OnForwardFailed(AppErrors.tdlib('bad_request', 'Cannot forward this message', false)),
+        makeEnv()
+      );
+
+      expect(result.state.errorMessage).assertEqual('Cannot forward this message');
+      expect(result.state.selectionMode).assertTrue();
+      expect(result.state.selectedMessageIds.length).assertEqual(1);
+    });
+
+    it('backToChatList_exitsSelectionModeBeforeNavigatingBack', 0, () => {
+      const messages: readonly MessageItem[] = [makeTextMessage(7, false)];
+      const state: ChatUiState = new ChatUiState(
+        42, 'chat', messages, false, true, null, '', null, null,
+        -1, [], 0, 0, true, [7]
+      );
+
+      const first: ReducerResult<ChatUiState, ChatEffect> =
+        chatReducer(state, new BackToChatList(), makeEnv());
+      expect(first.state.selectionMode).assertFalse();
+      expect(first.state.selectedMessageIds.length).assertEqual(0);
+      expect(first.effects.length).assertEqual(0);
+
+      const second: ReducerResult<ChatUiState, ChatEffect> =
+        chatReducer(first.state, new BackToChatList(), makeEnv());
+      expect(second.effects.length).assertEqual(1);
+      expect(second.effects[0].kind).assertEqual('navigateBack');
+    });
+
+    it('onMessagesLoaded_prunesSelectionOfVanishedMessages', 0, () => {
+      const state: ChatUiState = new ChatUiState(
+        42, 'chat', [makeTextMessage(7, false)], false, true, null, '', null, null,
+        -1, [], 0, 0, true, [7, 8]
+      );
+
+      // 8 已被删除：选择集合收敛为 [7]，仍可继续转发
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        state,
+        new OnMessagesLoaded([makeTextMessage(7, false)], true, 0, 0),
+        makeEnv()
+      );
+
+      expect(result.state.selectionMode).assertTrue();
+      expect(result.state.selectedMessageIds.length).assertEqual(1);
+      expect(result.state.selectedMessageIds[0]).assertEqual(7);
+    });
+
+    it('onMessagesLoaded_exitsSelectionModeWhenEverySelectedMessageVanished', 0, () => {
+      const state: ChatUiState = new ChatUiState(
+        42, 'chat', [makeTextMessage(7, false)], false, true, null, '', null, null,
+        -1, [], 0, 0, true, [7]
+      );
+
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        state,
+        new OnMessagesLoaded([], true, 0, 0),
+        makeEnv()
+      );
+
+      expect(result.state.selectionMode).assertFalse();
+      expect(result.state.selectedMessageIds.length).assertEqual(0);
     });
   });
 }

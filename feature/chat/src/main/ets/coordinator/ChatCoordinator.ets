@@ -86,6 +86,8 @@ import {
   OnMessageSendFailed,
   OnMessageActionMenuLoaded,
   OnMessageActionFailed,
+  OnForwardCompleted,
+  OnForwardFailed,
   OpenMediaViewer,
   RequestMediaDownload
 } from '../contract/ChatIntent';
@@ -95,6 +97,8 @@ import {
   FetchMessagePermissions,
   EditMessageText,
   DeleteMessages,
+  OpenForwardPicker,
+  ForwardMessages,
   ReportMessagesRead,
   ResendMessage
 } from '../contract/ChatEffect';
@@ -186,6 +190,26 @@ export function repliedMessageIdOf(replyTo: TdMessageReplyTo | null): number | n
   return reply.message_id > 0 ? reply.message_id : null;
 }
 
+/**
+ * MSG-106：统计 forwardMessages 响应里真正转出的条数。
+ * TDLib 按 message_ids 顺序逐条回 message 或 null（不可转发时为 null，
+ * 例如受保护内容），所以只数非空项；不是数组/字段缺失按 0 处理。
+ */
+function countForwardedMessages(wire: TdWireObject): number {
+  const raw: TdWireValue | undefined = wire['messages'];
+  if (raw === undefined || raw === null || !Array.isArray(raw)) {
+    return 0;
+  }
+  const items: TdWireValue[] = raw as TdWireValue[];
+  let count: number = 0;
+  for (let i = 0; i < items.length; i++) {
+    if (items[i] !== null && items[i] !== undefined) {
+      count += 1;
+    }
+  }
+  return count;
+}
+
 export class ReplyInfo {
   readonly summary: string;
   readonly senderName: string;
@@ -215,6 +239,8 @@ export class ChatCoordinator {
   private readonly fileRegistry: FileRegistry;
   private readonly env: ReducerEnv;
   private readonly onBack: () => void;
+  /** MSG-106：请求装配层弹出转发目标会话选择器（缺省 no-op）。 */
+  private readonly onOpenForwardPicker: (messageIds: number[]) => void;
   private currentState: ChatUiState;
   private readonly listeners: ChatUiStateListener[] = [];
   private syncScheduled: boolean = false;
@@ -235,12 +261,16 @@ export class ChatCoordinator {
   private readonly readThrottle: ReadReportThrottle = new ReadReportThrottle();
   /** 回复引用消息详情已发起过 getMessage 的 messageId 集合，防重复请求。 */
   private readonly requestedReplyIds: Set<number> = new Set();
+  /** MSG-103：进入会话时的首条未读消息 id（锁定后会话内保持书签不消失，重进或无未读时为 null）。 */
+  private firstUnreadMessageId: number | null = null;
+  private initialUnreadResolved: boolean = false;
 
   constructor(
     scope: AccountScope,
     chatId: number,
     chatTitle: string,
     onBack?: () => void,
+    onOpenForwardPicker?: (messageIds: number[]) => void,
     env?: ReducerEnv
   ) {
     this.projection = new MessageProjection(chatId, scope);
@@ -250,11 +280,14 @@ export class ChatCoordinator {
     // FileRegistry 构造即 start（订阅 updateFile），destroy 时 stop。
     this.fileRegistry = new FileRegistry(scope);
     this.onBack = onBack !== undefined ? onBack : (): void => {};
+    this.onOpenForwardPicker = onOpenForwardPicker !== undefined
+      ? onOpenForwardPicker
+      : (messageIds: number[]): void => {};
     this.env = env !== undefined ? env : {
       clock: new ManualClock(1000, 500),
       ids: new SequentialIdGenerator('chat-')
     };
-    this.currentState = new ChatUiState(chatId, chatTitle, [], false, true, null, '', null, null, -1, [], 0);
+    this.currentState = new ChatUiState(chatId, chatTitle, [], false, true, null, '', null, null, -1, [], 0, 0, false, []);
   }
 
   get state(): ChatUiState {
@@ -377,10 +410,50 @@ export class ChatCoordinator {
       const message: Message = projectionState.messages[i];
       replyInfoById.set(message.id, this.resolveReplyInfo(message));
     }
+    // MSG-103：未读消息书签定位（对齐 Telegram X MessagesAdapter.java:528 与 canGoUnread 规则）
+    if (!this.initialUnreadResolved) {
+      if (projectionState.unreadCount > 0 && projectionState.lastReadInboxMessageId > 0) {
+        for (let i = 0; i < projectionState.messages.length; i++) {
+          const m: Message = projectionState.messages[i];
+          if (!m.is_outgoing && m.id > projectionState.lastReadInboxMessageId) {
+            this.firstUnreadMessageId = m.id;
+            this.initialUnreadResolved = true;
+            break;
+          }
+        }
+      } else if (!projectionState.isLoading && projectionState.messages.length > 0) {
+        // 首屏已加载完成且未读数为 0 或无已读水位，锁定本会话无未读分隔线
+        this.initialUnreadResolved = true;
+      }
+    }
+
     const items: MessageItem[] = [];
     for (let i = 0; i < projectionState.messages.length; i++) {
-      items.push(this.mapMessageToItem(projectionState.messages[i], replyInfoById,
-        projectionState.lastReadOutboxMessageId));
+      const currentMsg: Message = projectionState.messages[i];
+      let showDateHeader: boolean = false;
+      let dateHeaderText: string = '';
+      if (i === 0) {
+        showDateHeader = true;
+        dateHeaderText = formatDateHeader(currentMsg.date * 1000);
+      } else {
+        const prevMsg: Message = projectionState.messages[i - 1];
+        if (!isSameDay(prevMsg.date * 1000, currentMsg.date * 1000)) {
+          showDateHeader = true;
+          dateHeaderText = formatDateHeader(currentMsg.date * 1000);
+        }
+      }
+
+      const showUnreadSeparator: boolean =
+        this.firstUnreadMessageId !== null && currentMsg.id === this.firstUnreadMessageId;
+
+      items.push(this.mapMessageToItem(
+        currentMsg,
+        replyInfoById,
+        projectionState.lastReadOutboxMessageId,
+        showDateHeader,
+        dateHeaderText,
+        showUnreadSeparator
+      ));
     }
     this.dispatch(new OnMessagesLoaded(
       items,
@@ -910,8 +983,14 @@ export class ChatCoordinator {
     return new ReplyInfo(summary, senderName, senderColorIndex, thumbnailPath, isSticker);
   }
 
-  private mapMessageToItem(message: Message, replyInfoById: Map<number, ReplyInfo>,
-    lastReadOutboxMessageId: number): MessageItem {
+  private mapMessageToItem(
+    message: Message,
+    replyInfoById: Map<number, ReplyInfo>,
+    lastReadOutboxMessageId: number,
+    showDateHeader: boolean = false,
+    dateHeaderText: string = '',
+    showUnreadSeparator: boolean = false
+  ): MessageItem {
     const replyToId: number | null = repliedMessageIdOf(message.reply_to);
     let replyToSummary: string = '';
     let replySenderName: string = '';
@@ -982,7 +1061,10 @@ export class ChatCoordinator {
       replySenderName,
       replySenderColorIndex,
       replyThumbnailPath,
-      replyIsSticker
+      replyIsSticker,
+      showDateHeader,
+      dateHeaderText,
+      showUnreadSeparator
     );
   }
 
@@ -1143,7 +1225,8 @@ export class ChatCoordinator {
                 fetch.messageId,
                 props.can_be_edited,
                 props.can_be_deleted_only_for_self,
-                props.can_be_deleted_for_all_users
+                props.can_be_deleted_for_all_users,
+                props.can_be_forwarded
               ));
             }
           }).catch(() => {
@@ -1214,6 +1297,61 @@ export class ChatCoordinator {
         break;
       }
 
+      case 'openForwardPicker': {
+        // MSG-106：选择器 UI 归装配层（entry 同时持有会话列表数据与本次选择），
+        // 这里只把选择集合透传出去。
+        const picker: OpenForwardPicker = effect as OpenForwardPicker;
+        hilog.info(DOMAIN, TAG, 'open forward picker from chatId=%{public}s count=%{public}d',
+          `${picker.fromChatId}`, picker.messageIds.length);
+        this.onOpenForwardPicker(picker.messageIds);
+        break;
+      }
+
+      case 'forwardMessages': {
+        const forward: ForwardMessages = effect as ForwardMessages;
+        hilog.info(DOMAIN, TAG, 'forward messages from chatId=%{public}s to chatId=%{public}s count=%{public}d copy=%{public}s',
+          `${forward.fromChatId}`, `${forward.toChatId}`, forward.messageIds.length, `${forward.sendCopy}`);
+        const result: Result<TdPendingRequest, AppError> =
+          this.projection.forwardMessages(
+            forward.toChatId,
+            forward.messageIds,
+            forward.sendCopy,
+            forward.removeCaption
+          );
+        if (result.err) {
+          hilog.error(DOMAIN, TAG, 'forwardMessages rejected: %{public}s', AppErrors.toLogString(result.error));
+          this.dispatch(new OnForwardFailed(result.error));
+        }
+        if (result.ok) {
+          result.value.promise.then((res: Result<TdWireObject, AppError>) => {
+            if (this.destroyed) {
+              return;
+            }
+            if (res.err) {
+              hilog.error(DOMAIN, TAG, 'forwardMessages failed: %{public}s', AppErrors.toLogString(res.error));
+              this.dispatch(new OnForwardFailed(res.error));
+            }
+            // 正向 if(res.ok)：ArkTS 收窄只在块内有效，early-return 后取 res.value 不成立。
+            if (res.ok) {
+              // TDLib 返回 messageIds 对应的转发结果：不可转发的条目占位 null。
+              const forwardedCount: number = countForwardedMessages(res.value);
+              hilog.info(DOMAIN, TAG, 'forwardMessages ok forwarded=%{public}d of %{public}d',
+                forwardedCount, forward.messageIds.length);
+              if (forwardedCount === 0) {
+                // 全部不可转发（如受保护内容）：按失败提示，别假装成功收起选择态。
+                this.dispatch(new OnForwardFailed(
+                  AppErrors.internal('chat.forward_none', 'none of the selected messages could be forwarded')
+                ));
+              } else {
+                this.dispatch(new OnForwardCompleted(forwardedCount));
+              }
+            }
+          }).catch(() => {
+          });
+        }
+        break;
+      }
+
       case 'reportMessagesRead': {
         // MSG-104：scroll intent 路径的已读上报；执行侧再经节流（只增不减）。
         const report: ReportMessagesRead = effect as ReportMessagesRead;
@@ -1280,4 +1418,25 @@ export class ChatCoordinator {
       });
     }
   }
+}
+
+/** MSG-103：判断两个毫秒时间戳是否在同一自然日（本地时区同年月日）。 */
+export function isSameDay(t1Ms: number, t2Ms: number): boolean {
+  const d1: Date = new Date(t1Ms);
+  const d2: Date = new Date(t2Ms);
+  return d1.getFullYear() === d2.getFullYear() &&
+    d1.getMonth() === d2.getMonth() &&
+    d1.getDate() === d2.getDate();
+}
+
+/** MSG-103：对齐 Telegram X 规范（Lang.getDate），当年输出 "M月d日"，跨年输出 "yyyy年M月d日"。 */
+export function formatDateHeader(timestampMs: number): string {
+  const date: Date = new Date(timestampMs);
+  const now: Date = new Date();
+  const month: number = date.getMonth() + 1;
+  const day: number = date.getDate();
+  if (date.getFullYear() === now.getFullYear()) {
+    return `${month}月${day}日`;
+  }
+  return `${date.getFullYear()}年${month}月${day}日`;
 }

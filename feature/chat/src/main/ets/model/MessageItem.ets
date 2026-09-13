@@ -19,6 +19,11 @@
  * MSG-104 新增：
  * - isRead：己方消息已被对端读（messageId <= lastReadOutboxMessageId），
  *   气泡时间戳旁显 "✓✓"；收到的消息恒 false。
+ *
+ * MSG-103 新增：
+ * - showDateHeader：是否展示日期胶囊头；
+ * - dateHeaderText：日期胶囊文本（当年 "M月d日"，跨年 "yyyy年M月d日"）；
+ * - showUnreadSeparator：是否展示未读消息分隔线（"新消息 ∨"）。
  */
 
 import { MessageTextSpan } from './MessageTextSpan';
@@ -46,6 +51,9 @@ export class MessageItem {
   readonly replySenderColorIndex: number;
   readonly replyThumbnailPath: string | null;
   readonly replyIsSticker: boolean;
+  readonly showDateHeader: boolean;
+  readonly dateHeaderText: string;
+  readonly showUnreadSeparator: boolean;
 
   constructor(
     messageId: number,
@@ -65,7 +73,10 @@ export class MessageItem {
     replySenderName: string = '',
     replySenderColorIndex: number = -1,
     replyThumbnailPath: string | null = null,
-    replyIsSticker: boolean = false
+    replyIsSticker: boolean = false,
+    showDateHeader: boolean = false,
+    dateHeaderText: string = '',
+    showUnreadSeparator: boolean = false
   ) {
     this.messageId = messageId;
     this.text = text;
@@ -85,5 +96,9 @@ export class MessageItem {
     this.replySenderColorIndex = replySenderColorIndex;
     this.replyThumbnailPath = replyThumbnailPath;
     this.replyIsSticker = replyIsSticker;
+    this.showDateHeader = showDateHeader;
+    this.dateHeaderText = dateHeaderText;
+    this.showUnreadSeparator = showUnreadSeparator;
   }
 }
+

@@ -5,7 +5,9 @@
  * 1. start() 发 openChat + getChat，getChat 响应把 last_read_outbox_message_id
  *    灌为初始已读水位（修复"进入会话前已读仍显示单勾"）；
  * 2. updateChatReadOutbox 推进水位：只增不减、变化才 notify、其他 chatId 忽略；
- * 3. markMessagesRead / resendMessages 组包形状与空数组判错。
+ * 3. markMessagesRead / resendMessages 组包形状与空数组判错；
+ * 4. MSG-106：forwardMessages 组包（chat_id/from_chat_id/send_copy）、
+ *    空数组与超 100 条判错、message_ids 归一化为严格递增。
  */
 
 import { describe, it, expect } from '@ohos/hypium';
@@ -384,6 +386,74 @@ export default function messageProjectionTest(): void {
       const ids: number[] = sent['message_ids'] as number[];
       expect(ids.length).assertEqual(1);
       expect(ids[0]).assertEqual(33);
+    });
+
+    // ---- MSG-106 转发（FEAT-COMP-004）----
+
+    it('should assemble forwardMessages with source chat and copy flag', 0, (): void => {
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const scope: AccountScope = createScope(bridge);
+      const projection: MessageProjection = new MessageProjection(42, scope);
+
+      const res: Result<TdPendingRequest, AppError> = projection.forwardMessages(777, [10, 11], true);
+      expect(res.ok).assertTrue();
+
+      const sent: Record<string, TdWireValue> = bridge.lastSentJson();
+      expect(sent['@type']).assertEqual('forwardMessages');
+      // chat_id = 目标会话，from_chat_id = 当前投影的会话
+      expect(sent['chat_id']).assertEqual(777);
+      expect(sent['from_chat_id']).assertEqual(42);
+      expect(sent['send_copy']).assertEqual(true);
+      expect(sent['remove_caption']).assertEqual(false);
+      // topic_id / options 显式 null（非论坛话题、默认发送选项）
+      expect(sent['topic_id']).assertNull();
+      expect(sent['options']).assertNull();
+      const ids: number[] = sent['message_ids'] as number[];
+      expect(ids.length).assertEqual(2);
+      expect(ids[0]).assertEqual(10);
+      expect(ids[1]).assertEqual(11);
+    });
+
+    it('should reject forwardMessages with empty ids', 0, (): void => {
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const scope: AccountScope = createScope(bridge);
+      const projection: MessageProjection = new MessageProjection(42, scope);
+
+      const res: Result<TdPendingRequest, AppError> = projection.forwardMessages(777, [], false);
+      expect(res.ok).assertFalse();
+      expect(bridge.sent.length).assertEqual(0);
+    });
+
+    it('should sort and dedupe forward message ids into strictly increasing order', 0, (): void => {
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const scope: AccountScope = createScope(bridge);
+      const projection: MessageProjection = new MessageProjection(42, scope);
+
+      // TDLib 要求 message_ids 严格递增：乱序 + 重复必须先归一化
+      const res: Result<TdPendingRequest, AppError> =
+        projection.forwardMessages(777, [30, 10, 30, 20], false);
+      expect(res.ok).assertTrue();
+
+      const sent: Record<string, TdWireValue> = bridge.lastSentJson();
+      const ids: number[] = sent['message_ids'] as number[];
+      expect(ids.length).assertEqual(3);
+      expect(ids[0]).assertEqual(10);
+      expect(ids[1]).assertEqual(20);
+      expect(ids[2]).assertEqual(30);
+    });
+
+    it('should reject forwardMessages beyond the 100 message limit', 0, (): void => {
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const scope: AccountScope = createScope(bridge);
+      const projection: MessageProjection = new MessageProjection(42, scope);
+
+      const tooMany: number[] = [];
+      for (let i = 1; i <= 101; i++) {
+        tooMany.push(i);
+      }
+      const res: Result<TdPendingRequest, AppError> = projection.forwardMessages(777, tooMany, false);
+      expect(res.ok).assertFalse();
+      expect(bridge.sent.length).assertEqual(0);
     });
 
   });

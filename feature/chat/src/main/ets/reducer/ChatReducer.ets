@@ -19,6 +19,17 @@
  *   reply → SendTextMessage 带 replyToMessageId；
  * - deleteMessage → DeleteMessages(chatId, [id], revoke=canBeDeletedForAllUsers)；
  * - onMessageActionFailed → errorMessage 细条提示。
+ *
+ * MSG-106 新增转发多选流：
+ * - forwardMessagesRequested → 进入选择态并预选中 actionMenu 的消息（需
+ *   showForward，即 can_be_forwarded）；
+ * - toggleMessageSelection → 增删选中；取消掉最后一条即自动退出选择态
+ *   （Telegram X 行为）；
+ * - forwardSelectedToChat → OpenForwardPicker 之前先产出选择器请求，选定后
+ *   由 ForwardMessages effect 执行；成功 OnForwardCompleted 退出选择态，
+ *   失败 OnForwardFailed 只提示、保留选择便于换目标重试；
+ * - onMessagesLoaded 收敛选择集合（选中期间消息被删/撤回时剔除）；
+ * - backToChatList 优先退出选择态（在操作菜单之后、输入栏模式之前）。
  */
 
 import { Reducer, ReducerEnv, ReducerResult, reduced } from '@tgx/feature-template';
@@ -40,6 +51,11 @@ import {
   MessageActionRequested,
   OnMessageActionMenuLoaded,
   OnMessageActionFailed,
+  ForwardMessagesRequested,
+  ToggleMessageSelection,
+  ForwardSelectedToChat,
+  OnForwardCompleted,
+  OnForwardFailed,
   OnVisibleRangeChanged,
   TapFailedMessage,
   OpenMediaViewer,
@@ -55,10 +71,18 @@ import {
   EditMessageText,
   DeleteMessages,
   NavigateBack,
+  OpenForwardPicker,
+  ForwardMessages,
   ReportMessagesRead,
   ResendMessage
 } from '../contract/ChatEffect';
 import { incomingIdUpTo } from '../model/ReadReceipt';
+import {
+  clearSelection,
+  isMessageSelected,
+  retainExistingSelection,
+  toggleMessageSelection
+} from '../model/ForwardSelection';
 
 /** 收集列表中所有可在大图画廊中展示的多媒体项。 */
 export function buildViewerItems(messages: readonly MessageItem[]): MediaViewerItem[] {
@@ -155,6 +179,20 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
       if (activeIndex >= viewerItems.length) {
         activeIndex = viewerItems.length > 0 ? viewerItems.length - 1 : -1;
       }
+      // MSG-106：选择集合收敛——选中期间消息被删除/撤回时剔除失效 id；
+      // 全部失效则连选择态一起退出（没有可转发的目标）。
+      const pruned: readonly number[] = retainExistingSelection(
+        state.selectedMessageIds,
+        (messageId: number): boolean => {
+          for (let i = 0; i < loadedIntent.messages.length; i++) {
+            if (loadedIntent.messages[i].messageId === messageId) {
+              return true;
+            }
+          }
+          return false;
+        }
+      );
+      const keepSelectionMode: boolean = state.selectionMode && pruned.length > 0;
       const nextState: ChatUiState = state.copyWith({
         messages: loadedIntent.messages,
         hasMoreOlder: loadedIntent.hasMoreOlder,
@@ -165,7 +203,9 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
         lastReadInboxMessageId: loadedIntent.lastReadInboxMessageId > 0
           ? loadedIntent.lastReadInboxMessageId
           : state.lastReadInboxMessageId,
-        unreadCount: loadedIntent.unreadCount
+        unreadCount: loadedIntent.unreadCount,
+        selectionMode: keepSelectionMode,
+        selectedMessageIds: keepSelectionMode ? pruned : []
       });
       return reduced(nextState);
     }
@@ -245,6 +285,10 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
       if (state.actionMenu !== null) {
         return reduced(state.copyWith({ actionMenu: null }));
       }
+      // MSG-106：多选转发态激活时，返回只退出选择态，不离开页面。
+      if (state.selectionMode) {
+        return reduced(state.copyWith({ selectionMode: false, selectedMessageIds: clearSelection() }));
+      }
       // 回复/编辑模式激活时，返回先退出模式（编辑恢复草稿），不离开页面。
       if (state.composerMode !== null) {
         return reduced(cancelMode(state));
@@ -271,7 +315,8 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
       }
       // 权限过滤：回复恒可；编辑仅己方文本消息且 canBeEdited；
       // 删除需 canBeDeletedOnlyForSelf || canBeDeletedForAllUsers，
-      // revoke 取 canBeDeletedForAllUsers（可对所有人删则对所有人删）。
+      // revoke 取 canBeDeletedForAllUsers（可对所有人删则对所有人删）；
+      // MSG-106：转发需 canBeForwarded。
       const showEdit: boolean = item.isOutgoing && item.isTextMessage && loaded.canBeEdited;
       const showDelete: boolean = loaded.canBeDeletedOnlyForSelf || loaded.canBeDeletedForAllUsers;
       const menu: MessageActionMenuState = new MessageActionMenuState(
@@ -279,7 +324,8 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
         true,
         showEdit,
         showDelete,
-        loaded.canBeDeletedForAllUsers
+        loaded.canBeDeletedForAllUsers,
+        loaded.canBeForwarded
       );
       const nextState: ChatUiState = state.copyWith({ actionMenu: menu });
       return reduced(nextState);
@@ -359,6 +405,100 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
       const failed: OnMessageActionFailed = intent as OnMessageActionFailed;
       const nextState: ChatUiState = state.copyWith({
         errorMessage: failed.error.message
+      });
+      return reduced(nextState);
+    }
+
+    // ---- MSG-106 转发多选流 ----
+
+    case 'forwardMessagesRequested': {
+      // 菜单点选 Forward：关闭菜单、进入选择态并预选中该条。
+      // showForward 已在 onMessageActionMenuLoaded 内按 can_be_forwarded 过滤。
+      const menu: MessageActionMenuState | null = state.actionMenu;
+      if (menu === null || !menu.showForward) {
+        return reduced(state);
+      }
+      const item: MessageItem | null = findMessage(state, menu.messageId);
+      if (item === null) {
+        return reduced(state.copyWith({ actionMenu: null }));
+      }
+      const nextState: ChatUiState = state.copyWith({
+        actionMenu: null,
+        selectionMode: true,
+        selectedMessageIds: toggleMessageSelection([], menu.messageId),
+        errorMessage: null
+      });
+      return reduced(nextState);
+    }
+
+    case 'toggleMessageSelection': {
+      const toggle: ToggleMessageSelection = intent as ToggleMessageSelection;
+      if (!state.selectionMode) {
+        return reduced(state);
+      }
+      // 消息已不在列表（刚被删除）→ 忽略，选择集合不动。
+      if (findMessage(state, toggle.messageId) === null) {
+        return reduced(state);
+      }
+      const next: number[] = toggleMessageSelection(state.selectedMessageIds, toggle.messageId);
+      // 取消掉最后一条 → 自动退出选择态（Telegram X 行为）。
+      if (next.length === 0) {
+        return reduced(state.copyWith({ selectionMode: false, selectedMessageIds: clearSelection() }));
+      }
+      return reduced(state.copyWith({ selectedMessageIds: next }));
+    }
+
+    case 'exitMessageSelection': {
+      if (!state.selectionMode) {
+        return reduced(state);
+      }
+      return reduced(state.copyWith({ selectionMode: false, selectedMessageIds: clearSelection() }));
+    }
+
+    case 'confirmForwardSelection': {
+      // 顶栏 Forward：把"给这些消息挑目标"交给装配层（entry 持有会话列表数据）。
+      if (!state.selectionMode || state.selectedMessageIds.length === 0) {
+        return reduced(state);
+      }
+      const effects: ChatEffect[] = [
+        new OpenForwardPicker(state.chatId, state.selectedMessageIds.slice())
+      ];
+      return reduced(state, effects);
+    }
+
+    case 'forwardSelectedToChat': {
+      const pick: ForwardSelectedToChat = intent as ForwardSelectedToChat;
+      if (!state.selectionMode || state.selectedMessageIds.length === 0) {
+        return reduced(state);
+      }
+      if (pick.toChatId === 0) {
+        return reduced(state);
+      }
+      // 选择态保留到 OnForwardCompleted：失败时用户可直接换目标重试。
+      const effects: ChatEffect[] = [
+        new ForwardMessages(state.chatId, pick.toChatId, state.selectedMessageIds.slice(), pick.sendCopy)
+      ];
+      return reduced(state, effects);
+    }
+
+    case 'onForwardCompleted': {
+      // 成功：收起选择态并清空选择（幂等——已退出时返回原引用）。
+      if (!state.selectionMode && state.selectedMessageIds.length === 0) {
+        return reduced(state);
+      }
+      const nextState: ChatUiState = state.copyWith({
+        selectionMode: false,
+        selectedMessageIds: clearSelection(),
+        errorMessage: null
+      });
+      return reduced(nextState);
+    }
+
+    case 'onForwardFailed': {
+      const failure: OnForwardFailed = intent as OnForwardFailed;
+      // 保留选择态：换一个目标会话即可重试。
+      const nextState: ChatUiState = state.copyWith({
+        errorMessage: failure.error.message
       });
       return reduced(nextState);
     }

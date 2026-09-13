@@ -12,6 +12,14 @@
  * OnMessageActionMenuLoaded（权限过滤后弹菜单）→ ReplyToMessage / EditMessage /
  * DeleteMessage（菜单点选）；CancelComposerMode / DismissMessageActionMenu 撤销；
  * OnMessageActionFailed 把权限拉取/编辑/删除的失败回灌 errorMessage。
+ *
+ * MSG-106 新增转发多选流：
+ * ForwardMessagesRequested（菜单点选 Forward）→ 进入选择态 →
+ * ToggleMessageSelection（点气泡增减）/ ExitMessageSelection（取消）→
+ * ConfirmForwardSelection（顶栏 Forward 按钮，请装配层弹会话选择器）→
+ * ForwardSelectedToChat（选择器里选中目标会话，带 sendCopy 隐藏来源）→
+ * ForwardMessages effect → OnForwardCompleted（退出选择态）/
+ * OnForwardFailed（保留选择态便于换目标重试）。
  */
 
 import { Intent } from '@tgx/feature-template';
@@ -98,17 +106,21 @@ export class OnMessageActionMenuLoaded implements Intent {
   readonly canBeEdited: boolean;
   readonly canBeDeletedOnlyForSelf: boolean;
   readonly canBeDeletedForAllUsers: boolean;
+  /** MSG-106：can_be_forwarded，决定菜单是否出现 Forward。 */
+  readonly canBeForwarded: boolean;
 
   constructor(
     messageId: number,
     canBeEdited: boolean,
     canBeDeletedOnlyForSelf: boolean,
-    canBeDeletedForAllUsers: boolean
+    canBeDeletedForAllUsers: boolean,
+    canBeForwarded: boolean = false
   ) {
     this.messageId = messageId;
     this.canBeEdited = canBeEdited;
     this.canBeDeletedOnlyForSelf = canBeDeletedOnlyForSelf;
     this.canBeDeletedForAllUsers = canBeDeletedForAllUsers;
+    this.canBeForwarded = canBeForwarded;
   }
 }
 
@@ -140,6 +152,74 @@ export class DismissMessageActionMenu implements Intent {
 /** 权限拉取/编辑/删除请求失败，回灌 errorMessage。 */
 export class OnMessageActionFailed implements Intent {
   readonly kind: 'onMessageActionFailed' = 'onMessageActionFailed';
+  readonly error: AppError;
+
+  constructor(error: AppError) {
+    this.error = error;
+  }
+}
+
+/**
+ * MSG-106：菜单点选 Forward → 进入多选转发态，并以 actionMenu.messageId 预选中。
+ * 仅当 actionMenu.showForward 为真时生效（reducer 内校验）。
+ */
+export class ForwardMessagesRequested implements Intent {
+  readonly kind: 'forwardMessagesRequested' = 'forwardMessagesRequested';
+}
+
+/** MSG-106：点击气泡切换选中（仅选择态下生效）。 */
+export class ToggleMessageSelection implements Intent {
+  readonly kind: 'toggleMessageSelection' = 'toggleMessageSelection';
+  readonly messageId: number;
+
+  constructor(messageId: number) {
+    this.messageId = messageId;
+  }
+}
+
+/** MSG-106：取消多选转发态（顶栏 Cancel / 返回键）。 */
+export class ExitMessageSelection implements Intent {
+  readonly kind: 'exitMessageSelection' = 'exitMessageSelection';
+}
+
+/**
+ * MSG-106：顶栏 Forward 按钮 → 产出 OpenForwardPicker effect，
+ * 请装配层（entry）弹出目标会话选择器。选择集为空时不生效。
+ */
+export class ConfirmForwardSelection implements Intent {
+  readonly kind: 'confirmForwardSelection' = 'confirmForwardSelection';
+}
+
+/**
+ * MSG-106：在会话选择器里选定目标会话 → 产出 ForwardMessages effect。
+ * sendCopy=true 即"以副本发送"（隐藏原发送者，Android R.string.SendAsCopy）。
+ * 不改选择态：成功由 OnForwardCompleted 收尾，失败保留选择便于换目标重试。
+ */
+export class ForwardSelectedToChat implements Intent {
+  readonly kind: 'forwardSelectedToChat' = 'forwardSelectedToChat';
+  readonly toChatId: number;
+  readonly sendCopy: boolean;
+
+  constructor(toChatId: number, sendCopy: boolean) {
+    this.toChatId = toChatId;
+    this.sendCopy = sendCopy;
+  }
+}
+
+/** MSG-106：转发请求成功 → 退出选择态并清空选择。 */
+export class OnForwardCompleted implements Intent {
+  readonly kind: 'onForwardCompleted' = 'onForwardCompleted';
+  /** 实际转出的消息条数（TDLib 对不可转发的条目回 null）。 */
+  readonly forwardedCount: number;
+
+  constructor(forwardedCount: number) {
+    this.forwardedCount = forwardedCount;
+  }
+}
+
+/** MSG-106：转发请求失败 → 回灌 errorMessage，选择态保留。 */
+export class OnForwardFailed implements Intent {
+  readonly kind: 'onForwardFailed' = 'onForwardFailed';
   readonly error: AppError;
 
   constructor(error: AppError) {
@@ -220,6 +300,13 @@ export type ChatIntent =
   | CancelComposerMode
   | DismissMessageActionMenu
   | OnMessageActionFailed
+  | ForwardMessagesRequested
+  | ToggleMessageSelection
+  | ExitMessageSelection
+  | ConfirmForwardSelection
+  | ForwardSelectedToChat
+  | OnForwardCompleted
+  | OnForwardFailed
   | OnVisibleRangeChanged
   | TapFailedMessage
   | OpenMediaViewer

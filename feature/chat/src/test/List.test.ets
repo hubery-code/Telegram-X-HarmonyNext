@@ -4,6 +4,8 @@ import senderInfoTest from './SenderInfo.test';
 import readReceiptTest from './ReadReceipt.test';
 import mediaAttachmentTest from './MediaAttachment.test';
 import mediaViewerTest from './MediaViewer.test';
+import forwardSelectionTest from './ForwardSelection.test';
+import dateAndUnreadSeparatorTest from './DateAndUnreadSeparator.test';
 
 export default function testsuite(): void {
   chatReducerTest();
@@ -12,4 +14,6 @@ export default function testsuite(): void {
   readReceiptTest();
   mediaAttachmentTest();
   mediaViewerTest();
+  forwardSelectionTest();
+  dateAndUnreadSeparatorTest();
 }

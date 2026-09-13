@@ -6,6 +6,9 @@
  * CHAT-004 新增：FetchMessagePermissions（长按后拉 TDLib messageProperties
  * 权限位）、EditMessageText（编辑模式发送）、DeleteMessages（删除消息）；
  * SendTextMessage 扩展 replyToMessageId 支持回复。
+ *
+ * MSG-106 新增：OpenForwardPicker（请求装配层弹出会话选择器）、
+ * ForwardMessages（转发到目标会话）。
  */
 
 import { Effect } from '@tgx/feature-template';
@@ -84,6 +87,49 @@ export class NavigateBack implements Effect {
   readonly kind: 'navigateBack' = 'navigateBack';
 }
 
+/**
+ * MSG-106：请求弹出会话选择器（转发目标）。选择器 UI 由装配层（entry）渲染
+ * ——它同时持有会话列表数据与 ChatCoordinator，是本模块拿不到的组合
+ * （feature/* 之间禁止互相依赖）。本 effect 只声明"要给这些消息挑个目标"。
+ */
+export class OpenForwardPicker implements Effect {
+  readonly kind: 'openForwardPicker' = 'openForwardPicker';
+  readonly fromChatId: number;
+  /** 待转发的消息 id，升序无重复。 */
+  readonly messageIds: number[];
+
+  constructor(fromChatId: number, messageIds: number[]) {
+    this.fromChatId = fromChatId;
+    this.messageIds = messageIds;
+  }
+}
+
+/** MSG-106：真正执行转发（forwardMessages）。 */
+export class ForwardMessages implements Effect {
+  readonly kind: 'forwardMessages' = 'forwardMessages';
+  readonly fromChatId: number;
+  readonly toChatId: number;
+  /** 升序无重复（TDLib 要求严格递增）。 */
+  readonly messageIds: number[];
+  /** true = 以副本发送，隐藏原发送者。 */
+  readonly sendCopy: boolean;
+  readonly removeCaption: boolean;
+
+  constructor(
+    fromChatId: number,
+    toChatId: number,
+    messageIds: number[],
+    sendCopy: boolean,
+    removeCaption: boolean = false
+  ) {
+    this.fromChatId = fromChatId;
+    this.toChatId = toChatId;
+    this.messageIds = messageIds;
+    this.sendCopy = sendCopy;
+    this.removeCaption = removeCaption;
+  }
+}
+
 /** MSG-104：已读上报（viewMessages），上报到 messageId（含）为止。 */
 export class ReportMessagesRead implements Effect {
   readonly kind: 'reportMessagesRead' = 'reportMessagesRead';
@@ -116,5 +162,7 @@ export type ChatEffect =
   | EditMessageText
   | DeleteMessages
   | NavigateBack
+  | OpenForwardPicker
+  | ForwardMessages
   | ReportMessagesRead
   | ResendMessage;
