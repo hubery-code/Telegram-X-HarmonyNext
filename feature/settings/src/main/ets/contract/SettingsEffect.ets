@@ -21,6 +21,11 @@ export class ClearCacheEffect implements Effect {
   readonly kind: 'clearCache' = 'clearCache';
 }
 
+/** SET-104：拉取存储占用统计（getStorageStatistics）。 */
+export class LoadStorageStatsEffect implements Effect {
+  readonly kind: 'loadStorageStats' = 'loadStorageStats';
+}
+
 export class ShowToastEffect implements Effect {
   readonly kind: 'showToast' = 'showToast';
   readonly message: string;
@@ -38,5 +43,6 @@ export type SettingsEffect =
   | LoadProfileEffect
   | LogoutEffect
   | ClearCacheEffect
+  | LoadStorageStatsEffect
   | ShowToastEffect
   | NavigateToAuthEffect;

@@ -8,16 +8,19 @@ import {
   ChangeThemeMode,
   ClearCacheRequested,
   ConfirmLogout,
+  LoadStorageStats,
   LoadUserProfile,
   ProfileLoaded,
   RequestLogout,
   SetErrorMessage,
+  StorageStatsLoaded,
   ToggleNotifications,
   UserProfileData
 } from '../main/ets/contract/SettingsIntent';
 import {
   ClearCacheEffect,
   LoadProfileEffect,
+  LoadStorageStatsEffect,
   LogoutEffect,
   ShowToastEffect
 } from '../main/ets/contract/SettingsEffect';
@@ -239,6 +242,58 @@ export default function settingsReducerTest(): void {
       expect(r1.state.notificationsEnabled).assertEqual(r2.state.notificationsEnabled);
       expect(r1.effects.length).assertEqual(r2.effects.length);
       expect((r1.effects[0] as ShowToastEffect).message).assertEqual((r2.effects[0] as ShowToastEffect).message);
+    });
+
+    // ---- SET-104 存储占用 ----
+
+    it('loadStorageStats_emitsEffectWithoutTouchingState', 0, () => {
+      // 静默刷新：只出 effect，不动 UI 状态（不置 isLoading，避免打断其它区块）
+      const state = SettingsUiState.initial();
+      const result = settingsReducer(state, new LoadStorageStats(), makeEnv());
+
+      expect(result.state === state).assertTrue();
+      expect(result.effects.length).assertEqual(1);
+      expect(result.effects[0].kind).assertEqual('loadStorageStats');
+    });
+
+    it('storageStatsLoaded_writesFormattedLabel', 0, () => {
+      const state = SettingsUiState.initial();
+      const result = settingsReducer(
+        state,
+        new StorageStatsLoaded('12.3 MB · 45 files'),
+        makeEnv()
+      );
+
+      expect(result.state.storageCacheSize).assertEqual('12.3 MB · 45 files');
+      expect(result.effects.length).assertEqual(0);
+    });
+
+    it('storageStatsLoaded_replacesStalePlaceholder', 0, () => {
+      // 初始硬编码占位 '0 B' 必须被真实值覆盖
+      const state = SettingsUiState.initial();
+      expect(state.storageCacheSize).assertEqual('0 B');
+
+      const result = settingsReducer(state, new StorageStatsLoaded('1.5 KB · 2 files'), makeEnv());
+      expect(result.state.storageCacheSize).assertEqual('1.5 KB · 2 files');
+    });
+
+    it('cacheCleared_usesReturnedStatisticsNotHardcodedZero', 0, () => {
+      // 清理后显示的是 TDLib 返回的真实剩余占用（数据库/语言包不会被清掉，
+      // 真实值通常非 0）——不再是此前硬编码的 '0 B'
+      const state = SettingsUiState.initial().copyWith({ storageCacheSize: '500.0 MB · 900 files' });
+      const result = settingsReducer(state, new CacheCleared('48.2 MB · 120 files'), makeEnv());
+
+      expect(result.state.storageCacheSize).assertEqual('48.2 MB · 120 files');
+      expect(result.effects.length).assertEqual(1);
+      expect((result.effects[0] as ShowToastEffect).message).assertEqual('Cache cleared');
+    });
+
+    it('clearCacheRequested_stillEmitsClearEffect', 0, () => {
+      const state = SettingsUiState.initial();
+      const result = settingsReducer(state, new ClearCacheRequested(), makeEnv());
+
+      expect(result.effects.length).assertEqual(1);
+      expect(result.effects[0].kind).assertEqual('clearCache');
     });
   });
 }

@@ -15,11 +15,13 @@ import {
   ChangeThemeMode,
   ProfileLoaded,
   SetErrorMessage,
-  SettingsIntent
+  SettingsIntent,
+  StorageStatsLoaded
 } from '../contract/SettingsIntent';
 import {
   ClearCacheEffect,
   LoadProfileEffect,
+  LoadStorageStatsEffect,
   LogoutEffect,
   SettingsEffect,
   ShowToastEffect
@@ -122,6 +124,23 @@ export const settingsReducer: Reducer<SettingsUiState, SettingsIntent, SettingsE
     case 'clearCacheRequested': {
       const effects: readonly SettingsEffect[] = [new ClearCacheEffect()];
       return reduced(state, effects);
+    }
+
+    // ---- SET-104 存储占用 ----
+
+    case 'loadStorageStats': {
+      // 拉取存储占用：不改 UI 状态（静默刷新），只出 effect；
+      // 结果经 storageStatsLoaded 回灌。重复进入设置页可反复触发，无副作用。
+      const effects: readonly SettingsEffect[] = [new LoadStorageStatsEffect()];
+      return reduced(state, effects);
+    }
+
+    case 'storageStatsLoaded': {
+      const statsIntent: StorageStatsLoaded = intent as StorageStatsLoaded;
+      const options: SettingsUiStateOptions = {
+        storageCacheSize: statsIntent.label
+      };
+      return reduced(state.copyWith(options));
     }
 
     case 'cacheCleared': {

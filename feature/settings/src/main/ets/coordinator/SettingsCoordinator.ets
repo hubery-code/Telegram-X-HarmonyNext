@@ -14,15 +14,19 @@ import { AccountScope } from '@tgx/core-account';
 import { UserRegistry } from '@tgx/core-domain';
 import {
   GetMe,
+  GetStorageStatistics,
   GetUserFullInfo,
   LogOut,
   OptimizeStorage,
+  StorageStatistics,
   TdJsonRaw,
   User,
   UserFullInfo,
+  decodeStorageStatistics,
   decodeUser,
   decodeUserFullInfo,
   encodeGetMe,
+  encodeGetStorageStatistics,
   encodeGetUserFullInfo,
   encodeLogOut,
   encodeOptimizeStorage
@@ -30,12 +34,15 @@ import {
 import { TdPendingRequest, TdWireObject } from '@tgx/td-gateway';
 import { ReducerEnv, ReducerResult } from '@tgx/feature-template';
 import { SettingsUiState } from '../contract/SettingsUiState';
+import { formatStorageLabel } from '../model/StorageSize';
 import {
   CacheCleared,
+  LoadStorageStats,
   LoadUserProfile,
   ProfileLoaded,
   SetErrorMessage,
   SettingsIntent,
+  StorageStatsLoaded,
   UserProfileData
 } from '../contract/SettingsIntent';
 import {
@@ -86,6 +93,8 @@ export class SettingsCoordinator {
 
   start(): void {
     this.dispatch(new LoadUserProfile());
+    // SET-104：进页即静默拉一次真实存储占用（此前 storageCacheSize 是硬编码占位）。
+    this.dispatch(new LoadStorageStats());
   }
 
   destroy(): void {
@@ -143,6 +152,10 @@ export class SettingsCoordinator {
 
       case 'clearCache':
         this.handleClearCache();
+        break;
+
+      case 'loadStorageStats':
+        this.handleLoadStorageStats();
         break;
 
       case 'navigateToAuth':
@@ -301,8 +314,62 @@ export class SettingsCoordinator {
     }
   }
 
+  /**
+   * SET-104：拉取真实存储占用（getStorageStatistics）。
+   * chat_limit=0 → 只算总量，不要按会话拆分的明细（设置页只需要总占用）；
+   * 失败静默——设置页其它功能不受影响，保留上一次的显示值。
+   */
+  private handleLoadStorageStats(): void {
+    const statsReq: GetStorageStatistics = new GetStorageStatistics();
+    statsReq.chat_limit = 0;
+    const result: Result<TdPendingRequest, AppError> = this.scope.request(
+      'getStorageStatistics',
+      encodeGetStorageStatistics(statsReq) as TdWireObject
+    );
+
+    if (result.ok) {
+      const self: SettingsCoordinator = this;
+      result.value.promise.then((res: Result<TdWireObject, AppError>): void => {
+        if (self.destroyed) {
+          return;
+        }
+        if (res.ok) {
+          const stats: StorageStatistics | null = decodeStorageStatistics(res.value as TdJsonRaw);
+          if (stats !== null) {
+            self.dispatch(new StorageStatsLoaded(formatStorageLabel(stats.size, stats.count)));
+          }
+        }
+        if (res.err) {
+          hilog.warn(DOMAIN, TAG, 'getStorageStatistics failed: %{public}s', res.error.message);
+        }
+      }).catch((): void => {
+      });
+    }
+    if (result.err) {
+      hilog.warn(DOMAIN, TAG, 'getStorageStatistics rejected: %{public}s', result.error.message);
+    }
+  }
+
+  /**
+   * SET-104：一键清理缓存（optimizeStorage）。
+   *
+   * size/ttl/count/immunity_delay 全传 0 = **删到剩 0 字节**（TDLib 里 -1 才是
+   * "用默认上限"，0 是硬上限），file_types 留空即 TDLib 默认口径（缩略图/头像/
+   * 贴纸/壁纸不删）。与 Android SettingsCacheController 的
+   * `OptimizeStorage(0, 0, 0, 0, ...)` 完全一致。
+   *
+   * 清理后**用响应里返回的真实统计**刷新显示——响应就是清理后的整体
+   * StorageStatistics（return_deleted_file_statistics=false），因此不必再发
+   * 一次 getStorageStatistics；此前这里硬编码 '0 B' 是错的（数据库、语言包等
+   * 非文件占用并不会被清掉，真实值通常不为 0）。
+   */
   private handleClearCache(): void {
     const optReq: OptimizeStorage = new OptimizeStorage();
+    optReq.size = 0;
+    optReq.ttl = 0;
+    optReq.count = 0;
+    optReq.immunity_delay = 0;
+    optReq.return_deleted_file_statistics = false;
     const result: Result<TdPendingRequest, AppError> = this.scope.request(
       'optimizeStorage',
       encodeOptimizeStorage(optReq) as TdWireObject
@@ -311,8 +378,15 @@ export class SettingsCoordinator {
     if (result.ok) {
       const self: SettingsCoordinator = this;
       result.value.promise.then((res: Result<TdWireObject, AppError>): void => {
+        if (self.destroyed) {
+          return;
+        }
         if (res.ok) {
-          self.dispatch(new CacheCleared('0 B'));
+          const stats: StorageStatistics | null = decodeStorageStatistics(res.value as TdJsonRaw);
+          const label: string = stats !== null
+            ? formatStorageLabel(stats.size, stats.count)
+            : '0 B';
+          self.dispatch(new CacheCleared(label));
         }
         if (res.err) {
           self.dispatch(new SetErrorMessage(res.error.message));
@@ -322,7 +396,7 @@ export class SettingsCoordinator {
       });
     }
     if (result.err) {
-      this.dispatch(new CacheCleared('0 B'));
+      this.dispatch(new SetErrorMessage(result.error.message));
     }
   }
 }

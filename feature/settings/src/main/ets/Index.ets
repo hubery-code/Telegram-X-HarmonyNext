@@ -1,5 +1,5 @@
 /**
- * feature/settings — 模块公共导出（SET-101）。
+ * feature/settings — 模块公共导出（SET-101 + SET-104）。
  */
 
 // Contract: UiState
@@ -19,6 +19,8 @@ export {
   CancelLogout,
   ConfirmLogout,
   ClearCacheRequested,
+  LoadStorageStats,
+  StorageStatsLoaded,
   CacheCleared,
   ProfileLoaded,
   SetErrorMessage,
@@ -30,10 +32,14 @@ export {
   LoadProfileEffect,
   LogoutEffect,
   ClearCacheEffect,
+  LoadStorageStatsEffect,
   ShowToastEffect,
   NavigateToAuthEffect,
   SettingsEffect
 } from './contract/SettingsEffect';
+
+// Model
+export { formatBytes, formatStorageLabel } from './model/StorageSize';
 
 // Reducer
 export { settingsReducer } from './reducer/SettingsReducer';

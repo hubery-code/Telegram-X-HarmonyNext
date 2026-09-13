@@ -51,6 +51,27 @@ export class ClearCacheRequested implements Intent {
   readonly kind: 'clearCacheRequested' = 'clearCacheRequested';
 }
 
+/**
+ * SET-104：进入设置页时请求拉取存储占用（reducer 出 loadStorageStats effect）。
+ */
+export class LoadStorageStats implements Intent {
+  readonly kind: 'loadStorageStats' = 'loadStorageStats';
+}
+
+/**
+ * SET-104：存储占用拉取/清理后的结果回灌。
+ * label 由 coordinator 用 `formatStorageLabel` 预先格式化好——与既有
+ * CacheCleared 携带已格式化字符串的约定保持一致，reducer 保持纯搬运。
+ */
+export class StorageStatsLoaded implements Intent {
+  readonly kind: 'storageStatsLoaded' = 'storageStatsLoaded';
+  readonly label: string;
+
+  constructor(label: string) {
+    this.label = label;
+  }
+}
+
 export class CacheCleared implements Intent {
   readonly kind: 'cacheCleared' = 'cacheCleared';
   readonly newCacheSize: string;
@@ -86,6 +107,8 @@ export type SettingsIntent =
   | CancelLogout
   | ConfirmLogout
   | ClearCacheRequested
+  | LoadStorageStats
+  | StorageStatsLoaded
   | CacheCleared
   | ProfileLoaded
   | SetErrorMessage;
