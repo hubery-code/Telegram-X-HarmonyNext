@@ -28,7 +28,7 @@
 | FEAT-FEAS-002 | Node-API 最小契约 create/send/receive/execute/close | P0 | `telegram/Tdlib.java`（Client 封装参考），`TDLib.java` | SetTdlibParameters（初始化） | ArkTS 侧可创建客户端、同步 execute、异步收 update、优雅 close | Node-API (NAPI) | Accepted | 迁移组 |
 | FEAT-FEAS-003 | 真机垂直链路：授权→会话列表→打开聊天→收发文本→重启恢复 | P0 | `MainActivity.java`, `ui/ChatsController.java`, `ui/MessagesController.java` | SetAuthenticationPhoneNumber, GetChats, GetChatHistory, SendMessage, GetAuthorizationState | 真机一次会话内完成全链路，杀进程重启后状态自动恢复 | 网络 | Accepted | 迁移组 |
 | FEAT-FEAS-004 | 数据目录隔离、数据库密钥保存、异常退出恢复 | P0 | `telegram/Tdlib.java`（updateAuthState, :1194），`BaseApplication.kt` | SetTdlibParameters（database_directory / encryption key） | 每账号独立目录，key 入 HUKS，kill -9 后无数据库损坏 | 文件、HUKS | Accepted | 迁移组 |
-| FEAT-FEAS-005 | 前后台切换、断网重连、24 小时 update 事件 soak | P0 | `telegram/ConnectionListener.java`, `telegram/TdlibManager.java`, `core/WatchDog.java` | updateConnectionState（可订阅） | 24h 事件流无乱序/丢失/泄漏，断网自动重连 | 网络 | Verifying | 迁移组 |
+| FEAT-FEAS-005 | 前后台切换、断网重连、24 小时 update 事件 soak | P0 | `telegram/ConnectionListener.java`, `telegram/TdlibManager.java`, `core/WatchDog.java` | updateConnectionState（可订阅） | 24h 事件流无乱序/丢失/泄漏，断网自动重连 | 网络 | Accepted | 迁移组 |
 | FEAT-FEAS-006 | Push Kit token 经 Telegram 后端端到端唤醒 | P0 | `telegram/Tdlib.java:683`（RegisterDevice）, `service/PushHandler.kt`, `service/PushProcessor.java` | RegisterDevice, updateNotification | 新 bundle 的 Push token 注册成功，杀进程后推送可达 | Push Kit | Blocked | ADR-003 |
 | FEAT-FEAS-007 | tgcalls/WebRTC + OHAudio/Camera 双向音视频最小 PoC | P0 | `voip/TgCallsController.java`, `voip/VoIPController.java`, `voip/AudioRecordJNI.java`, `voip/AudioTrackJNI.java` | SetCall, DiscardCall | 真机双向通话 ≥60s，音频双向可听、视频帧可渲染 | Call Service Kit、OHAudio、Camera、麦克风/相机权限 | Deferred | ADR-004 |
 

@@ -25,14 +25,15 @@
 | 10 | `platform_network` | `platform/network` | `platform/network/src/test/List.test.ets` | 18 | PASS | 网络快照监听、类型映射与断网探测 |
 | 11 | `platform_storage` | `platform/storage` | `platform/storage/src/test/List.test.ets` | 47 | PASS | KV 存储适配器、缓存淘汰与持久化 |
 | 12 | `core_account` | `core/account` | `core/account/src/test/List.test.ets` | 105 | PASS | AccountRegistry、AccountScope、HUKS 密钥管理器 |
-| 13 | `platform_tdcore_bridge` | `platform/tdcore-bridge` | `platform/tdcore-bridge/src/test/List.test.ets` | 15 | PASS | NAPI 回调重入安全、快照迭代、延迟退订、Session Generation |
+| 13 | `platform_tdcore_bridge` | `platform/tdcore-bridge` | `platform/tdcore-bridge/src/test/List.test.ets` | 20 | PASS | NAPI 回调重入安全、快照迭代、延迟退订、Session Generation、24h Update Soak |
 | 14 | `core_domain` | `core/domain` | `core/domain/src/test/List.test.ets` | 60 | PASS | ChatListProjection、MessageProjection、未读/置顶状态 |
 | 15 | `feature_auth` | `feature/auth` | `feature/auth/src/test/List.test.ets` | 47 | PASS | AuthReducer、二维码登录、状态流转、DB 加密在线平滑迁移 |
 | 16 | `feature_chat_list` | `feature/chat_list` | `feature/chat_list/src/test/List.test.ets` | 15 | PASS | ChatListReducer、置顶、标未读、长按菜单意图处理 |
 | 17 | `feature_chat` | `feature/chat` | `feature/chat/src/test/List.test.ets` | 124 | PASS | ChatReducer、文本收发、回复/编辑/删除、转发选择器 |
 | 18 | `feature_settings` | `feature/settings` | `feature/settings/src/test/List.test.ets` | 30 | PASS | SettingsReducer、配置持久化、登出回调触发 |
 | 19 | `feature_search` | `feature/search` | `feature/search/src/test/List.test.ets` | 19 | PASS | SearchReducer、全局搜索过滤、联系人/会话/消息分组 |
-| **合计** | **19 个模块** | — | — | **793** | **100%** | **Failures: 0, Errors: 0** |
+| **合计** | **19 个模块** | — | — | **798** | **100%** | **Failures: 0, Errors: 0** |
+
 
 豁免模块说明：
 - `platform/files`：系统应用文件存储适配器，由 `entry` 端到端集成测试与真机套件覆盖；
@@ -50,8 +51,9 @@
 4. `check_architecture.py`：核心域、Reducer 及 Coordinator 100% Kit-free 架构防线；
 5. `check_codegen.py`：3205 个 DTO 类与 154 个敏感字段代码生成一致性字节比对；
 6. `check.sh`：全仓 linter 与 ArkTS 静态类型检查；
-7. `test_all_modules.py`：全量 19 模块 793 项单元测试执行与基线断言（≥780 项）；
+7. `test_all_modules.py`：全量 19 模块 798 项单元测试执行与基线断言（≥780 项）；
 8. `build.sh debug`：构建 Debug HAP 产物；
+
 9. `build.sh release`：构建 Release HAP 产物，断言构建后工作区 100% 洁净无污染。
 
 ---

@@ -43,3 +43,7 @@ local.signing.json5
 signing/
 .agent_status.json
 .appanalyzer/
+native/tdcore/soak/native_soak
+native/tdcore/soak/native_soak_arm64
+
+
