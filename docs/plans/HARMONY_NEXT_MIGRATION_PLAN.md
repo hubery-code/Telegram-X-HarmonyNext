@@ -1,11 +1,11 @@
 # Telegram X → HarmonyOS NEXT 迁移实施与架构计划
 
-> 文档状态：v1.1（2026-09-14 实施审计修订）
-> 编制日期：2026-09-08
-> 最近审计：2026-09-14，`Telegram-X-HarmonyNext/master@7e75c89`
-> Android 参考基线：`main@80e569a7`
-> 适用对象：架构/调度 AI、实现 AI、检查 AI、测试人员、项目负责人
-> 目标平台：HarmonyOS NEXT，Phone/arm64 优先
+> 文档状态：v1.1（2026-09-14 实施审计修订）  
+> 编制日期：2026-09-08  
+> 最近审计：2026-09-14，`Telegram-X-HarmonyNext/master@7e75c89`  
+> Android 参考基线：`main@80e569a7`  
+> 适用对象：架构/调度 AI、实现 AI、检查 AI、测试人员、项目负责人  
+> 目标平台：HarmonyOS NEXT，Phone/arm64 优先  
 > 计划属性：工程执行蓝图，不是产品需求文档，也不是上架合规意见
 
 ---

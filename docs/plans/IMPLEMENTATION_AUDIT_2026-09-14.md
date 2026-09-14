@@ -1,11 +1,11 @@
 # Telegram X HarmonyOS NEXT 代码审计与计划偏差报告
 
-> 审计日期：2026-09-14
-> 报告版本：v1.0
-> 实现仓库：`/Users/mbjpeng-yu01/androidProjects/Telegram-X-HarmonyNext`
-> 审计基线：`master@7e75c89`，与 `origin/master` 一致，工作区审计开始时干净
-> 对照计划：[迁移实施与架构计划](HARMONY_NEXT_MIGRATION_PLAN.md)
-> 审计角色：架构、质量门禁与后续 AI 调度检查
+> 审计日期：2026-09-14  
+> 报告版本：v1.0  
+> 实现仓库：`/Users/mbjpeng-yu01/androidProjects/Telegram-X-HarmonyNext`  
+> 审计基线：`master@7e75c89`，与 `origin/master` 一致，工作区审计开始时干净  
+> 对照计划：[迁移实施与架构计划](HARMONY_NEXT_MIGRATION_PLAN.md)  
+> 审计角色：架构、质量门禁与后续 AI 调度检查  
 > 注意：本文不记录任何凭据、签名口令或密钥原文。
 
 ---
