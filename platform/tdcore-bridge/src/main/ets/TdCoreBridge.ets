@@ -53,6 +53,7 @@ export interface TdCoreNativeModule {
   subscribeUpdates(sink: TdEventSinkRaw): number;
   unsubscribe(subscriptionId: number): void;
   getMetrics(): TdNativeBridgeMetrics;
+  resetSession?(): void;
 }
 
 /** 桥关闭生命周期状态。idle = 未建 client；active = 已建 client/可服务；closed = 终态（可经 createClient  reopen）。 */
@@ -193,7 +194,27 @@ export class TdCoreBridge implements TdNativeBridgeLike {
       }
     }
     this.subscriptionIds.clear();
+    if (typeof this.nativeModule.resetSession === 'function') {
+      try {
+        this.nativeModule.resetSession();
+      } catch (e) {
+        this.closeErrorCountValue += 1;
+      }
+    }
     this.state = 'closed';
+  }
+
+  /**
+   * 推进会话代际并清空底层积压队列（BRG-007 / P1-BRG-002）。
+   */
+  resetSession(): void {
+    if (typeof this.nativeModule.resetSession === 'function') {
+      try {
+        this.nativeModule.resetSession();
+      } catch (e) {
+        this.closeErrorCountValue += 1;
+      }
+    }
   }
 
   getMetrics(): TdNativeBridgeMetrics {

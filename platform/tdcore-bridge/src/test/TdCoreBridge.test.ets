@@ -134,6 +134,101 @@ export default function tdCoreBridgeTest() {
       expect(id2).assertEqual(id1 + 1);
     });
 
+    it('reentrantUnsubscribe_withinCallback_noCrashAndStopsReceiving', 0, () => {
+      const fake = new FakeNativeModule();
+      const bridge: TdCoreBridge = new TdCoreBridge(fake);
+      let eventCount: number = 0;
+      let subId: number = 0;
+      const sink: TdNativeEventSink = (_event: TdNativeEvent): void => {
+        eventCount += 1;
+        bridge.unsubscribe(subId);
+      };
+      subId = bridge.subscribeUpdates(sink);
+      fake.deliverBatch([
+        { id: subId, payloadUtf8: '{"@type":"update1"}' },
+        { id: subId, payloadUtf8: '{"@type":"update2"}' }
+      ]);
+      // First event was processed and unsubscribed; second event in batch was skipped for subId
+      expect(eventCount).assertEqual(1);
+      expect(bridge.getMetrics().subscriptions).assertEqual(0);
+    });
+
+    it('reentrantSubscribe_withinCallback_registersAndReceivesNextBatch', 0, () => {
+      const fake = new FakeNativeModule();
+      const bridge: TdCoreBridge = new TdCoreBridge(fake);
+      let sub1Events: number = 0;
+      let sub2Events: number = 0;
+      let sub2Id: number = 0;
+      const sink2: TdNativeEventSink = (_event: TdNativeEvent): void => {
+        sub2Events += 1;
+      };
+      const sink1: TdNativeEventSink = (_event: TdNativeEvent): void => {
+        sub1Events += 1;
+        if (sub2Id === 0) {
+          sub2Id = bridge.subscribeUpdates(sink2);
+        }
+      };
+      const sub1Id: number = bridge.subscribeUpdates(sink1);
+      fake.deliverBatch([
+        { payloadUtf8: '{"@type":"event1"}' },
+        { payloadUtf8: '{"@type":"event2"}' }
+      ]);
+      expect(sub1Events).assertEqual(2);
+      expect(sub2Events).assertEqual(1); // sub2 was registered during event1, received event2
+      expect(bridge.getMetrics().subscriptions).assertEqual(2);
+    });
+
+    it('reentrantClose_withinCallback_cleanTeardown', 0, () => {
+      const fake = new FakeNativeModule();
+      const bridge: TdCoreBridge = new TdCoreBridge(fake);
+      bridge.createClient();
+      let eventCount: number = 0;
+      const sink: TdNativeEventSink = (_event: TdNativeEvent): void => {
+        eventCount += 1;
+        bridge.close();
+      };
+      const subId: number = bridge.subscribeUpdates(sink);
+      fake.deliverBatch([
+        { id: subId, payloadUtf8: '{"@type":"event1"}' },
+        { id: subId, payloadUtf8: '{"@type":"event2"}' }
+      ]);
+      expect(eventCount).assertEqual(1);
+      expect(bridge.lifecycleState).assertEqual('closed');
+      expect(bridge.getMetrics().subscriptions).assertEqual(0);
+    });
+
+    it('sessionGeneration_discardsStaleEventsAcrossSessions', 0, () => {
+      const fake = new FakeNativeModule();
+      const bridge: TdCoreBridge = new TdCoreBridge(fake);
+      bridge.createClient();
+      let sub1Events: number = 0;
+      const sub1Id: number = bridge.subscribeUpdates((_event: TdNativeEvent): void => {
+        sub1Events += 1;
+      });
+      // Deliver event for generation 1
+      fake.deliverEvent(sub1Id, 1, 1, '1', '{"@type":"gen1"}', 1000, 1);
+      expect(sub1Events).assertEqual(1);
+
+      // Close and reset session (bumps to generation 2)
+      bridge.close();
+      expect(fake.getSessionGeneration()).assertEqual(2);
+
+      // Deliver stale event with generation 1
+      fake.deliverEvent(sub1Id, 1, 1, '2', '{"@type":"stale_gen1"}', 2000, 1);
+      expect(sub1Events).assertEqual(1); // Stale event was discarded
+      expect(fake.getStaleDroppedCount()).assertEqual(1);
+
+      // Reopen session with createClient
+      bridge.createClient();
+      let sub2Events: number = 0;
+      const sub2Id: number = bridge.subscribeUpdates((_event: TdNativeEvent): void => {
+        sub2Events += 1;
+      });
+      // Deliver valid event for generation 2
+      fake.deliverEvent(sub2Id, 1, 2, '1', '{"@type":"gen2"}', 3000, 2);
+      expect(sub2Events).assertEqual(1);
+    });
+
     // NeedsDevice: the following require libtdcore_napi.so (real TDLib):
     // - TdCoreBridge() with no arg (production native import)
     // - getVersion() returning real TDLib version string

@@ -36,6 +36,7 @@
 #include <string>
 #include <thread>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -61,6 +62,7 @@ struct TdEvent {
   uint64_t sequence;
   std::string payload;
   int64_t received_at_monotonic_ms;
+  uint64_t session_generation;
 };
 
 // Process-lifetime singleton (never destroyed) so the receive thread, TSFN
@@ -75,12 +77,23 @@ struct BridgeState {
   // Metrics (queue-guarded where they describe the queue).
   uint64_t overflow_wait_count = 0;
   uint64_t dropped_count = 0;  // semantic guarantee: must stay 0
+  uint64_t stale_dropped_count = 0;
   uint64_t events_forwarded = 0;
 
   // Subscriptions: touched ONLY on the ArkTS thread (subscribe/unsubscribe and
   // the TSFN call_js callback all run there), so no lock is required.
   std::unordered_map<uint32_t, napi_ref> sinks;
   uint32_t next_subscription_id = 1;
+
+  // Reentrancy safety (P1-BRG-001):
+  // When dispatching callbacks on the ArkTS thread, dispatch_depth > 0.
+  // Any unsubscribe called during dispatch adds the id to pending_unsubscribes.
+  // Sinks are only deleted and erased when dispatch_depth returns to 0.
+  uint32_t dispatch_depth = 0;
+  std::unordered_set<uint32_t> pending_unsubscribes;
+
+  // Session Generation (P1-BRG-002): monotonic counter
+  std::atomic<uint64_t> session_generation{1};
 
   // Receive thread + TSFN lifecycle.
   std::atomic<bool> running{false};
@@ -131,7 +144,8 @@ void ReceiveLoop(BridgeState *state) {
 
     const int32_t client_id = ParseClientId(response);
     const uint64_t sequence = ++sequence_by_client[client_id];
-    TdEvent event{client_id, sequence, response, MonotonicMillis()};
+    const uint64_t generation = state->session_generation.load(std::memory_order_relaxed);
+    TdEvent event{client_id, sequence, response, MonotonicMillis(), generation};
 
     {
       std::unique_lock<std::mutex> lock(state->queue_mutex);
@@ -157,6 +171,9 @@ void ReceiveLoop(BridgeState *state) {
   }
 }
 
+// Forward declaration
+void StopDispatcherIfIdle(BridgeState *state);
+
 // Runs on the ArkTS thread. Wakeup signal only (data stays in the bounded
 // queue); drains everything currently queued, preserving receive order, and
 // invokes every subscriber sink once per event. Batch dequeue + per-event
@@ -172,10 +189,33 @@ void TsfnDispatch(napi_env env, napi_value /*unused_js_callback*/, void *context
   }
   state->queue_not_full.notify_all();
 
+  state->dispatch_depth++;
+
   for (const TdEvent &event : batch) {
+    const uint64_t current_generation = state->session_generation.load(std::memory_order_relaxed);
+    if (event.session_generation != current_generation) {
+      std::lock_guard<std::mutex> lock(state->queue_mutex);
+      state->stale_dropped_count++;
+      continue;
+    }
+
     state->events_forwarded++;
+
+    // Snapshot sinks before dispatching to allow safe reentrant unsubscribe/subscribe (P1-BRG-001).
+    std::vector<std::pair<uint32_t, napi_ref>> current_sinks;
+    current_sinks.reserve(state->sinks.size());
     for (const auto &[id, ref] : state->sinks) {
-      (void)id;
+      if (state->pending_unsubscribes.find(id) == state->pending_unsubscribes.end()) {
+        current_sinks.emplace_back(id, ref);
+      }
+    }
+
+    for (const auto &[id, ref] : current_sinks) {
+      // If unsubscribed in an earlier callback during this batch, skip.
+      if (state->pending_unsubscribes.find(id) != state->pending_unsubscribes.end()) {
+        continue;
+      }
+
       napi_value sink = nullptr;
       if (napi_get_reference_value(env, ref, &sink) != napi_ok || sink == nullptr) {
         continue;
@@ -194,13 +234,40 @@ void TsfnDispatch(napi_env env, napi_value /*unused_js_callback*/, void *context
       napi_value undefined = nullptr;
       napi_get_undefined(env, &undefined);
       napi_call_function(env, undefined, sink, 5, args, nullptr);
+
+      // Guard against pending exceptions thrown in the JS callback to prevent disrupting other sinks.
+      bool is_pending = false;
+      if (napi_is_exception_pending(env, &is_pending) == napi_ok && is_pending) {
+        napi_value fatal_err = nullptr;
+        napi_get_and_clear_last_exception(env, &fatal_err);
+      }
     }
+  }
+
+  state->dispatch_depth--;
+
+  // Clean up pending unsubscribes when dispatch stack has completely unwound.
+  if (state->dispatch_depth == 0) {
+    if (!state->pending_unsubscribes.empty()) {
+      for (uint32_t id : state->pending_unsubscribes) {
+        auto it = state->sinks.find(id);
+        if (it != state->sinks.end()) {
+          napi_delete_reference(env, it->second);
+          state->sinks.erase(it);
+        }
+      }
+      state->pending_unsubscribes.clear();
+    }
+    StopDispatcherIfIdle(state);
   }
 }
 
 // Idempotent stop: join the receive thread, then release the TSFN. Called on
 // the ArkTS thread when the last subscription goes away.
 void StopDispatcherIfIdle(BridgeState *state) {
+  if (state->dispatch_depth > 0) {
+    return;
+  }
   if (!state->sinks.empty() || !state->running.exchange(false)) {
     return;
   }
@@ -212,6 +279,12 @@ void StopDispatcherIfIdle(BridgeState *state) {
     napi_release_threadsafe_function(state->tsfn, napi_tsfn_release);
     state->tsfn = nullptr;
   }
+  {
+    std::lock_guard<std::mutex> lock(state->queue_mutex);
+    state->stale_dropped_count += state->queue.size();
+    state->queue.clear();
+  }
+  state->session_generation.fetch_add(1, std::memory_order_relaxed);
 }
 
 // Starts the receive thread + TSFN on first subscription. All on ArkTS thread.
@@ -455,6 +528,7 @@ napi_value SubscribeUpdates(napi_env env, napi_callback_info info) {
 
 // BRG-003/004: unsubscribe(subscriptionId). Stops the receive thread and
 // releases the TSFN when the last subscription goes away.
+// P1-BRG-001: reentrant calls during dispatch are queued to pending_unsubscribes.
 napi_value Unsubscribe(napi_env env, napi_callback_info info) {
   size_t argc = 1;
   napi_value argv[1];
@@ -468,12 +542,33 @@ napi_value Unsubscribe(napi_env env, napi_callback_info info) {
     return nullptr;
   }
 
-  auto it = g_state.sinks.find(id);
-  if (it != g_state.sinks.end()) {
-    napi_delete_reference(env, it->second);
-    g_state.sinks.erase(it);
+  if (g_state.dispatch_depth > 0) {
+    if (g_state.sinks.find(id) != g_state.sinks.end()) {
+      g_state.pending_unsubscribes.insert(id);
+    }
+  } else {
+    auto it = g_state.sinks.find(id);
+    if (it != g_state.sinks.end()) {
+      napi_delete_reference(env, it->second);
+      g_state.sinks.erase(it);
+    }
+    StopDispatcherIfIdle(&g_state);
   }
-  StopDispatcherIfIdle(&g_state);
+
+  napi_value undefined;
+  napi_get_undefined(env, &undefined);
+  return undefined;
+}
+
+// P1-BRG-002: resetSession() clears the queue and bumps the session generation.
+napi_value ResetSession(napi_env env, napi_callback_info /*info*/) {
+  {
+    std::lock_guard<std::mutex> lock(g_state.queue_mutex);
+    g_state.stale_dropped_count += g_state.queue.size();
+    g_state.queue.clear();
+  }
+  g_state.queue_not_full.notify_all();
+  g_state.session_generation.fetch_add(1, std::memory_order_relaxed);
 
   napi_value undefined;
   napi_get_undefined(env, &undefined);
@@ -485,13 +580,23 @@ napi_value GetMetrics(napi_env env, napi_callback_info /*info*/) {
   size_t queue_size;
   uint64_t overflow_waits;
   uint64_t dropped;
+  uint64_t stale_dropped;
   uint64_t forwarded;
   {
     std::lock_guard<std::mutex> lock(g_state.queue_mutex);
     queue_size = g_state.queue.size();
     overflow_waits = g_state.overflow_wait_count;
     dropped = g_state.dropped_count;
+    stale_dropped = g_state.stale_dropped_count;
     forwarded = g_state.events_forwarded;
+  }
+  uint64_t session_gen = g_state.session_generation.load(std::memory_order_relaxed);
+
+  size_t active_subs = g_state.sinks.size();
+  if (active_subs >= g_state.pending_unsubscribes.size()) {
+    active_subs -= g_state.pending_unsubscribes.size();
+  } else {
+    active_subs = 0;
   }
 
   napi_value obj = nullptr;
@@ -505,12 +610,18 @@ napi_value GetMetrics(napi_env env, napi_callback_info /*info*/) {
   napi_value v_dropped = nullptr;
   napi_create_double(env, static_cast<double>(dropped), &v_dropped);
   napi_set_named_property(env, obj, "droppedCount", v_dropped);
+  napi_value v_stale = nullptr;
+  napi_create_double(env, static_cast<double>(stale_dropped), &v_stale);
+  napi_set_named_property(env, obj, "staleDroppedCount", v_stale);
   napi_value v_forwarded = nullptr;
   napi_create_double(env, static_cast<double>(forwarded), &v_forwarded);
   napi_set_named_property(env, obj, "eventsForwarded", v_forwarded);
   napi_value v_subs = nullptr;
-  napi_create_uint32(env, static_cast<uint32_t>(g_state.sinks.size()), &v_subs);
+  napi_create_uint32(env, static_cast<uint32_t>(active_subs), &v_subs);
   napi_set_named_property(env, obj, "subscriptions", v_subs);
+  napi_value v_gen = nullptr;
+  napi_create_double(env, static_cast<double>(session_gen), &v_gen);
+  napi_set_named_property(env, obj, "sessionGeneration", v_gen);
   napi_value v_running = nullptr;
   napi_get_boolean(env, g_state.running.load(std::memory_order_relaxed), &v_running);
   napi_set_named_property(env, obj, "dispatcherRunning", v_running);
@@ -525,6 +636,7 @@ napi_value Init(napi_env env, napi_value exports) {
       {"send", nullptr, Send, nullptr, nullptr, nullptr, napi_default, nullptr},
       {"subscribeUpdates", nullptr, SubscribeUpdates, nullptr, nullptr, nullptr, napi_default, nullptr},
       {"unsubscribe", nullptr, Unsubscribe, nullptr, nullptr, nullptr, napi_default, nullptr},
+      {"resetSession", nullptr, ResetSession, nullptr, nullptr, nullptr, napi_default, nullptr},
       {"getMetrics", nullptr, GetMetrics, nullptr, nullptr, nullptr, napi_default, nullptr},
   };
   napi_define_properties(env, exports, sizeof(descriptors) / sizeof(descriptors[0]), descriptors);
