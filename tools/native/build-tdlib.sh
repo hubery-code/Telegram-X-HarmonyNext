@@ -21,7 +21,11 @@ TDCORE="$ROOT/native/tdcore"
 SRC="$TDCORE/third_party/td"
 BUILD_DIR="$TDCORE/build/arm64-v8a"
 DEPS_PREFIX="$TDCORE/build/deps/openssl/arm64-v8a"
-OHOS_NDK="${TDX_OHOS_NDK:-/Applications/DevEco-Studio.app/Contents/sdk/default/openharmony/native}"
+if [[ -z "${TDX_OHOS_NDK:-}" ]] && [[ -f "$ROOT/tools/ci/resolve-toolchain.sh" ]]; then
+  # shellcheck source=/dev/null
+  source "$ROOT/tools/ci/resolve-toolchain.sh"
+fi
+OHOS_NDK="${TDX_OHOS_NDK:-${NDK_PATH:-/Applications/DevEco-Studio.app/Contents/sdk/default/openharmony/native}}"
 ABI="arm64-v8a"
 
 log() { echo "== [build-tdlib] $*"; }

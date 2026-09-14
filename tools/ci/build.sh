@@ -12,8 +12,6 @@ case "${MODE}" in
   *) echo "usage: $0 [debug|release]" >&2; exit 2 ;;
 esac
 
-NODE="/Applications/DevEco-Studio.app/Contents/tools/node/bin/node"
-
 echo "[build] mode=${MODE} root=${ROOT}"
 cd "${ROOT}"
 
@@ -21,8 +19,12 @@ cd "${ROOT}"
 "${ROOT}/tools/ci/setup-check.sh"
 "${ROOT}/tools/ci/inject-credentials.sh"
 
+# Source resolved toolchain variables
+# shellcheck source=/dev/null
+source "${ROOT}/tools/ci/resolve-toolchain.sh"
+
 # shellcheck disable=SC2086
-exec "${NODE}" "${ROOT}/hvigorw" assembleHap \
+exec "${NODE_PATH}" "${ROOT}/hvigorw" assembleHap \
   --mode module \
   -p module=entry@default \
   -p product=default \

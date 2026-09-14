@@ -23,7 +23,11 @@ TDCORE="$ROOT/native/tdcore"
 DEPS_PREFIX="$TDCORE/build/deps"
 OPENSSL_COMMIT="f4dc4d58b48d346a8270183f89acf826d459b0ca"  # openssl/openssl, version 3.5.8
 OPENSSL_SRC="$TDCORE/third_party/openssl"
-OHOS_NDK="${TDX_OHOS_NDK:-/Applications/DevEco-Studio.app/Contents/sdk/default/openharmony/native}"
+if [[ -z "${TDX_OHOS_NDK:-}" ]] && [[ -f "$ROOT/tools/ci/resolve-toolchain.sh" ]]; then
+  # shellcheck source=/dev/null
+  source "$ROOT/tools/ci/resolve-toolchain.sh"
+fi
+OHOS_NDK="${TDX_OHOS_NDK:-${NDK_PATH:-/Applications/DevEco-Studio.app/Contents/sdk/default/openharmony/native}}"
 TRIPLE="aarch64-linux-ohos"
 ABI="arm64-v8a"
 

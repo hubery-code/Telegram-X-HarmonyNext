@@ -1,5 +1,5 @@
 #!/bin/sh
-':' //; exec "/Applications/DevEco-Studio.app/Contents/tools/node/bin/node" "$0" "$@"
+':' //; for cand in "${NODE_PATH:-}" "${DEVECO_NODE:-}" "${DEVECO_HOME:-}/tools/node/bin/node" "${DEVECO_HOME:-}/Contents/tools/node/bin/node" /Applications/DevEco-Studio.app/Contents/tools/node/bin/node "$HOME/Applications/DevEco-Studio.app/Contents/tools/node/bin/node" /opt/deveco-studio/tools/node/bin/node; do [ -n "$cand" ] && [ -x "$cand" ] && exec "$cand" "$0" "$@"; done; echo "hvigorw: DevEco node not found" >&2; exit 1
 /*
  * Hvigor wrapper (Telegram X HarmonyOS scaffold, GOV-001).
  *
@@ -8,28 +8,41 @@
  * re-executes this file with the DevEco-bundled node; in node mode the
  * code below runs.
  *
- * Why not the standard hvigorw? The standard wrapper downloads the hvigor
- * engine declared in hvigor/hvigor-config.json5 from the network, which
- * fails offline or in restricted environments. This wrapper directly spawns
- * the hvigor wrapper bundled with DevEco Studio
- * (<DevEco>/Contents/tools/hvigor/bin/hvigorw.js, hvigor 6.26.4). Because
- * hvigor/hvigor-config.json5 declares NO dependencies, that wrapper symlinks
- * the built-in @ohos/hvigor and @ohos/hvigor-ohos-plugin into the project
- * workspace (~/.hvigor/project_caches/<hash>), so builds run fully offline.
- *
  * Requirements:
- *   - DevEco Studio at /Applications/DevEco-Studio.app (see tools/toolchain-versions.json)
- *   - Build node: /Applications/DevEco-Studio.app/Contents/tools/node/bin/node
- *     (do NOT run hvigor with the system node v23/v24)
+ *   - DevEco Studio (auto-discovered or via DEVECO_HOME)
+ *   - Build node in DevEco tools (do NOT run hvigor with system node v23/v24)
  */
 'use strict';
 
 const { spawnSync } = require('child_process');
 const fs = require('fs');
+const path = require('path');
 
-const DEVECO_HOME = '/Applications/DevEco-Studio.app/Contents';
-const NODE = DEVECO_HOME + '/tools/node/bin/node';
-const WRAPPER_JS = DEVECO_HOME + '/tools/hvigor/bin/hvigorw.js';
+function findDevecoHome() {
+  if (process.env.DEVECO_HOME) {
+    const p = path.resolve(process.env.DEVECO_HOME);
+    if (fs.existsSync(path.join(p, 'Contents'))) return path.join(p, 'Contents');
+    return p;
+  }
+  const candidates = [
+    '/Applications/DevEco-Studio.app/Contents',
+    path.join(process.env.HOME || '', 'Applications/DevEco-Studio.app/Contents'),
+    '/opt/deveco-studio',
+    '/usr/local/deveco-studio',
+    path.join(process.env.HOME || '', 'deveco-studio')
+  ];
+  for (const c of candidates) {
+    if (c && fs.existsSync(c)) {
+      if (fs.existsSync(path.join(c, 'Contents'))) return path.join(c, 'Contents');
+      return c;
+    }
+  }
+  return '/Applications/DevEco-Studio.app/Contents';
+}
+
+const DEVECO_HOME = findDevecoHome();
+const NODE = process.env.NODE_PATH || process.env.DEVECO_NODE || path.join(DEVECO_HOME, 'tools/node/bin/node');
+const WRAPPER_JS = process.env.HVIGORW_JS || path.join(DEVECO_HOME, 'tools/hvigor/bin/hvigorw.js');
 
 function die(msg) {
   console.error('hvigorw: ERROR: ' + msg);
@@ -37,7 +50,7 @@ function die(msg) {
 }
 
 if (!fs.existsSync(NODE)) {
-  die('DevEco build node not found at ' + NODE + ' (see tools/toolchain-versions.json)');
+  die('DevEco build node not found at ' + NODE + ' (see tools/toolchain-versions.json or set DEVECO_HOME)');
 }
 if (!fs.existsSync(WRAPPER_JS)) {
   die('bundled hvigor wrapper not found at ' + WRAPPER_JS);

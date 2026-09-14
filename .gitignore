@@ -8,6 +8,8 @@ oh_modules/
 *.hap
 *.hsp
 *.app
+BuildProfile.ets
+**/BuildProfile.ets
 
 # 签名与秘密（GOV-007：材料绝不入库）
 *.p12

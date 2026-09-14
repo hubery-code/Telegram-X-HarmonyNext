@@ -8,13 +8,14 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-NODE="/Applications/DevEco-Studio.app/Contents/tools/node/bin/node"
-SDK_HOME="/Applications/DevEco-Studio.app/Contents/sdk/default/openharmony"
+# Source resolved toolchain variables
+# shellcheck source=/dev/null
+source "${ROOT}/tools/ci/resolve-toolchain.sh"
 
 "${ROOT}/tools/ci/setup-check.sh"
 "${ROOT}/tools/ci/inject-credentials.sh"
 
-CODELINTER="${SDK_HOME}/ets/build-tools/codelinter"
+CODELINTER="${SDK_PATH}/ets/build-tools/codelinter"
 if [[ -x "${CODELINTER}" ]]; then
   echo "[check] running codelinter"
   "${CODELINTER}" "${ROOT}"
@@ -24,7 +25,7 @@ fi
 
 echo "[check] ArkTS type-check via assembleHap (debug)"
 cd "${ROOT}"
-exec "${NODE}" "${ROOT}/hvigorw" assembleHap \
+exec "${NODE_PATH}" "${ROOT}/hvigorw" assembleHap \
   --mode module \
   -p module=entry@default \
   -p product=default \
