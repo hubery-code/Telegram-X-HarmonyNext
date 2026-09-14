@@ -3,6 +3,7 @@ import { hilog } from '@kit.PerformanceAnalysisKit';
 import { window } from '@kit.ArkUI';
 import { bootstrap, BootstrapResult } from '../Bootstrap';
 import { TdlibParametersConfig } from '@tgx/feature-auth';
+import { TELEGRAM_CREDENTIALS } from '../config/AppCredentials';
 
 const DOMAIN: number = 0x0000;
 const TAG: string = 'EntryAbility';
@@ -15,8 +16,8 @@ export default class EntryAbility extends UIAbility {
     const cacheDir: string = this.context.cacheDir;
 
     const tdlibParams: TdlibParametersConfig = {
-      apiId: 21724,
-      apiHash: '3e0cb5efcd52300aec5994fdfc5bdc16',
+      apiId: TELEGRAM_CREDENTIALS.apiId,
+      apiHash: TELEGRAM_CREDENTIALS.apiHash,
       databaseDirectory: `${filesDir}/tdlib/db`,
       filesDirectory: `${filesDir}/tdlib/files`,
       systemLanguageCode: 'en',

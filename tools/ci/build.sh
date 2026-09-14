@@ -19,6 +19,7 @@ cd "${ROOT}"
 
 # hvigorw sets DEVECO_SDK_HOME itself; run the environment gate first.
 "${ROOT}/tools/ci/setup-check.sh"
+"${ROOT}/tools/ci/inject-credentials.sh"
 
 # shellcheck disable=SC2086
 exec "${NODE}" "${ROOT}/hvigorw" assembleHap \

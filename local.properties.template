@@ -1,0 +1,8 @@
+# Telegram API Credentials
+# Obtain yours at https://my.telegram.org (under 'API development tools')
+#
+# DO NOT commit local.properties to git! It is ignored by .gitignore.
+# Real credentials will be injected into the build at compile time.
+
+telegram.api_id=
+telegram.api_hash=

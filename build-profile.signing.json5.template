@@ -1,0 +1,25 @@
+// build-profile.signing.json5.template — SEC-002: Local Signing Configuration Template
+//
+// HOW TO CONFIGURE LOCAL SIGNING FOR PHYSICAL DEVICE RUNS:
+// 1. In DevEco Studio, go to: File -> Project Structure -> Project -> Signing Configs
+//    and check "Automatically generate signature".
+//    OR manually configure signing parameters in your local build environment.
+// 2. DO NOT commit certificates (*.p12, *.cer, *.p7b), passwords, or absolute paths to git!
+// 3. Keep 'build-profile.json5' clean and secret-free for version control.
+//
+// Reference format for signingConfigs entry:
+/*
+{
+  "name": "default",
+  "type": "HarmonyOS",
+  "material": {
+    "certpath": "<RELATIVE_OR_LOCAL_PATH_TO_DEBUG_CER>",
+    "keyAlias": "debugKey",
+    "keyPassword": "<YOUR_KEY_PASSWORD>",
+    "profile": "<RELATIVE_OR_LOCAL_PATH_TO_DEBUG_P7B>",
+    "signAlg": "SHA256withECDSA",
+    "storeFile": "<RELATIVE_OR_LOCAL_PATH_TO_DEBUG_P12>",
+    "storePassword": "<YOUR_STORE_PASSWORD>"
+  }
+}
+*/

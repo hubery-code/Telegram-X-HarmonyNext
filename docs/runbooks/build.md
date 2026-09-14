@@ -97,8 +97,10 @@ rm -rf entry/build entry/.test .hvigor   # 本工程构建与测试产物
 - HarmonyOS 工程 API 10–25 的 sdkVersion 必须写成 `平台版本(API)` 字符串格式，纯数字串会报 00306042。
 
 ### 签名
-- 使用 DevEco 自动生成的 debug 签名（signingConfig `default`，证书在 `~/.ohos/config/`，不入库）；Release 同样产出 signed hap。
-- 真机安装：`hdc install entry/build/default/outputs/default/entry-default-signed.hap`。
+- 仓库 `build-profile.json5` 默认保持无秘密模板（`signingConfigs: []`），构建产物默认为 unsigned hap。
+- 本地真机调试：参考 `build-profile.signing.json5.template`，或在 DevEco Studio 中配置，签名证书与口令严禁提交入库。
 
 ### Telegram API 凭据
-- 位于仓库根 `local.properties`（已 gitignore）：`telegram.api_id` / `telegram.api_hash`，值取自 Android 参考工程；TDLib 构建/桥接工作包从该文件读取，禁止写入其他文件或日志。
+- 必须通过仓库根 `local.properties`（已 gitignore，参考 `local.properties.template`）或环境变量 `TELEGRAM_API_ID` 与 `TELEGRAM_API_HASH` 配置。
+- 构建时由 `tools/ci/inject_credentials.py` 动态校验并安全注入生成 `entry/src/main/ets/config/AppCredentials.ets`（0600 权限，已 gitignore）。
+- 缺少凭据时，构建命令将立即退出并提示配置方式，禁止在日志中泄露凭据值。

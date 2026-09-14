@@ -12,6 +12,7 @@ NODE="/Applications/DevEco-Studio.app/Contents/tools/node/bin/node"
 SDK_HOME="/Applications/DevEco-Studio.app/Contents/sdk/default/openharmony"
 
 "${ROOT}/tools/ci/setup-check.sh"
+"${ROOT}/tools/ci/inject-credentials.sh"
 
 CODELINTER="${SDK_HOME}/ets/build-tools/codelinter"
 if [[ -x "${CODELINTER}" ]]; then

@@ -30,7 +30,10 @@
 - 任何密钥/聊天内容泄漏到证据 = 立即 P0：吊销并清理（计划 §18 风险登记册「密钥/聊天内容泄漏」）。
 - 泄漏处理记录进风险登记册与对应 work item 的回滚章节。
 
-## 当前状态（Phase 0）
+## 当前状态（SEC-002 质量恢复）
 
-- 秘密管理已落地：`.gitignore` 排除签名材料/`local.properties`/`oh_modules` 等；构建无需任何秘密（未配置 signingConfigs，产物为 unsigned hap）。
-- 威胁模型 v0 = SEC-001（Backlog，依赖 GOV-004）。
+- 秘密管理已闭环：`.gitignore` 严格排除签名材料、`local.properties`、`entry/src/main/ets/config/AppCredentials.ets`、`local.signing.json5` 等。
+- 源码零凭据与构建期注入：生产代码通过 `tools/ci/inject_credentials.py` 在构建期从 `local.properties` 或环境变量安全注入；缺失凭据时立即阻断构建并给出不泄密指导。
+- 签名配置模板化：`build-profile.json5` 保持 `signingConfigs: []`，消除明文口令与本机绝对路径，公开仓库默认输出 unsigned hap；本地签名通过 `build-profile.signing.json5.template` 指引配置。
+- CI 秘密门禁强化：`tools/ci/secret-scan.sh` 支持 Telegram 凭据、签名口令、私钥 PEM、绝对路径与被跟踪敏感文件的零泄露脱敏扫描，并通过 `tools/ci/test_secret_scan.sh` 自动化正反向测试。
+- 历史清理方案就绪：已建立 `docs/runbooks/CREDENTIAL_ROTATION_AND_HISTORY_PURGE.md` 指导架构负责人执行凭据吊销与 `git-filter-repo` 历史擦除。
