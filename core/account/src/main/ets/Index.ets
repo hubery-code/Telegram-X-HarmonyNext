@@ -70,3 +70,9 @@ export {
   AccountRegistryMetrics,
   AccountRegistry
 } from './AccountRegistry';
+export {
+  DB_KEY_BYTES_LENGTH,
+  DB_KEY_ALIAS_PREFIX,
+  AccountDatabaseKeyManagerDeps,
+  AccountDatabaseKeyManager
+} from './AccountDatabaseKeyManager';

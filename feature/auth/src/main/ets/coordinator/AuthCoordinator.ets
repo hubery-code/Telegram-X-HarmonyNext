@@ -7,7 +7,7 @@
  * - 订阅 AccountScope 的事件流，解析 updateAuthorizationState 并驱动内部状态
  */
 
-import { AppError, Result, err } from '@tgx/core-common';
+import { AppError, AppErrors, Result, TdlibAppError, err } from '@tgx/core-common';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import {
   AuthState,
@@ -49,6 +49,8 @@ export interface AuthAccountScopeLike {
   readonly authorizationHolder: AuthorizationStateHolder;
   request(method: string, params?: TdWireObject): Promise<Result<TdWireObject, AppError>>;
   subscribeEvents(listener: (event: TdRoutedEvent) => void): AuthSubscriptionLike;
+  /** 获取 Base64 编码的 TDLib 数据库加密密钥（DATA-001）。 */
+  getDatabaseEncryptionKeyBase64?(): Promise<Result<string, AppError>>;
 }
 
 export type AuthUiStateListener = (state: AuthUiState) => void;
@@ -84,10 +86,14 @@ function wireParam2(k1: string, v1: string, k2: string, v2: string): TdWireObjec
   return parsed as TdWireObject;
 }
 
-function buildSetTdlibParametersParams(config: TdlibParametersConfig): TdWireObject {
+function buildSetTdlibParametersParams(
+  config: TdlibParametersConfig,
+  databaseEncryptionKey: string = ''
+): TdWireObject {
   const obj: Record<string, Object> = {};
   obj['database_directory'] = config.databaseDirectory;
   obj['files_directory'] = config.filesDirectory;
+  obj['database_encryption_key'] = databaseEncryptionKey;
   obj['api_id'] = config.apiId;
   obj['api_hash'] = config.apiHash;
   obj['system_language_code'] = config.systemLanguageCode;
@@ -101,6 +107,26 @@ function buildSetTdlibParametersParams(config: TdlibParametersConfig): TdWireObj
   const json: string = JSON.stringify(obj);
   const parsed: Object = JSON.parse(json);
   return parsed as TdWireObject;
+}
+
+function buildSetDatabaseEncryptionKeyParams(newEncryptionKey: string): TdWireObject {
+  const obj: Record<string, Object> = {};
+  obj['new_encryption_key'] = newEncryptionKey;
+  const json: string = JSON.stringify(obj);
+  const parsed: Object = JSON.parse(json);
+  return parsed as TdWireObject;
+}
+
+function isDatabaseKeyError(error: AppError): boolean {
+  if (error.kind === 'tdlib') {
+    const tdErr: TdlibAppError = error as TdlibAppError;
+    if (tdErr.code === 'unauthorized') {
+      return true;
+    }
+  }
+  const msg: string = error.message.toLowerCase();
+  const cause: string = (error.cause !== undefined && error.cause !== null ? error.cause : '').toLowerCase();
+  return msg.indexOf('401') >= 0 || msg.indexOf('encryption') >= 0 || cause.indexOf('401') >= 0 || cause.indexOf('encryption') >= 0;
 }
 
 export class AuthCoordinator {
@@ -258,16 +284,7 @@ export class AuthCoordinator {
           break;
         }
         this.tdlibParamsSent = true;
-        hilog.info(DOMAIN, TAG, 'executing setTdlibParameters');
-        const params: TdWireObject = buildSetTdlibParametersParams(this.tdlibParameters);
-        this.scope.request('setTdlibParameters', params).then((res: Result<TdWireObject, AppError>) => {
-          if (res.err) {
-            hilog.error(DOMAIN, TAG, 'setTdlibParameters failed: %{public}s %{public}s', res.error.kind, res.error.message);
-            this.dispatch(new OnRequestError(res.error));
-          } else {
-            hilog.info(DOMAIN, TAG, 'setTdlibParameters succeeded');
-          }
-        });
+        this.sendSetTdlibParameters();
         break;
       }
       case 'checkDbKey': {
@@ -276,17 +293,7 @@ export class AuthCoordinator {
           break;
         }
         this.dbKeySent = true;
-        hilog.info(DOMAIN, TAG, 'executing checkDatabaseEncryptionKey');
-        const json: string = '{"@type":"checkDatabaseEncryptionKey","encryption_key":""}';
-        const parsed: Object = JSON.parse(json);
-        this.scope.request('checkDatabaseEncryptionKey', parsed as TdWireObject).then((res: Result<TdWireObject, AppError>) => {
-          if (res.err) {
-            hilog.error(DOMAIN, TAG, 'checkDbKey failed: %{public}s %{public}s', res.error.kind, res.error.message);
-            this.dispatch(new OnRequestError(res.error));
-          } else {
-            hilog.info(DOMAIN, TAG, 'checkDbKey succeeded');
-          }
-        });
+        this.sendCheckDbKey();
         break;
       }
       case 'none':
@@ -294,6 +301,106 @@ export class AuthCoordinator {
       default:
         break;
     }
+  }
+
+  private sendSetTdlibParameters(): void {
+    if (this.scope.getDatabaseEncryptionKeyBase64 === undefined) {
+      this.doSendSetTdlibParameters('', false);
+      return;
+    }
+    this.scope.getDatabaseEncryptionKeyBase64().then((res: Result<string, AppError>) => {
+      const keyBase64: string = res.fold(
+        (val: string): string => val,
+        (error: AppError): string => {
+          hilog.error(DOMAIN, TAG, 'failed to get database encryption key: %{public}s %{public}s',
+            error.kind, error.message);
+          throw new Error(error.message);
+        }
+      );
+      this.doSendSetTdlibParameters(keyBase64, true);
+    }).catch((e: Object) => {
+      const msg: string = e instanceof Error ? e.message : String(e);
+      hilog.error(DOMAIN, TAG, 'sendSetTdlibParameters aborted: %{public}s', msg);
+      this.dispatch(new OnRequestError(AppErrors.platform(-1, `Failed to retrieve database encryption key: ${msg}`, true)));
+    });
+  }
+
+  private doSendSetTdlibParameters(keyBase64: string, allowMigration: boolean): void {
+    hilog.info(DOMAIN, TAG, 'executing setTdlibParameters (encrypted=%{public}s)', String(keyBase64.length > 0));
+    const params: TdWireObject = buildSetTdlibParametersParams(this.tdlibParameters, keyBase64);
+    this.scope.request('setTdlibParameters', params).then((res: Result<TdWireObject, AppError>) => {
+      if (res.err) {
+        hilog.error(DOMAIN, TAG, 'setTdlibParameters failed: %{public}s %{public}s', res.error.kind, res.error.message);
+        if (allowMigration && keyBase64.length > 0 && isDatabaseKeyError(res.error)) {
+          hilog.info(DOMAIN, TAG, 'Detected legacy unencrypted database (401), attempting migration fallback...');
+          this.attemptLegacyDatabaseMigration(keyBase64, res.error);
+          return;
+        }
+        this.dispatch(new OnRequestError(res.error));
+      } else {
+        hilog.info(DOMAIN, TAG, 'setTdlibParameters succeeded');
+      }
+    });
+  }
+
+  private attemptLegacyDatabaseMigration(targetKeyBase64: string, originalError: AppError): void {
+    const emptyKeyParams: TdWireObject = buildSetTdlibParametersParams(this.tdlibParameters, '');
+    this.scope.request('setTdlibParameters', emptyKeyParams).then((emptyRes: Result<TdWireObject, AppError>) => {
+      if (emptyRes.err) {
+        hilog.error(DOMAIN, TAG, 'Legacy database migration probe failed with empty key: %{public}s', emptyRes.error.message);
+        this.dispatch(new OnRequestError(originalError));
+        return;
+      }
+
+      hilog.info(DOMAIN, TAG, 'Legacy database opened with empty key, executing setDatabaseEncryptionKey...');
+      const migrateParams: TdWireObject = buildSetDatabaseEncryptionKeyParams(targetKeyBase64);
+      this.scope.request('setDatabaseEncryptionKey', migrateParams).then((migrateRes: Result<TdWireObject, AppError>) => {
+        if (migrateRes.err) {
+          hilog.error(DOMAIN, TAG, 'setDatabaseEncryptionKey migration failed: %{public}s', migrateRes.error.message);
+          this.dispatch(new OnRequestError(migrateRes.error));
+        } else {
+          hilog.info(DOMAIN, TAG, 'Successfully migrated legacy database to HUKS encryption key');
+        }
+      });
+    });
+  }
+
+  private sendCheckDbKey(): void {
+    if (this.scope.getDatabaseEncryptionKeyBase64 === undefined) {
+      this.doSendCheckDbKey('');
+      return;
+    }
+    this.scope.getDatabaseEncryptionKeyBase64().then((res: Result<string, AppError>) => {
+      const keyBase64: string = res.fold(
+        (val: string): string => val,
+        (error: AppError): string => {
+          hilog.error(DOMAIN, TAG, 'failed to get db key: %{public}s %{public}s', error.kind, error.message);
+          throw new Error(error.message);
+        }
+      );
+      this.doSendCheckDbKey(keyBase64);
+    }).catch((e: Object) => {
+      const msg: string = e instanceof Error ? e.message : String(e);
+      hilog.error(DOMAIN, TAG, 'sendCheckDbKey aborted: %{public}s', msg);
+      this.dispatch(new OnRequestError(AppErrors.platform(-1, `Failed to retrieve db key: ${msg}`, true)));
+    });
+  }
+
+  private doSendCheckDbKey(keyBase64: string): void {
+    hilog.info(DOMAIN, TAG, 'executing checkDatabaseEncryptionKey with resolved key');
+    const obj: Record<string, Object> = {};
+    obj['@type'] = 'checkDatabaseEncryptionKey';
+    obj['encryption_key'] = keyBase64;
+    const json: string = JSON.stringify(obj);
+    const parsed: Object = JSON.parse(json);
+    this.scope.request('checkDatabaseEncryptionKey', parsed as TdWireObject).then((res: Result<TdWireObject, AppError>) => {
+      if (res.err) {
+        hilog.error(DOMAIN, TAG, 'checkDbKey failed: %{public}s %{public}s', res.error.kind, res.error.message);
+        this.dispatch(new OnRequestError(res.error));
+      } else {
+        hilog.info(DOMAIN, TAG, 'checkDbKey succeeded');
+      }
+    });
   }
 
   private executeEffect(effect: AuthEffect): void {

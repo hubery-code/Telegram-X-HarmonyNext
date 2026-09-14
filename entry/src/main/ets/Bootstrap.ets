@@ -22,8 +22,9 @@ import {
   AuthCoordinatorDeps,
   TdlibParametersConfig
 } from '@tgx/feature-auth';
-import { NetworkStatePort } from '@tgx/platform-ports';
+import { NetworkStatePort, SecureKeyStorePort, SecureRandomPort, AppFilesPort } from '@tgx/platform-ports';
 import { ConnectivityAdapter } from '@tgx/platform-network';
+import { HarmonySecureKeyStore, HarmonySecureRandom } from '@tgx/platform-keystore';
 import { ScopeAuthAdapter } from './ScopeAuthAdapter';
 import {
   LifecycleCoordinator,
@@ -34,7 +35,7 @@ export interface BootstrapResult {
   readonly coordinator: AuthCoordinator;
   readonly registry: AccountRegistry;
   readonly scope: AccountScope;
-  readonly bridge: TdCoreBridge;
+  readonly bridge: TdNativeBridgeLike;
   readonly lifecycle: LifecycleCoordinator;
 }
 
@@ -42,13 +43,21 @@ export function bootstrap(
   filesDir: string,
   cacheDir: string,
   tdlibParams: TdlibParametersConfig,
-  networkPort?: NetworkStatePort
+  networkPort?: NetworkStatePort,
+  keyStorePort?: SecureKeyStorePort,
+  secureRandomPort?: SecureRandomPort,
+  bridgePort?: TdNativeBridgeLike,
+  filesPort?: AppFilesPort
 ): BootstrapResult {
-  const bridge: TdCoreBridge = new TdCoreBridge();
-  const files: HarmonyAppFilesAdapter = new HarmonyAppFilesAdapter(filesDir, cacheDir);
+  const bridge: TdNativeBridgeLike = bridgePort !== undefined ? bridgePort : new TdCoreBridge();
+  const files: AppFilesPort = filesPort !== undefined ? filesPort : new HarmonyAppFilesAdapter(filesDir, cacheDir);
+  const keyStore: SecureKeyStorePort = keyStorePort !== undefined ? keyStorePort : new HarmonySecureKeyStore();
+  const secureRandom: SecureRandomPort = secureRandomPort !== undefined ? secureRandomPort : new HarmonySecureRandom();
   const options: AccountRegistryOptions = {
-    bridge: bridge as TdNativeBridgeLike,
+    bridge: bridge,
     files: files,
+    keyStore: keyStore,
+    secureRandom: secureRandom,
     gatewayOptions: {
       defaultTimeoutMillis: 60000
     }

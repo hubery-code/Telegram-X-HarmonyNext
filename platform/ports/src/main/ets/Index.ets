@@ -23,8 +23,10 @@ export {
   AppFilesPort
 } from './AppFilesPort';
 export { MonotonicClockPort } from './MonotonicClockPort';
+export { SecureRandomPort } from './SecureRandomPort';
 export { FakePreferencesStore } from './fakes/FakePreferencesStore';
 export { FakeSecureKeyStore } from './fakes/FakeSecureKeyStore';
+export { FakeSecureRandom } from './fakes/FakeSecureRandom';
 export { FakeNetworkState } from './fakes/FakeNetworkState';
 export { FakeAppFiles } from './fakes/FakeAppFiles';
 export { FakeMonotonicClock } from './fakes/FakeMonotonicClock';

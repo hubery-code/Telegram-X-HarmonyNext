@@ -20,7 +20,7 @@
 
 import { AppError, AppErrors, Clock, Result, SystemClock, err, ok } from '@tgx/core-common';
 import { TdGatewayOptions, TdNativeBridgeLike, TdNativeEventSink } from '@tgx/td-gateway';
-import { AppFilesPort } from '@tgx/platform-ports';
+import { AppFilesPort, SecureKeyStorePort, SecureRandomPort } from '@tgx/platform-ports';
 import { AccountIdGenerator, RandomAccountIdGenerator } from './AccountIds';
 import {
   AccountClientIdHolder,
@@ -56,6 +56,10 @@ export interface AccountRegistryOptions {
   readonly gatewayOptions?: TdGatewayOptions;
   /** 未知 clientId 事件出口（缺省只计数）。 */
   readonly onUnknownClientId?: (error: AppError, clientId: number) => void;
+  /** 硬件安全密钥存储（HUKS / AssetStore）。 */
+  readonly keyStore?: SecureKeyStorePort;
+  /** 密码学安全随机生成器。 */
+  readonly secureRandom?: SecureRandomPort;
 }
 
 export interface AccountRegistryMetrics {
@@ -74,6 +78,8 @@ export class AccountRegistry {
   private readonly gatewayOptions: TdGatewayOptions | undefined;
   private readonly isolator: AccountEventIsolator;
   private readonly manifest: AccountManifestStore;
+  private readonly keyStore: SecureKeyStorePort | undefined;
+  private readonly secureRandom: SecureRandomPort | undefined;
   private readonly scopes: Map<string, AccountScope> = new Map();
 
   private monitorSubscriptionId: number = -1;
@@ -86,6 +92,8 @@ export class AccountRegistry {
     this.gatewayOptions = options.gatewayOptions;
     this.isolator = new AccountEventIsolator(options.onUnknownClientId);
     this.manifest = new AccountManifestStore(options.files);
+    this.keyStore = options.keyStore;
+    this.secureRandom = options.secureRandom;
   }
 
   /**
@@ -340,7 +348,9 @@ export class AccountRegistry {
       directories: directories,
       gatewayOptions: this.gatewayOptions,
       startActive: startActive,
-      clientIdHolder: holder
+      clientIdHolder: holder,
+      keyStore: this.keyStore,
+      secureRandom: this.secureRandom
     });
     if (opened.ok === false) {
       return err<AccountScope, AppError>(opened.error);

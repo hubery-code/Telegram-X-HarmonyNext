@@ -53,4 +53,8 @@ export class ScopeAuthAdapter implements AuthAccountScopeLike {
     this.scope.subscribeEvents(listener);
     return new EventSubscription(this.scope);
   }
+
+  async getDatabaseEncryptionKeyBase64(): Promise<Result<string, AppError>> {
+    return await this.scope.getDatabaseEncryptionKeyBase64();
+  }
 }

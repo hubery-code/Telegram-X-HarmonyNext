@@ -1,6 +1,7 @@
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { describe, it, expect } from '@ohos/hypium';
 import lifecycleCoordinatorTest from './lifecycle/LifecycleCoordinator.test';
+import bootstrapKeystoreTest from './lifecycle/BootstrapKeystore.test';
 
 const DOMAIN: number = 0x0000;
 const TAG: string = 'ListTest';
@@ -17,4 +18,5 @@ export default function listTest() {
   });
 
   lifecycleCoordinatorTest();
+  bootstrapKeystoreTest();
 }

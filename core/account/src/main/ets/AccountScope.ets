@@ -32,7 +32,7 @@ import {
   TdUpdateSubscription,
   TdWireObject
 } from '@tgx/td-gateway';
-import { AppFilesPort } from '@tgx/platform-ports';
+import { AppFilesPort, SecureKeyStorePort, SecureRandomPort, FakeSecureRandom } from '@tgx/platform-ports';
 import {
   AccountLifecycleState,
   reduceAccountLifecycle
@@ -42,6 +42,7 @@ import { AccountDirectoryLayout } from './AccountDirectories';
 import { AccountDescriptor } from './AccountDescriptor';
 import { AccountClientIdHolder } from './AccountEventIsolator';
 import { AuthorizationState, AuthorizationStateHolder } from './AuthorizationState';
+import { AccountDatabaseKeyManager } from './AccountDatabaseKeyManager';
 
 export const SCOPE_CLOSED_ORIGIN: string = 'core_account.scope_closed';
 
@@ -58,6 +59,12 @@ export interface AccountScopeOpenDeps {
   readonly startActive: boolean;
   /** registry 共享的 clientId 回填位；缺省 scope 自建。 */
   readonly clientIdHolder?: AccountClientIdHolder;
+  /** 硬件安全密钥存储（HUKS / AssetStore），用于保护 SQLite 数据库加密密钥。 */
+  readonly keyStore?: SecureKeyStorePort;
+  /** 高熵密码学安全随机生成器。 */
+  readonly secureRandom?: SecureRandomPort;
+  /** 可直接注入预构造的 AccountDatabaseKeyManager。 */
+  readonly databaseKeyManager?: AccountDatabaseKeyManager;
 }
 
 export class AccountScope {
@@ -68,6 +75,7 @@ export class AccountScope {
   private readonly cancellation: AccountCancellation;
   private readonly authHolder: AuthorizationStateHolder;
   private readonly clientIdHolder: AccountClientIdHolder;
+  private readonly dbKeyManager: AccountDatabaseKeyManager | null;
 
   private lifecycleState: AccountLifecycleState;
   private eventSubscription: TdUpdateSubscription | null = null;
@@ -83,6 +91,18 @@ export class AccountScope {
     this.clientIdHolder = deps.clientIdHolder !== undefined ? deps.clientIdHolder : { clientId: -1 };
     this.gateway = new TdGateway(deps.bridge, deps.gatewayOptions);
     this.clientIdHolder.clientId = this.gateway.createClient();
+    if (deps.databaseKeyManager !== undefined) {
+      this.dbKeyManager = deps.databaseKeyManager;
+    } else if (deps.keyStore !== undefined) {
+      const randomPort: SecureRandomPort = deps.secureRandom !== undefined ? deps.secureRandom : new FakeSecureRandom();
+      this.dbKeyManager = new AccountDatabaseKeyManager({
+        accountKey: deps.descriptor.accountKey,
+        keyStore: deps.keyStore,
+        secureRandom: randomPort
+      });
+    } else {
+      this.dbKeyManager = null;
+    }
     this.lifecycleState = deps.startActive ? 'active' : 'hibernating';
     if (deps.startActive) {
       this.startGatewayLocked();
@@ -151,6 +171,32 @@ export class AccountScope {
 
   get pendingRequestCount(): number {
     return this.cancellation.pendingCount;
+  }
+
+  /** 数据库加密密钥管理器（未注入 keyStore 时为 null）。 */
+  get databaseKeyManager(): AccountDatabaseKeyManager | null {
+    return this.dbKeyManager;
+  }
+
+  /**
+   * 获取 Base64 编码的 TDLib 数据库加密密钥。
+   * 若未注入 keyStore，回退返回 ok('') 以保持未加密兼容。
+   */
+  async getDatabaseEncryptionKeyBase64(): Promise<Result<string, AppError>> {
+    if (this.dbKeyManager === null) {
+      return ok('');
+    }
+    return await this.dbKeyManager.getDatabaseEncryptionKeyBase64();
+  }
+
+  /**
+   * 销毁安全存储中的数据库密钥（账号登出/注销）。
+   */
+  async destroyDatabaseKey(): Promise<Result<void, AppError>> {
+    if (this.dbKeyManager === null) {
+      return ok(undefined);
+    }
+    return await this.dbKeyManager.destroyKey();
   }
 
   /** 非 active 状态（closed 迟到 / hibernating 直达）被守卫丢弃的事件数。 */
