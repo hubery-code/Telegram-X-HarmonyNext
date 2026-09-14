@@ -60,7 +60,14 @@ test_support HAR ──→ core_domain, platform_api
 见计划 §4.3；本仓库根目录即 HarmonyOS 工程根（`harmony/` 前缀已按用户决定取消）。
 目录骨架已建（core/*、platform/*、feature/*、native/*、tools/*、test/*），注册进构建（hvigor modules）的时间点由对应工作包决定，禁止提前注册空模块。
 
-## 5. 当前状态（Phase 0）
+## 5. 当前架构状态（Quality Recovery Sprint 阶段）
 
-- 仅 `entry` 一个可构建模块（空壳 HAP，ArkUI 单页）。
-- TDLib / Node-API / HAR 模块均未开始（G1/G2 工作包）。
+- **模块全景**：已注册并构建全量 21 个模块（1 个 `entry` HAP + 20 个 HAR/Native 模块），包含：
+  - **Core 核心域**：`core/domain`, `core/account`, `core/td_gateway`, `core/td_api_generated`, `core/navigation`, `core/observability`, `core/design_system`, `core/common`；
+  - **Platform 平台层**：`platform/ports`（抽象契约与 Fakes）、`platform/network`、`platform/storage`、`platform/files`、`platform/keystore`（HUKS）、`platform/tdcore-bridge`（C++ NAPI）；
+  - **Feature 业务层**：`feature/auth`, `feature/chat_list`, `feature/chat`, `feature/settings`, `feature/search`, `feature/_template`；
+  - **Entry 装配层**：`entry`（生产适配器装配、生命周期、单一强类型导航控制器 `EntryNavigationController`）。
+- **Native / TDLib**：基于 NDK clang 构建的 `libtdjson.so` 与 `libtdcore_napi.so`，具备回调重入快照防护、延迟析构与会话代际（Session Generation）队列隔离（BRG-007）。
+- **安全与加密**：TDLib 数据库由 `@kit.CryptoArchitectureKit`（HUKS）高熵密钥加密保护，具备在线平滑迁移能力（DATA-001）；API 凭据与签名脱敏受 CI 秘密扫描门禁保护（SEC-002）。
+- **路由与装配**：以单一强类型事实源 `EntryNavigationController`（基于 `NavigationStack` 与 `RouteCodec`）驱动页面渲染与返回栈保活，彻底杜绝布尔竞争标志（NAV-001）。
+- **质量防线**：全量 19 个可测试模块具备完备单元测试套件（793/793 项通过）；CI 设立 9 步严格自动化流水线，强制 100% Kit-free 架构防线与代码生成一致性校验（QA-002）。

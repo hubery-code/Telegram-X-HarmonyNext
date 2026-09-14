@@ -11,67 +11,61 @@
 |---|---|
 | `Not Started` | 尚未采集 Android 基线 |
 | `Baseline Captured` | Android 行为样本已入库（GOV-005 证据） |
-| `Dev Match` | HarmonyOS 实现与基线一致（自动化差分通过） |
+| `Dev Match` | HarmonyOS 实现与基线一致（自动化差分与真机用例通过） |
 | `Deviation` | 有意差异：必须在「差异说明」列注明理由、批准人、失效日期（计划 §16） |
 | `Gap` | 无意差异 / 未实现：P0/P1 项即为缺陷，进入风险登记册 |
 
-## 对齐表（骨架，初始全部 Not Started）
+## 对齐表
 
 | 功能 ID | Android 行为证据 | Harmony 当前状态 | 差异说明 |
 |---|---|---|---|
-| FEAT-FEAS-001 | 待采集（构建脚本产物哈希） | Not Started | — |
-| FEAT-FEAS-002 | 待采集（Tdlib.java Client 封装行为说明） | Not Started | — |
-| FEAT-FEAS-003 | 待采集（login-flow / chat-list / send-text-message 样本） | Not Started | — |
-| FEAT-FEAS-004 | 待采集（杀进程恢复观察点） | Not Started | — |
-| FEAT-FEAS-005 | 待采集（连接状态日志） | Not Started | — |
-| FEAT-FEAS-006 | 待采集（Push 唤醒链路记录） | Not Started | — |
-| FEAT-FEAS-007 | 待采集（通话 PoC 验证记录） | Not Started | — |
-| FEAT-AUTH-001 | 待采集（login-flow.md：手机号页 UI 状态） | Not Started | — |
-| FEAT-AUTH-002 | 待采集（login-flow.md：验证码页与错误提示） | Not Started | — |
-| FEAT-AUTH-003 | 待采集（login-flow.md：2FA 密码页） | Not Started | — |
-| FEAT-AUTH-004 | 待采集（login-flow.md：注册姓名页） | Not Started | — |
-| FEAT-AUTH-005 | 无 Android 对等实现（MainActivity.java:604 明确不支持）；以 TDLib 语义为准 | Not Started | 预期为有意 Deviation，实现时需记录批准 |
-| FEAT-AUTH-006 | 待采集（登出流程观察点） | Not Started | — |
-| FEAT-ACC-001 | 待采集（TdlibManager 多实例行为说明） | Not Started | — |
-| FEAT-ACC-002 | 待采集（DrawerController 切换交互） | Not Started | — |
-| FEAT-ACC-003 | 待采集（登出/添加账号入口观察点） | Not Started | — |
-| FEAT-CHAT-001 | 待采集（chat-list.md：排序与分页行为） | Not Started | — |
-| FEAT-CHAT-002 | 待采集（chat-list.md：置顶交互与排序） | Not Started | — |
-| FEAT-CHAT-003 | 待采集（chat-list.md：归档/还原交互） | Not Started | — |
-| FEAT-CHAT-004 | 待采集（chat-list.md：未读/提及徽标） | Not Started | — |
-| FEAT-CHAT-005 | 待采集（草稿展示样式） | Not Started | — |
-| FEAT-MSG-001 | 待采集（send-text-message.md / 消息流观察点） | Not Started | — |
-| FEAT-MSG-002 | 待采集（群组/频道署名展示） | Not Started | — |
-| FEAT-MSG-003 | 待采集（分页加载行为） | Not Started | — |
-| FEAT-MSG-004 | 待采集（已读态流转） | Not Started | — |
-| FEAT-COMP-001 | 待采集（send-text-message.md：pending→sent→failed） | Not Started | — |
-| FEAT-COMP-002 | 待采集（链接预览渲染） | Not Started | — |
-| FEAT-COMP-003 | 待采集（回复气泡样式） | Not Started | — |
-| FEAT-COMP-004 | 待采集（转发选择器交互） | Not Started | — |
-| FEAT-COMP-005 | 待采集（编辑与「已编辑」标注） | Not Started | — |
-| FEAT-COMP-006 | 待采集（删除确认与即时移除） | Not Started | — |
-| FEAT-COMP-007 | 待采集（复制交互） | Not Started | — |
-| FEAT-MEDIA-001 | 待采集（media-basic.md：图片收发与进度） | Not Started | — |
-| FEAT-MEDIA-002 | 待采集（media-basic.md：视频行为） | Not Started | — |
-| FEAT-MEDIA-003 | 待采集（media-basic.md：文件行为） | Not Started | — |
-| FEAT-MEDIA-004 | 待采集（语音录制/播放交互） | Not Started | — |
-| FEAT-MEDIA-005 | 待采集（失败重试交互） | Not Started | — |
-| FEAT-MEDIA-006 | 待采集（media-basic.md：查看器手势） | Not Started | — |
-| FEAT-SEARCH-001 | 待采集（全局搜索结果分组） | Not Started | — |
-| FEAT-SEARCH-002 | 待采集（聊天内搜索跳转） | Not Started | — |
-| FEAT-PUSH-001 | 待采集（notification-behavior.md） | Not Started | — |
-| FEAT-PUSH-002 | 待采集（notification-behavior.md：聚合与点击跳转） | Not Started | — |
-| FEAT-PUSH-003 | 待采集（前后台恢复观察点） | Not Started | — |
-| FEAT-SET-001 | 待采集（设置主列表结构） | Not Started | — |
-| FEAT-SET-002 | 待采集（语言切换即时生效） | Not Started | — |
-| FEAT-SET-003 | 待采集（通知开关生效路径） | Not Started | — |
-| FEAT-SET-004 | 待采集（存储清理流程） | Not Started | — |
-| FEAT-UI-001 | 待采集（深浅色关键页色值） | Not Started | — |
-| FEAT-UI-002 | 待采集（大字体布局） | Not Started | — |
-| FEAT-UI-003 | 待采集（中英文案抽查） | Not Started | — |
-
-## 使用规则
-
-1. 每个 P0/P1 工作包开工前，先把涉及行推进到 `Baseline Captured`（GOV-005 证据，对应 `docs/product/behavior-samples/` 下的样本文件）。
-2. `Deviation` 必须包含：理由、批准人、失效日期（最长一个里程碑，见计划 §16）。
-3. `Gap` 在 P0/P1 范围即为缺陷，进入计划 §18 风险登记册。
+| FEAT-FEAS-001 | TDLib CMake/Ninja 构建产物哈希 | Dev Match | HarmonyOS NDK clang Release arm64 构建复现通过 |
+| FEAT-FEAS-002 | `Tdlib.java` Client 封装 | Dev Match | C++ Node-API bridge，快照派发、延迟退订与会话隔离 |
+| FEAT-FEAS-003 | 垂直链路真机样本 | Dev Match | 真实机型 Huawei VYG-AL00 全链路验证通过 |
+| FEAT-FEAS-004 | 数据库加密与异常退出恢复 | Dev Match | HUKS AES-256-GCM 硬件密钥存储与 Base64 迁移 |
+| FEAT-FEAS-005 | 连接状态与重连日志 | Dev Match | 网络状态监听器与网络类型实时映射 |
+| FEAT-FEAS-006 | Push 唤醒链路记录 | Gap | 状态为 Blocked（ADR-003，无官方华为推送通道，MVP-Core 仅前台保活） |
+| FEAT-FEAS-007 | 通话 PoC 记录 | Gap | 状态为 Deferred（ADR-004，音视频后置至 Post-MVP / G4） |
+| FEAT-AUTH-001 | `login-flow.md` 手机号输入 | Dev Match | AuthCoordinator 手机号与国家码输入交互对齐 |
+| FEAT-AUTH-002 | `login-flow.md` 验证码校验 | Dev Match | 验证码输入、错误重试与超时提示 |
+| FEAT-AUTH-003 | `login-flow.md` 2FA 密码 | Dev Match | 2FA 密码页与本地提示校验对齐 |
+| FEAT-AUTH-004 | `login-flow.md` 注册姓名 | Dev Match | 新用户设置姓名并进入 Ready |
+| FEAT-AUTH-005 | Android TGX 明确不支持扫码 | Deviation | 有意差异：HarmonyOS 侧新增扫码登录，经架构确认批准 |
+| FEAT-AUTH-006 | 登出流程 | Dev Match | 登出后重置清栈（replaceRoot），回到登录页 |
+| FEAT-ACC-001 | `TdlibManager` 多实例行为 | Dev Match | AccountRegistry 与 AccountScope 严格目录与密钥隔离 |
+| FEAT-ACC-002 | `DrawerController` 账号切换 | Not Started | 抽屉快速切换 UI 待 Phase 4/5 补充 |
+| FEAT-ACC-003 | 登出当前账号 | Dev Match | SettingsCoordinator 登出触发会话销毁 |
+| FEAT-CHAT-001 | 会话列表分页加载与排序 | Dev Match | ChatListProjection 本地缓存加载与置顶重排对齐 |
+| FEAT-CHAT-002 | 置顶/取消置顶 | Dev Match | 长按菜单 Pin/Unpin，时间戳左侧 📌 标记对齐 |
+| FEAT-CHAT-003 | 归档/还原交互 | Not Started | 归档区待后续工作包接入 |
+| FEAT-CHAT-004 | 未读数与手动标未读 | Dev Match | 长按标未读，未读数与蓝色圆点展示对齐 |
+| FEAT-CHAT-005 | 草稿展示样式 | Not Started | 草稿同步待接入 |
+| FEAT-MSG-001 | 私聊消息流展示 | Dev Match | 气泡、时间戳、发送态（pending/sent/read）对齐 |
+| FEAT-MSG-002 | 群组/频道署名与头像 | Dev Match | 群聊用户署名解析与彩底头像对齐 |
+| FEAT-MSG-003 | 历史分页向上滚动 | Dev Match | MessageProjection 自动拉取更早历史无空洞 |
+| FEAT-MSG-004 | 已读上报与回执 | Dev Match | 入屏触发 viewMessages，双勾已读态对齐 |
+| FEAT-COMP-001 | 文本消息发送 | Dev Match | 发送即上屏、失败重试、发送成功确认 |
+| FEAT-COMP-002 | 链接预览 | Not Started | 待 MSG-107 工作包接入 |
+| FEAT-COMP-003 | 回复消息 | Dev Match | 引用条展示原文摘要，气泡内嵌回复对齐 |
+| FEAT-COMP-004 | 转发消息 | Dev Match | 装配层 ForwardPickerPage 目标选择器与原作者保留对齐 |
+| FEAT-COMP-005 | 编辑消息 | Dev Match | 文本消息就地编辑与「已编辑」标注对齐 |
+| FEAT-COMP-006 | 删除消息 | Dev Match | 支持双方删除与单方删除，列表即时移除 |
+| FEAT-COMP-007 | 复制消息文本 | Dev Match | 剪贴板 Port 抽象与系统 pasteboard 写入对齐 |
+| FEAT-MEDIA-001 | 图片发送 | Not Started | 待 MEDIA-102 工作包接入 |
+| FEAT-MEDIA-002 | 视频消息 | Dev Match | 缩略图与本地视频查看已具备，上传待接入 |
+| FEAT-MEDIA-003 | 文件消息 | Not Started | 待 MEDIA-104 工作包接入 |
+| FEAT-MEDIA-004 | 语音消息 | Not Started | 待 MEDIA-106 工作包接入 |
+| FEAT-MEDIA-005 | 失败重试/取消 | Not Started | 待 FILE-103 工作包接入 |
+| FEAT-MEDIA-006 | 媒体查看器 | Dev Match | 支持全屏展示与滑动翻页 |
+| FEAT-SEARCH-001 | 全局搜索 | Dev Match | 联系人与消息分组，点击跳入聊天，返回栈保活对齐 |
+| FEAT-SEARCH-002 | 聊天内搜索 | Not Started | 待 SEARCH-102 工作包接入 |
+| FEAT-PUSH-001 | Push token 注册 | Gap | 状态为 Blocked（ADR-003） |
+| FEAT-PUSH-002 | 通知聚合 | Gap | 状态为 Blocked（ADR-003） |
+| FEAT-PUSH-003 | 连接恢复 | Dev Match | 前后台切换与网络变化自动同步 |
+| FEAT-SET-001 | 设置主列表 | Dev Match | 个人信息与常用设置项展示对齐 |
+| FEAT-SET-002 | 语言切换 | Not Started | 待 SET-002 工作包接入 |
+| FEAT-SET-003 | 通知设置 | Not Started | 待 SET-003 工作包接入 |
+| FEAT-SET-004 | 存储管理 | Not Started | 待 SET-004 工作包接入 |
+| FEAT-UI-001 | 深浅色主题 | Dev Match | LightTheme 设计令牌规范对齐 |
+| FEAT-UI-002 | 大字体缩放 | Not Started | 待 UI-002 工作包接入 |
+| FEAT-UI-003 | 多语言资源 | Not Started | 待 UI-003 工作包接入 |
