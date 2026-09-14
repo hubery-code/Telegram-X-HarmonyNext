@@ -3,7 +3,7 @@
 > 本文件是多 AI 并行协作的**单一协调入口**。开始任何工作包前，必须先在「进行中」登记；完成后移到「已完成」并写明证据（构建命令、commit、测试结果）。
 >
 > 状态机：`Backlog → Contract Ready → Implementing → Verifying → Accepted`，或 `Blocked / Deferred`。
-> 规则来源：`/Users/mbjpeng-yu01/Downloads/Telegram-X-HarmonyOS-NEXT-迁移实施计划.md`（下称「计划」）。
+> 规则来源：[`docs/plans/HARMONY_NEXT_MIGRATION_PLAN.md`](docs/plans/HARMONY_NEXT_MIGRATION_PLAN.md)（下称「计划」）；当前审计与恢复顺序见 [`docs/plans/IMPLEMENTATION_AUDIT_2026-09-14.md`](docs/plans/IMPLEMENTATION_AUDIT_2026-09-14.md)。
 >
 > ⚠️ 目录约定：计划中的 `harmony/` 前缀由用户指定取消——**本仓库根目录即 HarmonyOS 工程根**（对应计划的 `harmony/` 内容），Android 参考工程仍在 `/Users/mbjpeng-yu01/androidProjects/Telegram-X`。
 
@@ -19,6 +19,8 @@
 | 设备 | Phone / arm64 优先（D-009）；x86_64 仅模拟器/CI |
 
 ## 进行中（Implementing）
+
+> 2026-09-14 架构审计结论：G0/G1/G2 尚未正式通过，G3 仅为“已有功能证据，等待前置 Gate”。普通新功能暂缓，下一批工作统一从计划 §8.1 Quality Recovery Sprint 下发。
 
 | 工作包 | 负责人(AI) | 开始时间 | 说明 |
 |---|---|---|---|

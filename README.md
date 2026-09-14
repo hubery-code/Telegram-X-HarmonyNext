@@ -42,7 +42,7 @@
 | Beta 功能 | 群组/频道管理、联系人、表情与 Sticker、系统分享、深色模式完善等 |
 | 通话 | 语音/视频通话（远期，依赖 tgcalls 移植） |
 
-详细工作分配与验收状态见 **[PROGRESS.md](PROGRESS.md)**；功能范围与对齐矩阵见 [docs/product/](docs/product/)。
+开发 AI 应先阅读 **[计划与架构审计入口](docs/plans/README.md)**。详细工作分配与验收状态见 **[PROGRESS.md](PROGRESS.md)**；功能范围与对齐矩阵见 [docs/product/](docs/product/)。
 
 ## 架构速览
 
