@@ -20,15 +20,16 @@
  * ForwardSelectedToChat 触发真正的 forwardMessages。
  *
  * INTEG-002：会话列表搜索入口 → SearchPage（SEARCH-101 模块此前不可达）。
- * 导航优先级 chat > settings > search > chatList > auth。
- * **从搜索结果打开会话时故意不清 showSearch**：build() 里 chat 分支优先级更高，
- * 所以进会话后返回会自然落回搜索结果（保留查询与结果，对齐 Telegram X），
- * 因此 searchCoordinator 也必须活到搜索页真正关闭为止，不能在 openChat 里销毁。
+ * 导航使用单一类型化事实源 EntryNavigationController（NAV-001 / P1-ARCH-003），
+ * 彻底移除相互竞争的布尔标志与 nullable ID。返回栈保活、深链解析与序列化恢复
+ * 均由类型化控制器负责。
  */
 
 import { LightTheme } from '@tgx/core-design-system';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { AccountScope } from '@tgx/core-account';
+import { AppRoute, ChatRoute } from '@tgx/core-navigation';
+import { EntryNavigationController } from '../navigation/EntryNavigationController';
 import {
   AuthRootPage,
   AuthUiState,
@@ -78,24 +79,24 @@ const TAG: string = 'Index';
 @Entry
 @Component
 struct Index {
+  @State currentRoute: AppRoute = { name: 'auth' };
   @State uiState: AuthUiState = AuthUiState.initial();
-  @State showChatList: boolean = false;
   @State chatListUiState: ChatListUiState = ChatListUiState.initial();
-  @State currentChatId: number | null = null;
   @State chatUiState: ChatUiState = ChatUiState.initial();
-  @State showSettings: boolean = false;
   @State settingsUiState: SettingsUiState = SettingsUiState.initial();
   /** MSG-106：转发目标选择器是否覆盖显示 + 本次候选目标。 */
   @State showForwardPicker: boolean = false;
   @State forwardTargets: ForwardTarget[] = [];
-  /** INTEG-002：搜索页是否显示 + 其可观察状态。 */
-  @State showSearch: boolean = false;
+  /** INTEG-002：搜索页可观察状态。 */
   @State searchUiState: SearchUiState = SearchUiState.initial();
   @State bootstrapError: string | null = null;
 
   private readonly clipboardAdapter: HarmonyClipboardAdapter = new HarmonyClipboardAdapter();
   private readonly toastAdapter: HarmonyToastAdapter = new HarmonyToastAdapter();
   private readonly logger: Logger = createHarmonyLogger();
+  private readonly navController: EntryNavigationController = new EntryNavigationController({ name: 'auth' });
+  private unsubscribeNavFn: (() => void) | null = null;
+  private activeChatId: number | null = null;
 
   private coordinator: AuthCoordinator | null = null;
   private unsubscribeFn: (() => void) | null = null;
@@ -119,14 +120,22 @@ struct Index {
 
     this.coordinator = result.coordinator;
     this.accountScope = result.scope;
+
+    this.unsubscribeNavFn = this.navController.subscribe((route: AppRoute, prev: AppRoute | null) => {
+      this.currentRoute = route;
+      this.onRouteChanged(route, prev);
+    });
+
     this.unsubscribeFn = this.coordinator.subscribe((state: AuthUiState) => {
       this.uiState = state;
       if (state.step === 'ready') {
-        this.showChatList = true;
+        if (this.currentRoute.name === 'auth') {
+          this.navController.replaceRoot({ name: 'home' });
+        }
         if (this.chatListCoordinator === null) {
           this.chatListCoordinator = new ChatListCoordinator(result.scope, undefined,
-            (chatId: number, chatTitle: string) => {
-              this.openChat(chatId, chatTitle);
+            (chatId: number, _chatTitle: string) => {
+              this.navController.navigateTo({ name: 'chat', chatId: chatId });
             },
             this.logger);
           this.chatListCoordinator.start();
@@ -135,7 +144,7 @@ struct Index {
           });
           hilog.info(DOMAIN, TAG, 'chat list coordinator started');
         }
-      } else if (this.showChatList) {
+      } else if (this.currentRoute.name !== 'auth') {
         // 授权离开 ready（登出/会话关闭）：销毁会话与设置协调器，回到登录页。
         this.handleSessionEnded();
       }
@@ -143,6 +152,10 @@ struct Index {
   }
 
   aboutToDisappear(): void {
+    if (this.unsubscribeNavFn !== null) {
+      this.unsubscribeNavFn();
+      this.unsubscribeNavFn = null;
+    }
     this.closeChat();
     this.closeSettings();
     this.closeSearch();
@@ -161,27 +174,48 @@ struct Index {
   }
 
   onBackPress(): boolean {
-    if (this.currentChatId !== null) {
+    if (this.currentRoute.name === 'chat') {
       // MSG-106：选择器打开时返回只关选择器，不退出会话页也不退出多选态。
       if (this.showForwardPicker) {
         this.closeForwardPicker();
         return true;
       }
-      // INTEG-002：从搜索结果进来的会话，返回后 showSearch 仍为 true，
-      // 于是自然落回搜索结果（查询与结果都还在）。
-      this.chatDispatch(new BackToChatList());
-      return true;
+      if (this.chatCoordinator !== null) {
+        this.chatDispatch(new BackToChatList());
+        return true;
+      }
+      return this.navController.pop();
     }
-    if (this.showSettings) {
+    return this.navController.pop();
+  }
+
+  private onRouteChanged(route: AppRoute, _prev: AppRoute | null): void {
+    // 1. 关闭栈中已不存在的页面的协调器
+    if (!this.navController.hasRoute('chat') && this.chatCoordinator !== null) {
+      this.closeChat();
+    }
+    if (!this.navController.hasRoute('settings') && !this.navController.hasRoute('settingsSection') && this.settingsCoordinator !== null) {
       this.closeSettings();
-      return true;
     }
-    // INTEG-002：搜索页返回 → 关搜索回会话列表。
-    if (this.showSearch) {
+    if (!this.navController.hasRoute('search') && this.searchCoordinator !== null) {
       this.closeSearch();
-      return true;
     }
-    return false;
+
+    // 2. 根据当前栈顶路由，按需拉起对应协调器
+    if (route.name === 'chat') {
+      const chatRoute: ChatRoute = route as ChatRoute;
+      if (this.chatCoordinator === null || this.activeChatId !== chatRoute.chatId) {
+        this.openChat(chatRoute.chatId, this.resolveChatTitle(chatRoute.chatId));
+      }
+    } else if (route.name === 'settings' || route.name === 'settingsSection') {
+      if (this.settingsCoordinator === null) {
+        this.openSettings();
+      }
+    } else if (route.name === 'search') {
+      if (this.searchCoordinator === null) {
+        this.openSearch();
+      }
+    }
   }
 
   private dispatch(intent: AuthIntent): void {
@@ -224,7 +258,7 @@ struct Index {
       this.chatListCoordinator.destroy();
       this.chatListCoordinator = null;
     }
-    this.showChatList = false;
+    this.navController.replaceRoot({ name: 'auth' });
     hilog.info(DOMAIN, TAG, 'session ended, back to auth page');
   }
 
@@ -254,7 +288,6 @@ struct Index {
     this.unsubscribeSearchFn = coordinator.subscribe((uiState: SearchUiState) => {
       this.searchUiState = uiState;
     });
-    this.showSearch = true;
     hilog.info(DOMAIN, TAG, 'search coordinator started');
   }
 
@@ -267,21 +300,15 @@ struct Index {
       this.searchCoordinator.destroy();
       this.searchCoordinator = null;
     }
-    this.showSearch = false;
   }
 
   /**
-   * 搜索结果 → 会话。故意不清 showSearch：build() 里 chat 优先级高于 search，
-   * 所以进会话后按返回会自然回到搜索结果。
-   * messageId 目前只记录不改行为——把会话滚到指定消息需要"围绕该消息拉历史"
-   * 的能力（现有 ChatPage.scrollToMessageId 只对已加载消息有效），属 SEARCH-102
-   * 「聊天内搜索 + 结果跳转定位」范围。
+   * 搜索结果 → 会话。通过 navController 压栈，保持 search 还在返回栈中。
    */
   private navigateToChatFromSearch(chatId: number, messageId?: number): void {
     hilog.info(DOMAIN, TAG, 'navigate from search chatId=%{public}s messageId=%{public}s',
       `${chatId}`, `${messageId !== undefined ? messageId : 0}`);
-    const title: string = this.chatTitleOf(chatId);
-    this.openChat(chatId, title);
+    this.navController.navigateTo({ name: 'chat', chatId: chatId });
   }
 
   /** 从会话列表数据里取标题（搜索结果只给 chatId）；未命中回退空串，ChatPage 会显示空标题。 */
@@ -293,6 +320,17 @@ struct Index {
       }
     }
     return '';
+  }
+
+  /** 综合缓存与列表解析会话标题 */
+  private resolveChatTitle(chatId: number): string {
+    if (this.chatListCoordinator !== null) {
+      const title: string | null = this.chatListCoordinator.getChatTitle(chatId);
+      if (title !== null && title.length > 0) {
+        return title;
+      }
+    }
+    return this.chatTitleOf(chatId);
   }
 
   /**
@@ -325,9 +363,8 @@ struct Index {
       undefined,
       undefined,
       () => {
-        // logOut 请求已成功；TDLib 授权状态更新（loggingOut → waitPhone）随后经
-        // AuthCoordinator 订阅驱动 handleSessionEnded 完成整体退场，这里先关闭设置页。
-        this.closeSettings();
+        // logOut 请求已成功；关闭设置页回到导航栈
+        this.navController.pop();
       },
       this.logger
     );
@@ -336,7 +373,6 @@ struct Index {
       this.settingsUiState = uiState;
     });
     coordinator.start();
-    this.showSettings = true;
     hilog.info(DOMAIN, TAG, 'settings coordinator started');
   }
 
@@ -349,7 +385,6 @@ struct Index {
       this.settingsCoordinator.destroy();
       this.settingsCoordinator = null;
     }
-    this.showSettings = false;
   }
 
   private openChat(chatId: number, chatTitle: string): void {
@@ -362,7 +397,7 @@ struct Index {
       chatId,
       chatTitle,
       () => {
-        this.closeChat();
+        this.navController.pop();
       },
       (messageIds: number[]) => {
         this.openForwardPicker(chatId, messageIds);
@@ -375,11 +410,11 @@ struct Index {
       }
     );
     this.chatCoordinator = coordinator;
+    this.activeChatId = chatId;
     this.unsubscribeChatFn = coordinator.subscribe((uiState: ChatUiState) => {
       this.chatUiState = uiState;
     });
     coordinator.start();
-    this.currentChatId = chatId;
     hilog.info(DOMAIN, TAG, 'chat coordinator started for chatId=%{public}s', `${chatId}`);
   }
 
@@ -393,7 +428,7 @@ struct Index {
       this.chatCoordinator.destroy();
       this.chatCoordinator = null;
     }
-    this.currentChatId = null;
+    this.activeChatId = null;
   }
 
   /**
@@ -453,7 +488,7 @@ struct Index {
         .justifyContent(FlexAlign.Center)
         .alignItems(HorizontalAlign.Center)
         .backgroundColor(T.colors.background)
-      } else if (this.currentChatId !== null) {
+      } else if (this.currentRoute.name === 'chat') {
         Stack() {
           ChatPage({
             uiState: this.chatUiState,
@@ -478,17 +513,17 @@ struct Index {
         }
         .width('100%')
         .height('100%')
-      } else if (this.showSettings) {
+      } else if (this.currentRoute.name === 'settings' || this.currentRoute.name === 'settingsSection') {
         SettingsPage({
           uiState: this.settingsUiState,
           onDispatch: (intent: SettingsIntent) => {
             this.settingsDispatch(intent);
           },
           onBack: () => {
-            this.closeSettings();
+            this.navController.pop();
           }
         })
-      } else if (this.showSearch) {
+      } else if (this.currentRoute.name === 'search') {
         // INTEG-002：搜索结果页。onDispatch 作为协调器缺席时的降级路径保留；
         // coordinator 非空时页面内部直调协调器（不会双发，见 SearchPage 注释）。
         SearchPage({
@@ -503,17 +538,17 @@ struct Index {
             this.navigateToChatFromSearch(chatId, messageId);
           }
         })
-      } else if (this.showChatList) {
+      } else if (this.currentRoute.name === 'home') {
         ChatListPage({
           uiState: this.chatListUiState,
           onDispatch: (intent: Object) => {
             this.chatListDispatch(intent as ChatListIntent);
           },
           onOpenSettings: () => {
-            this.openSettings();
+            this.navController.navigateTo({ name: 'settings' });
           },
           onOpenSearch: () => {
-            this.openSearch();
+            this.navController.navigateTo({ name: 'search' });
           }
         })
       } else {

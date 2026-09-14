@@ -9,6 +9,7 @@
     "@tgx/core-account": "file:../core/account",
     "@tgx/core-common": "file:../core/common",
     "@tgx/core-design-system": "file:../core/design_system",
+    "@tgx/core-navigation": "file:../core/navigation",
     "@tgx/feature-auth": "file:../feature/auth",
     "@tgx/feature-chat": "file:../feature/chat",
     "@tgx/feature-chat-list": "file:../feature/chat_list",
