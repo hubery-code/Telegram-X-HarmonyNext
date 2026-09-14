@@ -8,7 +8,7 @@
  */
 
 import { AppError, AppErrors, Result, TdlibAppError, err } from '@tgx/core-common';
-import { hilog } from '@kit.PerformanceAnalysisKit';
+import { Logger } from '@tgx/observability';
 import {
   AuthState,
   AuthEvent,
@@ -36,7 +36,6 @@ import {
   parseRecaptchaUpdateFromWire
 } from './AuthEventParser';
 
-const DOMAIN: number = 0x0000;
 const TAG: string = 'AuthCoordinator';
 
 export interface AuthSubscriptionLike {
@@ -72,6 +71,7 @@ export interface AuthCoordinatorDeps {
   readonly tdlibParameters: TdlibParametersConfig;
   readonly onNavigate?: (route: string) => void;
   readonly onToast?: (message: string) => void;
+  readonly logger?: Logger;
 }
 
 function wireParam1(key: string, value: string): TdWireObject {
@@ -135,6 +135,7 @@ export class AuthCoordinator {
   private readonly tdlibParameters: TdlibParametersConfig;
   private readonly onNavigate?: (route: string) => void;
   private readonly onToast?: (message: string) => void;
+  private readonly logger: Logger;
 
   private currentState: AuthUiState;
   private readonly listeners: AuthUiStateListener[] = [];
@@ -149,6 +150,7 @@ export class AuthCoordinator {
     this.tdlibParameters = deps.tdlibParameters;
     this.onNavigate = deps.onNavigate;
     this.onToast = deps.onToast;
+    this.logger = deps.logger !== undefined ? deps.logger : new Logger();
     this.currentState = initialState !== undefined ? initialState : AuthUiState.initial();
   }
 
@@ -221,8 +223,7 @@ export class AuthCoordinator {
   private handleIncomingEvent(event: TdRoutedEvent): void {
     const recaptchaInfo = parseRecaptchaUpdateFromWire(event.payload);
     if (recaptchaInfo !== null) {
-      hilog.info(DOMAIN, TAG, 'recaptcha required: verificationId=%{public}d action=%{public}s keyId=%{public}s',
-        recaptchaInfo.verificationId, recaptchaInfo.action, recaptchaInfo.recaptchaKeyId);
+      this.logger.info(TAG, 'recaptcha_required', `verificationId=${recaptchaInfo.verificationId}`);
       this.dispatch(new OnRecaptchaRequired(
         recaptchaInfo.verificationId, recaptchaInfo.action, recaptchaInfo.recaptchaKeyId));
       return;
@@ -230,7 +231,7 @@ export class AuthCoordinator {
 
     const qrCodeLink: string | null = parseQrCodeLinkFromWire(event.payload);
     if (qrCodeLink !== null) {
-      hilog.info(DOMAIN, TAG, 'QR authentication link updated');
+      this.logger.info(TAG, 'qr_authentication_link_updated');
       this.dispatch(new OnQrCodeLinkReceived(qrCodeLink));
       return;
     }
@@ -280,7 +281,7 @@ export class AuthCoordinator {
     switch (effect.kind) {
       case 'setTdlibParameters': {
         if (this.tdlibParamsSent) {
-          hilog.info(DOMAIN, TAG, 'setTdlibParameters already sent, skipping');
+          this.logger.info(TAG, 'set_tdlib_parameters_already_sent');
           break;
         }
         this.tdlibParamsSent = true;
@@ -289,7 +290,7 @@ export class AuthCoordinator {
       }
       case 'checkDbKey': {
         if (this.dbKeySent) {
-          hilog.info(DOMAIN, TAG, 'checkDbKey already sent, skipping');
+          this.logger.info(TAG, 'check_db_key_already_sent');
           break;
         }
         this.dbKeySent = true;
@@ -312,33 +313,32 @@ export class AuthCoordinator {
       const keyBase64: string = res.fold(
         (val: string): string => val,
         (error: AppError): string => {
-          hilog.error(DOMAIN, TAG, 'failed to get database encryption key: %{public}s %{public}s',
-            error.kind, error.message);
+          this.logger.logError(TAG, error);
           throw new Error(error.message);
         }
       );
       this.doSendSetTdlibParameters(keyBase64, true);
     }).catch((e: Object) => {
       const msg: string = e instanceof Error ? e.message : String(e);
-      hilog.error(DOMAIN, TAG, 'sendSetTdlibParameters aborted: %{public}s', msg);
+      this.logger.error(TAG, 'send_set_tdlib_parameters_aborted');
       this.dispatch(new OnRequestError(AppErrors.platform(-1, `Failed to retrieve database encryption key: ${msg}`, true)));
     });
   }
 
   private doSendSetTdlibParameters(keyBase64: string, allowMigration: boolean): void {
-    hilog.info(DOMAIN, TAG, 'executing setTdlibParameters (encrypted=%{public}s)', String(keyBase64.length > 0));
+    this.logger.info(TAG, 'executing_set_tdlib_parameters', `encrypted=${keyBase64.length > 0}`);
     const params: TdWireObject = buildSetTdlibParametersParams(this.tdlibParameters, keyBase64);
     this.scope.request('setTdlibParameters', params).then((res: Result<TdWireObject, AppError>) => {
       if (res.err) {
-        hilog.error(DOMAIN, TAG, 'setTdlibParameters failed: %{public}s %{public}s', res.error.kind, res.error.message);
+        this.logger.logError(TAG, res.error);
         if (allowMigration && keyBase64.length > 0 && isDatabaseKeyError(res.error)) {
-          hilog.info(DOMAIN, TAG, 'Detected legacy unencrypted database (401), attempting migration fallback...');
+          this.logger.info(TAG, 'legacy_database_migration_attempt');
           this.attemptLegacyDatabaseMigration(keyBase64, res.error);
           return;
         }
         this.dispatch(new OnRequestError(res.error));
       } else {
-        hilog.info(DOMAIN, TAG, 'setTdlibParameters succeeded');
+        this.logger.info(TAG, 'set_tdlib_parameters_succeeded');
       }
     });
   }
@@ -347,19 +347,19 @@ export class AuthCoordinator {
     const emptyKeyParams: TdWireObject = buildSetTdlibParametersParams(this.tdlibParameters, '');
     this.scope.request('setTdlibParameters', emptyKeyParams).then((emptyRes: Result<TdWireObject, AppError>) => {
       if (emptyRes.err) {
-        hilog.error(DOMAIN, TAG, 'Legacy database migration probe failed with empty key: %{public}s', emptyRes.error.message);
+        this.logger.logError(TAG, emptyRes.error);
         this.dispatch(new OnRequestError(originalError));
         return;
       }
 
-      hilog.info(DOMAIN, TAG, 'Legacy database opened with empty key, executing setDatabaseEncryptionKey...');
+      this.logger.info(TAG, 'legacy_database_opened_with_empty_key');
       const migrateParams: TdWireObject = buildSetDatabaseEncryptionKeyParams(targetKeyBase64);
       this.scope.request('setDatabaseEncryptionKey', migrateParams).then((migrateRes: Result<TdWireObject, AppError>) => {
         if (migrateRes.err) {
-          hilog.error(DOMAIN, TAG, 'setDatabaseEncryptionKey migration failed: %{public}s', migrateRes.error.message);
+          this.logger.logError(TAG, migrateRes.error);
           this.dispatch(new OnRequestError(migrateRes.error));
         } else {
-          hilog.info(DOMAIN, TAG, 'Successfully migrated legacy database to HUKS encryption key');
+          this.logger.info(TAG, 'database_migrated_to_huks');
         }
       });
     });
@@ -374,20 +374,20 @@ export class AuthCoordinator {
       const keyBase64: string = res.fold(
         (val: string): string => val,
         (error: AppError): string => {
-          hilog.error(DOMAIN, TAG, 'failed to get db key: %{public}s %{public}s', error.kind, error.message);
+          this.logger.logError(TAG, error);
           throw new Error(error.message);
         }
       );
       this.doSendCheckDbKey(keyBase64);
     }).catch((e: Object) => {
       const msg: string = e instanceof Error ? e.message : String(e);
-      hilog.error(DOMAIN, TAG, 'sendCheckDbKey aborted: %{public}s', msg);
+      this.logger.error(TAG, 'send_check_db_key_aborted');
       this.dispatch(new OnRequestError(AppErrors.platform(-1, `Failed to retrieve db key: ${msg}`, true)));
     });
   }
 
   private doSendCheckDbKey(keyBase64: string): void {
-    hilog.info(DOMAIN, TAG, 'executing checkDatabaseEncryptionKey with resolved key');
+    this.logger.info(TAG, 'executing_check_database_encryption_key');
     const obj: Record<string, Object> = {};
     obj['@type'] = 'checkDatabaseEncryptionKey';
     obj['encryption_key'] = keyBase64;
@@ -395,10 +395,10 @@ export class AuthCoordinator {
     const parsed: Object = JSON.parse(json);
     this.scope.request('checkDatabaseEncryptionKey', parsed as TdWireObject).then((res: Result<TdWireObject, AppError>) => {
       if (res.err) {
-        hilog.error(DOMAIN, TAG, 'checkDbKey failed: %{public}s %{public}s', res.error.kind, res.error.message);
+        this.logger.logError(TAG, res.error);
         this.dispatch(new OnRequestError(res.error));
       } else {
-        hilog.info(DOMAIN, TAG, 'checkDbKey succeeded');
+        this.logger.info(TAG, 'check_db_key_succeeded');
       }
     });
   }
@@ -407,18 +407,17 @@ export class AuthCoordinator {
     switch (effect.kind) {
       case 'sendPhoneNumber': {
         const params: TdWireObject = wireParam1('phone_number', effect.phoneNumber);
-        hilog.info(DOMAIN, TAG, 'executing setAuthenticationPhoneNumber');
+        this.logger.info(TAG, 'executing_set_authentication_phone_number');
         this.scope.request('setAuthenticationPhoneNumber', params).then((res: Result<TdWireObject, AppError>) => {
           if (res.err) {
-            hilog.error(DOMAIN, TAG, 'setAuthenticationPhoneNumber failed: %{public}s %{public}s %{public}s',
-              res.error.kind, res.error.message, res.error.cause ?? '');
+            this.logger.logError(TAG, res.error);
             if (this.currentState.step === 'waitRecaptcha' || this.currentState.step === 'waitQrCode') {
-              hilog.info(DOMAIN, TAG, 'phone authentication request was released for QR fallback');
+              this.logger.info(TAG, 'phone_request_released_for_qr_fallback');
             } else {
               this.dispatch(new OnRequestError(res.error));
             }
           } else {
-            hilog.info(DOMAIN, TAG, 'setAuthenticationPhoneNumber succeeded');
+            this.logger.info(TAG, 'set_authentication_phone_number_succeeded');
           }
         });
         break;
@@ -426,14 +425,13 @@ export class AuthCoordinator {
 
       case 'checkCode': {
         const params: TdWireObject = wireParam1('code', effect.code);
-        hilog.info(DOMAIN, TAG, 'executing checkAuthenticationCode');
+        this.logger.info(TAG, 'executing_check_authentication_code');
         this.scope.request('checkAuthenticationCode', params).then((res: Result<TdWireObject, AppError>) => {
           if (res.err) {
-            hilog.error(DOMAIN, TAG, 'checkAuthenticationCode failed: %{public}s %{public}s %{public}s',
-              res.error.kind, res.error.message, res.error.cause ?? '');
+            this.logger.logError(TAG, res.error);
             this.dispatch(new OnRequestError(res.error));
           } else {
-            hilog.info(DOMAIN, TAG, 'checkAuthenticationCode succeeded');
+            this.logger.info(TAG, 'check_authentication_code_succeeded');
           }
         });
         break;
@@ -496,18 +494,17 @@ export class AuthCoordinator {
         const params: Record<string, Object> = {};
         params['verification_id'] = effect.verificationId;
         params['token'] = effect.token;
-        hilog.info(DOMAIN, TAG, 'executing setApplicationVerificationToken verificationId=%{public}d', effect.verificationId);
+        this.logger.info(TAG, 'executing_set_application_verification_token', `verificationId=${effect.verificationId}`);
         this.scope.request('setApplicationVerificationToken', params as TdWireObject).then((res: Result<TdWireObject, AppError>) => {
           if (res.err) {
-            hilog.error(DOMAIN, TAG, 'setApplicationVerificationToken failed: %{public}s %{public}s %{public}s',
-              res.error.kind, res.error.message, res.error.cause ?? '');
+            this.logger.logError(TAG, res.error);
             if (effect.token.length > 0) {
               this.dispatch(new OnRequestError(res.error));
             }
           } else {
-            hilog.info(DOMAIN, TAG, effect.token.length === 0
-              ? 'unsupported application verification reported to TDLib'
-              : 'setApplicationVerificationToken succeeded');
+            this.logger.info(TAG, effect.token.length === 0
+              ? 'unsupported_application_verification_reported'
+              : 'set_application_verification_token_succeeded');
           }
         });
         break;
@@ -515,11 +512,10 @@ export class AuthCoordinator {
 
       case 'requestQrCodeAuthentication': {
         const parsed: Object = JSON.parse('{"other_user_ids":[]}');
-        hilog.info(DOMAIN, TAG, 'executing requestQrCodeAuthentication');
+        this.logger.info(TAG, 'executing_request_qr_code_authentication');
         this.scope.request('requestQrCodeAuthentication', parsed as TdWireObject).then((res: Result<TdWireObject, AppError>) => {
           if (res.err) {
-            hilog.error(DOMAIN, TAG, 'requestQrCodeAuthentication failed: %{public}s %{public}s %{public}s',
-              res.error.kind, res.error.message, res.error.cause ?? '');
+            this.logger.logError(TAG, res.error);
             this.dispatch(new OnRequestError(res.error));
           }
         });

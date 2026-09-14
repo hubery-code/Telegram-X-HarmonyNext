@@ -8,7 +8,7 @@
  * - 统一异常捕获与 error message 处理。
  */
 
-import { hilog } from '@kit.PerformanceAnalysisKit';
+import { Logger } from '@tgx/observability';
 import { AppError, ManualClock, Result, SequentialIdGenerator } from '@tgx/core-common';
 import { AccountScope } from '@tgx/core-account';
 import { UserRegistry } from '@tgx/core-domain';
@@ -55,7 +55,6 @@ import {
 } from '../contract/SettingsEffect';
 import { settingsReducer } from '../reducer/SettingsReducer';
 
-const DOMAIN: number = 0x0000;
 const TAG: string = 'SettingsCoordinator';
 
 export type SettingsUiStateListener = (state: SettingsUiState) => void;
@@ -65,6 +64,7 @@ export class SettingsCoordinator {
   private readonly userRegistry: UserRegistry;
   private readonly env: ReducerEnv;
   private readonly onNavigateToAuth: () => void;
+  private readonly logger: Logger;
   private currentState: SettingsUiState;
   private readonly listeners: SettingsUiStateListener[] = [];
   private unsubscribeUser: (() => void) | null = null;
@@ -75,7 +75,8 @@ export class SettingsCoordinator {
     scope: AccountScope,
     userRegistry?: UserRegistry,
     env?: ReducerEnv,
-    onNavigateToAuth?: () => void
+    onNavigateToAuth?: () => void,
+    logger?: Logger
   ) {
     this.scope = scope;
     this.userRegistry = userRegistry !== undefined ? userRegistry : new UserRegistry(scope);
@@ -84,6 +85,7 @@ export class SettingsCoordinator {
       ids: new SequentialIdGenerator('settings-')
     };
     this.onNavigateToAuth = onNavigateToAuth !== undefined ? onNavigateToAuth : (): void => {};
+    this.logger = logger !== undefined ? logger : new Logger();
     this.currentState = SettingsUiState.initial();
   }
 
@@ -159,13 +161,13 @@ export class SettingsCoordinator {
         break;
 
       case 'navigateToAuth':
-        hilog.info(DOMAIN, TAG, 'navigating to auth');
+        this.logger.info(TAG, 'navigating_to_auth');
         this.onNavigateToAuth();
         break;
 
       case 'showToast': {
         const toastEffect: ShowToastEffect = effect as ShowToastEffect;
-        hilog.info(DOMAIN, TAG, 'toast: %{public}s', toastEffect.message);
+        this.logger.info(TAG, 'toast', toastEffect.message);
         break;
       }
 
@@ -224,7 +226,7 @@ export class SettingsCoordinator {
           }
         }
         if (res.err) {
-          hilog.warn(DOMAIN, TAG, 'fetch full info error: %{public}s', res.error.message);
+          this.logger.logError(TAG, res.error);
         }
         self.dispatchProfile(user, bio);
       }).catch((): void => {
@@ -340,13 +342,13 @@ export class SettingsCoordinator {
           }
         }
         if (res.err) {
-          hilog.warn(DOMAIN, TAG, 'getStorageStatistics failed: %{public}s', res.error.message);
+          this.logger.logError(TAG, res.error);
         }
       }).catch((): void => {
       });
     }
     if (result.err) {
-      hilog.warn(DOMAIN, TAG, 'getStorageStatistics rejected: %{public}s', result.error.message);
+      this.logger.logError(TAG, result.error);
     }
   }
 

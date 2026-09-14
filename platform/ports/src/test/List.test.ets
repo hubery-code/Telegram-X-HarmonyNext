@@ -3,6 +3,7 @@ import fakeSecureKeyStoreContractTest from './FakeSecureKeyStore.test';
 import fakeNetworkStateContractTest from './FakeNetworkState.test';
 import fakeAppFilesContractTest from './FakeAppFiles.test';
 import fakeMonotonicClockContractTest from './FakeMonotonicClock.test';
+import fakeClipboardAndToastTest from './FakeClipboardAndToast.test';
 
 export default function testsuite() {
   fakePreferencesContractTest();
@@ -10,4 +11,6 @@ export default function testsuite() {
   fakeNetworkStateContractTest();
   fakeAppFilesContractTest();
   fakeMonotonicClockContractTest();
+  fakeClipboardAndToastTest();
 }
+

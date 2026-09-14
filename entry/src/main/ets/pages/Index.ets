@@ -66,6 +66,10 @@ import {
   SearchCoordinator
 } from '@tgx/feature-search';
 import { BootstrapResult } from '../Bootstrap';
+import { Logger } from '@tgx/observability';
+import { HarmonyClipboardAdapter } from '../platform/HarmonyClipboardAdapter';
+import { HarmonyToastAdapter } from '../platform/HarmonyToastAdapter';
+import { createHarmonyLogger } from '../platform/HarmonyLogSink';
 
 const T = LightTheme;
 const DOMAIN: number = 0x0000;
@@ -88,6 +92,10 @@ struct Index {
   @State showSearch: boolean = false;
   @State searchUiState: SearchUiState = SearchUiState.initial();
   @State bootstrapError: string | null = null;
+
+  private readonly clipboardAdapter: HarmonyClipboardAdapter = new HarmonyClipboardAdapter();
+  private readonly toastAdapter: HarmonyToastAdapter = new HarmonyToastAdapter();
+  private readonly logger: Logger = createHarmonyLogger();
 
   private coordinator: AuthCoordinator | null = null;
   private unsubscribeFn: (() => void) | null = null;
@@ -119,7 +127,8 @@ struct Index {
           this.chatListCoordinator = new ChatListCoordinator(result.scope, undefined,
             (chatId: number, chatTitle: string) => {
               this.openChat(chatId, chatTitle);
-            });
+            },
+            this.logger);
           this.chatListCoordinator.start();
           this.unsubscribeChatListFn = this.chatListCoordinator.subscribe((uiState: ChatListUiState) => {
             this.chatListUiState = uiState;
@@ -238,7 +247,8 @@ struct Index {
       // feature/search 不能依赖 feature/chat_list，所以由本层（装配层）注入查询。
       resolveChatMetadata: (chatId: number) => {
         return this.resolveSearchChatMetadata(chatId);
-      }
+      },
+      logger: this.logger
     });
     this.searchCoordinator = coordinator;
     this.unsubscribeSearchFn = coordinator.subscribe((uiState: SearchUiState) => {
@@ -318,7 +328,8 @@ struct Index {
         // logOut 请求已成功；TDLib 授权状态更新（loggingOut → waitPhone）随后经
         // AuthCoordinator 订阅驱动 handleSessionEnded 完成整体退场，这里先关闭设置页。
         this.closeSettings();
-      }
+      },
+      this.logger
     );
     this.settingsCoordinator = coordinator;
     this.unsubscribeSettingsFn = coordinator.subscribe((uiState: SettingsUiState) => {
@@ -355,6 +366,12 @@ struct Index {
       },
       (messageIds: number[]) => {
         this.openForwardPicker(chatId, messageIds);
+      },
+      undefined,
+      {
+        clipboardPort: this.clipboardAdapter,
+        toastPort: this.toastAdapter,
+        logger: this.logger
       }
     );
     this.chatCoordinator = coordinator;

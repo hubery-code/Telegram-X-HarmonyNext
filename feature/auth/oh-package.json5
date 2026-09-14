@@ -12,7 +12,8 @@
     "@tgx/core-account": "file:../../core/account",
     "@tgx/feature-template": "file:../_template",
     "@tgx/td-gateway": "file:../../core/td_gateway",
-    "@tgx/platform-ports": "file:../../platform/ports"
+    "@tgx/platform-ports": "file:../../platform/ports",
+    "@tgx/observability": "file:../../core/observability"
   },
   "devDependencies": {
     "@ohos/hypium": "1.0.21"

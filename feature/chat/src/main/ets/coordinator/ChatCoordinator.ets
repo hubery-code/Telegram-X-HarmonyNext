@@ -27,10 +27,8 @@
  * 生命周期：start() 打开会话（openChat + 首屏加载），destroy() 关闭（closeChat）。
  */
 
-import { hilog } from '@kit.PerformanceAnalysisKit';
-import { pasteboard } from '@kit.BasicServicesKit';
-import { promptAction } from '@kit.ArkUI';
-import { BusinessError } from '@kit.BasicServicesKit';
+import { Logger } from '@tgx/observability';
+import { ClipboardPort, ToastPort, FakeClipboard, FakeToast } from '@tgx/platform-ports';
 import { ManualClock, SequentialIdGenerator, AppError, AppErrors } from '@tgx/core-common';
 import { AccountScope } from '@tgx/core-account';
 import {
@@ -109,7 +107,6 @@ import {
 import { isOutgoingMessageRead, ReadReportThrottle } from '../model/ReadReceipt';
 import { chatReducer } from '../reducer/ChatReducer';
 
-const DOMAIN: number = 0x0000;
 const TAG: string = 'ChatCoordinator';
 const INITIAL_PAGE_SIZE: number = 30;
 const OLDER_PAGE_SIZE: number = 20;
@@ -248,12 +245,21 @@ export class ReplyInfo {
   }
 }
 
+export interface ChatCoordinatorOptions {
+  readonly clipboardPort?: ClipboardPort;
+  readonly toastPort?: ToastPort;
+  readonly logger?: Logger;
+}
+
 export class ChatCoordinator {
   private readonly projection: MessageProjection;
   private readonly scope: AccountScope;
   private readonly userRegistry: UserRegistry;
   private readonly fileRegistry: FileRegistry;
   private readonly env: ReducerEnv;
+  private readonly clipboardPort: ClipboardPort;
+  private readonly toastPort: ToastPort;
+  private readonly logger: Logger;
   private readonly onBack: () => void;
   /** MSG-106：请求装配层弹出转发目标会话选择器（缺省 no-op）。 */
   private readonly onOpenForwardPicker: (messageIds: number[]) => void;
@@ -287,7 +293,8 @@ export class ChatCoordinator {
     chatTitle: string,
     onBack?: () => void,
     onOpenForwardPicker?: (messageIds: number[]) => void,
-    env?: ReducerEnv
+    env?: ReducerEnv,
+    options?: ChatCoordinatorOptions
   ) {
     this.projection = new MessageProjection(chatId, scope);
     this.scope = scope;
@@ -303,6 +310,15 @@ export class ChatCoordinator {
       clock: new ManualClock(1000, 500),
       ids: new SequentialIdGenerator('chat-')
     };
+    this.clipboardPort = (options !== undefined && options.clipboardPort !== undefined)
+      ? options.clipboardPort
+      : new FakeClipboard();
+    this.toastPort = (options !== undefined && options.toastPort !== undefined)
+      ? options.toastPort
+      : new FakeToast();
+    this.logger = (options !== undefined && options.logger !== undefined)
+      ? options.logger
+      : new Logger();
     this.currentState = new ChatUiState(chatId, chatTitle, [], false, true, null, '', null, null, -1, [], 0, 0, false, []);
   }
 
@@ -565,13 +581,13 @@ export class ChatCoordinator {
   private sendReadReport(messageIds: number[]): void {
     const result: Result<TdPendingRequest, AppError> = this.projection.markMessagesRead(messageIds);
     if (result.err) {
-      hilog.error(DOMAIN, TAG, 'viewMessages rejected: %{public}s', AppErrors.toLogString(result.error));
+      this.logger.logError(TAG, result.error);
       return;
     }
     if (result.ok) {
       result.value.promise.then((res: Result<TdWireObject, AppError>) => {
         if (res.err) {
-          hilog.error(DOMAIN, TAG, 'viewMessages failed: %{public}s', AppErrors.toLogString(res.error));
+          this.logger.logError(TAG, res.error);
         }
       }).catch(() => {
       });
@@ -1299,7 +1315,7 @@ export class ChatCoordinator {
     const result: Result<TdPendingRequest, AppError> =
       this.scope.request('getChat', encodeGetChat(req) as TdWireObject);
     if (result.err) {
-      hilog.error(DOMAIN, TAG, 'getChat rejected: %{public}s', AppErrors.toLogString(result.error));
+      this.logger.logError(TAG, result.error);
       return;
     }
     if (result.ok) {
@@ -1308,13 +1324,13 @@ export class ChatCoordinator {
           return;
         }
         if (res.err) {
-          hilog.error(DOMAIN, TAG, 'getChat failed: %{public}s', AppErrors.toLogString(res.error));
+          this.logger.logError(TAG, res.error);
         }
         if (res.ok) {
           const chat: Chat | null = decodeChat(res.value as TdJsonRaw);
           if (chat !== null) {
             this.chatKind = chatKindOf(chat.type_);
-            hilog.info(DOMAIN, TAG, 'chat kind resolved: %{public}s', this.chatKind);
+            this.logger.info(TAG, 'chat_kind_resolved', `kind=${this.chatKind}`);
             this.scheduleSyncFromProjection();
           }
         }
@@ -1337,44 +1353,43 @@ export class ChatCoordinator {
     this.senderSubscriptions.set(userId, subscription);
     const result: Result<TdPendingRequest, AppError> = this.userRegistry.requestUser(userId);
     if (result.err) {
-      hilog.error(DOMAIN, TAG, 'requestUser rejected userId=%{public}s: %{public}s',
-        `${userId}`, AppErrors.toLogString(result.error));
+      this.logger.logError(TAG, result.error);
     }
   }
 
   private executeEffect(effect: ChatEffect): void {
     switch (effect.kind) {
       case 'fetchInitialMessages': {
-        hilog.info(DOMAIN, TAG, 'fetch initial messages chatId=%{public}s', `${this.currentState.chatId}`);
+        this.logger.info(TAG, 'fetch_initial_messages', `chatId=${this.currentState.chatId}`);
         this.runFetch(this.projection.loadInitialMessages(INITIAL_PAGE_SIZE));
         break;
       }
 
       case 'fetchOlderMessages': {
-        hilog.info(DOMAIN, TAG, 'fetch older messages chatId=%{public}s', `${this.currentState.chatId}`);
+        this.logger.info(TAG, 'fetch_older_messages', `chatId=${this.currentState.chatId}`);
         this.runFetch(this.projection.loadOlderMessages(OLDER_PAGE_SIZE));
         break;
       }
 
       case 'sendTextMessage': {
         const send: SendTextMessage = effect as SendTextMessage;
-        hilog.info(DOMAIN, TAG, 'send message chatId=%{public}s', `${send.chatId}`);
+        this.logger.info(TAG, 'send_message', `chatId=${send.chatId}`);
         const result: Result<TdPendingRequest, AppError> =
           this.projection.sendTextMessage(send.text, send.replyToMessageId);
         if (result.err) {
-          hilog.error(DOMAIN, TAG, 'sendMessage rejected: %{public}s', AppErrors.toLogString(result.error));
+          this.logger.logError(TAG, result.error);
           this.dispatch(new OnMessageSendFailed(result.error));
         }
         if (result.ok) {
           result.value.promise.then((res: Result<TdWireObject, AppError>) => {
             if (res.err) {
-              hilog.error(DOMAIN, TAG, 'sendMessage failed: %{public}s', AppErrors.toLogString(res.error));
+              this.logger.logError(TAG, res.error);
               if (!this.destroyed) {
                 this.dispatch(new OnMessageSendFailed(res.error));
               }
             }
             if (res.ok) {
-              hilog.info(DOMAIN, TAG, 'sendMessage ok chatId=%{public}s', `${send.chatId}`);
+              this.logger.info(TAG, 'send_message_ok', `chatId=${send.chatId}`);
             }
           }).catch(() => {
           });
@@ -1384,11 +1399,11 @@ export class ChatCoordinator {
 
       case 'fetchMessagePermissions': {
         const fetch: FetchMessagePermissions = effect as FetchMessagePermissions;
-        hilog.info(DOMAIN, TAG, 'fetch message permissions chatId=%{public}s messageId=%{public}s',
-          `${fetch.chatId}`, `${fetch.messageId}`);
+        this.logger.info(TAG, 'fetch_message_permissions',
+          `chatId=${fetch.chatId},messageId=${fetch.messageId}`);
         const result: Result<TdPendingRequest, AppError> = this.projection.getMessageProperties(fetch.messageId);
         if (result.err) {
-          hilog.error(DOMAIN, TAG, 'getMessageProperties rejected: %{public}s', AppErrors.toLogString(result.error));
+          this.logger.logError(TAG, result.error);
           this.dispatch(new OnMessageActionFailed(result.error));
         }
         if (result.ok) {
@@ -1397,13 +1412,13 @@ export class ChatCoordinator {
               return;
             }
             if (res.err) {
-              hilog.error(DOMAIN, TAG, 'getMessageProperties failed: %{public}s', AppErrors.toLogString(res.error));
+              this.logger.logError(TAG, res.error);
               this.dispatch(new OnMessageActionFailed(res.error));
             }
             if (res.ok) {
               const props: MessageProperties | null = decodeMessageProperties(res.value as TdJsonRaw);
               if (props === null) {
-                hilog.error(DOMAIN, TAG, 'getMessageProperties: undecodable response');
+                this.logger.error(TAG, 'undecodable_message_properties');
                 this.dispatch(new OnMessageActionFailed(
                   AppErrors.internal('chat.message_properties_decode', 'failed to decode messageProperties')
                 ));
@@ -1426,25 +1441,25 @@ export class ChatCoordinator {
 
       case 'editMessageText': {
         const edit: EditMessageText = effect as EditMessageText;
-        hilog.info(DOMAIN, TAG, 'edit message chatId=%{public}s messageId=%{public}s',
-          `${edit.chatId}`, `${edit.messageId}`);
+        this.logger.info(TAG, 'edit_message_text',
+          `chatId=${edit.chatId},messageId=${edit.messageId}`);
         const result: Result<TdPendingRequest, AppError> =
           this.projection.editMessageText(edit.messageId, edit.text);
         if (result.err) {
-          hilog.error(DOMAIN, TAG, 'editMessageText rejected: %{public}s', AppErrors.toLogString(result.error));
+          this.logger.logError(TAG, result.error);
           this.dispatch(new OnMessageActionFailed(result.error));
         }
         if (result.ok) {
           result.value.promise.then((res: Result<TdWireObject, AppError>) => {
             if (res.err) {
-              hilog.error(DOMAIN, TAG, 'editMessageText failed: %{public}s', AppErrors.toLogString(res.error));
+              this.logger.logError(TAG, res.error);
               if (!this.destroyed) {
                 this.dispatch(new OnMessageActionFailed(res.error));
               }
             }
             if (res.ok) {
               // 成功路径无动作：气泡由 updateMessageContent / updateMessageEdited 刷新。
-              hilog.info(DOMAIN, TAG, 'editMessageText ok messageId=%{public}s', `${edit.messageId}`);
+              this.logger.info(TAG, 'edit_message_text_ok', `messageId=${edit.messageId}`);
             }
           }).catch(() => {
           });
@@ -1454,25 +1469,25 @@ export class ChatCoordinator {
 
       case 'deleteMessages': {
         const del: DeleteMessages = effect as DeleteMessages;
-        hilog.info(DOMAIN, TAG, 'delete messages chatId=%{public}s count=%{public}d revoke=%{public}s',
-          `${del.chatId}`, del.messageIds.length, `${del.revoke}`);
+        this.logger.info(TAG, 'delete_messages',
+          `chatId=${del.chatId},count=${del.messageIds.length},revoke=${del.revoke}`);
         const result: Result<TdPendingRequest, AppError> =
           this.projection.deleteMessages(del.messageIds, del.revoke);
         if (result.err) {
-          hilog.error(DOMAIN, TAG, 'deleteMessages rejected: %{public}s', AppErrors.toLogString(result.error));
+          this.logger.logError(TAG, result.error);
           this.dispatch(new OnMessageActionFailed(result.error));
         }
         if (result.ok) {
           result.value.promise.then((res: Result<TdWireObject, AppError>) => {
             if (res.err) {
-              hilog.error(DOMAIN, TAG, 'deleteMessages failed: %{public}s', AppErrors.toLogString(res.error));
+              this.logger.logError(TAG, res.error);
               if (!this.destroyed) {
                 this.dispatch(new OnMessageActionFailed(res.error));
               }
             }
             if (res.ok) {
               // 成功路径无动作：气泡由 updateDeleteMessages 移出列表。
-              hilog.info(DOMAIN, TAG, 'deleteMessages ok chatId=%{public}s', `${del.chatId}`);
+              this.logger.info(TAG, 'delete_messages_ok', `chatId=${del.chatId}`);
             }
           }).catch(() => {
           });
@@ -1481,7 +1496,7 @@ export class ChatCoordinator {
       }
 
       case 'navigateBack': {
-        hilog.info(DOMAIN, TAG, 'back to chat list from chatId=%{public}s', `${this.currentState.chatId}`);
+        this.logger.info(TAG, 'navigate_back', `chatId=${this.currentState.chatId}`);
         this.onBack();
         break;
       }
@@ -1490,16 +1505,16 @@ export class ChatCoordinator {
         // MSG-106：选择器 UI 归装配层（entry 同时持有会话列表数据与本次选择），
         // 这里只把选择集合透传出去。
         const picker: OpenForwardPicker = effect as OpenForwardPicker;
-        hilog.info(DOMAIN, TAG, 'open forward picker from chatId=%{public}s count=%{public}d',
-          `${picker.fromChatId}`, picker.messageIds.length);
+        this.logger.info(TAG, 'open_forward_picker',
+          `fromChatId=${picker.fromChatId},count=${picker.messageIds.length}`);
         this.onOpenForwardPicker(picker.messageIds);
         break;
       }
 
       case 'forwardMessages': {
         const forward: ForwardMessages = effect as ForwardMessages;
-        hilog.info(DOMAIN, TAG, 'forward messages from chatId=%{public}s to chatId=%{public}s count=%{public}d copy=%{public}s',
-          `${forward.fromChatId}`, `${forward.toChatId}`, forward.messageIds.length, `${forward.sendCopy}`);
+        this.logger.info(TAG, 'forward_messages',
+          `fromChatId=${forward.fromChatId},toChatId=${forward.toChatId},count=${forward.messageIds.length},copy=${forward.sendCopy}`);
         const result: Result<TdPendingRequest, AppError> =
           this.projection.forwardMessages(
             forward.toChatId,
@@ -1508,7 +1523,7 @@ export class ChatCoordinator {
             forward.removeCaption
           );
         if (result.err) {
-          hilog.error(DOMAIN, TAG, 'forwardMessages rejected: %{public}s', AppErrors.toLogString(result.error));
+          this.logger.logError(TAG, result.error);
           this.dispatch(new OnForwardFailed(result.error));
         }
         if (result.ok) {
@@ -1517,15 +1532,15 @@ export class ChatCoordinator {
               return;
             }
             if (res.err) {
-              hilog.error(DOMAIN, TAG, 'forwardMessages failed: %{public}s', AppErrors.toLogString(res.error));
+              this.logger.logError(TAG, res.error);
               this.dispatch(new OnForwardFailed(res.error));
             }
             // 正向 if(res.ok)：ArkTS 收窄只在块内有效，early-return 后取 res.value 不成立。
             if (res.ok) {
               // TDLib 返回 messageIds 对应的转发结果：不可转发的条目占位 null。
               const forwardedCount: number = countForwardedMessages(res.value);
-              hilog.info(DOMAIN, TAG, 'forwardMessages ok forwarded=%{public}d of %{public}d',
-                forwardedCount, forward.messageIds.length);
+              this.logger.info(TAG, 'forward_messages_ok',
+                `forwarded=${forwardedCount},total=${forward.messageIds.length}`);
               if (forwardedCount === 0) {
                 // 全部不可转发（如受保护内容）：按失败提示，别假装成功收起选择态。
                 this.dispatch(new OnForwardFailed(
@@ -1554,18 +1569,18 @@ export class ChatCoordinator {
         // MSG-104：失败重发；响应失败回灌 OnMessageActionFailed（errorMessage 细条），
         // 成功无额外动作（updateMessageSendSucceeded/Failed 订阅结算）。
         const resend: ResendMessage = effect as ResendMessage;
-        hilog.info(DOMAIN, TAG, 'resend message chatId=%{public}s messageId=%{public}s',
-          `${resend.chatId}`, `${resend.messageId}`);
+        this.logger.info(TAG, 'resend_message',
+          `chatId=${resend.chatId},messageId=${resend.messageId}`);
         const result: Result<TdPendingRequest, AppError> =
           this.projection.resendMessages([resend.messageId]);
         if (result.err) {
-          hilog.error(DOMAIN, TAG, 'resendMessages rejected: %{public}s', AppErrors.toLogString(result.error));
+          this.logger.logError(TAG, result.error);
           this.dispatch(new OnMessageActionFailed(result.error));
         }
         if (result.ok) {
           result.value.promise.then((res: Result<TdWireObject, AppError>) => {
             if (res.err) {
-              hilog.error(DOMAIN, TAG, 'resendMessages failed: %{public}s', AppErrors.toLogString(res.error));
+              this.logger.logError(TAG, res.error);
               if (!this.destroyed) {
                 this.dispatch(new OnMessageActionFailed(res.error));
               }
@@ -1590,22 +1605,16 @@ export class ChatCoordinator {
 
   /** MSG-105：复制文本到系统剪贴板并弹出 Toast 提示。 */
   private copyToClipboard(text: string, toastMessage: string): void {
-    try {
-      const pasteData: pasteboard.PasteData = pasteboard.createData(pasteboard.MIMETYPE_TEXT_PLAIN, text);
-      const systemPasteboard: pasteboard.SystemPasteboard = pasteboard.getSystemPasteboard();
-      systemPasteboard.setData(pasteData).then(() => {
-        hilog.info(DOMAIN, TAG, 'copyToClipboard success, len=%{public}d', text.length);
-        try {
-          promptAction.showToast({ message: toastMessage, duration: 2000 });
-        } catch (toastErr) {
-          hilog.warn(DOMAIN, TAG, 'promptAction.showToast error: %{public}s', JSON.stringify(toastErr));
-        }
-      }).catch((err: BusinessError) => {
-        hilog.error(DOMAIN, TAG, 'systemPasteboard.setData error: %{public}s', JSON.stringify(err));
-      });
-    } catch (err) {
-      hilog.error(DOMAIN, TAG, 'copyToClipboard exception: %{public}s', JSON.stringify(err));
-    }
+    this.clipboardPort.setPlainText(text).then(() => {
+      this.logger.info(TAG, 'copy_to_clipboard_success', `len=${text.length}`);
+      try {
+        this.toastPort.showToast(toastMessage, 2000);
+      } catch (toastErr) {
+        this.logger.warn(TAG, 'toast_show_exception', String(toastErr));
+      }
+    }).catch((err: Object) => {
+      this.logger.warn(TAG, 'clipboard_set_exception', String(err));
+    });
   }
 
   /** null = 投影侧跳过（正在加载/已到顶端）；请求级与响应级失败都回灌 OnMessagesLoadFailed。 */
@@ -1614,13 +1623,13 @@ export class ChatCoordinator {
       return;
     }
     if (result.err) {
-      hilog.error(DOMAIN, TAG, 'getChatHistory rejected: %{public}s', result.error.message);
+      this.logger.logError(TAG, result.error);
       this.dispatch(new OnMessagesLoadFailed(result.error));
     }
     if (result.ok) {
       result.value.promise.then((res: Result<TdWireObject, AppError>) => {
         if (res.err) {
-          hilog.error(DOMAIN, TAG, 'getChatHistory failed: %{public}s', res.error.message);
+          this.logger.logError(TAG, res.error);
           if (!this.destroyed) {
             this.dispatch(new OnMessagesLoadFailed(res.error));
           }
@@ -1628,7 +1637,7 @@ export class ChatCoordinator {
         if (res.ok) {
           const raw: TdWireValue | undefined = res.value['messages'];
           const count: number = (raw !== undefined && Array.isArray(raw)) ? (raw as TdWireObject[]).length : -1;
-          hilog.info(DOMAIN, TAG, 'getChatHistory ok: %{public}d messages', count);
+          this.logger.info(TAG, 'get_chat_history_ok', `count=${count}`);
         }
       }).catch(() => {
       });

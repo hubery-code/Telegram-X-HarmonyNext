@@ -21,7 +21,8 @@
     "@tgx/platform-keystore": "file:../platform/keystore",
     "@tgx/platform-network": "file:../platform/network",
     "@tgx/core-td-api-generated": "file:../core/td_api_generated",
-    "@tgx/td-gateway": "file:../core/td_gateway"
+    "@tgx/td-gateway": "file:../core/td_gateway",
+    "@tgx/observability": "file:../core/observability"
   },
   "devDependencies": {
     "@ohos/hypium": "1.0.21"

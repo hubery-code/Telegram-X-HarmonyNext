@@ -30,6 +30,7 @@ import {
   LifecycleCoordinator,
   LifecycleBootstrapReport
 } from './lifecycle/LifecycleCoordinator';
+import { createHarmonyLogger } from './platform/HarmonyLogSink';
 
 export interface BootstrapResult {
   readonly coordinator: AuthCoordinator;
@@ -84,7 +85,8 @@ export function bootstrap(
     tdlibParameters: tdlibParams,
     onNavigate: (route: string) => {
       // Navigation handled in Index.ets via state subscription
-    }
+    },
+    logger: createHarmonyLogger()
   };
   const coordinator: AuthCoordinator = new AuthCoordinator(deps);
 

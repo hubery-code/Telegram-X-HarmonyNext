@@ -7,7 +7,7 @@
  * - 提供状态订阅 subscribe(listener: (state: SearchUiState) => void): () => void。
  */
 
-import { hilog } from '@kit.PerformanceAnalysisKit';
+import { Logger } from '@tgx/observability';
 import { ManualClock, SequentialIdGenerator, Result, AppError } from '@tgx/core-common';
 import { AccountScope } from '@tgx/core-account';
 import {
@@ -46,7 +46,6 @@ import {
 } from '../contract/SearchEffect';
 import { searchReducer } from '../reducer/SearchReducer';
 
-const DOMAIN: number = 0x0000;
 const TAG: string = 'SearchCoordinator';
 
 function formatMessageDate(unixSeconds: number): string {
@@ -78,10 +77,12 @@ export type SearchChatMetadataResolver = (chatId: number) => SearchChatMetadata 
 export class TdlibSearchQueryProvider implements SearchQueryProvider {
   private readonly scope: AccountScope;
   private readonly resolveChatMetadata: SearchChatMetadataResolver | null;
+  private readonly logger: Logger;
 
-  constructor(scope: AccountScope, resolveChatMetadata?: SearchChatMetadataResolver) {
+  constructor(scope: AccountScope, resolveChatMetadata?: SearchChatMetadataResolver, logger?: Logger) {
     this.scope = scope;
     this.resolveChatMetadata = resolveChatMetadata !== undefined ? resolveChatMetadata : null;
+    this.logger = logger !== undefined ? logger : new Logger();
   }
 
   /** 标题/用户名：本地缓存命中就用真值，未命中回退占位符（保证列表仍可用）。 */
@@ -110,11 +111,11 @@ export class TdlibSearchQueryProvider implements SearchQueryProvider {
       const pending = result.value;
       const response = await pending.promise;
       if (response.ok) {
-        const chatsObj: Chats | null = decodeChats(response.value);
-        if (chatsObj !== null) {
+        const chats: Chats | null = decodeChats(response.value);
+        if (chats !== null) {
           const items: SearchChatItem[] = [];
-          for (let i = 0; i < chatsObj.chat_ids.length; i++) {
-            const chatId: number = chatsObj.chat_ids[i];
+          for (let i = 0; i < chats.chat_ids.length; i++) {
+            const chatId: number = chats.chat_ids[i];
             items.push(new SearchChatItem(
               chatId,
               this.titleOf(chatId),
@@ -128,11 +129,11 @@ export class TdlibSearchQueryProvider implements SearchQueryProvider {
         }
       }
       if (response.err) {
-        hilog.error(DOMAIN, TAG, 'searchChats response failed: %{public}s', response.error.message);
+        this.logger.logError(TAG, response.error);
       }
     }
     if (result.err) {
-      hilog.error(DOMAIN, TAG, 'searchChats request failed: %{public}s', result.error.message);
+      this.logger.logError(TAG, result.error);
     }
     return [];
   }
@@ -173,11 +174,11 @@ export class TdlibSearchQueryProvider implements SearchQueryProvider {
         }
       }
       if (response.err) {
-        hilog.error(DOMAIN, TAG, 'searchMessages response failed: %{public}s', response.error.message);
+        this.logger.logError(TAG, response.error);
       }
     }
     if (result.err) {
-      hilog.error(DOMAIN, TAG, 'searchMessages request failed: %{public}s', result.error.message);
+      this.logger.logError(TAG, result.error);
     }
     return [];
   }
@@ -245,6 +246,7 @@ export interface SearchCoordinatorOptions {
   readonly debounceMs?: number;
   /** FIX-001：会话元数据解析（由装配层注入会话列表的本地缓存查询）。 */
   readonly resolveChatMetadata?: SearchChatMetadataResolver;
+  readonly logger?: Logger;
 }
 
 export type SearchUiStateListener = (state: SearchUiState) => void;
@@ -254,6 +256,7 @@ export class SearchCoordinator {
   private readonly env: ReducerEnv;
   private readonly onNavigateToChat: (chatId: number, messageId?: number) => void;
   private readonly debounceMs: number;
+  private readonly logger: Logger;
   private currentState: SearchUiState;
   private readonly listeners: SearchUiStateListener[] = [];
   private debounceTimerId: number | null = null;
@@ -261,10 +264,11 @@ export class SearchCoordinator {
   private destroyed: boolean = false;
 
   constructor(options?: SearchCoordinatorOptions) {
+    this.logger = (options !== undefined && options.logger !== undefined) ? options.logger : new Logger();
     if (options !== undefined && options.provider !== undefined) {
       this.provider = options.provider;
     } else if (options !== undefined && options.scope !== undefined) {
-      this.provider = new TdlibSearchQueryProvider(options.scope, options.resolveChatMetadata);
+      this.provider = new TdlibSearchQueryProvider(options.scope, options.resolveChatMetadata, this.logger);
     } else {
       this.provider = new MockSearchQueryProvider();
     }
@@ -394,7 +398,7 @@ export class SearchCoordinator {
       }
       case 'saveRecentSearch': {
         const saveEffect: SaveRecentSearchEffect = effect as SaveRecentSearchEffect;
-        hilog.info(DOMAIN, TAG, 'Saved recent search: %{public}s', saveEffect.term);
+        this.logger.info(TAG, 'saved_recent_search', `len=${saveEffect.term.length}`);
         break;
       }
       case 'navigateToChat': {

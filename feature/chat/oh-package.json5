@@ -13,6 +13,7 @@
     "@tgx/core-td-api-generated": "file:../../core/td_api_generated",
     "@tgx/td-gateway": "file:../../core/td_gateway",
     "@tgx/platform-ports": "file:../../platform/ports",
+    "@tgx/observability": "file:../../core/observability",
     "@tgx/feature-template": "file:../_template"
   },
   "devDependencies": {

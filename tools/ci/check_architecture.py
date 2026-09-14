@@ -56,13 +56,24 @@ def check_architecture() -> int:
                         f"[PRIVATE_IMPORT] {rel_path}:{line_no}: Illegal import from private directory: {line.strip()}"
                     )
 
+    # Rule 4: feature/*/src/main/ets/coordinator/** must not import @kit or @ohos (Kit-free Coordinators, ARCH-001)
+    feature_coord_pattern = os.path.join(ROOT, "feature", "*", "src", "main", "ets", "coordinator", "**", "*.ets")
+    for file_path in glob.glob(feature_coord_pattern, recursive=True):
+        rel_path = os.path.relpath(file_path, ROOT)
+        with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+            for line_no, line in enumerate(f, 1):
+                if re.search(r"from\s+['\"]@(kit|ohos)\b", line):
+                    violations.append(
+                        f"[COORDINATOR_KIT_FREE] {rel_path}:{line_no}: Feature coordinator must not import system Kit directly: {line.strip()}"
+                    )
+
     if violations:
         print(f"[check_architecture] FAIL: {len(violations)} architectural boundary violations found:")
         for v in violations:
             print(f"  {v}")
         return 1
 
-    print("[check_architecture] OK: 0 architectural boundary violations in core domain and reducers")
+    print("[check_architecture] OK: 0 architectural boundary violations in core domain, reducers, and coordinators")
     return 0
 
 if __name__ == "__main__":

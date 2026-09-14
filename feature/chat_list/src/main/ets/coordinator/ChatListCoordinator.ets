@@ -14,7 +14,7 @@
  * 标记 + 用 viewMessages(force_read) 把未读消息读掉，两者都是独立请求。
  */
 
-import { hilog } from '@kit.PerformanceAnalysisKit';
+import { Logger } from '@tgx/observability';
 import { ManualClock, SequentialIdGenerator, AppError, AppErrors } from '@tgx/core-common';
 import { AccountScope } from '@tgx/core-account';
 import {
@@ -56,7 +56,6 @@ import {
 } from '../contract/ChatListEffect';
 import { chatListReducer } from '../reducer/ChatListReducer';
 
-const DOMAIN: number = 0x0000;
 const TAG: string = 'ChatListCoordinator';
 
 export type ChatListUiStateListener = (state: ChatListUiState) => void;
@@ -126,11 +125,13 @@ export class ChatListCoordinator {
   private destroyed: boolean = false;
   /** MSG-108：本页对应的 TDLib 会话列表（置顶态要按列表判定，不能只看 chat 自身）。 */
   private readonly chatList: ChatListMain;
+  private readonly logger: Logger;
 
   constructor(
     scope: AccountScope,
     env?: ReducerEnv,
-    onNavigateToChat?: (chatId: number, chatTitle: string) => void
+    onNavigateToChat?: (chatId: number, chatTitle: string) => void,
+    logger?: Logger
   ) {
     this.registry = new ChatRegistry();
     this.chatList = new ChatListMain();
@@ -144,6 +145,7 @@ export class ChatListCoordinator {
       ids: new SequentialIdGenerator('chat-list-')
     };
     this.onNavigateToChat = onNavigateToChat !== undefined ? onNavigateToChat : (chatId: number, chatTitle: string): void => {};
+    this.logger = logger !== undefined ? logger : new Logger();
     this.currentState = ChatListUiState.initial();
   }
 
@@ -314,9 +316,9 @@ export class ChatListCoordinator {
         if (result === null) {
           break;
         }
-        hilog.info(DOMAIN, TAG, 'executing loadChats limit=%{public}d', fetchEffect.limit);
+        this.logger.info(TAG, 'executing_load_chats', `limit=${fetchEffect.limit}`);
         if (result.err) {
-          hilog.error(DOMAIN, TAG, 'loadChats rejected: %{public}s', result.error.message);
+          this.logger.logError(TAG, result.error);
           this.dispatch(new OnChatsLoadFailed(result.error));
         }
         if (result.ok) {
@@ -326,7 +328,7 @@ export class ChatListCoordinator {
               return;
             }
             if (res.err) {
-              hilog.error(DOMAIN, TAG, 'loadChats failed: %{public}s', AppErrors.toLogString(res.error));
+              this.logger.logError(TAG, res.error);
               this.dispatch(new OnChatsLoadFailed(res.error));
             }
           }).catch(() => {
@@ -337,7 +339,7 @@ export class ChatListCoordinator {
 
       case 'navigateToChat': {
         const navigateEffect: NavigateToChat = effect as NavigateToChat;
-        hilog.info(DOMAIN, TAG, 'chat selected: %{public}s', `${navigateEffect.chatId}`);
+        this.logger.info(TAG, 'chat_selected', `chatId=${navigateEffect.chatId}`);
         const chat: Chat | undefined = this.registry.getChat(navigateEffect.chatId);
         const chatTitle: string = chat !== undefined ? chat.title : '';
         this.onNavigateToChat(navigateEffect.chatId, chatTitle);
@@ -346,14 +348,13 @@ export class ChatListCoordinator {
 
       case 'showToast': {
         const toastEffect: ShowToast = effect as ShowToast;
-        hilog.info(DOMAIN, TAG, 'toast: %{public}s', toastEffect.messageKey);
+        this.logger.info(TAG, 'toast', toastEffect.messageKey);
         break;
       }
 
       case 'setChatPinned': {
         const pin: SetChatPinned = effect as SetChatPinned;
-        hilog.info(DOMAIN, TAG, 'toggleChatIsPinned chatId=%{public}s isPinned=%{public}s',
-          `${pin.chatId}`, `${pin.isPinned}`);
+        this.logger.info(TAG, 'toggle_chat_pinned', `chatId=${pin.chatId},isPinned=${pin.isPinned}`);
         const result: Result<TdPendingRequest, AppError> =
           this.projection.toggleChatIsPinned(pin.chatId, pin.isPinned);
         this.settleChatAction(result, 'toggleChatIsPinned');
@@ -362,8 +363,7 @@ export class ChatListCoordinator {
 
       case 'setChatReadState': {
         const readState: SetChatReadState = effect as SetChatReadState;
-        hilog.info(DOMAIN, TAG, 'setChatReadState chatId=%{public}s markAsUnread=%{public}s',
-          `${readState.chatId}`, `${readState.markAsUnread}`);
+        this.logger.info(TAG, 'set_chat_read_state', `chatId=${readState.chatId},markAsUnread=${readState.markAsUnread}`);
         if (readState.markAsUnread) {
           // 标未读：只置手动标记。未读数是 TDLib 的事，本端不臆造。
           const markResult: Result<TdPendingRequest, AppError> =
@@ -404,7 +404,7 @@ export class ChatListCoordinator {
    */
   private settleChatAction(result: Result<TdPendingRequest, AppError>, label: string): void {
     if (result.err) {
-      hilog.error(DOMAIN, TAG, '%{public}s rejected: %{public}s', label, AppErrors.toLogString(result.error));
+      this.logger.logError(TAG, result.error);
       this.dispatch(new OnChatActionFailed(result.error));
       return;
     }
@@ -414,11 +414,11 @@ export class ChatListCoordinator {
           return;
         }
         if (res.err) {
-          hilog.error(DOMAIN, TAG, '%{public}s failed: %{public}s', label, AppErrors.toLogString(res.error));
+          this.logger.logError(TAG, res.error);
           this.dispatch(new OnChatActionFailed(res.error));
         }
         if (res.ok) {
-          hilog.info(DOMAIN, TAG, '%{public}s ok', label);
+          this.logger.info(TAG, 'chat_action_ok', label);
         }
       }).catch(() => {
       });

@@ -102,6 +102,7 @@ export { chatReducer, messageSnippet, extractFirstLink } from './reducer/ChatRed
 export {
   ChatUiStateListener,
   ChatCoordinator,
+  ChatCoordinatorOptions,
   messageContentText,
   messageSendStateOf,
   repliedMessageIdOf,
