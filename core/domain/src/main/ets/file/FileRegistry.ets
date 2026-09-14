@@ -180,6 +180,45 @@ export class FileRegistry {
     return progress;
   }
 
+  isUploading(fileId: number): boolean {
+    const file: File | undefined = this.files.get(fileId);
+    if (file === undefined || file.remote === null) {
+      return false;
+    }
+    return file.remote.is_uploading_active;
+  }
+
+  isUploaded(fileId: number): boolean {
+    const file: File | undefined = this.files.get(fileId);
+    if (file === undefined || file.remote === null) {
+      return false;
+    }
+    return file.remote.is_uploading_completed;
+  }
+
+  getUploadProgress(fileId: number): number {
+    const file: File | undefined = this.files.get(fileId);
+    if (file === undefined || file.remote === null) {
+      return 0.0;
+    }
+    if (file.remote.is_uploading_completed) {
+      return 1.0;
+    }
+    const totalSize: number = file.size > 0 ? file.size : file.expected_size;
+    if (totalSize <= 0) {
+      return 0.0;
+    }
+    const uploaded: number = file.remote.uploaded_size;
+    if (uploaded <= 0) {
+      return 0.0;
+    }
+    const progress: number = uploaded / totalSize;
+    if (progress > 1.0) {
+      return 1.0;
+    }
+    return progress;
+  }
+
   downloadFile(
     fileId: number,
     priority: number = 1,

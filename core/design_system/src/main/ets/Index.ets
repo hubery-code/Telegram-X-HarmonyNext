@@ -38,6 +38,7 @@ export {
 } from './FontScale';
 export {
   ThemeMode,
+  ThemePreference,
   Theme,
   createTheme,
   LightTheme,
@@ -49,3 +50,10 @@ export {
   TOKEN_NAMESPACES,
   tokenNames
 } from './Theme';
+export {
+  ThemeListener,
+  ThemeManager,
+  themeManager,
+  resolveTheme,
+  resolveThemeMode
+} from './ThemeManager';

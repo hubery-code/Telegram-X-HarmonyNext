@@ -556,5 +556,46 @@ export default function fileRegistryTest(): void {
       registry.stop();
     });
 
+    it('should correctly report isUploading, isUploaded, and getUploadProgress', 0, (): void => {
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const scope: AccountScope = createScope(bridge);
+      const registry: FileRegistry = new FileRegistry(scope);
+
+      // 1. Unknown file
+      expect(registry.isUploading(999)).assertFalse();
+      expect(registry.isUploaded(999)).assertFalse();
+      expect(registry.getUploadProgress(999)).assertEqual(0.0);
+
+      // 2. Active upload file
+      const uploadingFile: File = new File();
+      uploadingFile.id = 5001;
+      uploadingFile.size = 1000;
+      uploadingFile.remote = new RemoteFile();
+      uploadingFile.remote.is_uploading_active = true;
+      uploadingFile.remote.is_uploading_completed = false;
+      uploadingFile.remote.uploaded_size = 400;
+
+      registry.putFile(uploadingFile);
+      expect(registry.isUploading(5001)).assertTrue();
+      expect(registry.isUploaded(5001)).assertFalse();
+      expect(registry.getUploadProgress(5001)).assertEqual(0.4);
+
+      // 3. Completed upload file
+      const completedFile: File = new File();
+      completedFile.id = 5002;
+      completedFile.size = 1000;
+      completedFile.remote = new RemoteFile();
+      completedFile.remote.is_uploading_active = false;
+      completedFile.remote.is_uploading_completed = true;
+      completedFile.remote.uploaded_size = 1000;
+
+      registry.putFile(completedFile);
+      expect(registry.isUploading(5002)).assertFalse();
+      expect(registry.isUploaded(5002)).assertTrue();
+      expect(registry.getUploadProgress(5002)).assertEqual(1.0);
+
+      registry.stop();
+    });
+
   });
 }

@@ -299,6 +299,11 @@ export class RequestMediaDownload implements Intent {
   }
 }
 
+/** MEDIA-102：调起相册选取图片并发送（附带当前输入栏草稿作为 caption 与回复引用）。 */
+export class PickAndSendPhoto implements Intent {
+  readonly kind: 'pickAndSendPhoto' = 'pickAndSendPhoto';
+}
+
 export type ChatIntent =
   | LoadInitialMessages
   | LoadOlderMessages
@@ -330,4 +335,5 @@ export type ChatIntent =
   | OpenMediaViewer
   | CloseMediaViewer
   | ChangeViewerIndex
-  | RequestMediaDownload;
+  | RequestMediaDownload
+  | PickAndSendPhoto;

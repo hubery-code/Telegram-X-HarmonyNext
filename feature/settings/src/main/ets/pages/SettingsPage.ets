@@ -10,7 +10,7 @@
  * - 色彩/字号/间距全部使用 design_system token。
  */
 
-import { DarkTheme, LightTheme, Theme } from '@tgx/core-design-system';
+import { DarkTheme, LightTheme, Theme, ThemeManager } from '@tgx/core-design-system';
 import { SettingsThemeMode, SettingsUiState } from '../contract/SettingsUiState';
 import {
   CancelLogout,
@@ -44,14 +44,34 @@ export struct SettingsPage {
   /** 返回上一页（纯导航回调，由装配层接线，INTEG-001）。 */
   onBack: () => void = (): void => {};
 
+  @State private effectiveTheme: Theme = LightTheme;
+  private unsubscribeTheme: (() => void) | null = null;
+
+  aboutToAppear(): void {
+    this.updateEffectiveTheme();
+    const self: SettingsPage = this;
+    this.unsubscribeTheme = ThemeManager.getInstance().subscribe((_theme: Theme): void => {
+      self.updateEffectiveTheme();
+    });
+  }
+
+  aboutToDisappear(): void {
+    if (this.unsubscribeTheme !== null) {
+      this.unsubscribeTheme();
+      this.unsubscribeTheme = null;
+    }
+  }
+
   onUiStateChanged(): void {
+    this.updateEffectiveTheme();
+  }
+
+  private updateEffectiveTheme(): void {
+    this.effectiveTheme = ThemeManager.getInstance().resolveTheme(this.uiState.themeMode);
   }
 
   private getTheme(): Theme {
-    if (this.uiState.themeMode === 'dark') {
-      return DarkTheme;
-    }
-    return LightTheme;
+    return this.effectiveTheme;
   }
 
   private getAvatarLetter(): string {
@@ -294,7 +314,7 @@ export struct SettingsPage {
       Button('Clear')
         .fontSize(this.getTheme().typography.subheadline.fontSize)
         .fontColor(this.getTheme().colors.accent)
-        .backgroundColor(this.getTheme().colors.backgroundElevated)
+        .backgroundColor(this.getTheme().colors.surfaceVariant)
         .height(32)
         .onClick((): void => {
           this.onDispatch(new ClearCacheRequested());
@@ -306,16 +326,33 @@ export struct SettingsPage {
     .borderRadius(this.getTheme().radius.md)
   }
 
+  private getThemeModeSummary(): string {
+    if (this.uiState.themeMode === 'system') {
+      const activeMode: string = this.getTheme().mode === 'dark' ? 'Dark' : 'Light';
+      return `System (${activeMode})`;
+    }
+    if (this.uiState.themeMode === 'dark') {
+      return 'Dark';
+    }
+    return 'Light';
+  }
+
   @Builder
   ThemeCardView() {
     Column() {
       Row() {
         Text('Theme Mode')
           .fontSize(this.getTheme().typography.body.fontSize)
+          .fontWeight(this.getTheme().typography.headline.fontWeight)
           .fontColor(this.getTheme().colors.textPrimary)
           .layoutWeight(1)
+
+        Text(this.getThemeModeSummary())
+          .fontSize(this.getTheme().typography.footnote.fontSize)
+          .fontColor(this.getTheme().colors.textSecondary)
       }
       .width('100%')
+      .alignItems(VerticalAlign.Center)
       .margin({ bottom: this.getTheme().spacing.sm })
 
       Row() {
@@ -342,6 +379,11 @@ export struct SettingsPage {
         right: mode === 'dark' ? 0 : this.getTheme().spacing.xs
       })
       .fontSize(this.getTheme().typography.subheadline.fontSize)
+      .fontWeight(
+        this.uiState.themeMode === mode
+          ? this.getTheme().typography.headline.fontWeight
+          : this.getTheme().typography.subheadline.fontWeight
+      )
       .fontColor(
         this.uiState.themeMode === mode
           ? this.getTheme().colors.textOnAccent
@@ -350,7 +392,7 @@ export struct SettingsPage {
       .backgroundColor(
         this.uiState.themeMode === mode
           ? this.getTheme().colors.accent
-          : this.getTheme().colors.backgroundElevated
+          : this.getTheme().colors.surfaceVariant
       )
       .borderRadius(this.getTheme().radius.md)
       .onClick((): void => {
@@ -423,7 +465,7 @@ export struct SettingsPage {
             .margin({ right: this.getTheme().spacing.sm })
             .fontSize(this.getTheme().typography.body.fontSize)
             .fontColor(this.getTheme().colors.textPrimary)
-            .backgroundColor(this.getTheme().colors.backgroundElevated)
+            .backgroundColor(this.getTheme().colors.surfaceVariant)
             .borderRadius(this.getTheme().radius.md)
             .onClick((): void => {
               this.onDispatch(new CancelLogout());

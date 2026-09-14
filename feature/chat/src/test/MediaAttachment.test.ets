@@ -163,5 +163,43 @@ export default function mediaAttachmentTest() {
       expect(sticker.isDownloaded).assertTrue();
     });
 
+    it('creates photo media attachment with uploading state and progress', 0, () => {
+      const photo = new MediaAttachment(
+        'photo',
+        6001,
+        '/data/local/photo.jpg',
+        null,
+        1000,
+        800,
+        0,
+        false,
+        false,
+        0.0,
+        'Uploading...',
+        [],
+        false,
+        true,
+        0.65
+      );
+
+      expect(photo.kind).assertEqual('photo');
+      expect(photo.isUploading).assertTrue();
+      expect(photo.uploadProgress).assertEqual(0.65);
+      expect(photo.isDownloaded).assertFalse();
+
+      const uploaded = photo.copyWith(
+        photo.localPath,
+        photo.thumbnailPath,
+        false,
+        true,
+        1.0,
+        false,
+        1.0
+      );
+      expect(uploaded.isUploading).assertFalse();
+      expect(uploaded.isDownloaded).assertTrue();
+      expect(uploaded.uploadProgress).assertEqual(1.0);
+    });
+
   });
 }

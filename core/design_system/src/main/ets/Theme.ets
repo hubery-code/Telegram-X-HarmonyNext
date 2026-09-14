@@ -11,6 +11,7 @@ import { MotionTokens, DefaultMotion, MOTION_TOKEN_NAMES, BezierCurve } from './
 import { clampFontScale, scaleTypography } from './FontScale';
 
 export type ThemeMode = 'light' | 'dark';
+export type ThemePreference = 'system' | 'light' | 'dark';
 
 /**
  * A fully resolved theme: semantic colors for one mode, plus the base

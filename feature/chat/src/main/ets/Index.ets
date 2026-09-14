@@ -72,6 +72,7 @@ export {
   CloseMediaViewer,
   ChangeViewerIndex,
   RequestMediaDownload,
+  PickAndSendPhoto,
   ChatIntent
 } from './contract/ChatIntent';
 
@@ -88,6 +89,7 @@ export {
   ReportMessagesRead,
   ResendMessage,
   CopyTextToClipboard,
+  PickAndSendPhotoEffect,
   ChatEffect
 } from './contract/ChatEffect';
 

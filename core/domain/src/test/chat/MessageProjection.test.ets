@@ -456,5 +456,78 @@ export default function messageProjectionTest(): void {
       expect(bridge.sent.length).assertEqual(0);
     });
 
+    it('should construct valid SendMessage with InputMessagePhoto', 0, (): void => {
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const scope: AccountScope = createScope(bridge);
+      const projection: MessageProjection = new MessageProjection(42, scope);
+
+      const res: Result<TdPendingRequest, AppError> = projection.sendPhotoMessage(
+        '/data/storage/el2/base/photos/test.jpg',
+        'Sunset photo',
+        100,
+        1920,
+        1080
+      );
+      expect(res.ok).assertTrue();
+
+      const sent: Record<string, TdWireValue> = bridge.lastSentJson();
+      expect(sent['@type']).assertEqual('sendMessage');
+      expect(sent['chat_id']).assertEqual(42);
+
+      const replyTo = sent['reply_to'] as Record<string, TdWireValue>;
+      expect(replyTo !== null && replyTo !== undefined).assertTrue();
+      expect(replyTo['@type']).assertEqual('inputMessageReplyToMessage');
+      expect(replyTo['message_id']).assertEqual(100);
+
+      const content = sent['input_message_content'] as Record<string, TdWireValue>;
+      expect(content['@type']).assertEqual('inputMessagePhoto');
+
+      const photo = content['photo'] as Record<string, TdWireValue>;
+      expect(photo['@type']).assertEqual('inputPhoto');
+      expect(photo['width']).assertEqual(1920);
+      expect(photo['height']).assertEqual(1080);
+
+      const file = photo['photo'] as Record<string, TdWireValue>;
+      expect(file['@type']).assertEqual('inputFileLocal');
+      expect(file['path']).assertEqual('/data/storage/el2/base/photos/test.jpg');
+
+      const caption = content['caption'] as Record<string, TdWireValue>;
+      expect(caption !== null && caption !== undefined).assertTrue();
+      expect(caption['text']).assertEqual('Sunset photo');
+    });
+
+    it('should reject sendPhotoMessage when localPath is empty', 0, (): void => {
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const scope: AccountScope = createScope(bridge);
+      const projection: MessageProjection = new MessageProjection(42, scope);
+
+      const res: Result<TdPendingRequest, AppError> = projection.sendPhotoMessage('   ', 'Caption');
+      expect(res.ok).assertFalse();
+      expect(bridge.sent.length).assertEqual(0);
+    });
+
+    it('should construct sendPhotoMessage with minimal arguments', 0, (): void => {
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const scope: AccountScope = createScope(bridge);
+      const projection: MessageProjection = new MessageProjection(42, scope);
+
+      const res: Result<TdPendingRequest, AppError> = projection.sendPhotoMessage('/data/img.png');
+      expect(res.ok).assertTrue();
+
+      const sent: Record<string, TdWireValue> = bridge.lastSentJson();
+      expect(sent['@type']).assertEqual('sendMessage');
+      expect(sent['reply_to']).assertNull();
+
+      const content = sent['input_message_content'] as Record<string, TdWireValue>;
+      expect(content['@type']).assertEqual('inputMessagePhoto');
+      expect(content['caption']).assertNull();
+
+      const photo = content['photo'] as Record<string, TdWireValue>;
+      expect(photo['width']).assertEqual(0);
+      expect(photo['height']).assertEqual(0);
+      const file = photo['photo'] as Record<string, TdWireValue>;
+      expect(file['path']).assertEqual('/data/img.png');
+    });
+
   });
 }

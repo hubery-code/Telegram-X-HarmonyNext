@@ -78,7 +78,8 @@ import {
   ForwardMessages,
   ReportMessagesRead,
   ResendMessage,
-  CopyTextToClipboard
+  CopyTextToClipboard,
+  PickAndSendPhotoEffect
 } from '../contract/ChatEffect';
 import { incomingIdUpTo } from '../model/ReadReceipt';
 import {
@@ -304,6 +305,18 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
         errorMessage: sendFailedIntent.error.message
       });
       return reduced(nextState);
+    }
+
+    case 'pickAndSendPhoto': {
+      let replyToMessageId: number = 0;
+      if (state.composerMode !== null && state.composerMode.kind === 'reply') {
+        replyToMessageId = (state.composerMode as ComposerReplyMode).targetMessageId;
+      }
+      const caption: string = state.composerText.trim();
+      const effects: ChatEffect[] = [
+        new PickAndSendPhotoEffect(state.chatId, replyToMessageId, caption)
+      ];
+      return reduced(state, effects);
     }
 
     case 'backToChatList': {

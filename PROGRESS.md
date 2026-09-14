@@ -52,7 +52,6 @@
 
 | 工作包 | 依赖 | 一句话 |
 |---|---|---|
-| MEDIA-102 | MEDIA-101 | 图片发送：photoViewPicker 选图 → SendMessage(InputMessagePhoto) + 上传进度（FEAT-MEDIA-001 发侧） |
 | MEDIA-104 | FILE-101 | 文件消息气泡（名称/大小/下载态）+ 完成可打开（FEAT-MEDIA-003） |
 | MEDIA-106 | FILE-101 | 语音消息录制/发送/播放、波形（FEAT-MEDIA-004，~2 天） |
 
@@ -66,7 +65,6 @@
 | NOTIF-101 | AGC 配置 | Push Kit token → RegisterDevice 闭环（FEAT-PUSH-001；AGC/签名配置需用户确认） |
 | NOTIF-102 | NOTIF-101 | 通知聚合 + 点击路由直达聊天（FEAT-PUSH-002） |
 | ACC-101 | CORE-003 | 多账号切换 UI + 添加账号入口（FEAT-ACC-002/003；框架已有） |
-| SET-102 | INTEG-001 | 深色/浅色主题跟随系统/手动切换（FEAT-UI-001；design token 已有；SettingsPage 已有主题切换 UI，需全局生效） |
 | SET-103 | SET-101 | 中/英语言切换 + 关键路径文案资源化（FEAT-SET-002/UI-003） |
 
 ### P2 及以后（Phase 5 Beta，暂不拆包）
@@ -78,6 +76,9 @@ GROUP / PROFILE / SHARE / A11Y / ADAPTIVE Epic 及 FEATURE_MATRIX P2/P3 项：Ph
 ## 已完成（Accepted 或有保留）
 
 | 工作包 | 完成日期 | 证据 |
+|---|---|---|
+| MEDIA-102 相册选图与发送图片消息（FEAT-MEDIA-001 发侧完整闭环） | 2026-09-14 ✅ | AI-Agent-Antigravity：① **平台能力 Kit 隔离与契约抽象**：在 `platform/ports` 定义 `MediaPickerPort` 纯契约与 `FakeMediaPicker` 内存桩（支持 `pickPhoto` 与 `pickFile`），并在 `entry` 实现基于 `@kit.MediaLibraryKit`（`PhotoViewPicker`）与 `@kit.CoreFileKit` 的生产适配器 `HarmonyMediaPickerAdapter`；② **领域层图片发送与上传状态管理**：`MessageProjection.sendPhotoMessage` 封装 TDLib `SendMessage(InputMessagePhoto)`；`FileRegistry` 扩展上传态判断（`isUploading`、`isUploaded`、`getUploadProgress`）；③ **MVI 状态机与协调调度**：`feature/chat` 增加 `PickAndSendPhoto` intent 与 `PickAndSendPhotoEffect`，输入框文字作为 caption，保留 replyMode；`ChatCoordinator` 调度选取、发送、附件本地路径与进度映射，以及上传中消息取消/撤回（`cancelMediaUpload`）；④ **UI 交互与渲染**：输入框添加 `📎` 附件按钮；`MediaBubble` 渲染本地缩略图与半透明圆形进度覆盖层；⑤ **自动化测试**：`feature/chat` 新增 `ChatPhotoSending.test.ets`（3 组端到端流程），模块单测增至 130 项全部 PASS，`core_domain` 64 项 PASS，架构与 Design Token 0 违规，沉淀报告 `work-items/accepted/MEDIA-102.md`。 |
+| SET-102 深色/浅色/跟随系统主题全局切换与持久化（FEAT-UI-001 完整闭环） | 2026-09-14 ✅ | AI-Agent-Antigravity (Subagent-Settings)：① **全局主题状态机与纯 ArkTS 管理器**：在 `core/design_system` 建立 `ThemePreference`（`'system' | 'light' | 'dark'`）与 `ThemeManager` 单例/独立实例，提供 `resolveTheme`、`resolveThemeMode` 及 `subscribe/unsubscribe` 响应式分发，100% Kit-free；② **UI 状态驱动与持久化**：`feature/settings` 中 `SettingsUiState` 与 `SettingsReducer` 统一对齐 `ThemePreference`，处理 `changeThemeMode` 时级联同步 `ThemeManager` 与 `AppStorage`；③ **设置页三态分段选择卡片**：`SettingsPage` 增加主题选择器（System / Light / Dark），选中态高亮，响应当前色彩模式，并修复非法 token `backgroundElevated`；④ **单元测试**：`core_design_system` 扩充 13 组单测（总计 38 项），`feature_settings` 扩充 11 组单测（总计 41 项）全部 PASS；⑤ **门禁**：架构与 Design Token 0 违规，沉淀报告 `work-items/accepted/SET-102.md`。 |
 | SPIKE-002 24h Update Soak 测试方案与稳定性证据闭环（审计恢复冲刺第 9 项与 G1 原生可行性闭合） | 2026-09-14 ✅ | AI-Agent-Antigravity：① **原生 C++ 压测流水线与背压断言**：在 `native/tdcore/soak/native_soak.cpp` 与 `Makefile` 完整实现纯 Native 管道压测（生产者线程、有界队列 1024、背压等待挂起、批量快照派发、并发动态订阅/退订重入扰动与代际隔离）；实测 200,000+ 高频事件吞吐（>1,000,000 eps），严格断言 `outOfOrderCount == 0`、`duplicateCount == 0`、`droppedCount == 0`；② **内存增长斜率稳态达标**：集成平台原生高精度 RSS 采样与最小二乘法拟合，排除进程启动热身阶段后稳态内存增长斜率实测平稳（预算 `< 1.0 MB/小时`），无 native 泄漏与野指针；③ **ArkTS 高容量并发单测套件**：在 `platform/tdcore-bridge/src/test/BridgeSoak.test.ets` 编写 5 组关键测试（10,000+ burst 严格保序与零丢弃、高频连续流动态重入安全、Session Generation 跨代旧事件 100% 拦截丢弃、超出 JS 精度的大序列号字符串严格比较、50 次快速重入 close/createClient 生命周期循环）；`platform_tdcore_bridge` 单测用例数由 15 项增至 20 项全部 PASS；④ **自动化调度与报告生成器**：编写 `tools/test/soak_runner.py`（支持 `--mode fast` 快速门禁、`--mode duration` 24h 长跑、`--mode device` 真机监控与报告自动生成）；沉淀标准 G1 退出证据报告 `work-items/accepted/evidence/SPIKE-002-soak-report.md` 与 `work-items/accepted/SPIKE-002.md`；⑤ **全量门禁与洁净度**：全仓 19 模块 798/798 项单测 100% 全部通过；`FEAT-FEAS-005` 标记为 Accepted。 |
 | GOV-008 同步五个矩阵、ADR 与工作包证据库（P1-GOV-001 阻断项闭合与 PUSH-001/CALL-001 裁决） | 2026-09-14 ✅ | AI-Agent-Antigravity：① **工作包与证据库归档 (`work-items/accepted/`)**：将质量恢复冲刺中已完成的 7 个工作包（`SEC-002`, `DATA-001`, `BUILD-001`, `BRG-007`, `QA-002`, `ARCH-001`, `NAV-001`）按标准模板拆分并沉淀独立 evidence 报告；② **正式架构决策记录 (ADR-003 ~ ADR-007)**：新增 `ADR-003-push-kit-blocked.md`（裁决 Push Kit 为 Blocked，确立 MVP-Core 受控前台长连接边界）、`ADR-004-tgcalls-voip-deferred.md`（裁决音视频通话为 Deferred，后置至 Post-MVP / G4）、`ADR-005-typed-navigation-single-source.md`（单一强类型导航栈规范）、`ADR-006-huks-database-encryption.md`（HUKS 硬件加密与在线平滑迁移规范）、`ADR-007-ports-adapters-kit-isolation.md`（Ports/Adapters Kit 完全隔离规范）；③ **五个控制矩阵同步更新**：更新 `docs/architecture/ARCHITECTURE.md`（全面反映 21 模块、Port/Adapter、793 项单测现状，清除 Phase 0 空壳描述）；更新 `docs/product/FEATURE_MATRIX.md` 与 `PARITY_MATRIX.md`（对齐全部已交付特性至 Accepted/Dev Match，明确 Blocked/Deferred 裁决）；更新 `docs/quality/TEST_MATRIX.md`（扩充为 19 模块 793 项单测与 9 步 CI 门禁矩阵）；更新 `docs/quality/DEVICE_MATRIX.md`（登记 Huawei VYG-AL00 / 6XE0225A27023538 真机已验证基线）；④ **工程首页 README.md 同步**：准确反映多媒体接收/查看/视频预览能力、工程基座指标与后续清晰路线图；⑤ **全量流水线**：全仓 19 模块 793/793 项单测 100% PASS，`./tools/ci/ci.sh` 9 步全通，工作区保持 100% 洁净零污染。 |
 

@@ -168,6 +168,20 @@ export class CopyTextToClipboard implements Effect {
   }
 }
 
+/** MEDIA-102：调用媒体选择器选图并发送 */
+export class PickAndSendPhotoEffect implements Effect {
+  readonly kind: 'pickAndSendPhoto' = 'pickAndSendPhoto';
+  readonly chatId: number;
+  readonly replyToMessageId: number;
+  readonly caption: string;
+
+  constructor(chatId: number, replyToMessageId: number = 0, caption: string = '') {
+    this.chatId = chatId;
+    this.replyToMessageId = replyToMessageId;
+    this.caption = caption;
+  }
+}
+
 export type ChatEffect =
   | FetchInitialMessages
   | FetchOlderMessages
@@ -180,4 +194,5 @@ export type ChatEffect =
   | ForwardMessages
   | ReportMessagesRead
   | ResendMessage
-  | CopyTextToClipboard;
+  | CopyTextToClipboard
+  | PickAndSendPhotoEffect;

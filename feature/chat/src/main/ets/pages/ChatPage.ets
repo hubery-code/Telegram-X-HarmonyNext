@@ -83,7 +83,8 @@ import {
   OpenMediaViewer,
   CloseMediaViewer,
   ChangeViewerIndex,
-  RequestMediaDownload
+  RequestMediaDownload,
+  PickAndSendPhoto
 } from '../contract/ChatIntent';
 import { isMessageSelected } from '../model/ForwardSelection';
 
@@ -998,7 +999,7 @@ export struct ChatPage {
   MediaBubble(media: MediaAttachment, messageId: number) {
     Stack({ alignContent: Alignment.Center }) {
       // 1. 底图 / 缩略图 / 占位 / 动图视频
-      if (media.localPath !== null && media.isDownloaded) {
+      if (media.localPath !== null && (media.isDownloaded || media.isUploading)) {
         if (media.kind === 'animation' && (media.localPath.endsWith('.mp4') || media.localPath.indexOf('.mp4') >= 0)) {
           // Telegram 动图通常为 MP4 格式，无声循环播放
           Video({
@@ -1062,7 +1063,26 @@ export struct ChatPage {
 
       // 2. 状态与角标覆盖层
       if (media.kind === 'photo') {
-        if (!media.isDownloaded) {
+        if (media.isUploading) {
+          Column() {
+            LoadingProgress()
+              .width(36)
+              .height(36)
+              .color(Color.White)
+            if (media.uploadProgress > 0 && media.uploadProgress < 1) {
+              Text(`${Math.round(media.uploadProgress * 100)}%`)
+                .fontSize(11)
+                .fontColor(Color.White)
+                .margin({ top: 4 })
+            }
+          }
+          .width(56)
+          .height(56)
+          .borderRadius(T.radius.full)
+          .backgroundColor('#80000000')
+          .justifyContent(FlexAlign.Center)
+          .alignItems(HorizontalAlign.Center)
+        } else if (!media.isDownloaded) {
           if (media.isDownloading) {
             Column() {
               LoadingProgress()
@@ -1708,6 +1728,18 @@ export struct ChatPage {
   @Builder
   ComposerBar() {
     Row() {
+      // MEDIA-102：相册选图发送按钮
+      Text('📎')
+        .fontSize(20)
+        .fontColor(T.colors.textSecondary)
+        .textAlign(TextAlign.Center)
+        .width(COMPOSER_INPUT_HEIGHT)
+        .height(COMPOSER_INPUT_HEIGHT)
+        .margin({ right: T.spacing.xs })
+        .onClick(() => {
+          this.onDispatch(new PickAndSendPhoto());
+        })
+
       Row() {
         TextInput({
           text: this.uiState.composerText,

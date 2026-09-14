@@ -26,6 +26,7 @@ export { MonotonicClockPort } from './MonotonicClockPort';
 export { SecureRandomPort } from './SecureRandomPort';
 export { ClipboardPort } from './ClipboardPort';
 export { ToastPort } from './ToastPort';
+export { MediaPickerPort, PickedMedia } from './MediaPickerPort';
 export { FakePreferencesStore } from './fakes/FakePreferencesStore';
 export { FakeSecureKeyStore } from './fakes/FakeSecureKeyStore';
 export { FakeSecureRandom } from './fakes/FakeSecureRandom';
@@ -35,4 +36,6 @@ export { FakeMonotonicClock } from './fakes/FakeMonotonicClock';
 export { FakeClipboard } from './fakes/FakeClipboard';
 export { FakeToast } from './fakes/FakeToast';
 export type { RecordedToast } from './fakes/FakeToast';
+export { FakeMediaPicker } from './fakes/FakeMediaPicker';
+
 

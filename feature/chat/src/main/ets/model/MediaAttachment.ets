@@ -25,6 +25,8 @@ export class MediaAttachment {
   readonly caption: string;
   readonly captionSpans: MessageTextSpan[];
   readonly hasSpoiler: boolean;
+  readonly isUploading: boolean;
+  readonly uploadProgress: number; // 0..1
 
   constructor(
     kind: MediaKind,
@@ -39,7 +41,9 @@ export class MediaAttachment {
     progress: number = 0,
     caption: string = '',
     captionSpans: MessageTextSpan[] = [],
-    hasSpoiler: boolean = false
+    hasSpoiler: boolean = false,
+    isUploading: boolean = false,
+    uploadProgress: number = 0
   ) {
     this.kind = kind;
     this.fileId = fileId;
@@ -54,6 +58,8 @@ export class MediaAttachment {
     this.caption = caption;
     this.captionSpans = captionSpans;
     this.hasSpoiler = hasSpoiler;
+    this.isUploading = isUploading;
+    this.uploadProgress = uploadProgress;
   }
 
   copyWith(
@@ -61,7 +67,9 @@ export class MediaAttachment {
     thumbnailPath?: string | null,
     isDownloading?: boolean,
     isDownloaded?: boolean,
-    progress?: number
+    progress?: number,
+    isUploading?: boolean,
+    uploadProgress?: number
   ): MediaAttachment {
     return new MediaAttachment(
       this.kind,
@@ -76,7 +84,9 @@ export class MediaAttachment {
       progress !== undefined ? progress : this.progress,
       this.caption,
       this.captionSpans,
-      this.hasSpoiler
+      this.hasSpoiler,
+      isUploading !== undefined ? isUploading : this.isUploading,
+      uploadProgress !== undefined ? uploadProgress : this.uploadProgress
     );
   }
 }

@@ -28,7 +28,7 @@
  */
 
 import { Logger } from '@tgx/observability';
-import { ClipboardPort, ToastPort, FakeClipboard, FakeToast } from '@tgx/platform-ports';
+import { ClipboardPort, ToastPort, MediaPickerPort, PickedMedia, FakeClipboard, FakeToast, FakeMediaPicker } from '@tgx/platform-ports';
 import { ManualClock, SequentialIdGenerator, AppError, AppErrors } from '@tgx/core-common';
 import { AccountScope } from '@tgx/core-account';
 import {
@@ -90,7 +90,10 @@ import {
   OnForwardCompleted,
   OnForwardFailed,
   OpenMediaViewer,
-  RequestMediaDownload
+  RequestMediaDownload,
+  PickAndSendPhoto,
+  ComposerTextChanged,
+  CancelComposerMode
 } from '../contract/ChatIntent';
 import {
   ChatEffect,
@@ -102,7 +105,8 @@ import {
   ForwardMessages,
   ReportMessagesRead,
   ResendMessage,
-  CopyTextToClipboard
+  CopyTextToClipboard,
+  PickAndSendPhotoEffect
 } from '../contract/ChatEffect';
 import { isOutgoingMessageRead, ReadReportThrottle } from '../model/ReadReceipt';
 import { chatReducer } from '../reducer/ChatReducer';
@@ -248,6 +252,7 @@ export class ReplyInfo {
 export interface ChatCoordinatorOptions {
   readonly clipboardPort?: ClipboardPort;
   readonly toastPort?: ToastPort;
+  readonly mediaPickerPort?: MediaPickerPort;
   readonly logger?: Logger;
 }
 
@@ -259,6 +264,7 @@ export class ChatCoordinator {
   private readonly env: ReducerEnv;
   private readonly clipboardPort: ClipboardPort;
   private readonly toastPort: ToastPort;
+  private readonly mediaPickerPort: MediaPickerPort;
   private readonly logger: Logger;
   private readonly onBack: () => void;
   /** MSG-106：请求装配层弹出转发目标会话选择器（缺省 no-op）。 */
@@ -316,6 +322,9 @@ export class ChatCoordinator {
     this.toastPort = (options !== undefined && options.toastPort !== undefined)
       ? options.toastPort
       : new FakeToast();
+    this.mediaPickerPort = (options !== undefined && options.mediaPickerPort !== undefined)
+      ? options.mediaPickerPort
+      : new FakeMediaPicker();
     this.logger = (options !== undefined && options.logger !== undefined)
       ? options.logger
       : new Logger();
@@ -697,7 +706,24 @@ export class ChatCoordinator {
         }
       }
 
-      if (!isDownloaded && !isDownloading) {
+      const isUploading: boolean = this.fileRegistry.isUploading(fileId) ||
+        (message.is_outgoing && message.sending_state !== null && message.sending_state.type === 'messageSendingStatePending');
+      const uploadProgress: number = this.fileRegistry.getUploadProgress(fileId);
+
+      if (isUploading && !this.fileSubscriptions.has(fileId)) {
+        const sub: Subscription = this.fileRegistry.subscribeFile(fileId, (file: File) => {
+          if (!this.destroyed) {
+            if (file.remote !== null && file.remote.is_uploading_completed) {
+              this.scheduleSyncFromProjection();
+            } else {
+              this.scheduleThrottledSync();
+            }
+          }
+        });
+        this.fileSubscriptions.set(fileId, sub);
+      }
+
+      if (!isDownloaded && !isDownloading && !isUploading) {
         this.requestMediaDownload(fileId, 1);
       }
 
@@ -717,7 +743,9 @@ export class ChatCoordinator {
         progress,
         captionText,
         captionSpans,
-        photoContent.has_spoiler
+        photoContent.has_spoiler,
+        isUploading,
+        uploadProgress
       );
     }
 
@@ -1598,8 +1626,65 @@ export class ChatCoordinator {
         break;
       }
 
+      case 'pickAndSendPhoto': {
+        const pick: PickAndSendPhotoEffect = effect as PickAndSendPhotoEffect;
+        this.handlePickAndSendPhoto(pick.replyToMessageId, pick.caption);
+        break;
+      }
+
       default:
         break;
+    }
+  }
+
+  /** MEDIA-102：调起相册选取图片并发送 */
+  public pickAndSendPhoto(): void {
+    this.dispatch(new PickAndSendPhoto());
+  }
+
+  /** MEDIA-102：取消正在上传或待发送的媒体消息 */
+  public cancelMediaUpload(messageId: number): Result<TdPendingRequest, AppError> {
+    return this.projection.deleteMessages([messageId], true);
+  }
+
+  private async handlePickAndSendPhoto(replyToMessageId: number = 0, caption: string = ''): Promise<void> {
+    try {
+      const pickedMedia: PickedMedia[] = await this.mediaPickerPort.pickPhoto(1);
+      if (this.destroyed || pickedMedia.length === 0) {
+        return;
+      }
+      const picked: PickedMedia = pickedMedia[0];
+      const path: string = (picked.path !== undefined && picked.path.length > 0) ? picked.path : picked.uri;
+      if (path.length === 0) {
+        return;
+      }
+      this.dispatch(new ComposerTextChanged(''));
+      if (this.currentState.composerMode !== null) {
+        this.dispatch(new CancelComposerMode());
+      }
+      const result: Result<TdPendingRequest, AppError> = this.projection.sendPhotoMessage(
+        path,
+        caption.length > 0 ? caption : undefined,
+        replyToMessageId
+      );
+      if (result.err) {
+        this.logger.logError(TAG, result.error);
+        this.dispatch(new OnMessageSendFailed(result.error));
+      }
+      if (result.ok) {
+        result.value.promise.then((res: Result<TdWireObject, AppError>) => {
+          if (res.err) {
+            this.logger.logError(TAG, res.error);
+            if (!this.destroyed) {
+              this.dispatch(new OnMessageSendFailed(res.error));
+            }
+          } else {
+            this.logger.info(TAG, 'send_photo_message_ok', `chatId=${this.currentState.chatId}`);
+          }
+        }).catch(() => {});
+      }
+    } catch (err) {
+      this.logger.error(TAG, 'pick_photo_error', String(err));
     }
   }
 

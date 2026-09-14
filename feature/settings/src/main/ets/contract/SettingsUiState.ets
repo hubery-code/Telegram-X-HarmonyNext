@@ -8,8 +8,9 @@
  */
 
 import { UiState } from '@tgx/feature-template';
+import { ThemePreference } from '@tgx/core-design-system';
 
-export type SettingsThemeMode = 'system' | 'light' | 'dark';
+export type SettingsThemeMode = ThemePreference;
 
 export interface SettingsUiStateOptions {
   readonly userId?: number;
@@ -82,7 +83,7 @@ export class SettingsUiState implements UiState {
     this.showLogoutConfirm = showLogoutConfirm;
   }
 
-  static initial(): SettingsUiState {
+  static initial(themeMode: SettingsThemeMode = 'system'): SettingsUiState {
     return new SettingsUiState(
       0,
       '',
@@ -93,7 +94,7 @@ export class SettingsUiState implements UiState {
       true,
       '0 B',
       'en',
-      'system',
+      themeMode,
       '1.0.0',
       false,
       false,

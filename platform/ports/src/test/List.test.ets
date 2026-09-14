@@ -4,6 +4,7 @@ import fakeNetworkStateContractTest from './FakeNetworkState.test';
 import fakeAppFilesContractTest from './FakeAppFiles.test';
 import fakeMonotonicClockContractTest from './FakeMonotonicClock.test';
 import fakeClipboardAndToastTest from './FakeClipboardAndToast.test';
+import mediaPickerPortTest from './MediaPickerPort.test';
 
 export default function testsuite() {
   fakePreferencesContractTest();
@@ -12,5 +13,7 @@ export default function testsuite() {
   fakeAppFilesContractTest();
   fakeMonotonicClockContractTest();
   fakeClipboardAndToastTest();
+  mediaPickerPortTest();
 }
+
 

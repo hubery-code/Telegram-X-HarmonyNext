@@ -9,6 +9,7 @@
  */
 
 import { Reducer, ReducerEnv, ReducerResult, reduced } from '@tgx/feature-template';
+import { ThemeManager } from '@tgx/core-design-system';
 import { SettingsUiState, SettingsUiStateOptions } from '../contract/SettingsUiState';
 import {
   CacheCleared,
@@ -78,6 +79,17 @@ export const settingsReducer: Reducer<SettingsUiState, SettingsIntent, SettingsE
       if (state.themeMode === themeIntent.themeMode) {
         return reduced(state);
       }
+      // 1. 同步更新全局 ThemeManager
+      ThemeManager.getInstance().setPreference(themeIntent.themeMode);
+
+      // 2. 同步持久化到 AppStorage（若在 UI 运行环境中）
+      try {
+        AppStorage.setOrCreate<string>('themeMode', themeIntent.themeMode);
+        AppStorage.setOrCreate<string>('themePreference', themeIntent.themeMode);
+      } catch (_e) {
+        // 无 AppStorage 运行环境（如纯逻辑单测）容错
+      }
+
       const options: SettingsUiStateOptions = {
         themeMode: themeIntent.themeMode
       };

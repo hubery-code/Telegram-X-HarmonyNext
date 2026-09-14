@@ -54,6 +54,7 @@ import {
   ShowToastEffect
 } from '../contract/SettingsEffect';
 import { settingsReducer } from '../reducer/SettingsReducer';
+import { Theme, ThemeManager } from '@tgx/core-design-system';
 
 const TAG: string = 'SettingsCoordinator';
 
@@ -68,6 +69,7 @@ export class SettingsCoordinator {
   private currentState: SettingsUiState;
   private readonly listeners: SettingsUiStateListener[] = [];
   private unsubscribeUser: (() => void) | null = null;
+  private unsubscribeTheme: (() => void) | null = null;
   private subscribedUserId: number = 0;
   private destroyed: boolean = false;
 
@@ -87,6 +89,25 @@ export class SettingsCoordinator {
     this.onNavigateToAuth = onNavigateToAuth !== undefined ? onNavigateToAuth : (): void => {};
     this.logger = logger !== undefined ? logger : new Logger();
     this.currentState = SettingsUiState.initial();
+
+    const currentThemePref = ThemeManager.getInstance().getPreference();
+    if (this.currentState.themeMode !== currentThemePref) {
+      this.currentState = this.currentState.copyWith({ themeMode: currentThemePref });
+    }
+
+    const self: SettingsCoordinator = this;
+    this.unsubscribeTheme = ThemeManager.getInstance().subscribe((_theme: Theme): void => {
+      if (self.destroyed) {
+        return;
+      }
+      const pref = ThemeManager.getInstance().getPreference();
+      if (self.currentState.themeMode !== pref) {
+        self.currentState = self.currentState.copyWith({ themeMode: pref });
+        for (let i = 0; i < self.listeners.length; i++) {
+          self.listeners[i](self.currentState);
+        }
+      }
+    });
   }
 
   get state(): SettingsUiState {
@@ -104,6 +125,10 @@ export class SettingsCoordinator {
     if (this.unsubscribeUser !== null) {
       this.unsubscribeUser();
       this.unsubscribeUser = null;
+    }
+    if (this.unsubscribeTheme !== null) {
+      this.unsubscribeTheme();
+      this.unsubscribeTheme = null;
     }
     this.listeners.length = 0;
   }

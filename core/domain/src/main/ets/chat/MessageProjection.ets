@@ -59,6 +59,9 @@ import {
   GetChat,
   ForwardMessages,
   Chat,
+  InputFileLocal,
+  InputPhoto,
+  InputMessagePhoto,
   InputMessageReplyToMessage,
   InputMessageText,
   FormattedText,
@@ -242,6 +245,56 @@ export class MessageProjection {
 
     const content: InputMessageText = new InputMessageText();
     content.text = formatted;
+
+    const req: SendMessage = new SendMessage();
+    req.chat_id = this.chatId;
+    if (replyToMessageId > 0) {
+      const replyTo: InputMessageReplyToMessage = new InputMessageReplyToMessage();
+      replyTo.message_id = replyToMessageId;
+      req.reply_to = replyTo;
+    }
+    req.input_message_content = content;
+
+    return this.scope.request('sendMessage', encodeSendMessage(req) as TdWireObject);
+  }
+
+  /**
+   * 发送图片消息（MEDIA-102 / FEAT-MEDIA-001 发侧）：组 InputMessagePhoto 调 sendMessage。
+   * localPath 为空直接判 parameter/missing；caption 可选。
+   * replyToMessageId > 0 时挂 reply_to。
+   */
+  sendPhotoMessage(
+    localPath: string,
+    caption?: string,
+    replyToMessageId: number = 0,
+    width: number = 0,
+    height: number = 0
+  ): Result<TdPendingRequest, AppError> {
+    const trimmedPath: string = localPath.trim();
+    if (trimmedPath.length === 0) {
+      return err<TdPendingRequest, AppError>(
+        AppErrors.parameter('missing', 'localPath', 'photo local path is empty')
+      );
+    }
+    const fileLocal: InputFileLocal = new InputFileLocal();
+    fileLocal.path = trimmedPath;
+
+    const photo: InputPhoto = new InputPhoto();
+    photo.photo = fileLocal;
+    if (width > 0) {
+      photo.width = width;
+    }
+    if (height > 0) {
+      photo.height = height;
+    }
+
+    const content: InputMessagePhoto = new InputMessagePhoto();
+    content.photo = photo;
+    if (caption !== undefined && caption.trim().length > 0) {
+      const formatted: FormattedText = new FormattedText();
+      formatted.text = caption.trim();
+      content.caption = formatted;
+    }
 
     const req: SendMessage = new SendMessage();
     req.chat_id = this.chatId;

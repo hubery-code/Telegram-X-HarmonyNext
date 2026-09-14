@@ -31,7 +31,8 @@ import {
   ConfirmForwardSelection,
   ForwardSelectedToChat,
   OnForwardCompleted,
-  OnForwardFailed
+  OnForwardFailed,
+  PickAndSendPhoto
 } from '../main/ets/contract/ChatIntent';
 import {
   ChatEffect,
@@ -42,7 +43,8 @@ import {
   NavigateBack,
   OpenForwardPicker,
   ForwardMessages,
-  CopyTextToClipboard
+  CopyTextToClipboard,
+  PickAndSendPhotoEffect
 } from '../main/ets/contract/ChatEffect';
 import { chatReducer, extractFirstLink } from '../main/ets/reducer/ChatReducer';
 import { MessageTextSpan } from '../main/ets/model/MessageTextSpan';
@@ -652,6 +654,38 @@ export default function chatReducerTest() {
         4, 'click here https://raw-link.com', 1000, false, '', 'none', true, false, null, '', [span]
       );
       expect(extractFirstLink(msgSpan)).assertEqual('https://span-link.com');
+    });
+
+    it('pickAndSendPhoto_emitsPickAndSendPhotoEffect_withComposerTextAsCaption', 0, () => {
+      const state: ChatUiState = makeState('photo caption');
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        state,
+        new PickAndSendPhoto(),
+        makeEnv()
+      );
+
+      expect(result.effects.length).assertEqual(1);
+      const effect: PickAndSendPhotoEffect = result.effects[0] as PickAndSendPhotoEffect;
+      expect(effect.kind).assertEqual('pickAndSendPhoto');
+      expect(effect.chatId).assertEqual(42);
+      expect(effect.caption).assertEqual('photo caption');
+      expect(effect.replyToMessageId).assertEqual(0);
+    });
+
+    it('pickAndSendPhoto_withReplyMode_includesReplyToMessageId', 0, () => {
+      const replyMode: ComposerReplyMode = new ComposerReplyMode(123, 'sender', 'text');
+      const state: ChatUiState = makeStateWith([], 'caption', replyMode);
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        state,
+        new PickAndSendPhoto(),
+        makeEnv()
+      );
+
+      expect(result.effects.length).assertEqual(1);
+      const effect: PickAndSendPhotoEffect = result.effects[0] as PickAndSendPhotoEffect;
+      expect(effect.kind).assertEqual('pickAndSendPhoto');
+      expect(effect.replyToMessageId).assertEqual(123);
+      expect(effect.caption).assertEqual('caption');
     });
   });
 }

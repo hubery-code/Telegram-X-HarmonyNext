@@ -1,4 +1,5 @@
 import { describe, it, expect } from '@ohos/hypium';
+import { ThemeManager, LightTheme, DarkTheme } from '@tgx/core-design-system';
 import { ManualClock, SequentialIdGenerator } from '@tgx/core-common';
 import { ReducerEnv } from '@tgx/feature-template';
 import { SettingsUiState, SettingsUiStateOptions } from '../main/ets/contract/SettingsUiState';
@@ -116,6 +117,7 @@ export default function settingsReducerTest(): void {
     });
 
     it('changeThemeMode_updatesThemeAndEmitsToast', 0, () => {
+      ThemeManager.getInstance().reset();
       const state = SettingsUiState.initial();
       const result = settingsReducer(state, new ChangeThemeMode('dark'), makeEnv());
 
@@ -123,15 +125,48 @@ export default function settingsReducerTest(): void {
       expect(result.effects.length).assertEqual(1);
       expect(result.effects[0].kind).assertEqual('showToast');
       expect((result.effects[0] as ShowToastEffect).message).assertEqual('Theme mode set to dark');
+      expect(ThemeManager.getInstance().getPreference()).assertEqual('dark');
+      expect(ThemeManager.getInstance().getEffectiveTheme()).assertEqual(DarkTheme);
+    });
+
+    it('changeThemeMode_toLight_syncsThemeManagerAndEmitsToast', 0, () => {
+      ThemeManager.getInstance().reset();
+      const state = SettingsUiState.initial().copyWith({ themeMode: 'dark' });
+      ThemeManager.getInstance().setPreference('dark');
+
+      const result = settingsReducer(state, new ChangeThemeMode('light'), makeEnv());
+
+      expect(result.state.themeMode).assertEqual('light');
+      expect(ThemeManager.getInstance().getPreference()).assertEqual('light');
+      expect(ThemeManager.getInstance().getEffectiveTheme()).assertEqual(LightTheme);
+      expect((result.effects[0] as ShowToastEffect).message).assertEqual('Theme mode set to light');
+    });
+
+    it('changeThemeMode_toSystem_syncsThemeManagerAndEmitsToast', 0, () => {
+      ThemeManager.getInstance().reset();
+      const state = SettingsUiState.initial().copyWith({ themeMode: 'light' });
+      ThemeManager.getInstance().setPreference('light');
+
+      const result = settingsReducer(state, new ChangeThemeMode('system'), makeEnv());
+
+      expect(result.state.themeMode).assertEqual('system');
+      expect(ThemeManager.getInstance().getPreference()).assertEqual('system');
+      expect((result.effects[0] as ShowToastEffect).message).assertEqual('Theme mode set to system');
     });
 
     it('changeThemeMode_sameMode_isNoOp', 0, () => {
+      ThemeManager.getInstance().reset();
       const options: SettingsUiStateOptions = { themeMode: 'dark' };
       const state = SettingsUiState.initial().copyWith(options);
       const result = settingsReducer(state, new ChangeThemeMode('dark'), makeEnv());
 
       expect(result.state === state).assertTrue();
       expect(result.effects.length).assertEqual(0);
+    });
+
+    it('initialState_respectsExplicitThemeMode', 0, () => {
+      const state = SettingsUiState.initial('dark');
+      expect(state.themeMode).assertEqual('dark');
     });
 
     it('requestLogout_showsConfirm', 0, () => {

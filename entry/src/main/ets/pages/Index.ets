@@ -70,6 +70,7 @@ import { BootstrapResult } from '../Bootstrap';
 import { Logger } from '@tgx/observability';
 import { HarmonyClipboardAdapter } from '../platform/HarmonyClipboardAdapter';
 import { HarmonyToastAdapter } from '../platform/HarmonyToastAdapter';
+import { HarmonyMediaPickerAdapter } from '../platform/HarmonyMediaPickerAdapter';
 import { createHarmonyLogger } from '../platform/HarmonyLogSink';
 
 const T = LightTheme;
@@ -93,6 +94,7 @@ struct Index {
 
   private readonly clipboardAdapter: HarmonyClipboardAdapter = new HarmonyClipboardAdapter();
   private readonly toastAdapter: HarmonyToastAdapter = new HarmonyToastAdapter();
+  private readonly mediaPickerAdapter: HarmonyMediaPickerAdapter = new HarmonyMediaPickerAdapter();
   private readonly logger: Logger = createHarmonyLogger();
   private readonly navController: EntryNavigationController = new EntryNavigationController({ name: 'auth' });
   private unsubscribeNavFn: (() => void) | null = null;
@@ -406,6 +408,7 @@ struct Index {
       {
         clipboardPort: this.clipboardAdapter,
         toastPort: this.toastAdapter,
+        mediaPickerPort: this.mediaPickerAdapter,
         logger: this.logger
       }
     );
