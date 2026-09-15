@@ -361,7 +361,8 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
       const effects: ChatEffect[] = [
         new PickAndSendPhotoEffect(state.chatId, replyToMessageId, caption)
       ];
-      return reduced(state, effects);
+      const nextState: ChatUiState = state.showAttachmentMenu ? state.copyWith({ showAttachmentMenu: false }) : state;
+      return reduced(nextState, effects);
     }
 
     case 'pickAndSendFile': {
@@ -373,7 +374,20 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
       const effects: ChatEffect[] = [
         new PickAndSendFileEffect(state.chatId, replyToMessageId, caption)
       ];
-      return reduced(state, effects);
+      const nextState: ChatUiState = state.showAttachmentMenu ? state.copyWith({ showAttachmentMenu: false }) : state;
+      return reduced(nextState, effects);
+    }
+
+    case 'openAttachmentMenu': {
+      return reduced(state.copyWith({ showAttachmentMenu: true }));
+    }
+
+    case 'closeAttachmentMenu': {
+      return reduced(state.copyWith({ showAttachmentMenu: false }));
+    }
+
+    case 'toggleAttachmentMenu': {
+      return reduced(state.copyWith({ showAttachmentMenu: !state.showAttachmentMenu }));
     }
 
     case 'cancelMediaUpload': {
@@ -384,6 +398,10 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
     }
 
     case 'backToChatList': {
+      // COMPOSER-102：附件面板打开时，返回先关闭面板不离开页面。
+      if (state.showAttachmentMenu) {
+        return reduced(state.copyWith({ showAttachmentMenu: false }));
+      }
       // 撤销路径：若全屏查看器打开，先关闭查看器不离开页面。
       if (state.activeViewerIndex >= 0) {
         return reduced(state.copyWith({ activeViewerIndex: -1 }));

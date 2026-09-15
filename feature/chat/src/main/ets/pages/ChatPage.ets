@@ -86,7 +86,10 @@ import {
   RequestMediaDownload,
   PickAndSendPhoto,
   PickAndSendFile,
-  CancelMediaUpload
+  CancelMediaUpload,
+  OpenAttachmentMenu,
+  CloseAttachmentMenu,
+  ToggleAttachmentMenu
 } from '../contract/ChatIntent';
 import { isMessageSelected } from '../model/ForwardSelection';
 
@@ -459,6 +462,11 @@ export struct ChatPage {
       // 长按气泡的操作菜单（CHAT-004）：全屏遮罩 + 底部动作面板。
       if (this.uiState.actionMenu !== null) {
         this.ActionMenuSheet(this.uiState.actionMenu)
+      }
+
+      // COMPOSER-102：附件选择面板（半透明遮罩 + 底部抽屉）。
+      if (this.uiState.showAttachmentMenu) {
+        this.AttachmentMenuSheet()
       }
 
       // 全屏媒体查看器（MEDIA-103 / FEAT-MEDIA-006）
@@ -1558,6 +1566,113 @@ export struct ChatPage {
     .alignContent(Alignment.Bottom)
   }
 
+  /** COMPOSER-102：附件选择面板（半透明遮罩 + 底部圆角抽屉）。 */
+  @Builder
+  AttachmentMenuSheet() {
+    Stack() {
+      // 1. 半透明全屏遮罩：点击关闭
+      Column()
+        .width('100%')
+        .height('100%')
+        .backgroundColor(T.colors.scrim)
+        .onClick(() => {
+          this.onDispatch(new CloseAttachmentMenu());
+        })
+
+      // 2. 底部抽屉面板
+      Column() {
+        // 顶部小手柄 indicator
+        Row()
+          .width(36)
+          .height(4)
+          .borderRadius(T.radius.full)
+          .backgroundColor(T.colors.disabled)
+          .margin({ top: T.spacing.sm, bottom: T.spacing.md })
+
+        // 标题行
+        Row() {
+          Text('Attach')
+            .fontSize(T.typography.title.fontSize)
+            .fontWeight(T.typography.title.fontWeight)
+            .fontColor(T.colors.textPrimary)
+        }
+        .width('100%')
+        .padding({
+          left: T.spacing.screenInset,
+          right: T.spacing.screenInset,
+          bottom: T.spacing.md
+        })
+
+        // 附件选项网格
+        Row() {
+          // 选项 1：Gallery (相册)
+          Column() {
+            Column() {
+              Text('🖼️')
+                .fontSize(28)
+            }
+            .width(56)
+            .height(56)
+            .borderRadius(T.radius.full)
+            .backgroundColor(T.colors.surfaceVariant)
+            .justifyContent(FlexAlign.Center)
+            .alignItems(HorizontalAlign.Center)
+            .margin({ bottom: T.spacing.xs })
+
+            Text('Gallery')
+              .fontSize(T.typography.footnote.fontSize)
+              .fontColor(T.colors.textPrimary)
+          }
+          .alignItems(HorizontalAlign.Center)
+          .onClick(() => {
+            this.onDispatch(new PickAndSendPhoto());
+          })
+          .margin({ right: T.spacing.xl })
+
+          // 选项 2：File (文件)
+          Column() {
+            Column() {
+              Text('📁')
+                .fontSize(28)
+            }
+            .width(56)
+            .height(56)
+            .borderRadius(T.radius.full)
+            .backgroundColor(T.colors.surfaceVariant)
+            .justifyContent(FlexAlign.Center)
+            .alignItems(HorizontalAlign.Center)
+            .margin({ bottom: T.spacing.xs })
+
+            Text('File')
+              .fontSize(T.typography.footnote.fontSize)
+              .fontColor(T.colors.textPrimary)
+          }
+          .alignItems(HorizontalAlign.Center)
+          .onClick(() => {
+            this.onDispatch(new PickAndSendFile());
+          })
+        }
+        .width('100%')
+        .padding({
+          left: T.spacing.screenInset,
+          right: T.spacing.screenInset,
+          top: T.spacing.sm,
+          bottom: T.spacing.xl
+        })
+      }
+      .width('100%')
+      .backgroundColor(T.colors.surface)
+      .borderRadius({
+        topLeft: T.radius.xl,
+        topRight: T.radius.xl
+      })
+      .padding({ bottom: T.spacing.screenInset })
+    }
+    .width('100%')
+    .height('100%')
+    .alignContent(Alignment.Bottom)
+  }
+
   /** 全屏多媒体画廊查看器（MEDIA-103 / FEAT-MEDIA-006）。 */
   @Builder
   MediaViewerOverlay() {
@@ -1851,28 +1966,16 @@ export struct ChatPage {
   @Builder
   ComposerBar() {
     Row() {
-      // MEDIA-102：相册选图发送按钮
+      // COMPOSER-102：统一附件入口按钮（展开/收起附件选择面板）
       Text('📎')
-        .fontSize(20)
-        .fontColor(T.colors.textSecondary)
+        .fontSize(22)
+        .fontColor(this.uiState.showAttachmentMenu ? T.colors.accent : T.colors.textSecondary)
         .textAlign(TextAlign.Center)
         .width(COMPOSER_INPUT_HEIGHT)
         .height(COMPOSER_INPUT_HEIGHT)
         .margin({ right: T.spacing.xs })
         .onClick(() => {
-          this.onDispatch(new PickAndSendPhoto());
-        })
-
-      // MEDIA-104：选取文件发送按钮
-      Text('📁')
-        .fontSize(20)
-        .fontColor(T.colors.textSecondary)
-        .textAlign(TextAlign.Center)
-        .width(COMPOSER_INPUT_HEIGHT)
-        .height(COMPOSER_INPUT_HEIGHT)
-        .margin({ right: T.spacing.xs })
-        .onClick(() => {
-          this.onDispatch(new PickAndSendFile());
+          this.onDispatch(new ToggleAttachmentMenu());
         })
 
       Row() {

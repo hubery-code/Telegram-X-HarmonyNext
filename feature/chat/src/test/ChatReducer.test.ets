@@ -33,7 +33,11 @@ import {
   OnForwardCompleted,
   OnForwardFailed,
   PickAndSendPhoto,
-  RestoreDraft
+  PickAndSendFile,
+  RestoreDraft,
+  OpenAttachmentMenu,
+  CloseAttachmentMenu,
+  ToggleAttachmentMenu
 } from '../main/ets/contract/ChatIntent';
 import {
   ChatEffect,
@@ -762,6 +766,89 @@ export default function chatReducerTest() {
       expect(replyMode.targetMessageId).assertEqual(601);
       expect(replyMode.previewTitle).assertEqual('Bob');
       expect(replyMode.previewText).assertEqual('arrived text');
+    });
+
+    it('openAttachmentMenu_setsShowAttachmentMenuTrue', 0, () => {
+      const initial: ChatUiState = makeState('');
+      expect(initial.showAttachmentMenu).assertFalse();
+
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        initial,
+        new OpenAttachmentMenu(),
+        makeEnv()
+      );
+
+      expect(result.state.showAttachmentMenu).assertTrue();
+      expect(result.effects.length).assertEqual(0);
+    });
+
+    it('closeAttachmentMenu_setsShowAttachmentMenuFalse', 0, () => {
+      const initial: ChatUiState = makeState('').copyWith({ showAttachmentMenu: true });
+      expect(initial.showAttachmentMenu).assertTrue();
+
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        initial,
+        new CloseAttachmentMenu(),
+        makeEnv()
+      );
+
+      expect(result.state.showAttachmentMenu).assertFalse();
+      expect(result.effects.length).assertEqual(0);
+    });
+
+    it('toggleAttachmentMenu_togglesState', 0, () => {
+      const initial: ChatUiState = makeState('');
+      const opened: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        initial,
+        new ToggleAttachmentMenu(),
+        makeEnv()
+      );
+      expect(opened.state.showAttachmentMenu).assertTrue();
+
+      const closed: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        opened.state,
+        new ToggleAttachmentMenu(),
+        makeEnv()
+      );
+      expect(closed.state.showAttachmentMenu).assertFalse();
+    });
+
+    it('pickAndSendPhoto_closesAttachmentMenu', 0, () => {
+      const initial: ChatUiState = makeState('').copyWith({ showAttachmentMenu: true });
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        initial,
+        new PickAndSendPhoto(),
+        makeEnv()
+      );
+
+      expect(result.state.showAttachmentMenu).assertFalse();
+      expect(result.effects.length).assertEqual(1);
+      expect(result.effects[0].kind).assertEqual('pickAndSendPhoto');
+    });
+
+    it('pickAndSendFile_closesAttachmentMenu', 0, () => {
+      const initial: ChatUiState = makeState('').copyWith({ showAttachmentMenu: true });
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        initial,
+        new PickAndSendFile(),
+        makeEnv()
+      );
+
+      expect(result.state.showAttachmentMenu).assertFalse();
+      expect(result.effects.length).assertEqual(1);
+      expect(result.effects[0].kind).assertEqual('pickAndSendFile');
+    });
+
+    it('backToChatList_closesAttachmentMenu_withoutNavigatingBack', 0, () => {
+      const initial: ChatUiState = makeState('').copyWith({ showAttachmentMenu: true });
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        initial,
+        new BackToChatList(),
+        makeEnv()
+      );
+
+      expect(result.state.showAttachmentMenu).assertFalse();
+      expect(result.effects.length).assertEqual(0);
     });
   });
 }

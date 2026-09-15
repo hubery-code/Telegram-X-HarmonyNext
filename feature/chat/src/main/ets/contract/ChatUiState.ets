@@ -114,6 +114,7 @@ export interface ChatUiStateOptions {
   readonly unreadCount?: number;
   readonly selectionMode?: boolean;
   readonly selectedMessageIds?: readonly number[];
+  readonly showAttachmentMenu?: boolean;
 }
 
 export class ChatUiState implements UiState {
@@ -134,6 +135,8 @@ export class ChatUiState implements UiState {
   readonly selectionMode: boolean;
   /** MSG-106：已选消息 id，恒升序无重复。 */
   readonly selectedMessageIds: readonly number[];
+  /** COMPOSER-102：附件选择面板是否展示。 */
+  readonly showAttachmentMenu: boolean;
 
   constructor(
     chatId: number,
@@ -150,7 +153,8 @@ export class ChatUiState implements UiState {
     lastReadInboxMessageId: number = 0,
     unreadCount: number = 0,
     selectionMode: boolean = false,
-    selectedMessageIds: readonly number[] = []
+    selectedMessageIds: readonly number[] = [],
+    showAttachmentMenu: boolean = false
   ) {
     this.chatId = chatId;
     this.chatTitle = chatTitle;
@@ -167,10 +171,11 @@ export class ChatUiState implements UiState {
     this.unreadCount = unreadCount;
     this.selectionMode = selectionMode;
     this.selectedMessageIds = selectedMessageIds;
+    this.showAttachmentMenu = showAttachmentMenu;
   }
 
   static initial(): ChatUiState {
-    return new ChatUiState(0, '', [], false, true, null, '', null, null, -1, [], 0, 0, false, []);
+    return new ChatUiState(0, '', [], false, true, null, '', null, null, -1, [], 0, 0, false, [], false);
   }
 
   copyWith(options: ChatUiStateOptions): ChatUiState {
@@ -189,7 +194,8 @@ export class ChatUiState implements UiState {
       options.lastReadInboxMessageId !== undefined ? options.lastReadInboxMessageId : this.lastReadInboxMessageId,
       options.unreadCount !== undefined ? options.unreadCount : this.unreadCount,
       options.selectionMode !== undefined ? options.selectionMode : this.selectionMode,
-      options.selectedMessageIds !== undefined ? options.selectedMessageIds : this.selectedMessageIds
+      options.selectedMessageIds !== undefined ? options.selectedMessageIds : this.selectedMessageIds,
+      options.showAttachmentMenu !== undefined ? options.showAttachmentMenu : this.showAttachmentMenu
     );
   }
 }

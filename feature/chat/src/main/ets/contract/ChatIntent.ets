@@ -331,6 +331,21 @@ export class RestoreDraft implements Intent {
   }
 }
 
+/** COMPOSER-102：打开附件选择面板。 */
+export class OpenAttachmentMenu implements Intent {
+  readonly kind: 'openAttachmentMenu' = 'openAttachmentMenu';
+}
+
+/** COMPOSER-102：关闭附件选择面板。 */
+export class CloseAttachmentMenu implements Intent {
+  readonly kind: 'closeAttachmentMenu' = 'closeAttachmentMenu';
+}
+
+/** COMPOSER-102：切换附件选择面板显隐。 */
+export class ToggleAttachmentMenu implements Intent {
+  readonly kind: 'toggleAttachmentMenu' = 'toggleAttachmentMenu';
+}
+
 export type ChatIntent =
   | LoadInitialMessages
   | LoadOlderMessages
@@ -366,4 +381,7 @@ export type ChatIntent =
   | PickAndSendPhoto
   | PickAndSendFile
   | CancelMediaUpload
-  | RestoreDraft;
+  | RestoreDraft
+  | OpenAttachmentMenu
+  | CloseAttachmentMenu
+  | ToggleAttachmentMenu;
