@@ -33,13 +33,13 @@
 | FEAT-AUTH-005 | Android TGX 明确不支持扫码 | Deviation | 有意差异：HarmonyOS 侧新增扫码登录，经架构确认批准 |
 | FEAT-AUTH-006 | 登出流程 | Dev Match | 登出后重置清栈（replaceRoot），回到登录页 |
 | FEAT-ACC-001 | `TdlibManager` 多实例行为 | Dev Match | AccountRegistry 与 AccountScope 严格目录与密钥隔离 |
-| FEAT-ACC-002 | `DrawerController` 账号切换 | Not Started | 抽屉快速切换 UI 待 Phase 4/5 补充 |
+| FEAT-ACC-002 | `DrawerController` 账号切换 | Dev Match | 设置页弹层 AccountSwitcherDialog 快速切换账号与添加账号闭环 |
 | FEAT-ACC-003 | 登出当前账号 | Dev Match | SettingsCoordinator 登出触发会话销毁 |
 | FEAT-CHAT-001 | 会话列表分页加载与排序 | Dev Match | ChatListProjection 本地缓存加载与置顶重排对齐 |
 | FEAT-CHAT-002 | 置顶/取消置顶 | Dev Match | 长按菜单 Pin/Unpin，时间戳左侧 📌 标记对齐 |
 | FEAT-CHAT-003 | 归档/还原交互 | Not Started | 归档区待后续工作包接入 |
 | FEAT-CHAT-004 | 未读数与手动标未读 | Dev Match | 长按标未读，未读数与蓝色圆点展示对齐 |
-| FEAT-CHAT-005 | 草稿展示样式 | Not Started | 草稿同步待接入 |
+| FEAT-CHAT-005 | 草稿展示样式 | Dev Match | 输入栏草稿退出自动保存至 TDLib，列表项红色 Draft: 前缀与重进恢复 |
 | FEAT-MSG-001 | 私聊消息流展示 | Dev Match | 气泡、时间戳、发送态（pending/sent/read）对齐 |
 | FEAT-MSG-002 | 群组/频道署名与头像 | Dev Match | 群聊用户署名解析与彩底头像对齐 |
 | FEAT-MSG-003 | 历史分页向上滚动 | Dev Match | MessageProjection 自动拉取更早历史无空洞 |
@@ -51,9 +51,9 @@
 | FEAT-COMP-005 | 编辑消息 | Dev Match | 文本消息就地编辑与「已编辑」标注对齐 |
 | FEAT-COMP-006 | 删除消息 | Dev Match | 支持双方删除与单方删除，列表即时移除 |
 | FEAT-COMP-007 | 复制消息文本 | Dev Match | 剪贴板 Port 抽象与系统 pasteboard 写入对齐 |
-| FEAT-MEDIA-001 | 图片发送 | Not Started | 待 MEDIA-102 工作包接入 |
+| FEAT-MEDIA-001 | 图片发送 | Dev Match | 相册选图发送带进度圈，沙箱零拷贝物理转换，真机实测验证通过 |
 | FEAT-MEDIA-002 | 视频消息 | Dev Match | 缩略图与本地视频查看已具备，上传待接入 |
-| FEAT-MEDIA-003 | 文件消息 | Not Started | 待 MEDIA-104 工作包接入 |
+| FEAT-MEDIA-003 | 文件消息 | Dev Match | 系统文档选择器选取发送/下载，进度环与一键撤回，真机实测验证通过 |
 | FEAT-MEDIA-004 | 语音消息 | Not Started | 待 MEDIA-106 工作包接入 |
 | FEAT-MEDIA-005 | 失败重试/取消 | Not Started | 待 FILE-103 工作包接入 |
 | FEAT-MEDIA-006 | 媒体查看器 | Dev Match | 支持全屏展示与滑动翻页 |

@@ -134,6 +134,9 @@ struct Index {
     this.coordinator = result.coordinator;
     this.accountScope = result.scope;
     this.currentAccountKey = result.scope.accountKey;
+    if (result.cacheDir !== undefined && result.cacheDir.length > 0) {
+      this.mediaPickerAdapter.setCacheDir(result.cacheDir);
+    }
 
     this.unsubscribeNavFn = this.navController.subscribe((route: AppRoute, prev: AppRoute | null) => {
       this.currentRoute = route;
