@@ -73,6 +73,7 @@ export {
   ChangeViewerIndex,
   RequestMediaDownload,
   PickAndSendPhoto,
+  RestoreDraft,
   ChatIntent
 } from './contract/ChatIntent';
 

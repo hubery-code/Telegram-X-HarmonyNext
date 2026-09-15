@@ -24,6 +24,7 @@ import {
   Message,
   MessageSticker,
   MessageText,
+  DraftMessageContentText,
   TdMessageContent
 } from '@tgx/core-td-api-generated';
 import {
@@ -288,6 +289,16 @@ export class ChatListCoordinator {
           this.requestAvatarDownload(smallFile.id);
         }
       }
+      let draftText: string | null = null;
+      if (chat.draft_message !== null && chat.draft_message !== undefined) {
+        const draftContent = chat.draft_message.content;
+        if (draftContent !== null && draftContent.type === 'draftMessageContentText') {
+          const textObj = (draftContent as DraftMessageContentText).text;
+          if (textObj !== null && textObj.text.trim().length > 0) {
+            draftText = textObj.text.split('\n').join(' ');
+          }
+        }
+      }
       items.push(new ChatListItem(
         chat.id,
         chat.title,
@@ -300,7 +311,8 @@ export class ChatListCoordinator {
         // 手动未读标记独立于 unread_count。
         isChatPinnedInList(chat, this.chatList),
         chat.is_marked_as_unread,
-        avatarPath
+        avatarPath,
+        draftText
       ));
     }
     return items;

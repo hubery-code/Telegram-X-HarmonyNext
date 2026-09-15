@@ -16,8 +16,13 @@ import {
   LocalFile,
   UpdateChatPhoto,
   UpdateChatTitle,
+  UpdateChatDraftMessage,
+  DraftMessage,
+  DraftMessageContentText,
+  FormattedText,
   encodeUpdateChatPhoto,
-  encodeUpdateChatTitle
+  encodeUpdateChatTitle,
+  encodeUpdateChatDraftMessage
 } from '@tgx/core-td-api-generated';
 import {
   AccountScope,
@@ -186,6 +191,41 @@ export default function chatListProjectionTest() {
       const updatedChat = registry.getChat(102);
       expect(updatedChat !== undefined).assertTrue();
       expect(updatedChat!.title).assertEqual('New Group Title');
+      proj.stop();
+    });
+
+    it('updateChatDraftMessage updates chat.draft_message and reorders positions', 0, (): void => {
+      const bridge = new TestNativeBridge();
+      const scope = createScope(bridge);
+      const registry = new ChatRegistry();
+      const chat = makeChatWithPositions(103, [makePosition(new ChatListMain(), '100', false)]);
+      registry.putChat(chat);
+      const proj = new ChatListProjection(new ChatListMain(), registry, scope);
+      let notified = false;
+      proj.setOnStateChanged(() => {
+        notified = true;
+      });
+      proj.start();
+
+      const draftUpdate: UpdateChatDraftMessage = new UpdateChatDraftMessage();
+      draftUpdate.chat_id = 103;
+      const draft: DraftMessage = new DraftMessage();
+      const textContent: DraftMessageContentText = new DraftMessageContentText();
+      const formatted: FormattedText = new FormattedText();
+      formatted.text = 'Unsent draft text';
+      textContent.text = formatted;
+      draft.content = textContent;
+      draftUpdate.draft_message = draft;
+      draftUpdate.positions = [makePosition(new ChatListMain(), '200', false)];
+
+      bridge.emitUpdate(1, 'updateChatDraftMessage', encodeUpdateChatDraftMessage(draftUpdate) as Record<string, TdWireValue>);
+
+      expect(notified).assertTrue();
+      const updatedChat = registry.getChat(103);
+      expect(updatedChat !== undefined).assertTrue();
+      expect(updatedChat!.draft_message !== null).assertTrue();
+      const content = updatedChat!.draft_message!.content as DraftMessageContentText;
+      expect(content.text!.text).assertEqual('Unsent draft text');
       proj.stop();
     });
 

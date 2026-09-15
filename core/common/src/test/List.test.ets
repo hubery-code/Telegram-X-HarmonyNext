@@ -3,6 +3,7 @@ import appErrorTest from './AppError.test';
 import clockTest from './Clock.test';
 import idGeneratorTest from './Id.test';
 import base64Test from './Base64.test';
+import langTest from './Lang.test';
 
 export default function testsuite() {
   resultTest();
@@ -10,4 +11,5 @@ export default function testsuite() {
   clockTest();
   idGeneratorTest();
   base64Test();
+  langTest();
 }

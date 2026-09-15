@@ -7,6 +7,7 @@
  */
 
 import { Intent } from '@tgx/feature-template';
+import { LanguagePreference } from '@tgx/core-common';
 import { SettingsThemeMode } from './SettingsUiState';
 
 export interface UserProfileData {
@@ -32,6 +33,24 @@ export class ChangeThemeMode implements Intent {
 
   constructor(themeMode: SettingsThemeMode) {
     this.themeMode = themeMode;
+  }
+}
+
+export class ChangeLanguage implements Intent {
+  readonly kind: 'changeLanguage' = 'changeLanguage';
+  readonly languagePreference: LanguagePreference;
+
+  constructor(languagePreference: LanguagePreference) {
+    this.languagePreference = languagePreference;
+  }
+}
+
+export class SetLanguage implements Intent {
+  readonly kind: 'setLanguage' = 'setLanguage';
+  readonly languagePreference: LanguagePreference;
+
+  constructor(languagePreference: LanguagePreference) {
+    this.languagePreference = languagePreference;
   }
 }
 
@@ -103,6 +122,8 @@ export type SettingsIntent =
   | LoadUserProfile
   | ToggleNotifications
   | ChangeThemeMode
+  | ChangeLanguage
+  | SetLanguage
   | RequestLogout
   | CancelLogout
   | ConfirmLogout

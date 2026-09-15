@@ -37,11 +37,14 @@ import {
   decodeChat,
   decodeMessage,
   decodeMessageProperties,
+  DraftMessage,
+  DraftMessageContentText,
   encodeGetChat,
   encodeGetMessage,
   File,
   GetChat,
   GetMessage,
+  InputMessageReplyToMessage,
   Message,
   MessageAnimation,
   MessagePhoto,
@@ -77,7 +80,7 @@ import {
   resolveSenderInfo,
   SenderInfo
 } from '../model/SenderInfo';
-import { ChatUiState } from '../contract/ChatUiState';
+import { ChatUiState, ComposerReplyMode } from '../contract/ChatUiState';
 import {
   ChatIntent,
   LoadInitialMessages,
@@ -93,7 +96,8 @@ import {
   RequestMediaDownload,
   PickAndSendPhoto,
   ComposerTextChanged,
-  CancelComposerMode
+  CancelComposerMode,
+  RestoreDraft
 } from '../contract/ChatIntent';
 import {
   ChatEffect,
@@ -256,6 +260,16 @@ export interface ChatCoordinatorOptions {
   readonly logger?: Logger;
 }
 
+class ParsedDraft {
+  readonly text: string;
+  readonly replyToId: number;
+
+  constructor(text: string, replyToId: number) {
+    this.text = text;
+    this.replyToId = replyToId;
+  }
+}
+
 export class ChatCoordinator {
   private readonly projection: MessageProjection;
   private readonly scope: AccountScope;
@@ -335,17 +349,66 @@ export class ChatCoordinator {
     return this.currentState;
   }
 
+  private extractDraft(draft: DraftMessage | null): ParsedDraft | null {
+    if (draft === null) {
+      return null;
+    }
+    let text: string = '';
+    if (draft.content !== null && draft.content.type === 'draftMessageContentText') {
+      const content = draft.content as DraftMessageContentText;
+      if (content.text !== null && content.text.text.length > 0) {
+        text = content.text.text;
+      }
+    }
+    let replyToId: number = 0;
+    if (draft.reply_to !== null && draft.reply_to !== undefined && draft.reply_to.type === 'inputMessageReplyToMessage') {
+      replyToId = (draft.reply_to as InputMessageReplyToMessage).message_id;
+    }
+    if (text.length === 0 && replyToId === 0) {
+      return null;
+    }
+    return new ParsedDraft(text, replyToId);
+  }
+
   start(): void {
+    this.projection.setOnDraftLoaded((draft: DraftMessage | null) => {
+      if (!this.destroyed) {
+        const parsed = this.extractDraft(draft);
+        if (parsed !== null) {
+          this.dispatch(new RestoreDraft(parsed.text, parsed.replyToId));
+        }
+      }
+    });
     this.projection.setOnStateChanged(() => {
       this.scheduleSyncFromProjection();
     });
     this.projection.start();
+    const parsed = this.extractDraft(this.projection.getInitialDraft());
+    if (parsed !== null) {
+      this.dispatch(new RestoreDraft(parsed.text, parsed.replyToId));
+    }
     this.fetchChatKind();
     this.dispatch(new LoadInitialMessages());
   }
 
+  /** COMPOSER-101：立即保存当前输入栏中的草稿至 TDLib。 */
+  public saveDraftNow(): void {
+    const text: string = this.currentState.composerText;
+    let replyToMessageId: number = 0;
+    if (this.currentState.composerMode !== null && this.currentState.composerMode.kind === 'reply') {
+      replyToMessageId = (this.currentState.composerMode as ComposerReplyMode).targetMessageId;
+    }
+    if (text.trim().length > 0 || replyToMessageId > 0) {
+      this.projection.setChatDraftMessage(text, replyToMessageId);
+    } else {
+      this.projection.clearChatDraftMessage();
+    }
+  }
+
   destroy(): void {
     this.destroyed = true;
+    this.saveDraftNow();
+    this.projection.setOnDraftLoaded(null);
     this.projection.setOnStateChanged(null);
     this.projection.stop();
     this.senderSubscriptions.forEach((sub: Subscription) => {
@@ -1404,6 +1467,7 @@ export class ChatCoordinator {
         this.logger.info(TAG, 'send_message', `chatId=${send.chatId}`);
         const result: Result<TdPendingRequest, AppError> =
           this.projection.sendTextMessage(send.text, send.replyToMessageId);
+        this.projection.clearChatDraftMessage();
         if (result.err) {
           this.logger.logError(TAG, result.error);
           this.dispatch(new OnMessageSendFailed(result.error));
@@ -1667,6 +1731,7 @@ export class ChatCoordinator {
         caption.length > 0 ? caption : undefined,
         replyToMessageId
       );
+      this.projection.clearChatDraftMessage();
       if (result.err) {
         this.logger.logError(TAG, result.error);
         this.dispatch(new OnMessageSendFailed(result.error));

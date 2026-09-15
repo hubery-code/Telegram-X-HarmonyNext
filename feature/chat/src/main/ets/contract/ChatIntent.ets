@@ -304,6 +304,18 @@ export class PickAndSendPhoto implements Intent {
   readonly kind: 'pickAndSendPhoto' = 'pickAndSendPhoto';
 }
 
+/** COMPOSER-101：恢复草稿（草稿文本与回复目标） */
+export class RestoreDraft implements Intent {
+  readonly kind: 'restoreDraft' = 'restoreDraft';
+  readonly draftText: string;
+  readonly replyToMessageId: number;
+
+  constructor(draftText: string, replyToMessageId: number = 0) {
+    this.draftText = draftText;
+    this.replyToMessageId = replyToMessageId;
+  }
+}
+
 export type ChatIntent =
   | LoadInitialMessages
   | LoadOlderMessages
@@ -336,4 +348,5 @@ export type ChatIntent =
   | CloseMediaViewer
   | ChangeViewerIndex
   | RequestMediaDownload
-  | PickAndSendPhoto;
+  | PickAndSendPhoto
+  | RestoreDraft;

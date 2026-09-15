@@ -11,9 +11,11 @@
  */
 
 import { DarkTheme, LightTheme, Theme, ThemeManager } from '@tgx/core-design-system';
+import { Lang, LanguagePreference, SupportedLanguage } from '@tgx/core-common';
 import { SettingsThemeMode, SettingsUiState } from '../contract/SettingsUiState';
 import {
   CancelLogout,
+  ChangeLanguage,
   ChangeThemeMode,
   ClearCacheRequested,
   ConfirmLogout,
@@ -45,13 +47,19 @@ export struct SettingsPage {
   onBack: () => void = (): void => {};
 
   @State private effectiveTheme: Theme = LightTheme;
+  @State private effectiveLang: SupportedLanguage = 'en';
   private unsubscribeTheme: (() => void) | null = null;
+  private unsubscribeLang: (() => void) | null = null;
 
   aboutToAppear(): void {
     this.updateEffectiveTheme();
+    this.effectiveLang = Lang.getInstance().getLanguage();
     const self: SettingsPage = this;
     this.unsubscribeTheme = ThemeManager.getInstance().subscribe((_theme: Theme): void => {
       self.updateEffectiveTheme();
+    });
+    this.unsubscribeLang = Lang.getInstance().subscribe((lang: SupportedLanguage): void => {
+      self.effectiveLang = lang;
     });
   }
 
@@ -60,10 +68,15 @@ export struct SettingsPage {
       this.unsubscribeTheme();
       this.unsubscribeTheme = null;
     }
+    if (this.unsubscribeLang !== null) {
+      this.unsubscribeLang();
+      this.unsubscribeLang = null;
+    }
   }
 
   onUiStateChanged(): void {
     this.updateEffectiveTheme();
+    this.effectiveLang = Lang.getInstance().getLanguage();
   }
 
   private updateEffectiveTheme(): void {
@@ -72,6 +85,11 @@ export struct SettingsPage {
 
   private getTheme(): Theme {
     return this.effectiveTheme;
+  }
+
+  private t(key: string, ...args: (string | number)[]): string {
+    const langCode: SupportedLanguage = this.uiState.languageCode === 'zh' || this.effectiveLang === 'zh' ? 'zh' : 'en';
+    return Lang.getInstance().formatByKey(key, langCode, args);
   }
 
   private getAvatarLetter(): string {
@@ -104,16 +122,19 @@ export struct SettingsPage {
 
             this.ProfileCardView()
 
-            this.SectionTitle('NOTIFICATIONS')
+            this.SectionTitle(this.t('NOTIFICATIONS'))
             this.NotificationsCardView()
 
-            this.SectionTitle('DATA AND STORAGE')
+            this.SectionTitle(this.t('DATA AND STORAGE'))
             this.StorageCardView()
 
-            this.SectionTitle('APPEARANCE')
+            this.SectionTitle(this.t('APPEARANCE'))
             this.ThemeCardView()
 
-            this.SectionTitle('ABOUT')
+            this.SectionTitle(this.t('LANGUAGE'))
+            this.LanguageCardView()
+
+            this.SectionTitle(this.t('ABOUT'))
             this.AboutCardView()
 
             this.LogoutSectionView()
@@ -158,7 +179,7 @@ export struct SettingsPage {
           this.onBack();
         })
 
-      Text('Settings')
+      Text(this.t('Settings'))
         .fontSize(this.getTheme().typography.largeTitle.fontSize)
         .fontWeight(this.getTheme().typography.largeTitle.fontWeight)
         .fontColor(this.getTheme().colors.textPrimary)
@@ -181,7 +202,7 @@ export struct SettingsPage {
         .fontColor(this.getTheme().colors.destructive)
         .layoutWeight(1)
 
-      Button('Dismiss')
+      Button(this.t('Dismiss'))
         .fontSize(this.getTheme().typography.caption.fontSize)
         .fontColor(this.getTheme().colors.textPrimary)
         .backgroundColor(this.getTheme().colors.surface)
@@ -220,7 +241,7 @@ export struct SettingsPage {
       }
 
       Column() {
-        Text(this.uiState.displayName.length > 0 ? this.uiState.displayName : 'Telegram User')
+        Text(this.uiState.displayName.length > 0 ? this.uiState.displayName : this.t('Telegram User'))
           .fontSize(this.getTheme().typography.headline.fontSize)
           .fontWeight(this.getTheme().typography.headline.fontWeight)
           .fontColor(this.getTheme().colors.textPrimary)
@@ -277,7 +298,7 @@ export struct SettingsPage {
   @Builder
   NotificationsCardView() {
     Row() {
-      Text('Notifications')
+      Text(this.t('Notifications'))
         .fontSize(this.getTheme().typography.body.fontSize)
         .fontColor(this.getTheme().colors.textPrimary)
         .layoutWeight(1)
@@ -299,11 +320,11 @@ export struct SettingsPage {
   StorageCardView() {
     Row() {
       Column() {
-        Text('Storage & Cache')
+        Text(this.t('Storage & Cache'))
           .fontSize(this.getTheme().typography.body.fontSize)
           .fontColor(this.getTheme().colors.textPrimary)
 
-        Text(`Cache size: ${this.uiState.storageCacheSize}`)
+        Text(this.t('Cache size: {0}', this.uiState.storageCacheSize))
           .fontSize(this.getTheme().typography.footnote.fontSize)
           .fontColor(this.getTheme().colors.textSecondary)
           .margin({ top: this.getTheme().spacing.xs })
@@ -311,7 +332,7 @@ export struct SettingsPage {
       .alignItems(HorizontalAlign.Start)
       .layoutWeight(1)
 
-      Button('Clear')
+      Button(this.t('Clear'))
         .fontSize(this.getTheme().typography.subheadline.fontSize)
         .fontColor(this.getTheme().colors.accent)
         .backgroundColor(this.getTheme().colors.surfaceVariant)
@@ -328,20 +349,20 @@ export struct SettingsPage {
 
   private getThemeModeSummary(): string {
     if (this.uiState.themeMode === 'system') {
-      const activeMode: string = this.getTheme().mode === 'dark' ? 'Dark' : 'Light';
-      return `System (${activeMode})`;
+      const activeMode: string = this.getTheme().mode === 'dark' ? this.t('Dark') : this.t('Light');
+      return `${this.t('System')} (${activeMode})`;
     }
     if (this.uiState.themeMode === 'dark') {
-      return 'Dark';
+      return this.t('Dark');
     }
-    return 'Light';
+    return this.t('Light');
   }
 
   @Builder
   ThemeCardView() {
     Column() {
       Row() {
-        Text('Theme Mode')
+        Text(this.t('Theme Mode'))
           .fontSize(this.getTheme().typography.body.fontSize)
           .fontWeight(this.getTheme().typography.headline.fontWeight)
           .fontColor(this.getTheme().colors.textPrimary)
@@ -356,9 +377,9 @@ export struct SettingsPage {
       .margin({ bottom: this.getTheme().spacing.sm })
 
       Row() {
-        this.ThemeOption('system', 'System')
-        this.ThemeOption('light', 'Light')
-        this.ThemeOption('dark', 'Dark')
+        this.ThemeOption('system', this.t('System'))
+        this.ThemeOption('light', this.t('Light'))
+        this.ThemeOption('dark', this.t('Dark'))
       }
       .width('100%')
       .justifyContent(FlexAlign.SpaceBetween)
@@ -400,10 +421,84 @@ export struct SettingsPage {
       })
   }
 
+  private getLanguageSummary(): string {
+    if (this.uiState.languagePreference === 'system') {
+      const activeLang: string = this.uiState.languageCode === 'zh' || this.effectiveLang === 'zh' ? '简体中文' : 'English';
+      return `${this.t('Follow System')} (${activeLang})`;
+    }
+    if (this.uiState.languagePreference === 'zh') {
+      return '简体中文';
+    }
+    return 'English';
+  }
+
+  @Builder
+  LanguageCardView() {
+    Column() {
+      Row() {
+        Text(this.t('Language'))
+          .fontSize(this.getTheme().typography.body.fontSize)
+          .fontWeight(this.getTheme().typography.headline.fontWeight)
+          .fontColor(this.getTheme().colors.textPrimary)
+          .layoutWeight(1)
+
+        Text(this.getLanguageSummary())
+          .fontSize(this.getTheme().typography.footnote.fontSize)
+          .fontColor(this.getTheme().colors.textSecondary)
+      }
+      .width('100%')
+      .alignItems(VerticalAlign.Center)
+      .margin({ bottom: this.getTheme().spacing.sm })
+
+      Row() {
+        this.LanguageOption('system', this.t('System'))
+        this.LanguageOption('en', 'English')
+        this.LanguageOption('zh', '简体中文')
+      }
+      .width('100%')
+      .justifyContent(FlexAlign.SpaceBetween)
+    }
+    .width('100%')
+    .padding(this.getTheme().spacing.md)
+    .backgroundColor(this.getTheme().colors.surface)
+    .borderRadius(this.getTheme().radius.md)
+  }
+
+  @Builder
+  LanguageOption(mode: LanguagePreference, label: string) {
+    Button(label)
+      .layoutWeight(1)
+      .height(36)
+      .margin({
+        left: mode === 'system' ? 0 : this.getTheme().spacing.xs,
+        right: mode === 'zh' ? 0 : this.getTheme().spacing.xs
+      })
+      .fontSize(this.getTheme().typography.subheadline.fontSize)
+      .fontWeight(
+        this.uiState.languagePreference === mode
+          ? this.getTheme().typography.headline.fontWeight
+          : this.getTheme().typography.subheadline.fontWeight
+      )
+      .fontColor(
+        this.uiState.languagePreference === mode
+          ? this.getTheme().colors.textOnAccent
+          : this.getTheme().colors.textPrimary
+      )
+      .backgroundColor(
+        this.uiState.languagePreference === mode
+          ? this.getTheme().colors.accent
+          : this.getTheme().colors.surfaceVariant
+      )
+      .borderRadius(this.getTheme().radius.md)
+      .onClick((): void => {
+        this.onDispatch(new ChangeLanguage(mode));
+      })
+  }
+
   @Builder
   AboutCardView() {
     Row() {
-      Text('App Version')
+      Text(this.t('App Version'))
         .fontSize(this.getTheme().typography.body.fontSize)
         .fontColor(this.getTheme().colors.textPrimary)
         .layoutWeight(1)
@@ -420,7 +515,7 @@ export struct SettingsPage {
 
   @Builder
   LogoutSectionView() {
-    Button('Log Out')
+    Button(this.t('Log Out'))
       .width('100%')
       .height(48)
       .margin({ top: this.getTheme().spacing.xl })
@@ -446,20 +541,20 @@ export struct SettingsPage {
         })
 
       Column() {
-        Text('Log Out')
+        Text(this.t('Log Out'))
           .fontSize(this.getTheme().typography.title.fontSize)
           .fontWeight(this.getTheme().typography.title.fontWeight)
           .fontColor(this.getTheme().colors.textPrimary)
           .margin({ bottom: this.getTheme().spacing.sm })
 
-        Text('Are you sure you want to log out from this account?')
+        Text(this.t('Are you sure you want to log out from this account?'))
           .fontSize(this.getTheme().typography.body.fontSize)
           .fontColor(this.getTheme().colors.textSecondary)
           .textAlign(TextAlign.Center)
           .margin({ bottom: this.getTheme().spacing.lg })
 
         Row() {
-          Button('Cancel')
+          Button(this.t('Cancel'))
             .layoutWeight(1)
             .height(40)
             .margin({ right: this.getTheme().spacing.sm })
@@ -471,7 +566,7 @@ export struct SettingsPage {
               this.onDispatch(new CancelLogout());
             })
 
-          Button('Log Out')
+          Button(this.t('Log Out'))
             .layoutWeight(1)
             .height(40)
             .margin({ left: this.getTheme().spacing.sm })
@@ -509,7 +604,7 @@ export struct SettingsPage {
           .color(this.getTheme().colors.accent)
           .margin({ bottom: this.getTheme().spacing.sm })
 
-        Text(this.uiState.isLoggingOut ? 'Logging out...' : 'Loading...')
+        Text(this.uiState.isLoggingOut ? this.t('Logging out...') : this.t('Loading...'))
           .fontSize(this.getTheme().typography.subheadline.fontSize)
           .fontColor(this.getTheme().colors.textPrimary)
       }

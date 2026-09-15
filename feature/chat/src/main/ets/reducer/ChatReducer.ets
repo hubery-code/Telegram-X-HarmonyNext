@@ -63,7 +63,8 @@ import {
   TapFailedMessage,
   OpenMediaViewer,
   CloseMediaViewer,
-  ChangeViewerIndex
+  ChangeViewerIndex,
+  RestoreDraft
 } from '../contract/ChatIntent';
 import {
   ChatEffect,
@@ -224,6 +225,23 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
         }
       );
       const keepSelectionMode: boolean = state.selectionMode && pruned.length > 0;
+      let composerMode: ComposerMode | null = state.composerMode;
+      if (composerMode !== null && composerMode.kind === 'reply') {
+        const replyMode: ComposerReplyMode = composerMode as ComposerReplyMode;
+        if (replyMode.previewTitle === 'Reply' || replyMode.previewText.length === 0) {
+          for (let i = 0; i < loadedIntent.messages.length; i++) {
+            const msg: MessageItem = loadedIntent.messages[i];
+            if (msg.messageId === replyMode.targetMessageId) {
+              composerMode = new ComposerReplyMode(
+                replyMode.targetMessageId,
+                replyAuthorLabel(state, msg),
+                messageSnippet(msg.text)
+              );
+              break;
+            }
+          }
+        }
+      }
       const nextState: ChatUiState = state.copyWith({
         messages: loadedIntent.messages,
         hasMoreOlder: loadedIntent.hasMoreOlder,
@@ -236,7 +254,8 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
           : state.lastReadInboxMessageId,
         unreadCount: loadedIntent.unreadCount,
         selectionMode: keepSelectionMode,
-        selectedMessageIds: keepSelectionMode ? pruned : []
+        selectedMessageIds: keepSelectionMode ? pruned : [],
+        composerMode: composerMode
       });
       return reduced(nextState);
     }
@@ -256,6 +275,30 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
       const nextState: ChatUiState = state.copyWith({
         composerText: changedIntent.text,
         errorMessage: null
+      });
+      return reduced(nextState);
+    }
+
+    case 'restoreDraft': {
+      const draftIntent: RestoreDraft = intent as RestoreDraft;
+      // 若草稿全为空则无需恢复
+      if (draftIntent.draftText.length === 0 && draftIntent.replyToMessageId === 0) {
+        return reduced(state);
+      }
+      // 只有在当前输入栏为空时才恢复，避免覆盖用户已输入的内容
+      if (state.composerText.length > 0) {
+        return reduced(state);
+      }
+      let mode: ComposerMode | null = state.composerMode;
+      if (draftIntent.replyToMessageId > 0 && mode === null) {
+        const item: MessageItem | null = findMessage(state, draftIntent.replyToMessageId);
+        const author: string = item !== null ? replyAuthorLabel(state, item) : 'Reply';
+        const snippet: string = item !== null ? messageSnippet(item.text) : '';
+        mode = new ComposerReplyMode(draftIntent.replyToMessageId, author, snippet);
+      }
+      const nextState: ChatUiState = state.copyWith({
+        composerText: draftIntent.draftText,
+        composerMode: mode
       });
       return reduced(nextState);
     }

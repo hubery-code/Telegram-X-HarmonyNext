@@ -9,6 +9,7 @@
 
 import { UiState } from '@tgx/feature-template';
 import { ThemePreference } from '@tgx/core-design-system';
+import { LanguagePreference } from '@tgx/core-common';
 
 export type SettingsThemeMode = ThemePreference;
 
@@ -22,6 +23,7 @@ export interface SettingsUiStateOptions {
   readonly notificationsEnabled?: boolean;
   readonly storageCacheSize?: string;
   readonly languageCode?: string;
+  readonly languagePreference?: LanguagePreference;
   readonly themeMode?: SettingsThemeMode;
   readonly appVersion?: string;
   readonly isLoading?: boolean;
@@ -41,6 +43,7 @@ export class SettingsUiState implements UiState {
   readonly notificationsEnabled: boolean;
   readonly storageCacheSize: string;
   readonly languageCode: string;
+  readonly languagePreference: LanguagePreference;
   readonly themeMode: SettingsThemeMode;
   readonly appVersion: string;
 
@@ -59,6 +62,7 @@ export class SettingsUiState implements UiState {
     notificationsEnabled: boolean,
     storageCacheSize: string,
     languageCode: string,
+    languagePreference: LanguagePreference,
     themeMode: SettingsThemeMode,
     appVersion: string,
     isLoading: boolean,
@@ -75,6 +79,7 @@ export class SettingsUiState implements UiState {
     this.notificationsEnabled = notificationsEnabled;
     this.storageCacheSize = storageCacheSize;
     this.languageCode = languageCode;
+    this.languagePreference = languagePreference;
     this.themeMode = themeMode;
     this.appVersion = appVersion;
     this.isLoading = isLoading;
@@ -83,7 +88,11 @@ export class SettingsUiState implements UiState {
     this.showLogoutConfirm = showLogoutConfirm;
   }
 
-  static initial(themeMode: SettingsThemeMode = 'system'): SettingsUiState {
+  static initial(
+    themeMode: SettingsThemeMode = 'system',
+    languagePreference: LanguagePreference = 'system',
+    languageCode: string = 'en'
+  ): SettingsUiState {
     return new SettingsUiState(
       0,
       '',
@@ -93,7 +102,8 @@ export class SettingsUiState implements UiState {
       '',
       true,
       '0 B',
-      'en',
+      languageCode,
+      languagePreference,
       themeMode,
       '1.0.0',
       false,
@@ -114,6 +124,7 @@ export class SettingsUiState implements UiState {
       options.notificationsEnabled !== undefined ? options.notificationsEnabled : this.notificationsEnabled,
       options.storageCacheSize !== undefined ? options.storageCacheSize : this.storageCacheSize,
       options.languageCode !== undefined ? options.languageCode : this.languageCode,
+      options.languagePreference !== undefined ? options.languagePreference : this.languagePreference,
       options.themeMode !== undefined ? options.themeMode : this.themeMode,
       options.appVersion !== undefined ? options.appVersion : this.appVersion,
       options.isLoading !== undefined ? options.isLoading : this.isLoading,

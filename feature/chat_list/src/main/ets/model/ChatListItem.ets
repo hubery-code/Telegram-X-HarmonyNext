@@ -25,6 +25,7 @@ export class ChatListItem {
   readonly isPinned: boolean;
   readonly isMarkedAsUnread: boolean;
   readonly avatarPath: string | null;
+  readonly draftText: string | null;
 
   constructor(
     chatId: number,
@@ -36,7 +37,8 @@ export class ChatListItem {
     avatarLetter: string,
     isPinned: boolean = false,
     isMarkedAsUnread: boolean = false,
-    avatarPath: string | null = null
+    avatarPath: string | null = null,
+    draftText: string | null = null
   ) {
     this.chatId = chatId;
     this.title = title;
@@ -48,6 +50,7 @@ export class ChatListItem {
     this.isPinned = isPinned;
     this.isMarkedAsUnread = isMarkedAsUnread;
     this.avatarPath = avatarPath;
+    this.draftText = draftText;
   }
 }
 

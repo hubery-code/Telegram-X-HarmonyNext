@@ -93,7 +93,7 @@ function toSandboxUri(path: string | null): string {
 function chatRowKey(item: ChatListItem): string {
   const signature: string =
     `${item.title}|${item.lastMessagePreview}|${item.unreadCount}|${item.timestampMs}|` +
-    `${item.isPinned}|${item.isMarkedAsUnread}|${item.avatarPath !== null ? item.avatarPath : ''}`;
+    `${item.isPinned}|${item.isMarkedAsUnread}|${item.avatarPath !== null ? item.avatarPath : ''}|${item.draftText !== null ? item.draftText : ''}`;
   return `${item.chatId}:${fnv1a32(signature)}`;
 }
 
@@ -400,12 +400,26 @@ export struct ChatListPage {
         .margin({ bottom: T.spacing.xs })
 
         Row() {
-          Text(item.lastMessagePreview)
-            .fontSize(T.typography.subheadline.fontSize)
-            .fontColor(T.colors.textSecondary)
-            .maxLines(1)
-            .textOverflow({ overflow: TextOverflow.Ellipsis })
-            .layoutWeight(1)
+          if (item.draftText !== null && item.draftText.length > 0) {
+            Text('Draft: ')
+              .fontSize(T.typography.subheadline.fontSize)
+              .fontWeight(T.typography.headline.fontWeight)
+              .fontColor(T.colors.destructive)
+
+            Text(item.draftText)
+              .fontSize(T.typography.subheadline.fontSize)
+              .fontColor(T.colors.textSecondary)
+              .maxLines(1)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+              .layoutWeight(1)
+          } else {
+            Text(item.lastMessagePreview)
+              .fontSize(T.typography.subheadline.fontSize)
+              .fontColor(T.colors.textSecondary)
+              .maxLines(1)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+              .layoutWeight(1)
+          }
 
           if (item.unreadCount > 0) {
             Text(item.unreadCount > 99 ? '99+' : `${item.unreadCount}`)

@@ -19,6 +19,7 @@ import { encodeLoadChats, decodeTdUpdate,
   UpdateChatIsMarkedAsUnread,
   UpdateChatPhoto,
   UpdateChatTitle,
+  UpdateChatDraftMessage,
   ViewMessages,
   LoadChats,
 } from '@tgx/core-td-api-generated';
@@ -304,6 +305,18 @@ export class ChatListProjection {
       if (chat) {
         chat.title = titleUpdate.title;
         this.notifyStateChanged();
+      }
+    } else if (update.type === 'updateChatDraftMessage') {
+      const draftUpdate = update as UpdateChatDraftMessage;
+      const chat = this.registry.getChat(draftUpdate.chat_id);
+      if (chat) {
+        chat.draft_message = draftUpdate.draft_message;
+        const position = draftUpdate.positions.find((p: ChatPosition) => chatListEquals(p.list, this.chatList));
+        if (position) {
+          this.setChatPosition(draftUpdate.chat_id, position);
+        } else {
+          this.notifyStateChanged();
+        }
       }
     }
   }

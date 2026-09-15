@@ -9,7 +9,15 @@
  */
 
 import { Logger } from '@tgx/observability';
-import { AppError, ManualClock, Result, SequentialIdGenerator } from '@tgx/core-common';
+import {
+  AppError,
+  Lang,
+  LanguagePreference,
+  ManualClock,
+  Result,
+  SequentialIdGenerator,
+  SupportedLanguage
+} from '@tgx/core-common';
 import { AccountScope } from '@tgx/core-account';
 import { UserRegistry } from '@tgx/core-domain';
 import {
@@ -70,6 +78,7 @@ export class SettingsCoordinator {
   private readonly listeners: SettingsUiStateListener[] = [];
   private unsubscribeUser: (() => void) | null = null;
   private unsubscribeTheme: (() => void) | null = null;
+  private unsubscribeLang: (() => void) | null = null;
   private subscribedUserId: number = 0;
   private destroyed: boolean = false;
 
@@ -95,6 +104,15 @@ export class SettingsCoordinator {
       this.currentState = this.currentState.copyWith({ themeMode: currentThemePref });
     }
 
+    const currentLangPref: LanguagePreference = Lang.getInstance().getPreference();
+    const currentLangCode: string = Lang.getInstance().getLanguage();
+    if (this.currentState.languagePreference !== currentLangPref || this.currentState.languageCode !== currentLangCode) {
+      this.currentState = this.currentState.copyWith({
+        languagePreference: currentLangPref,
+        languageCode: currentLangCode
+      });
+    }
+
     const self: SettingsCoordinator = this;
     this.unsubscribeTheme = ThemeManager.getInstance().subscribe((_theme: Theme): void => {
       if (self.destroyed) {
@@ -103,6 +121,21 @@ export class SettingsCoordinator {
       const pref = ThemeManager.getInstance().getPreference();
       if (self.currentState.themeMode !== pref) {
         self.currentState = self.currentState.copyWith({ themeMode: pref });
+        for (let i = 0; i < self.listeners.length; i++) {
+          self.listeners[i](self.currentState);
+        }
+      }
+    });
+
+    this.unsubscribeLang = Lang.getInstance().subscribe((lang: SupportedLanguage, pref: LanguagePreference): void => {
+      if (self.destroyed) {
+        return;
+      }
+      if (self.currentState.languagePreference !== pref || self.currentState.languageCode !== lang) {
+        self.currentState = self.currentState.copyWith({
+          languagePreference: pref,
+          languageCode: lang
+        });
         for (let i = 0; i < self.listeners.length; i++) {
           self.listeners[i](self.currentState);
         }
@@ -129,6 +162,10 @@ export class SettingsCoordinator {
     if (this.unsubscribeTheme !== null) {
       this.unsubscribeTheme();
       this.unsubscribeTheme = null;
+    }
+    if (this.unsubscribeLang !== null) {
+      this.unsubscribeLang();
+      this.unsubscribeLang = null;
     }
     this.listeners.length = 0;
   }

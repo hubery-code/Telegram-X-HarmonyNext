@@ -10,12 +10,15 @@
 
 import { Reducer, ReducerEnv, ReducerResult, reduced } from '@tgx/feature-template';
 import { ThemeManager } from '@tgx/core-design-system';
+import { Lang, LanguagePreference } from '@tgx/core-common';
 import { SettingsUiState, SettingsUiStateOptions } from '../contract/SettingsUiState';
 import {
   CacheCleared,
+  ChangeLanguage,
   ChangeThemeMode,
   ProfileLoaded,
   SetErrorMessage,
+  SetLanguage,
   SettingsIntent,
   StorageStatsLoaded
 } from '../contract/SettingsIntent';
@@ -96,6 +99,36 @@ export const settingsReducer: Reducer<SettingsUiState, SettingsIntent, SettingsE
       const nextState: SettingsUiState = state.copyWith(options);
       const effects: readonly SettingsEffect[] = [
         new ShowToastEffect(`Theme mode set to ${themeIntent.themeMode}`)
+      ];
+      return reduced(nextState, effects);
+    }
+
+    case 'changeLanguage':
+    case 'setLanguage': {
+      const langIntent: ChangeLanguage = intent as ChangeLanguage;
+      const pref: LanguagePreference = langIntent.languagePreference;
+      if (state.languagePreference === pref) {
+        return reduced(state);
+      }
+      // 1. 同步更新全局 Lang
+      Lang.getInstance().setLanguage(pref);
+      const effectiveLang: string = Lang.getInstance().getLanguage();
+
+      // 2. 同步持久化到 AppStorage（若在 UI 运行环境中）
+      try {
+        AppStorage.setOrCreate<string>('appLanguage', pref);
+        AppStorage.setOrCreate<string>('languagePreference', pref);
+      } catch (_e) {
+        // 无 AppStorage 运行环境（如纯逻辑单测）容错
+      }
+
+      const options: SettingsUiStateOptions = {
+        languagePreference: pref,
+        languageCode: effectiveLang
+      };
+      const nextState: SettingsUiState = state.copyWith(options);
+      const effects: readonly SettingsEffect[] = [
+        new ShowToastEffect(`Language set to ${pref}`)
       ];
       return reduced(nextState, effects);
     }

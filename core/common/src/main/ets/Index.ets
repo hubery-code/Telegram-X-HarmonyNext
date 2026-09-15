@@ -18,3 +18,12 @@ export {
 export { Clock, SystemClock, ManualClock } from './Clock';
 export { IdGenerator, RandomIdGenerator, SequentialIdGenerator } from './Id';
 export { base64Encode, base64Decode } from './Base64';
+export {
+  Lang,
+  lang,
+  LanguagePreference,
+  SupportedLanguage,
+  LanguageListener,
+  resolveLanguage,
+  formatString
+} from './Lang';

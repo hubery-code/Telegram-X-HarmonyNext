@@ -11,7 +11,16 @@
  */
 
 import { describe, it, expect } from '@ohos/hypium';
-import { Chat, encodeChat } from '@tgx/core-td-api-generated';
+import {
+  Chat,
+  encodeChat,
+  DraftMessage,
+  DraftMessageContentText,
+  FormattedText,
+  InputMessageReplyToMessage,
+  UpdateChatDraftMessage,
+  encodeUpdateChatDraftMessage
+} from '@tgx/core-td-api-generated';
 import {
   AccountScope,
   buildAccountDirectories,
@@ -527,6 +536,102 @@ export default function messageProjectionTest(): void {
       expect(photo['height']).assertEqual(0);
       const file = photo['photo'] as Record<string, TdWireValue>;
       expect(file['path']).assertEqual('/data/img.png');
+    });
+
+    it('should send setChatDraftMessage with formatted text and reply_to', 0, (): void => {
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const scope: AccountScope = createScope(bridge);
+      const projection: MessageProjection = new MessageProjection(42, scope);
+
+      const res: Result<TdPendingRequest, AppError> = projection.setChatDraftMessage('Draft text', 123);
+      expect(res.ok).assertTrue();
+
+      const sent: Record<string, TdWireValue> = bridge.lastSentJson();
+      expect(sent['@type']).assertEqual('setChatDraftMessage');
+      expect(sent['chat_id']).assertEqual(42);
+
+      const draft = sent['draft_message'] as Record<string, TdWireValue>;
+      expect(draft['@type']).assertEqual('draftMessage');
+
+      const content = draft['content'] as Record<string, TdWireValue>;
+      expect(content['@type']).assertEqual('draftMessageContentText');
+      const textObj = content['text'] as Record<string, TdWireValue>;
+      expect(textObj['text']).assertEqual('Draft text');
+
+      const replyTo = draft['reply_to'] as Record<string, TdWireValue>;
+      expect(replyTo['@type']).assertEqual('inputMessageReplyToMessage');
+      expect(replyTo['message_id']).assertEqual(123);
+    });
+
+    it('should send setChatDraftMessage with null draft_message on clearChatDraftMessage', 0, (): void => {
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const scope: AccountScope = createScope(bridge);
+      const projection: MessageProjection = new MessageProjection(42, scope);
+
+      const res: Result<TdPendingRequest, AppError> = projection.clearChatDraftMessage();
+      expect(res.ok).assertTrue();
+
+      const sent: Record<string, TdWireValue> = bridge.lastSentJson();
+      expect(sent['@type']).assertEqual('setChatDraftMessage');
+      expect(sent['chat_id']).assertEqual(42);
+      expect(sent['draft_message']).assertNull();
+    });
+
+    it('should seed initialDraft from getChat and update on updateChatDraftMessage', 0, async (): Promise<void> => {
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const scope: AccountScope = createScope(bridge);
+      const projection: MessageProjection = new MessageProjection(42, scope);
+
+      let loadedDraft: DraftMessage | null = null;
+      projection.setOnDraftLoaded((draft: DraftMessage | null): void => {
+        loadedDraft = draft;
+      });
+
+      projection.start();
+
+      const getChatReq: Record<string, TdWireValue> | null = findSentRequest(bridge, 'getChat');
+      expect(getChatReq !== null).assertTrue();
+      if (getChatReq !== null) {
+        const chat: Chat = new Chat();
+        chat.id = 42;
+        const draft: DraftMessage = new DraftMessage();
+        const content: DraftMessageContentText = new DraftMessageContentText();
+        const formatted: FormattedText = new FormattedText();
+        formatted.text = 'Restored draft';
+        content.text = formatted;
+        draft.content = content;
+        chat.draft_message = draft;
+
+        bridge.emitResponse(scope.clientId, sentRequestId(getChatReq),
+          encodeChat(chat) as Record<string, TdWireValue>);
+        await flushAsync();
+
+        expect(projection.getInitialDraft() !== null).assertTrue();
+        expect(loadedDraft !== null).assertTrue();
+        const loadedContent = loadedDraft!.content as DraftMessageContentText;
+        expect(loadedContent.text!.text).assertEqual('Restored draft');
+      }
+
+      // 增量 updateChatDraftMessage 驱动
+      const updateDraft: DraftMessage = new DraftMessage();
+      const updatedContent: DraftMessageContentText = new DraftMessageContentText();
+      const updatedFormatted: FormattedText = new FormattedText();
+      updatedFormatted.text = 'Live draft update';
+      updatedContent.text = updatedFormatted;
+      updateDraft.content = updatedContent;
+
+      const draftUpdate: UpdateChatDraftMessage = new UpdateChatDraftMessage();
+      draftUpdate.chat_id = 42;
+      draftUpdate.draft_message = updateDraft;
+
+      bridge.emitUpdate(scope.clientId, 'updateChatDraftMessage',
+        encodeUpdateChatDraftMessage(draftUpdate) as Record<string, TdWireValue>);
+
+      expect(projection.getInitialDraft() !== null).assertTrue();
+      const liveContent = projection.getInitialDraft()!.content as DraftMessageContentText;
+      expect(liveContent.text!.text).assertEqual('Live draft update');
+
+      projection.stop();
     });
 
   });

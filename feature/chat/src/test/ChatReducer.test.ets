@@ -32,7 +32,8 @@ import {
   ForwardSelectedToChat,
   OnForwardCompleted,
   OnForwardFailed,
-  PickAndSendPhoto
+  PickAndSendPhoto,
+  RestoreDraft
 } from '../main/ets/contract/ChatIntent';
 import {
   ChatEffect,
@@ -686,6 +687,81 @@ export default function chatReducerTest() {
       expect(effect.kind).assertEqual('pickAndSendPhoto');
       expect(effect.replyToMessageId).assertEqual(123);
       expect(effect.caption).assertEqual('caption');
+    });
+
+    it('restoreDraft_restoresTextAndReplyMode_whenComposerEmpty', 0, () => {
+      const msg: MessageItem = new MessageItem(
+        501, 'reply target message', 1000, false, 'Alice', 'none', true, false, null, ''
+      );
+      const state: ChatUiState = makeStateWith([msg], '');
+
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        state,
+        new RestoreDraft('draft content', 501),
+        makeEnv()
+      );
+
+      expect(result.state.composerText).assertEqual('draft content');
+      expect(result.state.composerMode !== null).assertTrue();
+      const replyMode: ComposerReplyMode = result.state.composerMode as ComposerReplyMode;
+      expect(replyMode.kind).assertEqual('reply');
+      expect(replyMode.targetMessageId).assertEqual(501);
+      expect(replyMode.previewTitle).assertEqual('Alice');
+      expect(replyMode.previewText).assertEqual('reply target message');
+    });
+
+    it('restoreDraft_fallbackAuthor_whenReplyTargetNotInMemory', 0, () => {
+      const state: ChatUiState = makeState('');
+
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        state,
+        new RestoreDraft('draft without message', 999),
+        makeEnv()
+      );
+
+      expect(result.state.composerText).assertEqual('draft without message');
+      expect(result.state.composerMode !== null).assertTrue();
+      const replyMode: ComposerReplyMode = result.state.composerMode as ComposerReplyMode;
+      expect(replyMode.targetMessageId).assertEqual(999);
+      expect(replyMode.previewTitle).assertEqual('Reply');
+    });
+
+    it('restoreDraft_doesNotOverwrite_whenComposerAlreadyHasText', 0, () => {
+      const state: ChatUiState = makeState('existing typed text');
+
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        state,
+        new RestoreDraft('stale draft', 0),
+        makeEnv()
+      );
+
+      expect(result.state.composerText).assertEqual('existing typed text');
+      expect(result.state.composerMode === null).assertTrue();
+    });
+
+    it('restoreDraft_resolvesAuthorAndSnippet_whenMessagesLoadedLater', 0, () => {
+      const initial: ChatUiState = makeState('');
+      const restoredResult: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        initial,
+        new RestoreDraft('pending draft', 601),
+        makeEnv()
+      );
+
+      const msg: MessageItem = new MessageItem(
+        601, 'arrived text', 1000, false, 'Bob', 'none', true, false, null, ''
+      );
+      const loadedResult: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        restoredResult.state,
+        new OnMessagesLoaded([msg], false),
+        makeEnv()
+      );
+
+      expect(loadedResult.state.composerText).assertEqual('pending draft');
+      expect(loadedResult.state.composerMode !== null).assertTrue();
+      const replyMode: ComposerReplyMode = loadedResult.state.composerMode as ComposerReplyMode;
+      expect(replyMode.targetMessageId).assertEqual(601);
+      expect(replyMode.previewTitle).assertEqual('Bob');
+      expect(replyMode.previewText).assertEqual('arrived text');
     });
   });
 }

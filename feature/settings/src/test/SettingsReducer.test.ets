@@ -1,11 +1,12 @@
 import { describe, it, expect } from '@ohos/hypium';
 import { ThemeManager, LightTheme, DarkTheme } from '@tgx/core-design-system';
-import { ManualClock, SequentialIdGenerator } from '@tgx/core-common';
+import { Lang, ManualClock, SequentialIdGenerator } from '@tgx/core-common';
 import { ReducerEnv } from '@tgx/feature-template';
 import { SettingsUiState, SettingsUiStateOptions } from '../main/ets/contract/SettingsUiState';
 import {
   CacheCleared,
   CancelLogout,
+  ChangeLanguage,
   ChangeThemeMode,
   ClearCacheRequested,
   ConfirmLogout,
@@ -14,6 +15,7 @@ import {
   ProfileLoaded,
   RequestLogout,
   SetErrorMessage,
+  SetLanguage,
   StorageStatsLoaded,
   ToggleNotifications,
   UserProfileData

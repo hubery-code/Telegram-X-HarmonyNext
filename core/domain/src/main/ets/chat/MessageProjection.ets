@@ -47,6 +47,7 @@ import {
   encodeResendMessages,
   encodeGetChat,
   encodeForwardMessages,
+  encodeSetChatDraftMessage,
   GetChatHistory,
   OpenChat,
   CloseChat,
@@ -58,6 +59,9 @@ import {
   ResendMessages,
   GetChat,
   ForwardMessages,
+  SetChatDraftMessage,
+  DraftMessage,
+  DraftMessageContentText,
   Chat,
   InputFileLocal,
   InputPhoto,
@@ -74,7 +78,8 @@ import {
   UpdateMessageSendSucceeded,
   UpdateDeleteMessages,
   UpdateChatReadOutbox,
-  UpdateChatReadInbox
+  UpdateChatReadInbox,
+  UpdateChatDraftMessage
 } from '@tgx/core-td-api-generated';
 import { AccountScope } from '@tgx/core-account';
 import { TdUpdateSubscription, TdPendingRequest, TdWireObject, TdWireValue } from '@tgx/td-gateway';
@@ -129,6 +134,8 @@ export class MessageProjection {
 
   private subscription: TdUpdateSubscription | null = null;
   private stateListener: (() => void) | null = null;
+  private initialDraft: DraftMessage | null = null;
+  private draftListener: ((draft: DraftMessage | null) => void) | null = null;
 
   constructor(chatId: number, scope: AccountScope) {
     this.chatId = chatId;
@@ -138,6 +145,14 @@ export class MessageProjection {
   /** 列表内容或加载状态变化时回调（调用方负责合并高频通知）。 */
   setOnStateChanged(listener: (() => void) | null): void {
     this.stateListener = listener;
+  }
+
+  setOnDraftLoaded(listener: ((draft: DraftMessage | null) => void) | null): void {
+    this.draftListener = listener;
+  }
+
+  getInitialDraft(): DraftMessage | null {
+    return this.initialDraft;
   }
 
   private notifyStateChanged(): void {
@@ -306,6 +321,40 @@ export class MessageProjection {
     req.input_message_content = content;
 
     return this.scope.request('sendMessage', encodeSendMessage(req) as TdWireObject);
+  }
+
+  /**
+   * 保存或清除草稿（COMPOSER-101 / FEAT-CHAT-005）：setChatDraftMessage(chat_id, draft_message)。
+   * text 为空且无 replyTo 时置 draft_message = null 清除草稿；
+   * 否则组装 DraftMessage(DraftMessageContentText) 保存。
+   */
+  setChatDraftMessage(text: string, replyToMessageId: number = 0): Result<TdPendingRequest, AppError> {
+    const trimmed: string = text.trim();
+    const req: SetChatDraftMessage = new SetChatDraftMessage();
+    req.chat_id = this.chatId;
+    if (trimmed.length === 0 && replyToMessageId <= 0) {
+      req.draft_message = null;
+    } else {
+      const draft: DraftMessage = new DraftMessage();
+      const content: DraftMessageContentText = new DraftMessageContentText();
+      const formatted: FormattedText = new FormattedText();
+      formatted.text = text;
+      content.text = formatted;
+      draft.content = content;
+      draft.date = Math.floor(Date.now() / 1000);
+      if (replyToMessageId > 0) {
+        const replyTo: InputMessageReplyToMessage = new InputMessageReplyToMessage();
+        replyTo.message_id = replyToMessageId;
+        draft.reply_to = replyTo;
+      }
+      req.draft_message = draft;
+    }
+    return this.scope.request('setChatDraftMessage', encodeSetChatDraftMessage(req) as TdWireObject);
+  }
+
+  /** 清除当前会话的草稿。 */
+  clearChatDraftMessage(): Result<TdPendingRequest, AppError> {
+    return this.setChatDraftMessage('', 0);
   }
 
   /**
@@ -641,6 +690,14 @@ export class MessageProjection {
       if (readInboxUpdate.chat_id === this.chatId) {
         this.advanceLastReadInbox(readInboxUpdate.last_read_inbox_message_id, readInboxUpdate.unread_count);
       }
+    } else if (update.type === 'updateChatDraftMessage') {
+      const draftUpdate: UpdateChatDraftMessage = update as UpdateChatDraftMessage;
+      if (draftUpdate.chat_id === this.chatId) {
+        this.initialDraft = draftUpdate.draft_message;
+        if (this.draftListener !== null) {
+          this.draftListener(draftUpdate.draft_message);
+        }
+      }
     }
   }
 
@@ -669,8 +726,8 @@ export class MessageProjection {
   }
 
   /**
-   * 初始已读水位（MSG-104 修复与未读定位）：getChat 取
-   * chat.last_read_outbox_message_id 与 chat.last_read_inbox_message_id 灌为水位初值。
+   * 初始已读水位与草稿恢复（MSG-104 + COMPOSER-101）：getChat 取
+   * chat.last_read_outbox_message_id、chat.last_read_inbox_message_id 与 chat.draft_message。
    * openChat 后 chat 已命中 TDLib 本地缓存，无网络往返；
    * 失败静默——水位退化为纯增量推送，与修复前行为一致。
    */
@@ -687,6 +744,10 @@ export class MessageProjection {
           if (chat !== null && chat.id === self.chatId) {
             self.advanceLastReadOutbox(chat.last_read_outbox_message_id);
             self.advanceLastReadInbox(chat.last_read_inbox_message_id, chat.unread_count);
+            self.initialDraft = chat.draft_message;
+            if (self.draftListener !== null) {
+              self.draftListener(chat.draft_message);
+            }
           }
         }
       }).catch(() => {
