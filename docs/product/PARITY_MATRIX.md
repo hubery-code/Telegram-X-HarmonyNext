@@ -55,7 +55,7 @@
 | FEAT-MEDIA-002 | 视频消息 | Dev Match | 缩略图与本地视频查看已具备，上传待接入 |
 | FEAT-MEDIA-003 | 文件消息 | Dev Match | 系统文档选择器选取发送/下载，进度环与一键撤回，真机实测验证通过 |
 | FEAT-MEDIA-004 | 语音消息 | Not Started | 待 MEDIA-106 工作包接入 |
-| FEAT-MEDIA-005 | 失败重试/取消 | Not Started | 待 FILE-103 工作包接入 |
+| FEAT-MEDIA-005 | 失败重试/取消 | Dev Match | 下载/上传传输中取消、发送失败重试与长按菜单 Resend/Delete 完整闭环（FILE-103） |
 | FEAT-MEDIA-006 | 媒体查看器 | Dev Match | 支持全屏展示与滑动翻页 |
 | FEAT-SEARCH-001 | 全局搜索 | Dev Match | 联系人与消息分组，点击跳入聊天，返回栈保活对齐 |
 | FEAT-SEARCH-002 | 聊天内搜索 | Not Started | 待 SEARCH-102 工作包接入 |

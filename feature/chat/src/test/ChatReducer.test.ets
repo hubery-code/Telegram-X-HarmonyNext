@@ -37,7 +37,9 @@ import {
   RestoreDraft,
   OpenAttachmentMenu,
   CloseAttachmentMenu,
-  ToggleAttachmentMenu
+  ToggleAttachmentMenu,
+  CancelMediaDownload,
+  ResendFailedMessage
 } from '../main/ets/contract/ChatIntent';
 import {
   ChatEffect,
@@ -49,7 +51,9 @@ import {
   OpenForwardPicker,
   ForwardMessages,
   CopyTextToClipboard,
-  PickAndSendPhotoEffect
+  PickAndSendPhotoEffect,
+  CancelMediaDownloadEffect,
+  ResendMessage
 } from '../main/ets/contract/ChatEffect';
 import { chatReducer, extractFirstLink } from '../main/ets/reducer/ChatReducer';
 import { MessageTextSpan } from '../main/ets/model/MessageTextSpan';
@@ -848,6 +852,104 @@ export default function chatReducerTest() {
       );
 
       expect(result.state.showAttachmentMenu).assertFalse();
+      expect(result.effects.length).assertEqual(0);
+    });
+
+    it('cancelMediaDownload_emitsCancelMediaDownloadEffect', 0, () => {
+      const initial: ChatUiState = makeState('');
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        initial,
+        new CancelMediaDownload(505),
+        makeEnv()
+      );
+
+      expect(result.effects.length).assertEqual(1);
+      expect(result.effects[0].kind).assertEqual('cancelMediaDownload');
+      const effect: CancelMediaDownloadEffect = result.effects[0] as CancelMediaDownloadEffect;
+      expect(effect.fileId).assertEqual(505);
+    });
+
+    it('onMessageActionMenuLoaded_failedMessage_hasShowResendAndNoReply', 0, () => {
+      const failedMsg: MessageItem = new MessageItem(
+        77,
+        'failed text',
+        1000,
+        true,
+        'Me',
+        'failed',
+        true
+      );
+      const initial: ChatUiState = makeStateWith([failedMsg]);
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        initial,
+        new OnMessageActionMenuLoaded(77, false, false, false, false, false),
+        makeEnv()
+      );
+
+      expect(result.state.actionMenu !== null).assertTrue();
+      const menu: MessageActionMenuState = result.state.actionMenu as MessageActionMenuState;
+      expect(menu.showResend).assertTrue();
+      expect(menu.showReply).assertFalse();
+      expect(menu.showDelete).assertTrue();
+    });
+
+    it('resendFailedMessage_closesMenuAndEmitsResendMessage', 0, () => {
+      const failedMsg: MessageItem = new MessageItem(
+        77,
+        'failed text',
+        1000,
+        true,
+        'Me',
+        'failed',
+        true
+      );
+      const menuState: MessageActionMenuState = new MessageActionMenuState(
+        77,
+        false,
+        false,
+        true,
+        true,
+        false,
+        false,
+        false,
+        null,
+        true
+      );
+      const initial: ChatUiState = makeStateWith([failedMsg]).copyWith({
+        actionMenu: menuState
+      });
+
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        initial,
+        new ResendFailedMessage(77),
+        makeEnv()
+      );
+
+      expect(result.state.actionMenu === null).assertTrue();
+      expect(result.effects.length).assertEqual(1);
+      expect(result.effects[0].kind).assertEqual('resendMessage');
+      const effect: ResendMessage = result.effects[0] as ResendMessage;
+      expect(effect.messageId).assertEqual(77);
+      expect(effect.chatId).assertEqual(initial.chatId);
+    });
+
+    it('resendFailedMessage_ignoresNonFailedMessage', 0, () => {
+      const normalMsg: MessageItem = new MessageItem(
+        88,
+        'normal text',
+        1000,
+        true,
+        'Me',
+        'none',
+        true
+      );
+      const initial: ChatUiState = makeStateWith([normalMsg]);
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        initial,
+        new ResendFailedMessage(88),
+        makeEnv()
+      );
+
       expect(result.effects.length).assertEqual(0);
     });
   });

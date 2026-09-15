@@ -346,6 +346,26 @@ export class ToggleAttachmentMenu implements Intent {
   readonly kind: 'toggleAttachmentMenu' = 'toggleAttachmentMenu';
 }
 
+/** FILE-103：取消媒体/文件下载。 */
+export class CancelMediaDownload implements Intent {
+  readonly kind: 'cancelMediaDownload' = 'cancelMediaDownload';
+  readonly fileId: number;
+
+  constructor(fileId: number) {
+    this.fileId = fileId;
+  }
+}
+
+/** FILE-103：重发发送失败的消息（从长按菜单或重试图标触发）。 */
+export class ResendFailedMessage implements Intent {
+  readonly kind: 'resendFailedMessage' = 'resendFailedMessage';
+  readonly messageId: number;
+
+  constructor(messageId: number) {
+    this.messageId = messageId;
+  }
+}
+
 export type ChatIntent =
   | LoadInitialMessages
   | LoadOlderMessages
@@ -384,4 +404,6 @@ export type ChatIntent =
   | RestoreDraft
   | OpenAttachmentMenu
   | CloseAttachmentMenu
-  | ToggleAttachmentMenu;
+  | ToggleAttachmentMenu
+  | CancelMediaDownload
+  | ResendFailedMessage;

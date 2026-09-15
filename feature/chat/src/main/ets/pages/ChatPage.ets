@@ -89,7 +89,9 @@ import {
   CancelMediaUpload,
   OpenAttachmentMenu,
   CloseAttachmentMenu,
-  ToggleAttachmentMenu
+  ToggleAttachmentMenu,
+  CancelMediaDownload,
+  ResendFailedMessage
 } from '../contract/ChatIntent';
 import { isMessageSelected } from '../model/ForwardSelection';
 
@@ -656,9 +658,9 @@ export struct ChatPage {
           if (this.isSticker(item)) {
             this.StickerBubble(item.media, item)
           } else if (item.media.kind === 'document') {
-            this.DocumentBubble(item.media, item.messageId)
+            this.DocumentBubble(item.media, item.messageId, item.sendState === 'failed')
           } else {
-            this.MediaBubble(item.media, item.messageId)
+            this.MediaBubble(item.media, item.messageId, item.sendState === 'failed')
           }
         }
 
@@ -905,13 +907,27 @@ export struct ChatPage {
     .height(this.stickerHeight(media))
   }
 
-  /** 文件消息气泡渲染（MEDIA-104 / FEAT-MEDIA-003）：文件名、大小、下载/上传进度、点击动作。 */
+  /** 文件消息气泡渲染（MEDIA-104 / FILE-103 / FEAT-MEDIA-003）：文件名、大小、下载/上传进度、失败重试、点击动作。 */
   @Builder
-  DocumentBubble(media: MediaAttachment, messageId: number) {
+  DocumentBubble(media: MediaAttachment, messageId: number, isFailed: boolean = false) {
     Row() {
       // 左侧圆形图标与状态交互按钮（直径 44）
       Stack({ alignContent: Alignment.Center }) {
-        if (media.isUploading) {
+        if (isFailed) {
+          // FILE-103：发送失败态：红色底色 + 重试图标
+          Column() {
+            Text('↻')
+              .fontSize(20)
+              .fontColor(T.colors.textOnAccent)
+              .fontWeight(FontWeight.Bold)
+          }
+          .width(44)
+          .height(44)
+          .borderRadius(T.radius.full)
+          .backgroundColor(T.colors.destructive)
+          .justifyContent(FlexAlign.Center)
+          .alignItems(HorizontalAlign.Center)
+        } else if (media.isUploading) {
           // 上传中：进度转圈
           Column() {
             LoadingProgress()
@@ -971,11 +987,15 @@ export struct ChatPage {
       .height(44)
       .margin({ right: T.spacing.sm })
       .onClick(() => {
-        if (media.isUploading) {
+        if (isFailed) {
+          // FILE-103：失败重试发送
+          this.onDispatch(new TapFailedMessage(messageId));
+        } else if (media.isUploading) {
           // 上传中点击：取消上传并撤回
           this.onDispatch(new CancelMediaUpload(messageId));
         } else if (media.isDownloading) {
-          hilog.info(DOMAIN, TAG, `document downloading: fileId=${media.fileId}`);
+          // FILE-103：下载中点击：取消下载
+          this.onDispatch(new CancelMediaDownload(media.fileId));
         } else if (!media.isDownloaded) {
           this.onDispatch(new RequestMediaDownload(media.fileId));
         } else {
@@ -983,7 +1003,7 @@ export struct ChatPage {
         }
       })
 
-      // 右侧：文件名与文件大小 / 进度信息
+      // 右侧：文件名与文件大小 / 进度信息 / 失败提示
       Column() {
         Text(media.fileName.length > 0 ? media.fileName : 'Document')
           .fontSize(T.typography.body.fontSize)
@@ -992,9 +1012,9 @@ export struct ChatPage {
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
 
-        Text(this.documentSubtitle(media))
+        Text(isFailed ? 'Failed · Tap to retry' : this.documentSubtitle(media))
           .fontSize(T.typography.caption.fontSize)
-          .fontColor(T.colors.textSecondary)
+          .fontColor(isFailed ? T.colors.destructive : T.colors.textSecondary)
           .margin({ top: T.spacing.xs })
       }
       .alignItems(HorizontalAlign.Start)
@@ -1125,9 +1145,9 @@ export struct ChatPage {
     .margin({ bottom: item.text.length > 0 ? T.spacing.xs : 0 })
   }
 
-  /** 多媒体气泡渲染（MEDIA-101 / MEDIA-105）：图片/视频/GIF 动图。 */
+  /** 多媒体气泡渲染（MEDIA-101 / MEDIA-105 / FILE-103）：图片/视频/GIF 动图。 */
   @Builder
-  MediaBubble(media: MediaAttachment, messageId: number) {
+  MediaBubble(media: MediaAttachment, messageId: number, isFailed: boolean = false) {
     Stack({ alignContent: Alignment.Center }) {
       // 1. 底图 / 缩略图 / 占位 / 动图视频
       if (media.localPath !== null && (media.isDownloaded || media.isUploading)) {
@@ -1193,7 +1213,24 @@ export struct ChatPage {
       }
 
       // 2. 状态与角标覆盖层
-      if (media.kind === 'photo') {
+      if (isFailed) {
+        // FILE-103：发送失败态：红色重试圆钮
+        Column() {
+          Text('↻')
+            .fontSize(22)
+            .fontColor(T.colors.textOnAccent)
+            .fontWeight(FontWeight.Bold)
+        }
+        .width(52)
+        .height(52)
+        .borderRadius(T.radius.full)
+        .backgroundColor(T.colors.destructive)
+        .justifyContent(FlexAlign.Center)
+        .alignItems(HorizontalAlign.Center)
+        .onClick(() => {
+          this.onDispatch(new TapFailedMessage(messageId));
+        })
+      } else if (media.kind === 'photo') {
         if (media.isUploading) {
           Column() {
             LoadingProgress()
@@ -1213,6 +1250,9 @@ export struct ChatPage {
           .backgroundColor('#80000000')
           .justifyContent(FlexAlign.Center)
           .alignItems(HorizontalAlign.Center)
+          .onClick(() => {
+            this.onDispatch(new CancelMediaUpload(messageId));
+          })
         } else if (!media.isDownloaded) {
           if (media.isDownloading) {
             Column() {
@@ -1227,6 +1267,9 @@ export struct ChatPage {
             .backgroundColor('#80000000')
             .justifyContent(FlexAlign.Center)
             .alignItems(HorizontalAlign.Center)
+            .onClick(() => {
+              this.onDispatch(new CancelMediaDownload(media.fileId));
+            })
           } else {
             Column() {
               Text('⬇')
@@ -1239,6 +1282,9 @@ export struct ChatPage {
             .backgroundColor('#80000000')
             .justifyContent(FlexAlign.Center)
             .alignItems(HorizontalAlign.Center)
+            .onClick(() => {
+              this.onDispatch(new RequestMediaDownload(media.fileId));
+            })
           }
         }
       } else if (media.kind === 'animation') {
@@ -1272,6 +1318,9 @@ export struct ChatPage {
             .backgroundColor('#80000000')
             .justifyContent(FlexAlign.Center)
             .alignItems(HorizontalAlign.Center)
+            .onClick(() => {
+              this.onDispatch(new CancelMediaDownload(media.fileId));
+            })
           } else {
             Column() {
               Text('⬇')
@@ -1284,6 +1333,9 @@ export struct ChatPage {
             .backgroundColor('#80000000')
             .justifyContent(FlexAlign.Center)
             .alignItems(HorizontalAlign.Center)
+            .onClick(() => {
+              this.onDispatch(new RequestMediaDownload(media.fileId));
+            })
           }
         }
       } else if (media.kind === 'video') {
@@ -1301,6 +1353,24 @@ export struct ChatPage {
           .backgroundColor('#80000000')
           .justifyContent(FlexAlign.Center)
           .alignItems(HorizontalAlign.Center)
+          .onClick(() => {
+            this.onDispatch(new CancelMediaDownload(media.fileId));
+          })
+        } else if (!media.isDownloaded) {
+          Column() {
+            Text('⬇')
+              .fontSize(20)
+              .fontColor(Color.White)
+          }
+          .width(48)
+          .height(48)
+          .borderRadius(T.radius.full)
+          .backgroundColor('#80000000')
+          .justifyContent(FlexAlign.Center)
+          .alignItems(HorizontalAlign.Center)
+          .onClick(() => {
+            this.onDispatch(new RequestMediaDownload(media.fileId));
+          })
         } else {
           Column() {
             Text('▶')
@@ -1339,6 +1409,9 @@ export struct ChatPage {
     .clip(true)
     .margin({ bottom: T.spacing.xs })
     .onClick(() => {
+      if (isFailed || media.isUploading || media.isDownloading || !media.isDownloaded) {
+        return;
+      }
       this.onDispatch(new OpenMediaViewer(messageId));
     })
   }
@@ -1457,6 +1530,24 @@ export struct ChatPage {
         })
 
       Column() {
+        // FILE-103：失败消息展示 Resend 重发入口（对齐 Telegram X: Resend → Delete）
+        if (menu.showResend) {
+          Text('Resend')
+            .fontSize(T.typography.body.fontSize)
+            .fontWeight(FontWeight.Medium)
+            .fontColor(T.colors.accent)
+            .width('100%')
+            .padding({
+              left: T.spacing.screenInset,
+              right: T.spacing.screenInset,
+              top: T.spacing.md,
+              bottom: T.spacing.md
+            })
+            .onClick(() => {
+              this.onDispatch(new ResendFailedMessage(menu.messageId));
+            })
+        }
+
         if (menu.showReply) {
           Text('Reply')
             .fontSize(T.typography.body.fontSize)

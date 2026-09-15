@@ -114,7 +114,8 @@ import {
   ResendMessage,
   CopyTextToClipboard,
   PickAndSendPhotoEffect,
-  PickAndSendFileEffect
+  PickAndSendFileEffect,
+  CancelMediaDownloadEffect
 } from '../contract/ChatEffect';
 import { isOutgoingMessageRead, ReadReportThrottle } from '../model/ReadReceipt';
 import { chatReducer } from '../reducer/ChatReducer';
@@ -1776,6 +1777,12 @@ export class ChatCoordinator {
         break;
       }
 
+      case 'cancelMediaDownload': {
+        const cancel: CancelMediaDownloadEffect = effect as CancelMediaDownloadEffect;
+        this.cancelMediaDownload(cancel.fileId);
+        break;
+      }
+
       default:
         break;
     }
@@ -1791,10 +1798,12 @@ export class ChatCoordinator {
     this.dispatch(new PickAndSendFile());
   }
 
-  /** 取消正在下载的媒体文件 */
+  /** FILE-103：取消正在下载的媒体文件 */
   public cancelMediaDownload(fileId: number): Result<TdPendingRequest, AppError> {
     this.requestedFileIds.delete(fileId);
-    return this.fileRegistry.cancelDownloadFile(fileId);
+    const result: Result<TdPendingRequest, AppError> = this.fileRegistry.cancelDownloadFile(fileId);
+    this.scheduleSyncFromProjection();
+    return result;
   }
 
   /** MEDIA-102 / MEDIA-104：取消正在上传或待发送的媒体消息 */

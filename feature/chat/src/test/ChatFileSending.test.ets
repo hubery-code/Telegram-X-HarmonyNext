@@ -26,7 +26,7 @@ import { Result, AppError, ManualClock, SequentialIdGenerator } from '@tgx/core-
 import { ReducerEnv } from '@tgx/feature-template';
 import { ChatCoordinator } from '../main/ets/coordinator/ChatCoordinator';
 import { ChatUiState } from '../main/ets/contract/ChatUiState';
-import { PickAndSendFile, RequestMediaDownload } from '../main/ets/contract/ChatIntent';
+import { PickAndSendFile, RequestMediaDownload, CancelMediaDownload } from '../main/ets/contract/ChatIntent';
 
 interface SentBridgeRequest {
   readonly clientId: number;
@@ -201,6 +201,25 @@ export default function chatFileSendingTest(): void {
 
       const res: Result<import('@tgx/td-gateway').TdPendingRequest, AppError> = coordinator.cancelMediaDownload(5005);
       expect(res.ok).assertTrue();
+
+      const sent: Record<string, TdWireValue> = bridge.lastSentJson();
+      expect(sent['@type']).assertEqual('cancelDownloadFile');
+      expect(sent['file_id']).assertEqual(5005);
+
+      coordinator.destroy();
+    });
+
+    it('dispatch CancelMediaDownload sends cancelDownloadFile to bridge', 0, (): void => {
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const scope: AccountScope = createScope(bridge);
+
+      const coordinator: ChatCoordinator = new ChatCoordinator(
+        scope,
+        42,
+        'Test Chat'
+      );
+
+      coordinator.dispatch(new CancelMediaDownload(5005));
 
       const sent: Record<string, TdWireValue> = bridge.lastSentJson();
       expect(sent['@type']).assertEqual('cancelDownloadFile');

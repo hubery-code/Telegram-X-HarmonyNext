@@ -65,7 +65,9 @@ import {
   CloseMediaViewer,
   ChangeViewerIndex,
   CancelMediaUpload,
-  RestoreDraft
+  RestoreDraft,
+  CancelMediaDownload,
+  ResendFailedMessage
 } from '../contract/ChatIntent';
 import {
   ChatEffect,
@@ -82,7 +84,8 @@ import {
   ResendMessage,
   CopyTextToClipboard,
   PickAndSendPhotoEffect,
-  PickAndSendFileEffect
+  PickAndSendFileEffect,
+  CancelMediaDownloadEffect
 } from '../contract/ChatEffect';
 import { incomingIdUpTo } from '../model/ReadReceipt';
 import {
@@ -397,6 +400,12 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
       ]);
     }
 
+    case 'cancelMediaDownload': {
+      // FILE-103：取消媒体/文件下载
+      const cancelIntent: CancelMediaDownload = intent as CancelMediaDownload;
+      return reduced(state, [new CancelMediaDownloadEffect(cancelIntent.fileId)]);
+    }
+
     case 'backToChatList': {
       // COMPOSER-102：附件面板打开时，返回先关闭面板不离开页面。
       if (state.showAttachmentMenu) {
@@ -438,26 +447,32 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
       if (item === null) {
         return reduced(state);
       }
-      // 权限过滤：回复恒可；编辑仅己方文本消息且 canBeEdited；
-      // 删除需 canBeDeletedOnlyForSelf || canBeDeletedForAllUsers，
-      // revoke 取 canBeDeletedForAllUsers（可对所有人删则对所有人删）；
-      // MSG-106：转发需 canBeForwarded；
-      // MSG-105：复制文本需 canBeSaved 且非空文本；复制链接需 canBeSaved 且存在链接。
-      const showEdit: boolean = item.isOutgoing && item.isTextMessage && loaded.canBeEdited;
-      const showDelete: boolean = loaded.canBeDeletedOnlyForSelf || loaded.canBeDeletedForAllUsers;
-      const showCopy: boolean = loaded.canBeSaved && item.text.trim().length > 0;
+      // 权限过滤：回复恒可（发送失败消息不可回复）；编辑仅己方文本消息且 canBeEdited；
+      // 删除需 canBeDeletedOnlyForSelf || canBeDeletedForAllUsers（发送失败消息恒可删除撤销）；
+      // revoke 取 canBeDeletedForAllUsers（可对所有人删则对所有人删，失败消息为本地撤销）；
+      // MSG-106：转发需 canBeForwarded（发送失败消息不可转发）；
+      // MSG-105：复制文本需 canBeSaved 且非空文本；复制链接需 canBeSaved 且存在链接；
+      // FILE-103：失败消息展示 Resend 重发选项。
+      const isFailed: boolean = item.sendState === 'failed';
+      const showResend: boolean = isFailed;
+      const showReply: boolean = !isFailed;
+      const showEdit: boolean = !isFailed && item.isOutgoing && item.isTextMessage && loaded.canBeEdited;
+      const showDelete: boolean = isFailed || loaded.canBeDeletedOnlyForSelf || loaded.canBeDeletedForAllUsers;
+      const showCopy: boolean = !isFailed && loaded.canBeSaved && item.text.trim().length > 0;
       const firstLink: string | null = extractFirstLink(item);
-      const showCopyLink: boolean = loaded.canBeSaved && firstLink !== null;
+      const showCopyLink: boolean = !isFailed && loaded.canBeSaved && firstLink !== null;
+      const showForward: boolean = !isFailed && loaded.canBeForwarded;
       const menu: MessageActionMenuState = new MessageActionMenuState(
         loaded.messageId,
-        true,
+        showReply,
         showEdit,
         showDelete,
-        loaded.canBeDeletedForAllUsers,
-        loaded.canBeForwarded,
+        isFailed ? true : loaded.canBeDeletedForAllUsers,
+        showForward,
         showCopy,
         showCopyLink,
-        firstLink
+        firstLink,
+        showResend
       );
       const nextState: ChatUiState = state.copyWith({ actionMenu: menu });
       return reduced(nextState);
@@ -710,6 +725,18 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
       }
       const effects: ChatEffect[] = [new ResendMessage(state.chatId, tapped.messageId)];
       return reduced(state, effects);
+    }
+
+    case 'resendFailedMessage': {
+      // FILE-103：长按菜单或重试图标触发失败消息重发，收起菜单并派发 ResendMessage。
+      const resendIntent: ResendFailedMessage = intent as ResendFailedMessage;
+      const item: MessageItem | null = findMessage(state, resendIntent.messageId);
+      if (item === null || item.sendState !== 'failed') {
+        return reduced(state.copyWith({ actionMenu: null }));
+      }
+      const nextState: ChatUiState = state.copyWith({ actionMenu: null });
+      const effects: ChatEffect[] = [new ResendMessage(state.chatId, resendIntent.messageId)];
+      return reduced(nextState, effects);
     }
 
     case 'openMediaViewer': {

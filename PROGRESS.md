@@ -24,7 +24,7 @@
 
 | 工作包 | 负责人(AI) | 开始时间 | 说明 |
 |---|---|---|---|
-| _（暂无，等待架构负责人复核 BUILD-001 与下一任务下发）_ | — | — | — |
+| _（当前无进行中任务）_ | — | — | — |
 
 > ⚠️ 并行约定：**不要执行 git commit**，完成后报告文件清单由主会话统一提交。core/account 禁止 import ArkUI/Kit。项目内有 `.agents/skills/harmony-next/` 离线参考（API 12-23 快照），编码遇 API 问题可查。
 >
@@ -46,7 +46,7 @@
 
 | 工作包 | 依赖 | 一句话 |
 |---|---|---|
-| FILE-103 | FILE-101 | 传输失败重试/取消 UI 路径（FEAT-MEDIA-005） |
+| _（已认领进行中）_ | — | — |
 
 ### MEDIA Epic（图片/视频/文件/语音）
 
@@ -72,6 +72,7 @@ GROUP / PROFILE / SHARE / A11Y / ADAPTIVE Epic 及 FEATURE_MATRIX P2/P3 项：Ph
 
 | 工作包 | 完成日期 | 证据 |
 |---|---|---|
+| FILE-103 传输失败重试/取消 UI 路径（FEAT-MEDIA-005 完整闭环） | 2026-09-15 ✅ | AI-Agent-Antigravity：① **下载取消与即时重绘**：在 `feature/chat` 引入 `CancelMediaDownload(fileId)` intent 与 `CancelMediaDownloadEffect`；`ChatCoordinator` 收到 effect 后调用 `fileRegistry.cancelDownloadFile(fileId)`，清理 `requestedFileIds` 缓存并立即调度 `scheduleSyncFromProjection()` 促发 UI 及时刷新；② **发送失败与重试/删除闭环**：`ChatUiState.MessageActionMenuState` 扩展 `showResend`；`ChatReducer` 判定 `item.sendState === 'failed'` 时展开 `Resend` 与 `Delete`，隐藏 `Reply`；引入 `ResendFailedMessage(messageId)`，派发 `ResendMessage(chatId, messageId)` 重新尝试发送；③ **UI 交互与状态自适应渲染**：`DocumentBubble` 与 `MediaBubble` 引入 `isFailed` 参数，在失败态展示红底重试圆钮（`↻`）与失败提示；传输中（上传中/下载中）支持点击圆钮直接取消（上传派发 `CancelMediaUpload` 撤回临时消息，下载派发 `CancelMediaDownload`）；`MediaBubble` 点击穿透防护：失败或传输中状态严格拦截，防止误开全屏媒体查看器；④ **长按菜单与系统规范对齐**：`ActionMenuSheet` 在 `menu.showResend` 为真时置顶渲染 `Resend` 选项；⑤ **自动化测试与门禁验证**：`ChatReducer.test.ets` 新增 4 组用例覆盖取消下载、失败菜单与重试意图，`ChatFileSending.test.ets` 补充端到端取消下载验证；`feature_chat` 单测 150/150 全 PASS；全仓 19 模块 896/896 单测 100% 绿灯；架构与 Design Token 0 违规，构建 SUCCESSFUL。 |
 | COMPOSER-102 附件面板整合与标准半屏抽屉交互（FEAT-COMP-008 完整闭环） | 2026-09-15 ✅ | AI-Agent-Antigravity：① **输入栏瘦身与入口收敛**：重构 `ChatPage.ets` 输入栏，将原并列的 `📎` 与 `📁` 两个按钮收敛为单一标准的 `📎` 附件入口，扩充输入框可用水平宽度；② **Telegram X 风格半屏附件抽屉 (`AttachmentMenuSheet`)**：点击 `📎` 呼出半透明遮罩与圆角浮层，提供 `Gallery`（相册选图）与 `File`（通用文件）网格选项，支持点击外部空白遮罩与系统返回键拦截关闭（`ChatReducer` 纯函数拦截 `backToChatList`，返回仅收起面板不退出会话）；③ **MVI 状态机与架构纯洁性**：`feature/chat` 扩展 `ChatUiState`（`showAttachmentMenu: boolean`）、新增 `OpenAttachmentMenu`, `CloseAttachmentMenu`, `ToggleAttachmentMenu` 意图；`ChatReducer` 纯函数推导，选图或选文件触发时自动收起面板，100% Kit-free；100% 遵从 Design Tokens；④ **单元测试全绿**：`ChatReducer.test.ets` 新增 6 组测试用例（打开、关闭、切换、选图自动关闭、选文件自动关闭、返回键拦截），`feature_chat` 模块单测增至 145/145 项全部 PASS，`entry` 29/29 PASS；架构与 Design Token 0 违规，沉淀报告 `work-items/accepted/COMPOSER-102.md`。 |
 | FIX-002 真机虚拟 URI 转沙箱物理路径（消除 TDLib rejected the request 上传阻断） | 2026-09-15 ✅ | AI-Agent-Antigravity：① **问题根因定位**：真机选取图片/文件时，`PhotoViewPicker` 与 `DocumentViewPicker` 返回系统虚拟 URI（`file://media/...` 或 `file://docs/...`），底层 TDLib C++ native 库经 POSIX `open` 无法读取虚拟 URI（返回 ENOENT），判定本地文件不存在抛出 400 Bad Request（`tdlib/bad_request/retryable=false`）；② **沙箱零拷贝转换落地**：在 `entry/src/main/ets/platform/HarmonyMediaPickerAdapter.ets` 实现 `copyUriToCache`，使用 `@kit.CoreFileKit` 的 `fileIo.openSync(uri, READ_ONLY)` 获取内核级只读 FD，并在应用沙箱临时目录 `${cacheDir}/uploads/` 创建目标文件，通过 `fileIo.copyFileSync` 实现内核零拷贝与安全释放，为 TDLib 提供合规物理沙箱路径；③ **装配层目录注入**：在 `Index.ets` 的 `aboutToAppear` 将 `BootstrapResult.cacheDir` 注入 `mediaPickerAdapter`；④ **真机端到端复测全绿**：在 Huawei VYG-AL00（`6XE0225A27023538`）真机实测验证，相册图片（`📎`）选取与文件（`📁`）选取均成功上屏、显示上传进度圈并发送成功，TDLib 错误彻底消除。 |
 | ACC-101 多账号切换 UI 与添加账号入口（FEAT-ACC-002 / FEAT-ACC-003 完整闭环） | 2026-09-15 ✅ | AI-Agent-Antigravity (Subagent-MultiAccount)：① **多账号状态与 MVI 契约支持**：`feature/settings` 扩展 `SettingsUiState`（`availableAccounts`, `currentAccountKey`, `showAccountSwitcher`）、新增 `SwitchAccount`, `RequestAddAccount`, `OpenAccountSwitcher`, `CloseAccountSwitcher`, `SetAvailableAccounts` 意图与副作用；`SettingsReducer` 纯函数推导，保持向后兼容；② **账号切换 UI 与添加入口**：`SettingsPage` 个人卡片增加当前账号标识与切换指示器（`▾`），点击呼出 `AccountSwitcherDialog` 弹层；列出所有可用账号，高亮当前活跃项（`✓`），底部提供 `+ Add Account` 入口；100% 遵从 Design Tokens；③ **纯领域装配与会话协同器**：新增 `entry/src/main/ets/account/AccountSessionCoordinator.ets`（100% Kit-free），封装 `AccountRegistry` 作用域切换、创建与持久化通知；在 `Index.ets` 串联账号切换（清旧协调器并按授权状态路由）与添加账号（新建 scope 切至 auth 登录）；④ **单元测试与门禁验证**：`entry` 新增 `MultiAccountFlow.test.ets`（8 项全流程单测），`feature/settings` 新增 8 项单测，模块单测全绿（`feature_settings` 37/37，`entry` 12/12）；架构与 Token 0 违规，沉淀报告 `work-items/accepted/ACC-101.md`。 |

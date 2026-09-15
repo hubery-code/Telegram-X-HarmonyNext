@@ -76,6 +76,11 @@ export {
   PickAndSendFile,
   CancelMediaUpload,
   RestoreDraft,
+  OpenAttachmentMenu,
+  CloseAttachmentMenu,
+  ToggleAttachmentMenu,
+  CancelMediaDownload,
+  ResendFailedMessage,
   ChatIntent
 } from './contract/ChatIntent';
 
@@ -94,6 +99,7 @@ export {
   CopyTextToClipboard,
   PickAndSendPhotoEffect,
   PickAndSendFileEffect,
+  CancelMediaDownloadEffect,
   ChatEffect
 } from './contract/ChatEffect';
 

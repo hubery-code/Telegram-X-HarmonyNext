@@ -75,6 +75,7 @@ export class MessageActionMenuState {
   readonly showCopy: boolean;
   readonly showCopyLink: boolean;
   readonly linkUrlToCopy: string | null;
+  readonly showResend: boolean;
 
   constructor(
     messageId: number,
@@ -85,7 +86,8 @@ export class MessageActionMenuState {
     showForward: boolean = false,
     showCopy: boolean = false,
     showCopyLink: boolean = false,
-    linkUrlToCopy: string | null = null
+    linkUrlToCopy: string | null = null,
+    showResend: boolean = false
   ) {
     this.messageId = messageId;
     this.showReply = showReply;
@@ -96,6 +98,7 @@ export class MessageActionMenuState {
     this.showCopy = showCopy;
     this.showCopyLink = showCopyLink;
     this.linkUrlToCopy = linkUrlToCopy;
+    this.showResend = showResend;
   }
 }
 

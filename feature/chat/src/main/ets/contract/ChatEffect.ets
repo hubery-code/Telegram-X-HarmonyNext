@@ -196,6 +196,16 @@ export class PickAndSendFileEffect implements Effect {
   }
 }
 
+/** FILE-103：取消媒体/文件下载副作用。 */
+export class CancelMediaDownloadEffect implements Effect {
+  readonly kind: 'cancelMediaDownload' = 'cancelMediaDownload';
+  readonly fileId: number;
+
+  constructor(fileId: number) {
+    this.fileId = fileId;
+  }
+}
+
 export type ChatEffect =
   | FetchInitialMessages
   | FetchOlderMessages
@@ -210,4 +220,5 @@ export type ChatEffect =
   | ResendMessage
   | CopyTextToClipboard
   | PickAndSendPhotoEffect
-  | PickAndSendFileEffect;
+  | PickAndSendFileEffect
+  | CancelMediaDownloadEffect;
