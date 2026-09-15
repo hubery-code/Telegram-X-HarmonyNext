@@ -1,5 +1,5 @@
 import { describe, it, expect } from '@ohos/hypium';
-import { MediaAttachment, MediaKind } from '../main/ets/model/MediaAttachment';
+import { MediaAttachment, MediaKind, formatFileSize } from '../main/ets/model/MediaAttachment';
 import { MessageItem } from '../main/ets/model/MessageItem';
 import { MessageTextSpan } from '../main/ets/model/MessageTextSpan';
 
@@ -199,6 +199,64 @@ export default function mediaAttachmentTest() {
       expect(uploaded.isUploading).assertFalse();
       expect(uploaded.isDownloaded).assertTrue();
       expect(uploaded.uploadProgress).assertEqual(1.0);
+    });
+
+    it('creates document media attachment with filename, size, and mime', 0, () => {
+      const doc = new MediaAttachment(
+        'document',
+        4004,
+        '/data/storage/el2/base/files/spec.pdf',
+        null,
+        0,
+        0,
+        0,
+        false,
+        true,
+        1.0,
+        'Project Specification',
+        [],
+        false,
+        false,
+        0,
+        'spec.pdf',
+        10485760,
+        'application/pdf'
+      );
+
+      expect(doc.kind).assertEqual('document');
+      expect(doc.fileId).assertEqual(4004);
+      expect(doc.fileName).assertEqual('spec.pdf');
+      expect(doc.fileSize).assertEqual(10485760);
+      expect(doc.mimeType).assertEqual('application/pdf');
+      expect(doc.isDownloaded).assertTrue();
+
+      const updated = doc.copyWith(
+        doc.localPath,
+        doc.thumbnailPath,
+        true,
+        false,
+        0.5,
+        false,
+        0,
+        'spec_v2.pdf',
+        20971520,
+        'application/pdf'
+      );
+      expect(updated.fileName).assertEqual('spec_v2.pdf');
+      expect(updated.fileSize).assertEqual(20971520);
+      expect(updated.isDownloading).assertTrue();
+      expect(updated.progress).assertEqual(0.5);
+    });
+
+    it('formatFileSize correctly formats various byte sizes', 0, () => {
+      expect(formatFileSize(0)).assertEqual('0 B');
+      expect(formatFileSize(-100)).assertEqual('0 B');
+      expect(formatFileSize(500)).assertEqual('500 B');
+      expect(formatFileSize(1024)).assertEqual('1.0 KB');
+      expect(formatFileSize(1536)).assertEqual('1.5 KB');
+      expect(formatFileSize(1048576)).assertEqual('1.0 MB');
+      expect(formatFileSize(15728640)).assertEqual('15.0 MB');
+      expect(formatFileSize(1073741824)).assertEqual('1.0 GB');
     });
 
   });

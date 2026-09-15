@@ -3,6 +3,7 @@ import { describe, it, expect } from '@ohos/hypium';
 import lifecycleCoordinatorTest from './lifecycle/LifecycleCoordinator.test';
 import bootstrapKeystoreTest from './lifecycle/BootstrapKeystore.test';
 import entryNavigationTest from './navigation/EntryNavigation.test';
+import multiAccountFlowTest from './account/MultiAccountFlow.test';
 
 const DOMAIN: number = 0x0000;
 const TAG: string = 'ListTest';
@@ -21,4 +22,5 @@ export default function listTest() {
   lifecycleCoordinatorTest();
   bootstrapKeystoreTest();
   entryNavigationTest();
+  multiAccountFlowTest();
 }

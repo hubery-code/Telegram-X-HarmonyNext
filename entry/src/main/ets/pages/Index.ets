@@ -27,14 +27,18 @@
 
 import { LightTheme } from '@tgx/core-design-system';
 import { hilog } from '@kit.PerformanceAnalysisKit';
-import { AccountScope } from '@tgx/core-account';
+import { AccountDescriptor, AccountScope } from '@tgx/core-account';
+import { AppError, ManualClock, Result, SequentialIdGenerator } from '@tgx/core-common';
+import { ReducerEnv } from '@tgx/feature-template';
 import { AppRoute, ChatRoute } from '@tgx/core-navigation';
 import { EntryNavigationController } from '../navigation/EntryNavigationController';
 import {
   AuthRootPage,
   AuthUiState,
   AuthIntent,
-  AuthCoordinator
+  AuthCoordinator,
+  AuthCoordinatorDeps,
+  TdlibParametersConfig
 } from '@tgx/feature-auth';
 import {
   ChatListPage,
@@ -57,7 +61,9 @@ import {
   SettingsPage,
   SettingsUiState,
   SettingsIntent,
-  SettingsCoordinator
+  SettingsCoordinator,
+  SwitchAccount,
+  RequestAddAccount
 } from '@tgx/feature-settings';
 import {
   SearchPage,
@@ -67,6 +73,8 @@ import {
   SearchCoordinator
 } from '@tgx/feature-search';
 import { BootstrapResult } from '../Bootstrap';
+import { ScopeAuthAdapter } from '../ScopeAuthAdapter';
+import { TELEGRAM_CREDENTIALS } from '../config/AppCredentials';
 import { Logger } from '@tgx/observability';
 import { HarmonyClipboardAdapter } from '../platform/HarmonyClipboardAdapter';
 import { HarmonyToastAdapter } from '../platform/HarmonyToastAdapter';
@@ -111,6 +119,8 @@ struct Index {
   private searchCoordinator: SearchCoordinator | null = null;
   private unsubscribeSearchFn: (() => void) | null = null;
   private accountScope: AccountScope | null = null;
+  private bootstrapResult: BootstrapResult | null = null;
+  private currentAccountKey: string = 'default';
 
   aboutToAppear(): void {
     const result: BootstrapResult | undefined = AppStorage.get<BootstrapResult>('bootstrapResult');
@@ -120,37 +130,18 @@ struct Index {
       return;
     }
 
+    this.bootstrapResult = result;
     this.coordinator = result.coordinator;
     this.accountScope = result.scope;
+    this.currentAccountKey = result.scope.accountKey;
 
     this.unsubscribeNavFn = this.navController.subscribe((route: AppRoute, prev: AppRoute | null) => {
       this.currentRoute = route;
       this.onRouteChanged(route, prev);
     });
 
-    this.unsubscribeFn = this.coordinator.subscribe((state: AuthUiState) => {
-      this.uiState = state;
-      if (state.step === 'ready') {
-        if (this.currentRoute.name === 'auth') {
-          this.navController.replaceRoot({ name: 'home' });
-        }
-        if (this.chatListCoordinator === null) {
-          this.chatListCoordinator = new ChatListCoordinator(result.scope, undefined,
-            (chatId: number, _chatTitle: string) => {
-              this.navController.navigateTo({ name: 'chat', chatId: chatId });
-            },
-            this.logger);
-          this.chatListCoordinator.start();
-          this.unsubscribeChatListFn = this.chatListCoordinator.subscribe((uiState: ChatListUiState) => {
-            this.chatListUiState = uiState;
-          });
-          hilog.info(DOMAIN, TAG, 'chat list coordinator started');
-        }
-      } else if (this.currentRoute.name !== 'auth') {
-        // 授权离开 ready（登出/会话关闭）：销毁会话与设置协调器，回到登录页。
-        this.handleSessionEnded();
-      }
-    });
+    this.initAuthCoordinatorSubscription(result.scope);
+    this.updateAvailableAccounts();
   }
 
   aboutToDisappear(): void {
@@ -241,6 +232,13 @@ struct Index {
   private settingsDispatch(intent: SettingsIntent): void {
     if (this.settingsCoordinator !== null) {
       this.settingsCoordinator.dispatch(intent);
+    } else {
+      if (intent.kind === 'switchAccount') {
+        const switchIntent: SwitchAccount = intent as SwitchAccount;
+        this.handleSwitchAccount(switchIntent.accountKey);
+      } else if (intent.kind === 'requestAddAccount') {
+        this.handleAddAccount();
+      }
     }
   }
 
@@ -356,6 +354,228 @@ struct Index {
     return null;
   }
 
+  private getAvailableAccounts(): string[] {
+    if (this.bootstrapResult === null) {
+      return [this.currentAccountKey];
+    }
+    const descriptors: AccountDescriptor[] = this.bootstrapResult.registry.list();
+    const keys: string[] = [];
+    for (let i = 0; i < descriptors.length; i++) {
+      keys.push(descriptors[i].accountKey);
+    }
+    if (keys.indexOf(this.currentAccountKey) < 0) {
+      keys.push(this.currentAccountKey);
+    }
+    return keys;
+  }
+
+  private updateAvailableAccounts(): void {
+    const accounts: string[] = this.getAvailableAccounts();
+    this.settingsUiState = this.settingsUiState.copyWith({
+      availableAccounts: accounts,
+      currentAccountKey: this.currentAccountKey
+    });
+    if (this.settingsCoordinator !== null) {
+      this.settingsCoordinator.setAccounts(accounts, this.currentAccountKey);
+    }
+  }
+
+  private initChatList(scope: AccountScope): void {
+    if (this.chatListCoordinator !== null) {
+      this.chatListCoordinator.destroy();
+      this.chatListCoordinator = null;
+    }
+    if (this.unsubscribeChatListFn !== null) {
+      this.unsubscribeChatListFn();
+      this.unsubscribeChatListFn = null;
+    }
+    this.chatListCoordinator = new ChatListCoordinator(
+      scope,
+      undefined,
+      (chatId: number, _chatTitle: string) => {
+        this.navController.navigateTo({ name: 'chat', chatId: chatId });
+      },
+      this.logger
+    );
+    this.chatListCoordinator.start();
+    this.unsubscribeChatListFn = this.chatListCoordinator.subscribe((uiState: ChatListUiState) => {
+      this.chatListUiState = uiState;
+    });
+    hilog.info(DOMAIN, TAG, 'chat list coordinator started for scope %{public}s', scope.accountKey);
+  }
+
+  private initAuthCoordinatorSubscription(scope: AccountScope): void {
+    if (this.coordinator === null) {
+      return;
+    }
+    this.unsubscribeFn = this.coordinator.subscribe((state: AuthUiState) => {
+      this.uiState = state;
+      if (state.step === 'ready') {
+        if (this.currentRoute.name === 'auth') {
+          this.navController.replaceRoot({ name: 'home' });
+        }
+        if (this.chatListCoordinator === null) {
+          this.initChatList(scope);
+        }
+      } else if (this.currentRoute.name !== 'auth') {
+        // 授权离开 ready（登出/会话关闭）：销毁会话与设置协调器，回到登录页。
+        this.handleSessionEnded();
+      }
+    });
+  }
+
+  private createAuthCoordinator(scope: AccountScope): AuthCoordinator {
+    const authScope: ScopeAuthAdapter = new ScopeAuthAdapter(scope);
+    const env: ReducerEnv = {
+      clock: new ManualClock(1000, 500),
+      ids: new SequentialIdGenerator('entry-')
+    };
+    const tdlibParams: TdlibParametersConfig = this.bootstrapResult?.tdlibParams !== undefined
+      ? this.bootstrapResult.tdlibParams
+      : {
+          apiId: TELEGRAM_CREDENTIALS.apiId,
+          apiHash: TELEGRAM_CREDENTIALS.apiHash,
+          databaseDirectory: '',
+          filesDirectory: '',
+          systemLanguageCode: 'en',
+          deviceModel: 'HarmonyOS NEXT',
+          applicationVersion: '0.1.0',
+          useTestDc: false
+        };
+    const deps: AuthCoordinatorDeps = {
+      scope: authScope,
+      env: env,
+      tdlibParameters: tdlibParams,
+      onNavigate: (_route: string) => {},
+      logger: this.logger
+    };
+    return new AuthCoordinator(deps);
+  }
+
+  /**
+   * ACC-101：多账号切换
+   * 当用户在 Settings 中触发 SwitchAccount(key) 时：
+   * 调用 this.bootstrapResult.registry.activate(key) 切换当前 AccountScope，
+   * 重新初始化或切换当前会话列表和设置页，并更新路由。
+   */
+  private handleSwitchAccount(accountKey: string): void {
+    if (this.bootstrapResult === null) {
+      hilog.error(DOMAIN, TAG, 'cannot switch account: bootstrapResult is null');
+      return;
+    }
+    if (accountKey === this.currentAccountKey) {
+      hilog.info(DOMAIN, TAG, 'already on account: %{public}s', accountKey);
+      return;
+    }
+    hilog.info(DOMAIN, TAG, 'switching account to: %{public}s', accountKey);
+
+    const activateRes: Result<AccountScope, AppError> = this.bootstrapResult.registry.activate(accountKey);
+    if (activateRes.ok === false) {
+      hilog.error(DOMAIN, TAG, 'failed to activate account %{public}s: %{public}s',
+        accountKey, activateRes.error.message);
+      return;
+    }
+
+    const newScope: AccountScope = activateRes.value;
+
+    // 1. 关闭/销毁当前活跃的各协调器
+    this.closeChat();
+    this.closeSettings();
+    this.closeSearch();
+    if (this.unsubscribeChatListFn !== null) {
+      this.unsubscribeChatListFn();
+      this.unsubscribeChatListFn = null;
+    }
+    if (this.chatListCoordinator !== null) {
+      this.chatListCoordinator.destroy();
+      this.chatListCoordinator = null;
+    }
+    if (this.unsubscribeFn !== null) {
+      this.unsubscribeFn();
+      this.unsubscribeFn = null;
+    }
+    if (this.coordinator !== null) {
+      this.coordinator.destroy();
+      this.coordinator = null;
+    }
+
+    // 2. 切换当前 AccountScope 与账号键
+    this.accountScope = newScope;
+    this.currentAccountKey = accountKey;
+    this.updateAvailableAccounts();
+
+    // 3. 为新 scope 重新初始化 AuthCoordinator 并启动
+    this.coordinator = this.createAuthCoordinator(newScope);
+    this.initAuthCoordinatorSubscription(newScope);
+    this.coordinator.start();
+
+    // 4. 根据新账号的授权状态更新路由与会话列表
+    if (newScope.authorization.kind === 'ready') {
+      this.navController.replaceRoot({ name: 'home' });
+      this.initChatList(newScope);
+    } else {
+      this.navController.replaceRoot({ name: 'auth' });
+    }
+  }
+
+  /**
+   * ACC-101：添加账号入口
+   * 当用户点击「添加账号 (Add Account)」时：
+   * 调用 this.bootstrapResult.registry.create('account_' + Date.now()) 创建新 scope，
+   * 切换至该新 scope，并将路由切到 auth 登录页引导用户输入手机号登录。
+   */
+  private handleAddAccount(): void {
+    if (this.bootstrapResult === null) {
+      hilog.error(DOMAIN, TAG, 'cannot add account: bootstrapResult is null');
+      return;
+    }
+    const newKey: string = 'account_' + Date.now();
+    hilog.info(DOMAIN, TAG, 'creating new account: %{public}s', newKey);
+
+    const createRes: Result<AccountScope, AppError> = this.bootstrapResult.registry.create(newKey);
+    if (createRes.ok === false) {
+      hilog.error(DOMAIN, TAG, 'failed to create account %{public}s: %{public}s',
+        newKey, createRes.error.message);
+      return;
+    }
+
+    const newScope: AccountScope = createRes.value;
+
+    // 1. 关闭/销毁当前活跃的各协调器
+    this.closeChat();
+    this.closeSettings();
+    this.closeSearch();
+    if (this.unsubscribeChatListFn !== null) {
+      this.unsubscribeChatListFn();
+      this.unsubscribeChatListFn = null;
+    }
+    if (this.chatListCoordinator !== null) {
+      this.chatListCoordinator.destroy();
+      this.chatListCoordinator = null;
+    }
+    if (this.unsubscribeFn !== null) {
+      this.unsubscribeFn();
+      this.unsubscribeFn = null;
+    }
+    if (this.coordinator !== null) {
+      this.coordinator.destroy();
+      this.coordinator = null;
+    }
+
+    // 2. 切换当前 AccountScope 与账号键
+    this.accountScope = newScope;
+    this.currentAccountKey = newKey;
+    this.updateAvailableAccounts();
+
+    // 3. 为新 scope 重新初始化 AuthCoordinator 并启动
+    this.coordinator = this.createAuthCoordinator(newScope);
+    this.initAuthCoordinatorSubscription(newScope);
+    this.coordinator.start();
+
+    // 4. 将路由切到 auth 登录页引导用户输入手机号登录
+    this.navController.replaceRoot({ name: 'auth' });
+  }
+
   private openSettings(): void {
     if (this.accountScope === null || this.settingsCoordinator !== null) {
       return;
@@ -368,7 +588,15 @@ struct Index {
         // logOut 请求已成功；关闭设置页回到导航栈
         this.navController.pop();
       },
-      this.logger
+      this.logger,
+      (accountKey: string) => {
+        this.handleSwitchAccount(accountKey);
+      },
+      () => {
+        this.handleAddAccount();
+      },
+      this.currentAccountKey,
+      this.getAvailableAccounts()
     );
     this.settingsCoordinator = coordinator;
     this.unsubscribeSettingsFn = coordinator.subscribe((uiState: SettingsUiState) => {

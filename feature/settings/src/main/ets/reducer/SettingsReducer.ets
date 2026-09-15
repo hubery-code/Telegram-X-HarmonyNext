@@ -16,19 +16,26 @@ import {
   CacheCleared,
   ChangeLanguage,
   ChangeThemeMode,
+  CloseAccountSwitcher,
+  OpenAccountSwitcher,
   ProfileLoaded,
+  RequestAddAccount,
+  SetAvailableAccounts,
   SetErrorMessage,
   SetLanguage,
   SettingsIntent,
-  StorageStatsLoaded
+  StorageStatsLoaded,
+  SwitchAccount
 } from '../contract/SettingsIntent';
 import {
   ClearCacheEffect,
   LoadProfileEffect,
   LoadStorageStatsEffect,
   LogoutEffect,
+  RequestAddAccountEffect,
   SettingsEffect,
-  ShowToastEffect
+  ShowToastEffect,
+  SwitchAccountEffect
 } from '../contract/SettingsEffect';
 
 export const settingsReducer: Reducer<SettingsUiState, SettingsIntent, SettingsEffect> = (
@@ -206,6 +213,52 @@ export const settingsReducer: Reducer<SettingsUiState, SettingsIntent, SettingsE
         isLoading: false,
         isLoggingOut: false,
         errorMessage: errorIntent.errorMessage
+      };
+      return reduced(state.copyWith(options));
+    }
+
+    case 'openAccountSwitcher': {
+      if (state.showAccountSwitcher) {
+        return reduced(state);
+      }
+      return reduced(state.copyWith({ showAccountSwitcher: true }));
+    }
+
+    case 'closeAccountSwitcher': {
+      if (!state.showAccountSwitcher) {
+        return reduced(state);
+      }
+      return reduced(state.copyWith({ showAccountSwitcher: false }));
+    }
+
+    case 'switchAccount': {
+      const switchIntent: SwitchAccount = intent as SwitchAccount;
+      const targetKey: string = switchIntent.accountKey;
+      const options: SettingsUiStateOptions = {
+        currentAccountKey: targetKey,
+        showAccountSwitcher: false
+      };
+      const nextState: SettingsUiState = state.copyWith(options);
+      const effects: readonly SettingsEffect[] = [new SwitchAccountEffect(targetKey)];
+      return reduced(nextState, effects);
+    }
+
+    case 'requestAddAccount': {
+      const options: SettingsUiStateOptions = {
+        showAccountSwitcher: false
+      };
+      const nextState: SettingsUiState = state.copyWith(options);
+      const effects: readonly SettingsEffect[] = [new RequestAddAccountEffect()];
+      return reduced(nextState, effects);
+    }
+
+    case 'setAvailableAccounts': {
+      const setAccountsIntent: SetAvailableAccounts = intent as SetAvailableAccounts;
+      const options: SettingsUiStateOptions = {
+        availableAccounts: setAccountsIntent.accounts,
+        currentAccountKey: setAccountsIntent.currentAccountKey !== undefined
+          ? setAccountsIntent.currentAccountKey
+          : state.currentAccountKey
       };
       return reduced(state.copyWith(options));
     }

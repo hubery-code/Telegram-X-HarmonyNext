@@ -24,6 +24,11 @@ export {
   CacheCleared,
   ProfileLoaded,
   SetErrorMessage,
+  SwitchAccount,
+  RequestAddAccount,
+  OpenAccountSwitcher,
+  CloseAccountSwitcher,
+  SetAvailableAccounts,
   SettingsIntent
 } from './contract/SettingsIntent';
 
@@ -35,6 +40,8 @@ export {
   LoadStorageStatsEffect,
   ShowToastEffect,
   NavigateToAuthEffect,
+  SwitchAccountEffect,
+  RequestAddAccountEffect,
   SettingsEffect
 } from './contract/SettingsEffect';
 

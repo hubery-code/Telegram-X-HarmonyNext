@@ -9,14 +9,19 @@ import {
   ChangeLanguage,
   ChangeThemeMode,
   ClearCacheRequested,
+  CloseAccountSwitcher,
   ConfirmLogout,
   LoadStorageStats,
   LoadUserProfile,
+  OpenAccountSwitcher,
   ProfileLoaded,
+  RequestAddAccount,
   RequestLogout,
+  SetAvailableAccounts,
   SetErrorMessage,
   SetLanguage,
   StorageStatsLoaded,
+  SwitchAccount,
   ToggleNotifications,
   UserProfileData
 } from '../main/ets/contract/SettingsIntent';
@@ -25,7 +30,9 @@ import {
   LoadProfileEffect,
   LoadStorageStatsEffect,
   LogoutEffect,
-  ShowToastEffect
+  RequestAddAccountEffect,
+  ShowToastEffect,
+  SwitchAccountEffect
 } from '../main/ets/contract/SettingsEffect';
 import { settingsReducer } from '../main/ets/reducer/SettingsReducer';
 
@@ -55,6 +62,9 @@ export default function settingsReducerTest(): void {
       expect(state.isLoggingOut).assertFalse();
       expect(state.errorMessage).assertNull();
       expect(state.showLogoutConfirm).assertFalse();
+      expect(state.availableAccounts.length).assertEqual(0);
+      expect(state.currentAccountKey).assertEqual('');
+      expect(state.showAccountSwitcher).assertFalse();
     });
 
     it('loadUserProfile_notLoading_setsLoadingAndEmitsEffect', 0, () => {
@@ -331,6 +341,85 @@ export default function settingsReducerTest(): void {
 
       expect(result.effects.length).assertEqual(1);
       expect(result.effects[0].kind).assertEqual('clearCache');
+    });
+
+    // ---- ACC-101 多账号支持 ----
+
+    it('openAccountSwitcher_setsShowAccountSwitcherTrue', 0, () => {
+      const state = SettingsUiState.initial();
+      expect(state.showAccountSwitcher).assertFalse();
+
+      const result = settingsReducer(state, new OpenAccountSwitcher(), makeEnv());
+      expect(result.state.showAccountSwitcher).assertTrue();
+      expect(result.effects.length).assertEqual(0);
+    });
+
+    it('openAccountSwitcher_alreadyShowing_isNoOp', 0, () => {
+      const state = SettingsUiState.initial().copyWith({ showAccountSwitcher: true });
+      const result = settingsReducer(state, new OpenAccountSwitcher(), makeEnv());
+
+      expect(result.state === state).assertTrue();
+      expect(result.effects.length).assertEqual(0);
+    });
+
+    it('closeAccountSwitcher_setsShowAccountSwitcherFalse', 0, () => {
+      const state = SettingsUiState.initial().copyWith({ showAccountSwitcher: true });
+      const result = settingsReducer(state, new CloseAccountSwitcher(), makeEnv());
+
+      expect(result.state.showAccountSwitcher).assertFalse();
+      expect(result.effects.length).assertEqual(0);
+    });
+
+    it('closeAccountSwitcher_notShowing_isNoOp', 0, () => {
+      const state = SettingsUiState.initial();
+      const result = settingsReducer(state, new CloseAccountSwitcher(), makeEnv());
+
+      expect(result.state === state).assertTrue();
+      expect(result.effects.length).assertEqual(0);
+    });
+
+    it('switchAccount_updatesCurrentAccountKey_closesSwitcher_andEmitsEffect', 0, () => {
+      const state = SettingsUiState.initial('system', 'system', 'en', 'default', ['default', 'account_2'])
+        .copyWith({ showAccountSwitcher: true });
+
+      const result = settingsReducer(state, new SwitchAccount('account_2'), makeEnv());
+
+      expect(result.state.currentAccountKey).assertEqual('account_2');
+      expect(result.state.showAccountSwitcher).assertFalse();
+      expect(result.effects.length).assertEqual(1);
+      expect(result.effects[0].kind).assertEqual('switchAccount');
+      expect((result.effects[0] as SwitchAccountEffect).accountKey).assertEqual('account_2');
+    });
+
+    it('requestAddAccount_closesSwitcher_andEmitsEffect', 0, () => {
+      const state = SettingsUiState.initial().copyWith({ showAccountSwitcher: true });
+      const result = settingsReducer(state, new RequestAddAccount(), makeEnv());
+
+      expect(result.state.showAccountSwitcher).assertFalse();
+      expect(result.effects.length).assertEqual(1);
+      expect(result.effects[0].kind).assertEqual('requestAddAccount');
+    });
+
+    it('setAvailableAccounts_updatesAccountsAndCurrentKey', 0, () => {
+      const state = SettingsUiState.initial();
+      const accounts: string[] = ['acc_1', 'acc_2', 'acc_3'];
+      const result = settingsReducer(state, new SetAvailableAccounts(accounts, 'acc_2'), makeEnv());
+
+      expect(result.state.availableAccounts.length).assertEqual(3);
+      expect(result.state.availableAccounts[0]).assertEqual('acc_1');
+      expect(result.state.availableAccounts[1]).assertEqual('acc_2');
+      expect(result.state.availableAccounts[2]).assertEqual('acc_3');
+      expect(result.state.currentAccountKey).assertEqual('acc_2');
+      expect(result.effects.length).assertEqual(0);
+    });
+
+    it('setAvailableAccounts_preservesCurrentKeyWhenOmitted', 0, () => {
+      const state = SettingsUiState.initial('system', 'system', 'en', 'primary_acc');
+      const accounts: string[] = ['primary_acc', 'second_acc'];
+      const result = settingsReducer(state, new SetAvailableAccounts(accounts), makeEnv());
+
+      expect(result.state.availableAccounts.length).assertEqual(2);
+      expect(result.state.currentAccountKey).assertEqual('primary_acc');
     });
   });
 }

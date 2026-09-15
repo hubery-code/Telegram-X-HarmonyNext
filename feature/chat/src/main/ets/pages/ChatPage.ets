@@ -45,7 +45,7 @@ import { BusinessError } from '@kit.BasicServicesKit';
 import { fileUri } from '@kit.CoreFileKit';
 import { MessageItem } from '../model/MessageItem';
 import { MessageTextSpan } from '../model/MessageTextSpan';
-import { MediaAttachment } from '../model/MediaAttachment';
+import { MediaAttachment, formatFileSize } from '../model/MediaAttachment';
 import { MediaViewerItem } from '../model/MediaViewerItem';
 import {
   calculateMosaicLayout,
@@ -84,7 +84,9 @@ import {
   CloseMediaViewer,
   ChangeViewerIndex,
   RequestMediaDownload,
-  PickAndSendPhoto
+  PickAndSendPhoto,
+  PickAndSendFile,
+  CancelMediaUpload
 } from '../contract/ChatIntent';
 import { isMessageSelected } from '../model/ForwardSelection';
 
@@ -179,7 +181,7 @@ function messageRowKey(item: MessageItem, selected: boolean): string {
     const m: MediaAttachment = item.media;
     const path: string = m.localPath !== null ? m.localPath : '';
     const thumb: string = m.thumbnailPath !== null ? m.thumbnailPath : '';
-    mediaSig = `${m.kind}|${m.fileId}|${path}|${thumb}|${m.isDownloaded}|${m.isDownloading}|${Math.round(m.progress * 10)}`;
+    mediaSig = `${m.kind}|${m.fileId}|${path}|${thumb}|${m.isDownloaded}|${m.isDownloading}|${Math.round(m.progress * 10)}|${m.isUploading}|${Math.round(m.uploadProgress * 10)}|${m.fileName}`;
   }
   const replySig: string =
     `${item.replyToMessageId}|${item.replySenderName}|${item.replySenderColorIndex}|` +
@@ -645,6 +647,8 @@ export struct ChatPage {
         } else if (item.media !== null) {
           if (this.isSticker(item)) {
             this.StickerBubble(item.media, item)
+          } else if (item.media.kind === 'document') {
+            this.DocumentBubble(item.media, item.messageId)
           } else {
             this.MediaBubble(item.media, item.messageId)
           }
@@ -891,6 +895,125 @@ export struct ChatPage {
     }
     .width(this.stickerWidth(media))
     .height(this.stickerHeight(media))
+  }
+
+  /** 文件消息气泡渲染（MEDIA-104 / FEAT-MEDIA-003）：文件名、大小、下载/上传进度、点击动作。 */
+  @Builder
+  DocumentBubble(media: MediaAttachment, messageId: number) {
+    Row() {
+      // 左侧圆形图标与状态交互按钮（直径 44）
+      Stack({ alignContent: Alignment.Center }) {
+        if (media.isUploading) {
+          // 上传中：进度转圈
+          Column() {
+            LoadingProgress()
+              .width(28)
+              .height(28)
+              .color(T.colors.textOnAccent)
+          }
+          .width(44)
+          .height(44)
+          .borderRadius(T.radius.full)
+          .backgroundColor(T.colors.accent)
+          .justifyContent(FlexAlign.Center)
+          .alignItems(HorizontalAlign.Center)
+        } else if (media.isDownloading) {
+          // 下载中：进度转圈
+          Column() {
+            LoadingProgress()
+              .width(28)
+              .height(28)
+              .color(T.colors.textOnAccent)
+          }
+          .width(44)
+          .height(44)
+          .borderRadius(T.radius.full)
+          .backgroundColor(T.colors.accent)
+          .justifyContent(FlexAlign.Center)
+          .alignItems(HorizontalAlign.Center)
+        } else if (media.isDownloaded) {
+          // 已下载：强调底色 + 文档图标
+          Column() {
+            Text('📄')
+              .fontSize(20)
+          }
+          .width(44)
+          .height(44)
+          .borderRadius(T.radius.full)
+          .backgroundColor(T.colors.surfaceVariant)
+          .justifyContent(FlexAlign.Center)
+          .alignItems(HorizontalAlign.Center)
+        } else {
+          // 未下载：强调底色 + 白色向下箭头
+          Column() {
+            Text('⬇')
+              .fontSize(18)
+              .fontColor(T.colors.textOnAccent)
+              .fontWeight(FontWeight.Bold)
+          }
+          .width(44)
+          .height(44)
+          .borderRadius(T.radius.full)
+          .backgroundColor(T.colors.accent)
+          .justifyContent(FlexAlign.Center)
+          .alignItems(HorizontalAlign.Center)
+        }
+      }
+      .width(44)
+      .height(44)
+      .margin({ right: T.spacing.sm })
+      .onClick(() => {
+        if (media.isUploading) {
+          // 上传中点击：取消上传并撤回
+          this.onDispatch(new CancelMediaUpload(messageId));
+        } else if (media.isDownloading) {
+          hilog.info(DOMAIN, TAG, `document downloading: fileId=${media.fileId}`);
+        } else if (!media.isDownloaded) {
+          this.onDispatch(new RequestMediaDownload(media.fileId));
+        } else {
+          hilog.info(DOMAIN, TAG, `open document: ${media.fileName}, path: ${media.localPath}`);
+        }
+      })
+
+      // 右侧：文件名与文件大小 / 进度信息
+      Column() {
+        Text(media.fileName.length > 0 ? media.fileName : 'Document')
+          .fontSize(T.typography.body.fontSize)
+          .fontWeight(FontWeight.Medium)
+          .fontColor(T.colors.textPrimary)
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+
+        Text(this.documentSubtitle(media))
+          .fontSize(T.typography.caption.fontSize)
+          .fontColor(T.colors.textSecondary)
+          .margin({ top: T.spacing.xs })
+      }
+      .alignItems(HorizontalAlign.Start)
+      .layoutWeight(1)
+    }
+    .width('100%')
+    .constraintSize({ minWidth: 180, maxWidth: 260 })
+    .padding({
+      top: T.spacing.xs,
+      bottom: T.spacing.xs,
+      left: T.spacing.xs,
+      right: T.spacing.xs
+    })
+  }
+
+  private documentSubtitle(media: MediaAttachment): string {
+    if (media.isUploading) {
+      const pct: number = Math.round(media.uploadProgress * 100);
+      return `Uploading ${pct}%`;
+    }
+    if (media.isDownloading) {
+      return `${formatFileSize(media.fileSize * media.progress)} / ${formatFileSize(media.fileSize)}`;
+    }
+    if (media.fileSize > 0) {
+      return formatFileSize(media.fileSize);
+    }
+    return 'File';
   }
 
   private getMosaicLayout(item: MessageItem): MosaicLayoutResult {
@@ -1738,6 +1861,18 @@ export struct ChatPage {
         .margin({ right: T.spacing.xs })
         .onClick(() => {
           this.onDispatch(new PickAndSendPhoto());
+        })
+
+      // MEDIA-104：选取文件发送按钮
+      Text('📁')
+        .fontSize(20)
+        .fontColor(T.colors.textSecondary)
+        .textAlign(TextAlign.Center)
+        .width(COMPOSER_INPUT_HEIGHT)
+        .height(COMPOSER_INPUT_HEIGHT)
+        .margin({ right: T.spacing.xs })
+        .onClick(() => {
+          this.onDispatch(new PickAndSendFile());
         })
 
       Row() {

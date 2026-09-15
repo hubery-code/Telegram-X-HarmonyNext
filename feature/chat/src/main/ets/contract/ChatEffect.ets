@@ -182,6 +182,20 @@ export class PickAndSendPhotoEffect implements Effect {
   }
 }
 
+/** MEDIA-104：调用媒体选择器选文件并发送 */
+export class PickAndSendFileEffect implements Effect {
+  readonly kind: 'pickAndSendFile' = 'pickAndSendFile';
+  readonly chatId: number;
+  readonly replyToMessageId: number;
+  readonly caption: string;
+
+  constructor(chatId: number, replyToMessageId: number = 0, caption: string = '') {
+    this.chatId = chatId;
+    this.replyToMessageId = replyToMessageId;
+    this.caption = caption;
+  }
+}
+
 export type ChatEffect =
   | FetchInitialMessages
   | FetchOlderMessages
@@ -195,4 +209,5 @@ export type ChatEffect =
   | ReportMessagesRead
   | ResendMessage
   | CopyTextToClipboard
-  | PickAndSendPhotoEffect;
+  | PickAndSendPhotoEffect
+  | PickAndSendFileEffect;

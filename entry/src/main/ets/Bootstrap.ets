@@ -38,6 +38,9 @@ export interface BootstrapResult {
   readonly scope: AccountScope;
   readonly bridge: TdNativeBridgeLike;
   readonly lifecycle: LifecycleCoordinator;
+  readonly filesDir?: string;
+  readonly cacheDir?: string;
+  readonly tdlibParams?: TdlibParametersConfig;
 }
 
 export function bootstrap(
@@ -95,6 +98,9 @@ export function bootstrap(
     registry: registry,
     scope: scope,
     bridge: bridge,
-    lifecycle: lifecycle
+    lifecycle: lifecycle,
+    filesDir: filesDir,
+    cacheDir: cacheDir,
+    tdlibParams: tdlibParams
   };
 }

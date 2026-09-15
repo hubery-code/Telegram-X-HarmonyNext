@@ -538,6 +538,73 @@ export default function messageProjectionTest(): void {
       expect(file['path']).assertEqual('/data/img.png');
     });
 
+    it('should assemble sendMessage with inputMessageDocument and reply_to', 0, (): void => {
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const scope: AccountScope = createScope(bridge);
+      const projection: MessageProjection = new MessageProjection(42, scope);
+
+      const res: Result<TdPendingRequest, AppError> = projection.sendDocumentMessage(
+        '/data/storage/el2/base/docs/document.pdf',
+        'Annual report',
+        200
+      );
+      expect(res.ok).assertTrue();
+
+      const sent: Record<string, TdWireValue> = bridge.lastSentJson();
+      expect(sent['@type']).assertEqual('sendMessage');
+      expect(sent['chat_id']).assertEqual(42);
+
+      const replyTo = sent['reply_to'] as Record<string, TdWireValue>;
+      expect(replyTo !== null && replyTo !== undefined).assertTrue();
+      expect(replyTo['@type']).assertEqual('inputMessageReplyToMessage');
+      expect(replyTo['message_id']).assertEqual(200);
+
+      const content = sent['input_message_content'] as Record<string, TdWireValue>;
+      expect(content['@type']).assertEqual('inputMessageDocument');
+
+      const doc = content['document'] as Record<string, TdWireValue>;
+      expect(doc['@type']).assertEqual('inputDocument');
+
+      const file = doc['document'] as Record<string, TdWireValue>;
+      expect(file['@type']).assertEqual('inputFileLocal');
+      expect(file['path']).assertEqual('/data/storage/el2/base/docs/document.pdf');
+
+      const caption = content['caption'] as Record<string, TdWireValue>;
+      expect(caption !== null && caption !== undefined).assertTrue();
+      expect(caption['text']).assertEqual('Annual report');
+    });
+
+    it('should reject sendDocumentMessage when localPath is empty', 0, (): void => {
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const scope: AccountScope = createScope(bridge);
+      const projection: MessageProjection = new MessageProjection(42, scope);
+
+      const res: Result<TdPendingRequest, AppError> = projection.sendDocumentMessage('   ', 'Caption');
+      expect(res.ok).assertFalse();
+      expect(bridge.sent.length).assertEqual(0);
+    });
+
+    it('should construct sendDocumentMessage with minimal arguments', 0, (): void => {
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const scope: AccountScope = createScope(bridge);
+      const projection: MessageProjection = new MessageProjection(42, scope);
+
+      const res: Result<TdPendingRequest, AppError> = projection.sendDocumentMessage('/data/file.zip');
+      expect(res.ok).assertTrue();
+
+      const sent: Record<string, TdWireValue> = bridge.lastSentJson();
+      expect(sent['@type']).assertEqual('sendMessage');
+      expect(sent['reply_to']).assertNull();
+
+      const content = sent['input_message_content'] as Record<string, TdWireValue>;
+      expect(content['@type']).assertEqual('inputMessageDocument');
+      expect(content['caption']).assertNull();
+
+      const doc = content['document'] as Record<string, TdWireValue>;
+      const file = doc['document'] as Record<string, TdWireValue>;
+      expect(file['path']).assertEqual('/data/file.zip');
+    });
+
     it('should send setChatDraftMessage with formatted text and reply_to', 0, (): void => {
       const bridge: TestNativeBridge = new TestNativeBridge();
       const scope: AccountScope = createScope(bridge);

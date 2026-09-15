@@ -18,10 +18,14 @@ import {
   ChangeLanguage,
   ChangeThemeMode,
   ClearCacheRequested,
+  CloseAccountSwitcher,
   ConfirmLogout,
+  OpenAccountSwitcher,
+  RequestAddAccount,
   RequestLogout,
   SetErrorMessage,
   SettingsIntent,
+  SwitchAccount,
   ToggleNotifications
 } from '../contract/SettingsIntent';
 
@@ -109,6 +113,14 @@ export struct SettingsPage {
     return AVATAR_PALETTE[idx];
   }
 
+  private getAccountsList(): string[] {
+    const list: string[] = [];
+    for (let i = 0; i < this.uiState.availableAccounts.length; i++) {
+      list.push(this.uiState.availableAccounts[i]);
+    }
+    return list;
+  }
+
   build() {
     Stack() {
       Column() {
@@ -152,6 +164,10 @@ export struct SettingsPage {
       .width('100%')
       .height('100%')
       .backgroundColor(this.getTheme().colors.background)
+
+      if (this.uiState.showAccountSwitcher) {
+        this.AccountSwitcherDialog()
+      }
 
       if (this.uiState.showLogoutConfirm) {
         this.LogoutConfirmDialog()
@@ -241,12 +257,32 @@ export struct SettingsPage {
       }
 
       Column() {
-        Text(this.uiState.displayName.length > 0 ? this.uiState.displayName : this.t('Telegram User'))
-          .fontSize(this.getTheme().typography.headline.fontSize)
-          .fontWeight(this.getTheme().typography.headline.fontWeight)
-          .fontColor(this.getTheme().colors.textPrimary)
-          .maxLines(1)
-          .textOverflow({ overflow: TextOverflow.Ellipsis })
+        Row() {
+          Text(this.uiState.displayName.length > 0 ? this.uiState.displayName : this.t('Telegram User'))
+            .fontSize(this.getTheme().typography.headline.fontSize)
+            .fontWeight(this.getTheme().typography.headline.fontWeight)
+            .fontColor(this.getTheme().colors.textPrimary)
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+            .layoutWeight(1)
+
+          if (this.uiState.currentAccountKey.length > 0) {
+            Text(this.uiState.currentAccountKey)
+              .fontSize(this.getTheme().typography.caption.fontSize)
+              .fontColor(this.getTheme().colors.accent)
+              .backgroundColor(this.getTheme().colors.surfaceVariant)
+              .padding({
+                left: this.getTheme().spacing.xs,
+                right: this.getTheme().spacing.xs,
+                top: this.getTheme().spacing.hairline,
+                bottom: this.getTheme().spacing.hairline
+              })
+              .borderRadius(this.getTheme().radius.sm)
+              .margin({ left: this.getTheme().spacing.xs })
+          }
+        }
+        .width('100%')
+        .alignItems(VerticalAlign.Center)
 
         if (this.uiState.username.length > 0) {
           Text(`@${this.uiState.username}`)
@@ -273,12 +309,24 @@ export struct SettingsPage {
       }
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)
+
+      // Account switch indicator
+      Row() {
+        Text('▾')
+          .fontSize(this.getTheme().typography.title.fontSize)
+          .fontColor(this.getTheme().colors.textSecondary)
+          .margin({ left: this.getTheme().spacing.sm })
+      }
+      .alignItems(VerticalAlign.Center)
     }
     .width('100%')
     .padding(this.getTheme().spacing.md)
     .backgroundColor(this.getTheme().colors.surface)
     .borderRadius(this.getTheme().radius.lg)
     .margin({ bottom: this.getTheme().spacing.md })
+    .onClick((): void => {
+      this.onDispatch(new OpenAccountSwitcher());
+    })
   }
 
   @Builder
@@ -530,12 +578,125 @@ export struct SettingsPage {
   }
 
   @Builder
+  AccountSwitcherDialog() {
+    Stack({ alignContent: Alignment.Center }) {
+      Column()
+        .width('100%')
+        .height('100%')
+        .backgroundColor(this.getTheme().colors.scrim)
+        .onClick((): void => {
+          this.onDispatch(new CloseAccountSwitcher());
+        })
+
+      Column() {
+        Row() {
+          Text(this.t('Switch Account'))
+            .fontSize(this.getTheme().typography.title.fontSize)
+            .fontWeight(this.getTheme().typography.title.fontWeight)
+            .fontColor(this.getTheme().colors.textPrimary)
+            .layoutWeight(1)
+
+          Button(this.t('Close'))
+            .fontSize(this.getTheme().typography.subheadline.fontSize)
+            .fontColor(this.getTheme().colors.textSecondary)
+            .backgroundColor(this.getTheme().colors.surface)
+            .height(32)
+            .onClick((): void => {
+              this.onDispatch(new CloseAccountSwitcher());
+            })
+        }
+        .width('100%')
+        .alignItems(VerticalAlign.Center)
+        .margin({ bottom: this.getTheme().spacing.md })
+
+        List() {
+          ForEach(this.getAccountsList(), (accountKey: string) => {
+            ListItem() {
+              Row() {
+                Text(accountKey.length > 0 ? accountKey.charAt(0).toUpperCase() : 'A')
+                  .width(36)
+                  .height(36)
+                  .borderRadius(this.getTheme().radius.full)
+                  .backgroundColor(accountKey === this.uiState.currentAccountKey ? this.getTheme().colors.accent : this.getTheme().colors.surfaceVariant)
+                  .fontColor(accountKey === this.uiState.currentAccountKey ? this.getTheme().colors.textOnAccent : this.getTheme().colors.textPrimary)
+                  .fontSize(this.getTheme().typography.headline.fontSize)
+                  .fontWeight(this.getTheme().typography.headline.fontWeight)
+                  .textAlign(TextAlign.Center)
+                  .margin({ right: this.getTheme().spacing.sm })
+
+                Column() {
+                  Text(accountKey)
+                    .fontSize(this.getTheme().typography.body.fontSize)
+                    .fontWeight(accountKey === this.uiState.currentAccountKey ? this.getTheme().typography.headline.fontWeight : this.getTheme().typography.body.fontWeight)
+                    .fontColor(this.getTheme().colors.textPrimary)
+
+                  if (accountKey === this.uiState.currentAccountKey) {
+                    Text(this.t('Active'))
+                      .fontSize(this.getTheme().typography.caption.fontSize)
+                      .fontColor(this.getTheme().colors.accent)
+                  }
+                }
+                .layoutWeight(1)
+                .alignItems(HorizontalAlign.Start)
+
+                if (accountKey === this.uiState.currentAccountKey) {
+                  Text('✓')
+                    .fontSize(this.getTheme().typography.headline.fontSize)
+                    .fontColor(this.getTheme().colors.accent)
+                }
+              }
+              .width('100%')
+              .padding({
+                top: this.getTheme().spacing.sm,
+                bottom: this.getTheme().spacing.sm,
+                left: this.getTheme().spacing.sm,
+                right: this.getTheme().spacing.sm
+              })
+              .backgroundColor(accountKey === this.uiState.currentAccountKey ? this.getTheme().colors.surfaceVariant : this.getTheme().colors.surface)
+              .borderRadius(this.getTheme().radius.md)
+              .onClick((): void => {
+                if (accountKey !== this.uiState.currentAccountKey) {
+                  this.onDispatch(new SwitchAccount(accountKey));
+                } else {
+                  this.onDispatch(new CloseAccountSwitcher());
+                }
+              })
+            }
+            .margin({ bottom: this.getTheme().spacing.xs })
+          })
+        }
+        .width('100%')
+        .constraintSize({ maxHeight: 240 })
+
+        Button(this.t('+ Add Account'))
+          .width('100%')
+          .height(44)
+          .margin({ top: this.getTheme().spacing.md })
+          .fontSize(this.getTheme().typography.headline.fontSize)
+          .fontWeight(this.getTheme().typography.headline.fontWeight)
+          .fontColor(this.getTheme().colors.accent)
+          .backgroundColor(this.getTheme().colors.surfaceVariant)
+          .borderRadius(this.getTheme().radius.md)
+          .onClick((): void => {
+            this.onDispatch(new RequestAddAccount());
+          })
+      }
+      .width('88%')
+      .padding(this.getTheme().spacing.lg)
+      .backgroundColor(this.getTheme().colors.surface)
+      .borderRadius(this.getTheme().radius.lg)
+    }
+    .width('100%')
+    .height('100%')
+  }
+
+  @Builder
   LogoutConfirmDialog() {
     Stack({ alignContent: Alignment.Center }) {
       Column()
         .width('100%')
         .height('100%')
-        .backgroundColor('#66000000')
+        .backgroundColor(this.getTheme().colors.scrim)
         .onClick((): void => {
           this.onDispatch(new CancelLogout());
         })

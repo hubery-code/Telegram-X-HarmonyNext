@@ -37,6 +37,7 @@ import {
   decodeChat,
   decodeMessage,
   decodeMessageProperties,
+  Document,
   DraftMessage,
   DraftMessageContentText,
   encodeGetChat,
@@ -47,6 +48,7 @@ import {
   InputMessageReplyToMessage,
   Message,
   MessageAnimation,
+  MessageDocument,
   MessagePhoto,
   MessageProperties,
   MessageReplyToMessage,
@@ -95,6 +97,7 @@ import {
   OpenMediaViewer,
   RequestMediaDownload,
   PickAndSendPhoto,
+  PickAndSendFile,
   ComposerTextChanged,
   CancelComposerMode,
   RestoreDraft
@@ -110,7 +113,8 @@ import {
   ReportMessagesRead,
   ResendMessage,
   CopyTextToClipboard,
-  PickAndSendPhotoEffect
+  PickAndSendPhotoEffect,
+  PickAndSendFileEffect
 } from '../contract/ChatEffect';
 import { isOutgoingMessageRead, ReadReportThrottle } from '../model/ReadReceipt';
 import { chatReducer } from '../reducer/ChatReducer';
@@ -1016,6 +1020,76 @@ export class ChatCoordinator {
       );
     }
 
+    if (message.content.type === 'messageDocument') {
+      const docMsg: MessageDocument = message.content as MessageDocument;
+      if (docMsg.document === null) {
+        return null;
+      }
+      const doc: Document = docMsg.document;
+      const targetFile: File | null = doc.document;
+      if (targetFile === null) {
+        return null;
+      }
+
+      const fileId: number = targetFile.id;
+      const localPath: string | null = this.fileRegistry.getLocalPath(fileId);
+      const isDownloaded: boolean = this.fileRegistry.isDownloaded(fileId);
+      const progress: number = this.fileRegistry.getDownloadProgress(fileId);
+      const latestFile: File | null = this.fileRegistry.getFile(fileId);
+      const isDownloading: boolean = latestFile !== null && latestFile.local !== null
+        ? latestFile.local.is_downloading_active
+        : (targetFile.local !== null ? targetFile.local.is_downloading_active : false);
+
+      const isUploading: boolean = this.fileRegistry.isUploading(fileId) ||
+        (message.is_outgoing && message.sending_state !== null && message.sending_state.type === 'messageSendingStatePending');
+      const uploadProgress: number = this.fileRegistry.getUploadProgress(fileId);
+
+      if (isUploading && !this.fileSubscriptions.has(fileId)) {
+        const sub: Subscription = this.fileRegistry.subscribeFile(fileId, (file: File) => {
+          if (!this.destroyed) {
+            if (file.remote !== null && file.remote.is_uploading_completed) {
+              this.scheduleSyncFromProjection();
+            } else {
+              this.scheduleThrottledSync();
+            }
+          }
+        });
+        this.fileSubscriptions.set(fileId, sub);
+      }
+
+      let thumbPath: string | null = null;
+      if (doc.thumbnail !== null && doc.thumbnail.file !== null) {
+        thumbPath = this.fileRegistry.getLocalPath(doc.thumbnail.file.id);
+        if (thumbPath === null) {
+          this.requestMediaDownload(doc.thumbnail.file.id, 2);
+        }
+      }
+
+      const captionText: string = docMsg.caption !== null ? docMsg.caption.text : '';
+      const captionSpans: MessageTextSpan[] = docMsg.caption !== null ? parseFormattedText(docMsg.caption) : [];
+
+      return new MediaAttachment(
+        'document',
+        fileId,
+        localPath,
+        thumbPath,
+        doc.thumbnail !== null ? doc.thumbnail.width : 0,
+        doc.thumbnail !== null ? doc.thumbnail.height : 0,
+        0,
+        isDownloading,
+        isDownloaded,
+        progress,
+        captionText,
+        captionSpans,
+        false,
+        isUploading,
+        uploadProgress,
+        doc.file_name,
+        targetFile.size,
+        doc.mime_type
+      );
+    }
+
     return null;
   }
 
@@ -1696,6 +1770,12 @@ export class ChatCoordinator {
         break;
       }
 
+      case 'pickAndSendFile': {
+        const pick: PickAndSendFileEffect = effect as PickAndSendFileEffect;
+        this.handlePickAndSendFile(pick.replyToMessageId, pick.caption);
+        break;
+      }
+
       default:
         break;
     }
@@ -1706,7 +1786,18 @@ export class ChatCoordinator {
     this.dispatch(new PickAndSendPhoto());
   }
 
-  /** MEDIA-102：取消正在上传或待发送的媒体消息 */
+  /** MEDIA-104：调起文件选择器选取通用文件并发送 */
+  public pickAndSendFile(): void {
+    this.dispatch(new PickAndSendFile());
+  }
+
+  /** 取消正在下载的媒体文件 */
+  public cancelMediaDownload(fileId: number): Result<TdPendingRequest, AppError> {
+    this.requestedFileIds.delete(fileId);
+    return this.fileRegistry.cancelDownloadFile(fileId);
+  }
+
+  /** MEDIA-102 / MEDIA-104：取消正在上传或待发送的媒体消息 */
   public cancelMediaUpload(messageId: number): Result<TdPendingRequest, AppError> {
     return this.projection.deleteMessages([messageId], true);
   }
@@ -1750,6 +1841,48 @@ export class ChatCoordinator {
       }
     } catch (err) {
       this.logger.error(TAG, 'pick_photo_error', String(err));
+    }
+  }
+
+  private async handlePickAndSendFile(replyToMessageId: number = 0, caption: string = ''): Promise<void> {
+    try {
+      const pickedMedia: PickedMedia[] = await this.mediaPickerPort.pickFile(1);
+      if (this.destroyed || pickedMedia.length === 0) {
+        return;
+      }
+      const picked: PickedMedia = pickedMedia[0];
+      const path: string = (picked.path !== undefined && picked.path.length > 0) ? picked.path : picked.uri;
+      if (path.length === 0) {
+        return;
+      }
+      this.dispatch(new ComposerTextChanged(''));
+      if (this.currentState.composerMode !== null) {
+        this.dispatch(new CancelComposerMode());
+      }
+      const result: Result<TdPendingRequest, AppError> = this.projection.sendDocumentMessage(
+        path,
+        caption.length > 0 ? caption : undefined,
+        replyToMessageId
+      );
+      this.projection.clearChatDraftMessage();
+      if (result.err) {
+        this.logger.logError(TAG, result.error);
+        this.dispatch(new OnMessageSendFailed(result.error));
+      }
+      if (result.ok) {
+        result.value.promise.then((res: Result<TdWireObject, AppError>) => {
+          if (res.err) {
+            this.logger.logError(TAG, res.error);
+            if (!this.destroyed) {
+              this.dispatch(new OnMessageSendFailed(res.error));
+            }
+          } else {
+            this.logger.info(TAG, 'send_document_message_ok', `chatId=${this.currentState.chatId}`);
+          }
+        }).catch(() => {});
+      }
+    } catch (err) {
+      this.logger.error(TAG, 'pick_file_error', String(err));
     }
   }
 

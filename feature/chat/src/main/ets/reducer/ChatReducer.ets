@@ -64,6 +64,7 @@ import {
   OpenMediaViewer,
   CloseMediaViewer,
   ChangeViewerIndex,
+  CancelMediaUpload,
   RestoreDraft
 } from '../contract/ChatIntent';
 import {
@@ -80,7 +81,8 @@ import {
   ReportMessagesRead,
   ResendMessage,
   CopyTextToClipboard,
-  PickAndSendPhotoEffect
+  PickAndSendPhotoEffect,
+  PickAndSendFileEffect
 } from '../contract/ChatEffect';
 import { incomingIdUpTo } from '../model/ReadReceipt';
 import {
@@ -360,6 +362,25 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
         new PickAndSendPhotoEffect(state.chatId, replyToMessageId, caption)
       ];
       return reduced(state, effects);
+    }
+
+    case 'pickAndSendFile': {
+      let replyToMessageId: number = 0;
+      if (state.composerMode !== null && state.composerMode.kind === 'reply') {
+        replyToMessageId = (state.composerMode as ComposerReplyMode).targetMessageId;
+      }
+      const caption: string = state.composerText.trim();
+      const effects: ChatEffect[] = [
+        new PickAndSendFileEffect(state.chatId, replyToMessageId, caption)
+      ];
+      return reduced(state, effects);
+    }
+
+    case 'cancelMediaUpload': {
+      const cancelIntent: CancelMediaUpload = intent as CancelMediaUpload;
+      return reduced(state, [
+        new DeleteMessages(state.chatId, [cancelIntent.messageId], true)
+      ]);
     }
 
     case 'backToChatList': {

@@ -66,6 +66,8 @@ import {
   InputFileLocal,
   InputPhoto,
   InputMessagePhoto,
+  InputDocument,
+  InputMessageDocument,
   InputMessageReplyToMessage,
   InputMessageText,
   FormattedText,
@@ -305,6 +307,48 @@ export class MessageProjection {
 
     const content: InputMessagePhoto = new InputMessagePhoto();
     content.photo = photo;
+    if (caption !== undefined && caption.trim().length > 0) {
+      const formatted: FormattedText = new FormattedText();
+      formatted.text = caption.trim();
+      content.caption = formatted;
+    }
+
+    const req: SendMessage = new SendMessage();
+    req.chat_id = this.chatId;
+    if (replyToMessageId > 0) {
+      const replyTo: InputMessageReplyToMessage = new InputMessageReplyToMessage();
+      replyTo.message_id = replyToMessageId;
+      req.reply_to = replyTo;
+    }
+    req.input_message_content = content;
+
+    return this.scope.request('sendMessage', encodeSendMessage(req) as TdWireObject);
+  }
+
+  /**
+   * 发送文件消息（MEDIA-104 / FEAT-MEDIA-003 发侧）：组 InputMessageDocument 调 sendMessage。
+   * localPath 为空直接判 parameter/missing；caption 可选。
+   * replyToMessageId > 0 时挂 reply_to。
+   */
+  sendDocumentMessage(
+    localPath: string,
+    caption?: string,
+    replyToMessageId: number = 0
+  ): Result<TdPendingRequest, AppError> {
+    const trimmedPath: string = localPath.trim();
+    if (trimmedPath.length === 0) {
+      return err<TdPendingRequest, AppError>(
+        AppErrors.parameter('missing', 'localPath', 'document local path is empty')
+      );
+    }
+    const fileLocal: InputFileLocal = new InputFileLocal();
+    fileLocal.path = trimmedPath;
+
+    const doc: InputDocument = new InputDocument();
+    doc.document = fileLocal;
+
+    const content: InputMessageDocument = new InputMessageDocument();
+    content.document = doc;
     if (caption !== undefined && caption.trim().length > 0) {
       const formatted: FormattedText = new FormattedText();
       formatted.text = caption.trim();

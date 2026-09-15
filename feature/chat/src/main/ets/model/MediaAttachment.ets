@@ -27,6 +27,9 @@ export class MediaAttachment {
   readonly hasSpoiler: boolean;
   readonly isUploading: boolean;
   readonly uploadProgress: number; // 0..1
+  readonly fileName: string;
+  readonly fileSize: number;
+  readonly mimeType: string;
 
   constructor(
     kind: MediaKind,
@@ -43,7 +46,10 @@ export class MediaAttachment {
     captionSpans: MessageTextSpan[] = [],
     hasSpoiler: boolean = false,
     isUploading: boolean = false,
-    uploadProgress: number = 0
+    uploadProgress: number = 0,
+    fileName: string = '',
+    fileSize: number = 0,
+    mimeType: string = ''
   ) {
     this.kind = kind;
     this.fileId = fileId;
@@ -60,6 +66,9 @@ export class MediaAttachment {
     this.hasSpoiler = hasSpoiler;
     this.isUploading = isUploading;
     this.uploadProgress = uploadProgress;
+    this.fileName = fileName;
+    this.fileSize = fileSize;
+    this.mimeType = mimeType;
   }
 
   copyWith(
@@ -69,7 +78,10 @@ export class MediaAttachment {
     isDownloaded?: boolean,
     progress?: number,
     isUploading?: boolean,
-    uploadProgress?: number
+    uploadProgress?: number,
+    fileName?: string,
+    fileSize?: number,
+    mimeType?: string
   ): MediaAttachment {
     return new MediaAttachment(
       this.kind,
@@ -86,7 +98,30 @@ export class MediaAttachment {
       this.captionSpans,
       this.hasSpoiler,
       isUploading !== undefined ? isUploading : this.isUploading,
-      uploadProgress !== undefined ? uploadProgress : this.uploadProgress
+      uploadProgress !== undefined ? uploadProgress : this.uploadProgress,
+      fileName !== undefined ? fileName : this.fileName,
+      fileSize !== undefined ? fileSize : this.fileSize,
+      mimeType !== undefined ? mimeType : this.mimeType
     );
   }
+}
+
+const KB: number = 1024;
+const MB: number = 1024 * 1024;
+const GB: number = 1024 * 1024 * 1024;
+
+export function formatFileSize(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) {
+    return '0 B';
+  }
+  if (bytes < KB) {
+    return `${Math.round(bytes)} B`;
+  }
+  if (bytes < MB) {
+    return `${(bytes / KB).toFixed(1)} KB`;
+  }
+  if (bytes < GB) {
+    return `${(bytes / MB).toFixed(1)} MB`;
+  }
+  return `${(bytes / GB).toFixed(1)} GB`;
 }

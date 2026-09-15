@@ -118,6 +118,38 @@ export class SetErrorMessage implements Intent {
   }
 }
 
+export class SwitchAccount implements Intent {
+  readonly kind: 'switchAccount' = 'switchAccount';
+  readonly accountKey: string;
+
+  constructor(accountKey: string) {
+    this.accountKey = accountKey;
+  }
+}
+
+export class RequestAddAccount implements Intent {
+  readonly kind: 'requestAddAccount' = 'requestAddAccount';
+}
+
+export class OpenAccountSwitcher implements Intent {
+  readonly kind: 'openAccountSwitcher' = 'openAccountSwitcher';
+}
+
+export class CloseAccountSwitcher implements Intent {
+  readonly kind: 'closeAccountSwitcher' = 'closeAccountSwitcher';
+}
+
+export class SetAvailableAccounts implements Intent {
+  readonly kind: 'setAvailableAccounts' = 'setAvailableAccounts';
+  readonly accounts: readonly string[];
+  readonly currentAccountKey?: string;
+
+  constructor(accounts: readonly string[], currentAccountKey?: string) {
+    this.accounts = accounts;
+    this.currentAccountKey = currentAccountKey;
+  }
+}
+
 export type SettingsIntent =
   | LoadUserProfile
   | ToggleNotifications
@@ -132,4 +164,9 @@ export type SettingsIntent =
   | StorageStatsLoaded
   | CacheCleared
   | ProfileLoaded
-  | SetErrorMessage;
+  | SetErrorMessage
+  | SwitchAccount
+  | RequestAddAccount
+  | OpenAccountSwitcher
+  | CloseAccountSwitcher
+  | SetAvailableAccounts;

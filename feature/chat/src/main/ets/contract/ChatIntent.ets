@@ -304,6 +304,21 @@ export class PickAndSendPhoto implements Intent {
   readonly kind: 'pickAndSendPhoto' = 'pickAndSendPhoto';
 }
 
+/** MEDIA-104：调起文件选择器选取通用文件并发送（附带当前输入栏草稿作为 caption 与回复引用）。 */
+export class PickAndSendFile implements Intent {
+  readonly kind: 'pickAndSendFile' = 'pickAndSendFile';
+}
+
+/** 取消正在上传或待发送的媒体消息并撤回 */
+export class CancelMediaUpload implements Intent {
+  readonly kind: 'cancelMediaUpload' = 'cancelMediaUpload';
+  readonly messageId: number;
+
+  constructor(messageId: number) {
+    this.messageId = messageId;
+  }
+}
+
 /** COMPOSER-101：恢复草稿（草稿文本与回复目标） */
 export class RestoreDraft implements Intent {
   readonly kind: 'restoreDraft' = 'restoreDraft';
@@ -349,4 +364,6 @@ export type ChatIntent =
   | ChangeViewerIndex
   | RequestMediaDownload
   | PickAndSendPhoto
+  | PickAndSendFile
+  | CancelMediaUpload
   | RestoreDraft;

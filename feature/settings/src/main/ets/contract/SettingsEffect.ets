@@ -39,10 +39,25 @@ export class NavigateToAuthEffect implements Effect {
   readonly kind: 'navigateToAuth' = 'navigateToAuth';
 }
 
+export class SwitchAccountEffect implements Effect {
+  readonly kind: 'switchAccount' = 'switchAccount';
+  readonly accountKey: string;
+
+  constructor(accountKey: string) {
+    this.accountKey = accountKey;
+  }
+}
+
+export class RequestAddAccountEffect implements Effect {
+  readonly kind: 'requestAddAccount' = 'requestAddAccount';
+}
+
 export type SettingsEffect =
   | LoadProfileEffect
   | LogoutEffect
   | ClearCacheEffect
   | LoadStorageStatsEffect
   | ShowToastEffect
-  | NavigateToAuthEffect;
+  | NavigateToAuthEffect
+  | SwitchAccountEffect
+  | RequestAddAccountEffect;

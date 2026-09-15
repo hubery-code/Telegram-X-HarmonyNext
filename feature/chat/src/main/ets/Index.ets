@@ -3,7 +3,7 @@
  */
 
 export { MessageItem, MessageSendState } from './model/MessageItem';
-export { MediaAttachment, MediaKind } from './model/MediaAttachment';
+export { MediaAttachment, MediaKind, formatFileSize } from './model/MediaAttachment';
 export { MediaViewerItem } from './model/MediaViewerItem';
 
 export { MessageTextSpan } from './model/MessageTextSpan';
@@ -73,6 +73,8 @@ export {
   ChangeViewerIndex,
   RequestMediaDownload,
   PickAndSendPhoto,
+  PickAndSendFile,
+  CancelMediaUpload,
   RestoreDraft,
   ChatIntent
 } from './contract/ChatIntent';
@@ -91,6 +93,7 @@ export {
   ResendMessage,
   CopyTextToClipboard,
   PickAndSendPhotoEffect,
+  PickAndSendFileEffect,
   ChatEffect
 } from './contract/ChatEffect';
 

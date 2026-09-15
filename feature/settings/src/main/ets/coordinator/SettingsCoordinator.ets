@@ -48,6 +48,7 @@ import {
   LoadStorageStats,
   LoadUserProfile,
   ProfileLoaded,
+  SetAvailableAccounts,
   SetErrorMessage,
   SettingsIntent,
   StorageStatsLoaded,
@@ -56,10 +57,13 @@ import {
 import {
   ClearCacheEffect,
   LoadProfileEffect,
+  LoadStorageStatsEffect,
   LogoutEffect,
   NavigateToAuthEffect,
+  RequestAddAccountEffect,
   SettingsEffect,
-  ShowToastEffect
+  ShowToastEffect,
+  SwitchAccountEffect
 } from '../contract/SettingsEffect';
 import { settingsReducer } from '../reducer/SettingsReducer';
 import { Theme, ThemeManager } from '@tgx/core-design-system';
@@ -73,6 +77,8 @@ export class SettingsCoordinator {
   private readonly userRegistry: UserRegistry;
   private readonly env: ReducerEnv;
   private readonly onNavigateToAuth: () => void;
+  private readonly onSwitchAccount: (accountKey: string) => void;
+  private readonly onRequestAddAccount: () => void;
   private readonly logger: Logger;
   private currentState: SettingsUiState;
   private readonly listeners: SettingsUiStateListener[] = [];
@@ -87,7 +93,11 @@ export class SettingsCoordinator {
     userRegistry?: UserRegistry,
     env?: ReducerEnv,
     onNavigateToAuth?: () => void,
-    logger?: Logger
+    logger?: Logger,
+    onSwitchAccount?: (accountKey: string) => void,
+    onRequestAddAccount?: () => void,
+    currentAccountKey?: string,
+    availableAccounts?: readonly string[]
   ) {
     this.scope = scope;
     this.userRegistry = userRegistry !== undefined ? userRegistry : new UserRegistry(scope);
@@ -96,8 +106,16 @@ export class SettingsCoordinator {
       ids: new SequentialIdGenerator('settings-')
     };
     this.onNavigateToAuth = onNavigateToAuth !== undefined ? onNavigateToAuth : (): void => {};
+    this.onSwitchAccount = onSwitchAccount !== undefined ? onSwitchAccount : (_key: string): void => {};
+    this.onRequestAddAccount = onRequestAddAccount !== undefined ? onRequestAddAccount : (): void => {};
     this.logger = logger !== undefined ? logger : new Logger();
-    this.currentState = SettingsUiState.initial();
+    this.currentState = SettingsUiState.initial(
+      'system',
+      'system',
+      'en',
+      currentAccountKey !== undefined ? currentAccountKey : '',
+      availableAccounts !== undefined ? availableAccounts : []
+    );
 
     const currentThemePref = ThemeManager.getInstance().getPreference();
     if (this.currentState.themeMode !== currentThemePref) {
@@ -233,9 +251,26 @@ export class SettingsCoordinator {
         break;
       }
 
+      case 'switchAccount': {
+        const switchEffect: SwitchAccountEffect = effect as SwitchAccountEffect;
+        this.logger.info(TAG, 'switch_account', switchEffect.accountKey);
+        this.onSwitchAccount(switchEffect.accountKey);
+        break;
+      }
+
+      case 'requestAddAccount': {
+        this.logger.info(TAG, 'request_add_account');
+        this.onRequestAddAccount();
+        break;
+      }
+
       default:
         break;
     }
+  }
+
+  setAccounts(accounts: readonly string[], currentAccountKey?: string): void {
+    this.dispatch(new SetAvailableAccounts(accounts, currentAccountKey));
   }
 
   private handleLoadProfile(): void {

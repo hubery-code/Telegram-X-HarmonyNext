@@ -30,6 +30,9 @@ export interface SettingsUiStateOptions {
   readonly isLoggingOut?: boolean;
   readonly errorMessage?: string | null;
   readonly showLogoutConfirm?: boolean;
+  readonly availableAccounts?: readonly string[];
+  readonly currentAccountKey?: string;
+  readonly showAccountSwitcher?: boolean;
 }
 
 export class SettingsUiState implements UiState {
@@ -52,6 +55,10 @@ export class SettingsUiState implements UiState {
   readonly errorMessage: string | null;
   readonly showLogoutConfirm: boolean;
 
+  readonly availableAccounts: readonly string[];
+  readonly currentAccountKey: string;
+  readonly showAccountSwitcher: boolean;
+
   constructor(
     userId: number,
     displayName: string,
@@ -68,7 +75,10 @@ export class SettingsUiState implements UiState {
     isLoading: boolean,
     isLoggingOut: boolean,
     errorMessage: string | null,
-    showLogoutConfirm: boolean
+    showLogoutConfirm: boolean,
+    availableAccounts: readonly string[] = [],
+    currentAccountKey: string = '',
+    showAccountSwitcher: boolean = false
   ) {
     this.userId = userId;
     this.displayName = displayName;
@@ -86,12 +96,17 @@ export class SettingsUiState implements UiState {
     this.isLoggingOut = isLoggingOut;
     this.errorMessage = errorMessage;
     this.showLogoutConfirm = showLogoutConfirm;
+    this.availableAccounts = availableAccounts;
+    this.currentAccountKey = currentAccountKey;
+    this.showAccountSwitcher = showAccountSwitcher;
   }
 
   static initial(
     themeMode: SettingsThemeMode = 'system',
     languagePreference: LanguagePreference = 'system',
-    languageCode: string = 'en'
+    languageCode: string = 'en',
+    currentAccountKey: string = '',
+    availableAccounts: readonly string[] = []
   ): SettingsUiState {
     return new SettingsUiState(
       0,
@@ -109,6 +124,9 @@ export class SettingsUiState implements UiState {
       false,
       false,
       null,
+      false,
+      availableAccounts,
+      currentAccountKey,
       false
     );
   }
@@ -130,7 +148,10 @@ export class SettingsUiState implements UiState {
       options.isLoading !== undefined ? options.isLoading : this.isLoading,
       options.isLoggingOut !== undefined ? options.isLoggingOut : this.isLoggingOut,
       options.errorMessage !== undefined ? options.errorMessage : this.errorMessage,
-      options.showLogoutConfirm !== undefined ? options.showLogoutConfirm : this.showLogoutConfirm
+      options.showLogoutConfirm !== undefined ? options.showLogoutConfirm : this.showLogoutConfirm,
+      options.availableAccounts !== undefined ? options.availableAccounts : this.availableAccounts,
+      options.currentAccountKey !== undefined ? options.currentAccountKey : this.currentAccountKey,
+      options.showAccountSwitcher !== undefined ? options.showAccountSwitcher : this.showAccountSwitcher
     );
   }
 }

@@ -9,6 +9,7 @@ import dateAndUnreadSeparatorTest from './DateAndUnreadSeparator.test';
 import mosaicLayoutTest from './MosaicLayout.test';
 import mediaAlbumTest from './MediaAlbum.test';
 import chatPhotoSendingTest from './ChatPhotoSending.test';
+import chatFileSendingTest from './ChatFileSending.test';
 
 export default function testsuite(): void {
   chatReducerTest();
@@ -22,4 +23,5 @@ export default function testsuite(): void {
   mosaicLayoutTest();
   mediaAlbumTest();
   chatPhotoSendingTest();
+  chatFileSendingTest();
 }

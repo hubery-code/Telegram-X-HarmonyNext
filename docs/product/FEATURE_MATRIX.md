@@ -50,7 +50,7 @@
 | 功能 ID | 功能 | 优先级 | Android 参考位置 | TDLib 方法 | Harmony 目标行为 | 平台能力/权限 | 状态 | 负责人 |
 |---|---|---|---|---|---|---|---|---|
 | FEAT-ACC-001 | 多账号基础框架（每账号独立 Tdlib 实例） | P1 | `telegram/TdlibManager.java`, `telegram/TdlibAccount.java`, `BaseApplication.kt` | 每账号独立 SetTdlibParameters / GetAuthorizationState | 支持 ≥3 账号并存，实例生命周期互不干扰 | 文件、HUKS | Accepted | 迁移组 |
-| FEAT-ACC-002 | 账号切换与快速切换 UI | P1 | `navigation/DrawerController.java:620`（账号项点击）, `:708`（onAccountSwitched）, `MainActivity.java:518`（onAuthorizationStateChanged） | updateAuthorizationState（按账号分发） | 切换后 1s 内展示目标账号会话列表，未读计数正确 | — | Backlog | |
+| FEAT-ACC-002 | 账号切换与快速切换 UI | P1 | `navigation/DrawerController.java:620`（账号项点击）, `:708`（onAccountSwitched）, `MainActivity.java:518`（onAuthorizationStateChanged） | updateAuthorizationState（按账号分发） | 切换后 1s 内展示目标账号会话列表，未读计数正确 | — | Accepted | 迁移组 |
 | FEAT-ACC-003 | 单账号登出/添加账号入口 | P1 | `ui/SettingsLogOutController.java`, `navigation/DrawerController.java` | LogOut, GetAuthorizationState | 登出当前账号不影响其他账号在线状态 | — | Accepted | 迁移组 |
 
 ### 会话列表
@@ -90,7 +90,7 @@
 |---|---|---|---|---|---|---|---|---|
 | FEAT-MEDIA-001 | 图片消息上传/下载/进度 | P1 | `telegram/TdlibFilesManager.java:598`（DownloadFile）, `data/TD.java`（InputMessagePhoto）, `widget/FileProgressComponent.java` | SendMessage(InputMessagePhoto), DownloadFile, updateFile | 选图发送带进度圈，接收图片点击下载并可暂停 | 相册/图片权限 | Accepted | 迁移组 |
 | FEAT-MEDIA-002 | 视频消息上传/下载 | P1 | `data/TD.java`（InputMessageVideo）, `telegram/TdlibFilesManager.java` | SendMessage(InputMessageVideo), DownloadFile, updateFile | 视频缩略图先展示，进度与失败重试可用 | 相册/视频权限 | Verifying | 迁移组 |
-| FEAT-MEDIA-003 | 文件消息上传/下载 | P1 | `data/TD.java`（InputMessageDocument）, `ui/ShareController.java` | SendMessage(InputMessageDocument), DownloadFile, updateFile | 文件气泡显示名称/大小/下载态，完成可打开 | 文件读写 | Backlog | |
+| FEAT-MEDIA-003 | 文件消息上传/下载 | P1 | `data/TD.java`（InputMessageDocument）, `ui/ShareController.java` | SendMessage(InputMessageDocument), DownloadFile, updateFile | 文件气泡显示名称/大小/下载态，完成可打开 | 文件读写 | Accepted | 迁移组 |
 | FEAT-MEDIA-004 | 语音消息录制/发送/播放 | P1 | `component/chat/VoiceVideoButtonView.java:227`, `player/RecordAudioVideoController.java`, `data/TD.java`（InputMessageVoiceNote） | SendMessage(InputMessageVoiceNote), DownloadFile | 按住录音松开发送，波形展示，可播放 | 麦克风权限、音频焦点 | Backlog | |
 | FEAT-MEDIA-005 | 传输失败重试/取消 | P1 | `telegram/TdlibFilesManager.java:817`（cancelDownloadOrUploadFile）, `ui/MessagesController.java` | CancelUploadFile, CancelDownloadFile, updateMessageSendFailed | 失败项一键重发/重新下载，取消后不留半成品 | — | Backlog | |
 | FEAT-MEDIA-006 | 基础媒体查看/播放 | P1 | `mediaview/MediaViewController.java`, `mediaview/MediaView.java` | DownloadFile（原图） | 点击图片全屏查看，支持缩放与左右翻页；视频可播放 | — | Accepted | 迁移组 |
