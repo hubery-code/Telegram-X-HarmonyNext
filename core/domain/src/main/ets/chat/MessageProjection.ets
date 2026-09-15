@@ -70,6 +70,7 @@ import {
   InputMessageDocument,
   InputMessageReplyToMessage,
   InputMessageText,
+  LinkPreviewOptions,
   FormattedText,
   Message,
   TdJsonRaw,
@@ -250,7 +251,11 @@ export class MessageProjection {
    * 发出的消息经 updateNewMessage 进入列表、经 updateMessageSendSucceeded /
    * updateMessageSendFailed 结算发送态，均由现有更新订阅处理，这里不手动插入。
    */
-  sendTextMessage(text: string, replyToMessageId: number = 0): Result<TdPendingRequest, AppError> {
+  sendTextMessage(
+    text: string,
+    replyToMessageId: number = 0,
+    linkPreviewOptions?: LinkPreviewOptions
+  ): Result<TdPendingRequest, AppError> {
     const trimmed: string = text.trim();
     if (trimmed.length === 0) {
       return err<TdPendingRequest, AppError>(
@@ -262,6 +267,9 @@ export class MessageProjection {
 
     const content: InputMessageText = new InputMessageText();
     content.text = formatted;
+    if (linkPreviewOptions !== undefined) {
+      content.link_preview_options = linkPreviewOptions;
+    }
 
     const req: SendMessage = new SendMessage();
     req.chat_id = this.chatId;
@@ -407,7 +415,11 @@ export class MessageProjection {
    * 成功后 TDLib 推 updateMessageContent / updateMessageEdited，由现有订阅
    * 更新列表；失败经 promise 透传给调用方回灌错误提示。
    */
-  editMessageText(messageId: number, text: string): Result<TdPendingRequest, AppError> {
+  editMessageText(
+    messageId: number,
+    text: string,
+    linkPreviewOptions?: LinkPreviewOptions
+  ): Result<TdPendingRequest, AppError> {
     const trimmed: string = text.trim();
     if (trimmed.length === 0) {
       return err<TdPendingRequest, AppError>(
@@ -419,6 +431,9 @@ export class MessageProjection {
 
     const content: InputMessageText = new InputMessageText();
     content.text = formatted;
+    if (linkPreviewOptions !== undefined) {
+      content.link_preview_options = linkPreviewOptions;
+    }
 
     const req: EditMessageText = new EditMessageText();
     req.chat_id = this.chatId;

@@ -18,6 +18,7 @@ import {
   DraftMessageContentText,
   FormattedText,
   InputMessageReplyToMessage,
+  LinkPreviewOptions,
   UpdateChatDraftMessage,
   encodeUpdateChatDraftMessage
 } from '@tgx/core-td-api-generated';
@@ -699,6 +700,56 @@ export default function messageProjectionTest(): void {
       expect(liveContent.text!.text).assertEqual('Live draft update');
 
       projection.stop();
+    });
+
+    it('sendTextMessage_withLinkPreviewOptions_encodesOptionsInRequest', 0, async (): Promise<void> => {
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const scope: AccountScope = createScope(bridge);
+      const projection: MessageProjection = new MessageProjection(42, scope);
+
+      const options: LinkPreviewOptions = new LinkPreviewOptions();
+      options.is_disabled = false;
+      options.url = 'https://github.com';
+      options.force_small_media = true;
+
+      const result: Result<TdPendingRequest, AppError> =
+        projection.sendTextMessage('Check this: https://github.com', 0, options);
+      expect(result.ok).assertTrue();
+
+      const sendReq: Record<string, TdWireValue> | null = findSentRequest(bridge, 'sendMessage');
+      expect(sendReq !== null).assertTrue();
+      if (sendReq !== null) {
+        const content = sendReq['input_message_content'] as Record<string, TdWireValue>;
+        expect(content['@type']).assertEqual('inputMessageText');
+        const lpOptions = content['link_preview_options'] as Record<string, TdWireValue>;
+        expect(lpOptions !== null && lpOptions !== undefined).assertTrue();
+        expect(lpOptions['@type']).assertEqual('linkPreviewOptions');
+        expect(lpOptions['url']).assertEqual('https://github.com');
+        expect(lpOptions['force_small_media']).assertEqual(true);
+      }
+    });
+
+    it('editMessageText_withLinkPreviewOptions_encodesOptionsInRequest', 0, async (): Promise<void> => {
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const scope: AccountScope = createScope(bridge);
+      const projection: MessageProjection = new MessageProjection(42, scope);
+
+      const options: LinkPreviewOptions = new LinkPreviewOptions();
+      options.is_disabled = true;
+
+      const result: Result<TdPendingRequest, AppError> =
+        projection.editMessageText(1001, 'Edited text without preview', options);
+      expect(result.ok).assertTrue();
+
+      const editReq: Record<string, TdWireValue> | null = findSentRequest(bridge, 'editMessageText');
+      expect(editReq !== null).assertTrue();
+      if (editReq !== null) {
+        const content = editReq['input_message_content'] as Record<string, TdWireValue>;
+        expect(content['@type']).assertEqual('inputMessageText');
+        const lpOptions = content['link_preview_options'] as Record<string, TdWireValue>;
+        expect(lpOptions !== null && lpOptions !== undefined).assertTrue();
+        expect(lpOptions['is_disabled']).assertEqual(true);
+      }
     });
 
   });

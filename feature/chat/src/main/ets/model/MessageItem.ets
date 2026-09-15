@@ -28,6 +28,7 @@
 
 import { MessageTextSpan } from './MessageTextSpan';
 import { MediaAttachment } from './MediaAttachment';
+import { LinkPreviewInfo } from './LinkPreviewInfo';
 
 /** 发送状态：none=已发送/收到的正常消息；pending=发送中；failed=发送失败。 */
 export type MessageSendState = 'none' | 'pending' | 'failed';
@@ -57,6 +58,7 @@ export class MessageItem {
   readonly senderAvatarPath: string | null;
   readonly albumItems: MediaAttachment[];
   readonly albumMessageIds: number[];
+  readonly linkPreview: LinkPreviewInfo | null;
 
   constructor(
     messageId: number,
@@ -82,7 +84,8 @@ export class MessageItem {
     showUnreadSeparator: boolean = false,
     senderAvatarPath: string | null = null,
     albumItems: MediaAttachment[] = [],
-    albumMessageIds: number[] = []
+    albumMessageIds: number[] = [],
+    linkPreview: LinkPreviewInfo | null = null
   ) {
     this.messageId = messageId;
     this.text = text;
@@ -108,6 +111,7 @@ export class MessageItem {
     this.senderAvatarPath = senderAvatarPath;
     this.albumItems = albumItems;
     this.albumMessageIds = albumMessageIds;
+    this.linkPreview = linkPreview;
   }
 }
 

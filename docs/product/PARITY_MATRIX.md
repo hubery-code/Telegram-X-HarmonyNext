@@ -45,7 +45,7 @@
 | FEAT-MSG-003 | 历史分页向上滚动 | Dev Match | MessageProjection 自动拉取更早历史无空洞 |
 | FEAT-MSG-004 | 已读上报与回执 | Dev Match | 入屏触发 viewMessages，双勾已读态对齐 |
 | FEAT-COMP-001 | 文本消息发送 | Dev Match | 发送即上屏、失败重试、发送成功确认 |
-| FEAT-COMP-002 | 链接预览 | Not Started | 待 MSG-107 工作包接入 |
+| FEAT-COMP-002 | 链接预览 | Dev Match | 发送带 linkPreviewOptions，气泡渲染 Telegram X 风格带蓝竖条链接预览卡片，缩略图自动下载与点击访问（MSG-107） |
 | FEAT-COMP-003 | 回复消息 | Dev Match | 引用条展示原文摘要，气泡内嵌回复对齐 |
 | FEAT-COMP-004 | 转发消息 | Dev Match | 装配层 ForwardPickerPage 目标选择器与原作者保留对齐 |
 | FEAT-COMP-005 | 编辑消息 | Dev Match | 文本消息就地编辑与「已编辑」标注对齐 |

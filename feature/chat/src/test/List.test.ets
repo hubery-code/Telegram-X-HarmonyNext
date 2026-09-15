@@ -10,6 +10,7 @@ import mosaicLayoutTest from './MosaicLayout.test';
 import mediaAlbumTest from './MediaAlbum.test';
 import chatPhotoSendingTest from './ChatPhotoSending.test';
 import chatFileSendingTest from './ChatFileSending.test';
+import linkPreviewTest from './LinkPreview.test';
 
 export default function testsuite(): void {
   chatReducerTest();
@@ -24,4 +25,5 @@ export default function testsuite(): void {
   mediaAlbumTest();
   chatPhotoSendingTest();
   chatFileSendingTest();
+  linkPreviewTest();
 }

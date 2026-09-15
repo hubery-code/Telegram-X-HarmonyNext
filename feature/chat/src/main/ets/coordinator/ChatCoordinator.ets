@@ -46,6 +46,13 @@ import {
   GetChat,
   GetMessage,
   InputMessageReplyToMessage,
+  LinkPreview,
+  LinkPreviewTypePhoto,
+  LinkPreviewTypeArticle,
+  LinkPreviewTypeVideo,
+  LinkPreviewTypeAnimation,
+  LinkPreviewTypeDocument,
+  LinkPreviewTypeApp,
   Message,
   MessageAnimation,
   MessageDocument,
@@ -75,6 +82,7 @@ import { ReducerEnv, ReducerResult } from '@tgx/feature-template';
 import { MessageItem, MessageSendState } from '../model/MessageItem';
 import { MessageTextSpan } from '../model/MessageTextSpan';
 import { MediaAttachment } from '../model/MediaAttachment';
+import { LinkPreviewInfo } from '../model/LinkPreviewInfo';
 import { parseFormattedText } from '../model/FormattedTextParser';
 import {
   ChatKind,
@@ -1239,6 +1247,93 @@ export class ChatCoordinator {
     return new ReplyInfo(summary, senderName, senderColorIndex, thumbnailPath, isSticker);
   }
 
+  private resolveLinkPreviewInfo(linkPreview: LinkPreview | null): LinkPreviewInfo | null {
+    if (linkPreview === null) {
+      return null;
+    }
+    const url: string = linkPreview.url;
+    const displayUrl: string = linkPreview.display_url.length > 0 ? linkPreview.display_url : url;
+    const siteName: string = linkPreview.site_name;
+    const title: string = linkPreview.title;
+    const description: string = linkPreview.description !== null ? linkPreview.description.text : '';
+    const author: string = linkPreview.author;
+    const showAboveText: boolean = linkPreview.show_above_text;
+
+    let thumbFileId: number = 0;
+    let isPhoto: boolean = false;
+    let isLargeMedia: boolean = linkPreview.show_large_media;
+
+    if (linkPreview.type_ !== null) {
+      const t = linkPreview.type_;
+      if (t.type === 'linkPreviewTypePhoto') {
+        isPhoto = true;
+        isLargeMedia = true;
+        const photo = (t as LinkPreviewTypePhoto).photo;
+        if (photo !== null && photo.sizes.length > 0) {
+          const size = this.chooseDisplaySize(photo.sizes);
+          if (size.photo !== null) {
+            thumbFileId = size.photo.id;
+          }
+        }
+      } else if (t.type === 'linkPreviewTypeArticle') {
+        const photo = (t as LinkPreviewTypeArticle).photo;
+        if (photo !== null && photo.sizes.length > 0) {
+          const size = photo.sizes[0];
+          if (size.photo !== null) {
+            thumbFileId = size.photo.id;
+          }
+        }
+      } else if (t.type === 'linkPreviewTypeApp') {
+        const photo = (t as LinkPreviewTypeApp).photo;
+        if (photo !== null && photo.sizes.length > 0) {
+          const size = photo.sizes[0];
+          if (size.photo !== null) {
+            thumbFileId = size.photo.id;
+          }
+        }
+      } else if (t.type === 'linkPreviewTypeVideo') {
+        const video = (t as LinkPreviewTypeVideo).video;
+        if (video !== null && video.thumbnail !== null && video.thumbnail.file !== null) {
+          thumbFileId = video.thumbnail.file.id;
+        }
+      } else if (t.type === 'linkPreviewTypeAnimation') {
+        const anim = (t as LinkPreviewTypeAnimation).animation;
+        if (anim !== null && anim.thumbnail !== null && anim.thumbnail.file !== null) {
+          thumbFileId = anim.thumbnail.file.id;
+        }
+      } else if (t.type === 'linkPreviewTypeDocument') {
+        const doc = (t as LinkPreviewTypeDocument).document;
+        if (doc !== null && doc.thumbnail !== null && doc.thumbnail.file !== null) {
+          thumbFileId = doc.thumbnail.file.id;
+        }
+      }
+    }
+
+    let thumbnailPath: string | null = null;
+    if (thumbFileId > 0) {
+      thumbnailPath = this.fileRegistry.getLocalPath(thumbFileId);
+      if (thumbnailPath === null) {
+        this.requestMediaDownload(thumbFileId, 2);
+      }
+    }
+
+    const info: LinkPreviewInfo = new LinkPreviewInfo(
+      url,
+      displayUrl,
+      siteName,
+      title,
+      description,
+      author,
+      showAboveText,
+      thumbnailPath,
+      thumbFileId,
+      isPhoto,
+      isLargeMedia
+    );
+
+    return info.hasContent() ? info : null;
+  }
+
   private mapMessageToItem(
     message: Message,
     replyInfoById: Map<number, ReplyInfo>,
@@ -1247,13 +1342,16 @@ export class ChatCoordinator {
     dateHeaderText: string = '',
     showUnreadSeparator: boolean = false
   ): MessageItem {
-    const replyToId: number | null = repliedMessageIdOf(message.reply_to);
+    let replyToId: number | null = null;
     let replyToSummary: string = '';
     let replySenderName: string = '';
     let replySenderColorIndex: number = -1;
     let replyThumbnailPath: string | null = null;
     let replyIsSticker: boolean = false;
-
+    if (message.reply_to !== null && message.reply_to.type === 'messageReplyToMessage') {
+      const rep = message.reply_to as MessageReplyToMessage;
+      replyToId = rep.message_id;
+    }
     if (replyToId !== null) {
       let replyInfo: ReplyInfo | undefined = replyInfoById.get(replyToId);
       if (replyInfo === undefined) {
@@ -1277,6 +1375,7 @@ export class ChatCoordinator {
 
     let spans: MessageTextSpan[] = [];
     let displayText: string = '';
+    let linkPreviewInfo: LinkPreviewInfo | null = null;
 
     if (media !== null) {
       displayText = media.kind === 'sticker' ? '' : media.caption;
@@ -1285,6 +1384,7 @@ export class ChatCoordinator {
       const textContent: MessageText = message.content as MessageText;
       displayText = textContent.text !== null ? textContent.text.text : '';
       spans = parseFormattedText(textContent.text);
+      linkPreviewInfo = this.resolveLinkPreviewInfo(textContent.link_preview);
     } else {
       displayText = messageContentText(message.content);
     }
@@ -1325,7 +1425,10 @@ export class ChatCoordinator {
       showDateHeader,
       dateHeaderText,
       showUnreadSeparator,
-      senderInfo.avatarPath
+      senderInfo.avatarPath,
+      [],
+      [],
+      linkPreviewInfo
     );
   }
 

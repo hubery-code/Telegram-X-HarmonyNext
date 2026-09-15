@@ -47,6 +47,7 @@ import { MessageItem } from '../model/MessageItem';
 import { MessageTextSpan } from '../model/MessageTextSpan';
 import { MediaAttachment, formatFileSize } from '../model/MediaAttachment';
 import { MediaViewerItem } from '../model/MediaViewerItem';
+import { LinkPreviewInfo } from '../model/LinkPreviewInfo';
 import {
   calculateMosaicLayout,
   MosaicLayoutResult,
@@ -191,10 +192,16 @@ function messageRowKey(item: MessageItem, selected: boolean): string {
   const replySig: string =
     `${item.replyToMessageId}|${item.replySenderName}|${item.replySenderColorIndex}|` +
     `${item.replyThumbnailPath !== null ? item.replyThumbnailPath : ''}|${item.replyIsSticker}`;
+  let linkPreviewSig: string = '';
+  if (item.linkPreview !== null) {
+    const lp: LinkPreviewInfo = item.linkPreview;
+    const thumb: string = lp.thumbnailPath !== null ? lp.thumbnailPath : '';
+    linkPreviewSig = `${lp.url}|${lp.siteName}|${lp.title}|${lp.description}|${thumb}|${lp.showAboveText}|${lp.isLargeMedia}`;
+  }
   const signature: string =
     `${item.sendState}|${item.isRead}|${item.isEdited}|${item.senderColorIndex}|` +
     `${item.text}|${item.senderName}|${item.senderAvatarPath !== null ? item.senderAvatarPath : ''}|` +
-    `${item.replyToSummary}|${mediaSig}|${replySig}|${selected}|` +
+    `${item.replyToSummary}|${mediaSig}|${replySig}|${linkPreviewSig}|${selected}|` +
     `${item.showDateHeader ? item.dateHeaderText : ''}|${item.showUnreadSeparator}`;
   return `${item.messageId}:${fnv1a32(signature)}`;
 }
@@ -664,6 +671,11 @@ export struct ChatPage {
           }
         }
 
+        // 链接预览卡片（MSG-107）：showAboveText 为 true 时在正文上方渲染
+        if (item.linkPreview !== null && item.linkPreview.showAboveText) {
+          this.LinkPreviewBubble(item.linkPreview)
+        }
+
         // 正文/说明文字（MSG-101）：有富文本 spans 时按 span 渲染，否则回退纯文本。
         if (item.spans.length > 0) {
           Text() {
@@ -716,6 +728,11 @@ export struct ChatPage {
             .fontSize(T.typography.body.fontSize)
             .fontColor(T.colors.chatText)
             .margin(item.media !== null ? { top: T.spacing.xs } : { top: 0 })
+        }
+
+        // 链接预览卡片（MSG-107）：默认在正文下方渲染
+        if (item.linkPreview !== null && !item.linkPreview.showAboveText) {
+          this.LinkPreviewBubble(item.linkPreview)
         }
 
         if (!this.isSticker(item)) {
@@ -1464,6 +1481,91 @@ export struct ChatPage {
     .onClick(() => {
       if (item.replyToMessageId !== null) {
         this.scrollToMessageId(item.replyToMessageId);
+      }
+    })
+  }
+
+  /** 链接预览卡片（MSG-107 / FEAT-COMP-002）：左侧 accent 竖条 + 站点/标题/描述 + 缩略图/大图。 */
+  @Builder
+  LinkPreviewBubble(preview: LinkPreviewInfo) {
+    Column() {
+      Row() {
+        // 左侧细竖条（宽 2vp，高自适应，accent 强调色，圆角 1vp）
+        Column()
+          .width(2)
+          .backgroundColor(T.colors.accent)
+          .borderRadius(1)
+          .alignSelf(ItemAlign.Stretch)
+
+        // 中间文本列（站点名、标题、描述）
+        Column() {
+          if (preview.siteName.length > 0) {
+            Text(preview.siteName)
+              .fontSize(12)
+              .fontWeight(FontWeight.Bold)
+              .fontColor(T.colors.accent)
+              .maxLines(1)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+          }
+
+          if (preview.title.length > 0) {
+            Text(preview.title)
+              .fontSize(T.typography.body.fontSize)
+              .fontWeight(FontWeight.Medium)
+              .fontColor(T.colors.chatText)
+              .maxLines(2)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+              .margin({ top: preview.siteName.length > 0 ? 2 : 0 })
+          }
+
+          if (preview.description.length > 0) {
+            Text(preview.description)
+              .fontSize(12)
+              .fontColor(T.colors.textSecondary)
+              .maxLines(3)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+              .margin({ top: 2 })
+          }
+        }
+        .alignItems(HorizontalAlign.Start)
+        .justifyContent(FlexAlign.Center)
+        .layoutWeight(1)
+        .margin({ left: 6, right: (preview.thumbnailPath !== null && !preview.isLargeMedia) ? 6 : 0 })
+
+        // 小图模式：右侧 52x52 方形缩略图
+        if (preview.thumbnailPath !== null && !preview.isLargeMedia) {
+          Image(toSandboxUri(preview.thumbnailPath))
+            .width(52)
+            .height(52)
+            .borderRadius(T.radius.sm)
+            .objectFit(ImageFit.Cover)
+        }
+      }
+      .width('100%')
+      .alignItems(VerticalAlign.Center)
+
+      // 大图模式：下方单行大图展示
+      if (preview.thumbnailPath !== null && preview.isLargeMedia) {
+        Image(toSandboxUri(preview.thumbnailPath))
+          .width('100%')
+          .height(160)
+          .borderRadius(T.radius.sm)
+          .objectFit(ImageFit.Cover)
+          .margin({ top: 6 })
+      }
+    }
+    .alignSelf(ItemAlign.Start)
+    .padding({
+      left: 2,
+      right: 4,
+      top: 4,
+      bottom: 4
+    })
+    .backgroundColor(Color.Transparent)
+    .margin({ top: T.spacing.xs, bottom: T.spacing.xs })
+    .onClick(() => {
+      if (preview.url.length > 0) {
+        this.openLink(preview.url);
       }
     })
   }

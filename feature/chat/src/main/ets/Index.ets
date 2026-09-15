@@ -5,6 +5,7 @@
 export { MessageItem, MessageSendState } from './model/MessageItem';
 export { MediaAttachment, MediaKind, formatFileSize } from './model/MediaAttachment';
 export { MediaViewerItem } from './model/MediaViewerItem';
+export { LinkPreviewInfo } from './model/LinkPreviewInfo';
 
 export { MessageTextSpan } from './model/MessageTextSpan';
 
