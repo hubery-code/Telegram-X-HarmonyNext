@@ -126,10 +126,19 @@
 | FEAT-UI-001 | 深色/浅色主题 | P1 | `theme/ThemeManager.java:48`（DEFAULT_DARK_THEME = NIGHT_BLUE）, `theme/Theme.java` | —（平台侧） | 跟随系统/手动切换，关键页面（列表/聊天/设置）色值正确 | — | Accepted | 迁移组 |
 | FEAT-UI-002 | 大字体（聊天字号调节） | P1 | `unsorted/Settings.java:791`（CHAT_FONT_SIZES）, `ui/SettingsController.java:218`（getChatFontSize） | —（平台侧） | 大字号模式下气泡/列表不截断不重叠 | 字体缩放 | Backlog | |
 | FEAT-UI-003 | 中/英文案资源 | P1 | `core/Lang.java`, `ui/SettingsLanguageController.java` | — | 关键路径文案中英齐全，无硬编码遗漏 | — | Accepted | 迁移组 |
+| FEAT-UI-004 | 底部主导航（聊天/联系人/设置/个人资料 Tab） | P1 | `MainActivity.java`, `navigation/DrawerController.java`（入口改 Tab 形态，对齐官方 HarmonyOS 版） | —（平台侧） | 首页底部 Tab 四入口，未读角标随 TDLib counter 更新，切换不重建协调器 | — | Backlog | |
 
 ---
 
 ## P2：公开 Beta 完整度（计划 §3.3，仅列名）
+
+> **2026-09-16 官方 Telegram 对齐提升（用户实拍截图盘点，多 AI 可见）**：
+> FEAT-P2-001（联系人）、FEAT-P2-002（群/频道资料）、FEAT-P2-003 中的**置顶消息**部分
+> **提前至 P1 执行**，已拆工作包：PROFILE-102（群/频道资料页）、MSG-109（聊天头部信息区）、
+> TAB-101（底部 Tab）、CONTACT-101（联系人页）、MSG-108（置顶消息条）、CHANNEL-101（频道访客模式）、
+> PROFILE-103（用户资料增强）；执行顺序与依赖见 `PROGRESS.md`「官方 Telegram 对齐缺口」。
+> 反应/投票/话题、CameraPicker、深链等维持 P2 原序；通话/视频（FEAT-P3-001/002）、
+> Stories/礼物维持 P3 不提前。
 
 | 功能 ID | 功能名 |
 |---|---|
