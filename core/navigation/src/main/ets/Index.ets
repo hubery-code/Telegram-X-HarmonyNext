@@ -5,6 +5,7 @@ export {
   AuthRoute,
   ChatRoute,
   ChatInfoRoute,
+  UserProfileRoute,
   SettingsRoute,
   SettingsSectionRoute,
   SearchRoute,

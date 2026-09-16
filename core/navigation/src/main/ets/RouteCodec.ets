@@ -19,6 +19,7 @@ import {
   AppRoute,
   AuthRoute,
   ChatInfoRoute,
+  UserProfileRoute,
   ChatRoute,
   HomeRoute,
   MediaViewerRoute,
@@ -285,6 +286,14 @@ function buildRoute(name: RouteName, params: Map<string, ParamValue>): Result<Ap
       const route: ChatInfoRoute = { name: 'chatInfo', chatId: chatId };
       return ok(route);
     }
+    case 'userProfile': {
+      const userId: ParamValue | undefined = params.get('userId');
+      if (typeof userId !== 'number') {
+        return err(AppErrors.parameter('invalid', 'userId', 'userId must be int'));
+      }
+      const route: UserProfileRoute = { name: 'userProfile', userId: userId };
+      return ok(route);
+    }
     case 'settings': {
       const route: SettingsRoute = { name: 'settings' };
       return ok(route);
@@ -392,6 +401,9 @@ function collectRouteParams(route: AppRoute, out: Map<string, ParamValue>): Resu
       return ok(undefined);
     case 'chatInfo':
       out.set('chatId', route.chatId);
+      return ok(undefined);
+    case 'userProfile':
+      out.set('userId', route.userId);
       return ok(undefined);
     case 'settingsSection':
       out.set('section', route.section);

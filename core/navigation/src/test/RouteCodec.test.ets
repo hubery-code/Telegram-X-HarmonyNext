@@ -1,5 +1,5 @@
 import { describe, it, expect } from '@ohos/hypium';
-import { AppRoute, ChatRoute, SearchRoute } from '../main/ets/Route';
+import { AppRoute, ChatRoute, SearchRoute, UserProfileRoute } from '../main/ets/Route';
 import { defaultRegistry } from '../main/ets/RouteRegistry';
 import { RouteCodec, DeepLinkRule, defaultDeepLinkRules } from '../main/ets/RouteCodec';
 import type { AppError } from '@tgx/core-common';
@@ -198,6 +198,28 @@ export default function routeCodecTest() {
       const route: ChatRoute = mustOk(codec().parse('chat/42?threadId=7')) as ChatRoute;
       expect(route.threadId).assertEqual(7);
       expect(route.messageId === undefined).assertTrue();
+    });
+
+    // PROFILE-101：用户资料页路由（群聊点头像 → 查看资料）。
+    it('userProfileRoute_roundTrips', 0, () => {
+      roundTrip({ name: 'userProfile', userId: 123456789 });
+    });
+
+    it('encode_userProfile_pathForm', 0, () => {
+      expect(mustOk(codec().encode({ name: 'userProfile', userId: 42 })))
+        .assertEqual('userProfile/42');
+    });
+
+    it('parse_userProfile_resolved', 0, () => {
+      const route: UserProfileRoute = mustOk(codec().parse('userProfile/98765')) as UserProfileRoute;
+      expect(route.userId).assertEqual(98765);
+    });
+
+    it('parse_userProfileTypeMismatch_rejected', 0, () => {
+      const error: AppError = mustErr(codec().parse('userProfile/abc'));
+      expect(error.kind).assertEqual('parameter');
+      expect(paramCode(error)).assertEqual('invalid');
+      expect(paramField(error)).assertEqual('userId');
     });
   });
 }

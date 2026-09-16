@@ -271,7 +271,18 @@
           ]
         }
       ]
+    },
+    {
+      "name": "feature_profile",
+      "srcPath": "./feature/profile",
+      "targets": [
+        {
+          "name": "default",
+          "applyToProducts": [
+            "default"
+          ]
+        }
+      ]
     }
   ]
 }
-

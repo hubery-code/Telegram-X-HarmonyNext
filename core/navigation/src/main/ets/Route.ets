@@ -55,6 +55,7 @@ export type RouteName =
   | 'auth'
   | 'chat'
   | 'chatInfo'
+  | 'userProfile'
   | 'settings'
   | 'settingsSection'
   | 'search'
@@ -87,6 +88,16 @@ export interface ChatInfoRoute {
   readonly chatId: number;
 }
 
+/**
+ * PROFILE-101：用户资料页路由。群聊里点击发送者头像 → 查看该用户资料
+ * （对齐 Android `TGMessage.onAvatarClick → openPrivateProfile(userId)`）。
+ */
+export interface UserProfileRoute {
+  readonly name: 'userProfile';
+  /** TDLib user id（正数）。 */
+  readonly userId: number;
+}
+
 export interface SettingsRoute {
   readonly name: 'settings';
 }
@@ -114,6 +125,7 @@ export type AppRoute =
   | AuthRoute
   | ChatRoute
   | ChatInfoRoute
+  | UserProfileRoute
   | SettingsRoute
   | SettingsSectionRoute
   | SearchRoute
@@ -175,6 +187,11 @@ export const ROUTE_DEFINITIONS: RouteDefinition[] = [
     name: 'chatInfo',
     pathTemplate: 'chatInfo/{chatId}',
     params: [spec('chatId', 'int', true)]
+  },
+  {
+    name: 'userProfile',
+    pathTemplate: 'userProfile/{userId}',
+    params: [spec('userId', 'int', true, 1)]
   },
   { name: 'settings', pathTemplate: 'settings', params: [] },
   {

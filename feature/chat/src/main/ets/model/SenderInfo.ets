@@ -25,16 +25,19 @@ import { formatFullName, getAvatarColorIndex } from '@tgx/core-domain';
 /** 会话种类：署名只对 'group' 生效。 */
 export type ChatKind = 'private' | 'group' | 'channel' | 'unknown';
 
-/** 署名与头像解析结果；colorIndex -1 = 无署名/默认色。 */
+/** 署名与头像解析结果；colorIndex -1 = 无署名/默认色。userId 0 = 无（头像不可进资料页）。 */
 export class SenderInfo {
   readonly name: string;
   readonly colorIndex: number;
   readonly avatarPath: string | null;
+  /** PROFILE-101：发送者用户 id；0 = 非用户发送者/未知（头像不可点进资料页）。 */
+  readonly userId: number;
 
-  constructor(name: string = '', colorIndex: number = -1, avatarPath: string | null = null) {
+  constructor(name: string = '', colorIndex: number = -1, avatarPath: string | null = null, userId: number = 0) {
     this.name = name;
     this.colorIndex = colorIndex;
     this.avatarPath = avatarPath;
+    this.userId = userId;
   }
 }
 
@@ -108,7 +111,7 @@ export function resolveSenderInfo(
     }
   }
 
-  return new SenderInfo(name, getAvatarColorIndex(userId), avatarPath);
+  return new SenderInfo(name, getAvatarColorIndex(userId), avatarPath, userId);
 }
 
 /** Telegram 经典头像/署名调色板（'#AARRGGBB'），与 chat_list 的 AVATAR_PALETTE 同色值。 */

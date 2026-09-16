@@ -59,6 +59,8 @@ export class MessageItem {
   readonly albumItems: MediaAttachment[];
   readonly albumMessageIds: number[];
   readonly linkPreview: LinkPreviewInfo | null;
+  /** PROFILE-101：发送者用户 id（群聊用户消息 > 0）；0 = 头像不可点进资料页。 */
+  readonly senderUserId: number;
 
   constructor(
     messageId: number,
@@ -85,7 +87,8 @@ export class MessageItem {
     senderAvatarPath: string | null = null,
     albumItems: MediaAttachment[] = [],
     albumMessageIds: number[] = [],
-    linkPreview: LinkPreviewInfo | null = null
+    linkPreview: LinkPreviewInfo | null = null,
+    senderUserId: number = 0
   ) {
     this.messageId = messageId;
     this.text = text;
@@ -112,6 +115,7 @@ export class MessageItem {
     this.albumItems = albumItems;
     this.albumMessageIds = albumMessageIds;
     this.linkPreview = linkPreview;
+    this.senderUserId = senderUserId;
   }
 }
 

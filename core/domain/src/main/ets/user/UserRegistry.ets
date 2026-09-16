@@ -14,11 +14,16 @@
 
 import {
   User,
+  UserFullInfo,
   GetUser,
+  GetUserFullInfo,
   UpdateUser,
   UpdateUserStatus,
+  UpdateUserFullInfo,
   encodeGetUser,
+  encodeGetUserFullInfo,
   decodeUser,
+  decodeUserFullInfo,
   decodeTdUpdate,
   TdJsonRaw,
   TdUpdate
@@ -145,7 +150,9 @@ export function isOnline(user: User | null): boolean {
 export class UserRegistry {
   private readonly scope: AccountScope;
   private readonly users: Map<number, User> = new Map();
+  private readonly fullInfos: Map<number, UserFullInfo> = new Map();
   private readonly listenersByUserId: Map<number, ((user: User) => void)[]> = new Map();
+  private readonly fullInfoListenersByUserId: Map<number, ((info: UserFullInfo) => void)[]> = new Map();
   private subscription: TdUpdateSubscription | null = null;
 
   constructor(scope: AccountScope) {
@@ -159,7 +166,8 @@ export class UserRegistry {
     }
     const filter: TdUpdateFilter = {
       clientId: this.scope.clientId,
-      types: ['updateUser', 'updateUserStatus']
+      // PROFILE-101：updateUserFullInfo 在 getUserFullInfo 回包后由 TDLib 推送，用于资料页 bio 刷新。
+      types: ['updateUser', 'updateUserStatus', 'updateUserFullInfo']
     };
     this.subscription = this.scope.gatewayInstance.subscribeUpdates(
       filter,
@@ -179,11 +187,14 @@ export class UserRegistry {
       this.subscription = null;
     }
     this.listenersByUserId.clear();
+    this.fullInfoListenersByUserId.clear();
   }
 
   clear(): void {
     this.users.clear();
+    this.fullInfos.clear();
     this.listenersByUserId.clear();
+    this.fullInfoListenersByUserId.clear();
   }
 
   getUser(userId: number): User | null {
@@ -247,6 +258,64 @@ export class UserRegistry {
     return result;
   }
 
+  /**
+   * PROFILE-101：请求用户完整资料（bio 等）。回包经 TDLib 以 updateUserFullInfo
+   * 推送回来后入缓存并通知监听；调用方也可直接消费返回的 promise。
+   */
+  requestUserFullInfo(userId: number): Result<TdPendingRequest, AppError> {
+    const req: GetUserFullInfo = new GetUserFullInfo();
+    req.user_id = userId;
+
+    const result: Result<TdPendingRequest, AppError> =
+      this.scope.request('getUserFullInfo', encodeGetUserFullInfo(req) as TdWireObject);
+    if (result.ok) {
+      const self: UserRegistry = this;
+      result.value.promise.then((res: Result<TdWireObject, AppError>): void => {
+        if (res.ok) {
+          const info: UserFullInfo | null = decodeUserFullInfo(res.value as TdJsonRaw);
+          if (info !== null) {
+            self.putUserFullInfo(userId, info);
+          }
+        }
+      }).catch((): void => {
+      });
+    }
+    return result;
+  }
+
+  getUserFullInfo(userId: number): UserFullInfo | null {
+    const info: UserFullInfo | undefined = this.fullInfos.get(userId);
+    return info !== undefined ? info : null;
+  }
+
+  putUserFullInfo(userId: number, info: UserFullInfo): void {
+    this.fullInfos.set(userId, info);
+    this.notifyFullInfoListeners(userId, info);
+  }
+
+  subscribeUserFullInfo(userId: number, listener: (info: UserFullInfo) => void): Subscription {
+    let listeners: ((info: UserFullInfo) => void)[] | undefined =
+      this.fullInfoListenersByUserId.get(userId);
+    if (listeners === undefined) {
+      listeners = [];
+      this.fullInfoListenersByUserId.set(userId, listeners);
+    }
+    listeners.push(listener);
+    return new UserSubscription((): void => {
+      const list: ((info: UserFullInfo) => void)[] | undefined =
+        this.fullInfoListenersByUserId.get(userId);
+      if (list !== undefined) {
+        const index: number = list.indexOf(listener);
+        if (index >= 0) {
+          list.splice(index, 1);
+        }
+        if (list.length === 0) {
+          this.fullInfoListenersByUserId.delete(userId);
+        }
+      }
+    });
+  }
+
   formatFullName(user: User | null): string {
     return formatFullName(user);
   }
@@ -292,6 +361,11 @@ export class UserRegistry {
         existing.status = statusUpdate.status;
         this.notifyListeners(existing.id, existing);
       }
+    } else if (update.type === 'updateUserFullInfo') {
+      const fullInfoUpdate: UpdateUserFullInfo = update as UpdateUserFullInfo;
+      if (fullInfoUpdate.user_full_info !== null) {
+        this.putUserFullInfo(fullInfoUpdate.user_id, fullInfoUpdate.user_full_info);
+      }
     }
   }
 
@@ -330,6 +404,17 @@ export class UserRegistry {
       const copy: ((user: User) => void)[] = [...listeners];
       for (let i = 0; i < copy.length; i++) {
         copy[i](user);
+      }
+    }
+  }
+
+  private notifyFullInfoListeners(userId: number, info: UserFullInfo): void {
+    const listeners: ((info: UserFullInfo) => void)[] | undefined =
+      this.fullInfoListenersByUserId.get(userId);
+    if (listeners !== undefined && listeners.length > 0) {
+      const copy: ((info: UserFullInfo) => void)[] = [...listeners];
+      for (let i = 0; i < copy.length; i++) {
+        copy[i](info);
       }
     }
   }

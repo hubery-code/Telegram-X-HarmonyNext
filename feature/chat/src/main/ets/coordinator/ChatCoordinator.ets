@@ -114,7 +114,8 @@ import {
   RestoreDraft,
   OnChatSearchLoaded,
   OnChatSearchFailed,
-  OnJumpToMessageReady
+  OnJumpToMessageReady,
+  OpenUserProfile
 } from '../contract/ChatIntent';
 import {
   ChatEffect,
@@ -300,6 +301,8 @@ export interface ChatCoordinatorOptions {
   readonly toastPort?: ToastPort;
   readonly mediaPickerPort?: MediaPickerPort;
   readonly logger?: Logger;
+  /** PROFILE-101：请求装配层打开指定用户的资料页（缺省 no-op）。 */
+  readonly onOpenUserProfile?: (userId: number) => void;
 }
 
 class ParsedDraft {
@@ -325,6 +328,8 @@ export class ChatCoordinator {
   private readonly onBack: () => void;
   /** MSG-106：请求装配层弹出转发目标会话选择器（缺省 no-op）。 */
   private readonly onOpenForwardPicker: (messageIds: number[]) => void;
+  /** PROFILE-101：请求装配层打开用户资料页（缺省 no-op）。 */
+  private readonly onOpenUserProfile: (userId: number) => void;
   private currentState: ChatUiState;
   private readonly listeners: ChatUiStateListener[] = [];
   private syncScheduled: boolean = false;
@@ -377,6 +382,9 @@ export class ChatCoordinator {
     this.onOpenForwardPicker = onOpenForwardPicker !== undefined
       ? onOpenForwardPicker
       : (messageIds: number[]): void => {};
+    this.onOpenUserProfile = (options !== undefined && options.onOpenUserProfile !== undefined)
+      ? options.onOpenUserProfile
+      : (userId: number): void => {};
     this.env = env !== undefined ? env : {
       clock: new ManualClock(1000, 500),
       ids: new SequentialIdGenerator('chat-')
@@ -568,6 +576,13 @@ export class ChatCoordinator {
     } else if (intent.kind === 'requestMediaDownload') {
       const reqIntent: RequestMediaDownload = intent as RequestMediaDownload;
       this.requestMediaDownload(reqIntent.fileId, 32);
+    } else if (intent.kind === 'openUserProfile') {
+      // PROFILE-101：纯导航意图——reducer 原样透传（default 分支），这里转给装配层路由。
+      const profileIntent: OpenUserProfile = intent as OpenUserProfile;
+      if (profileIntent.userId > 0) {
+        this.logger.info(TAG, 'open_user_profile', `userId=${profileIntent.userId}`);
+        this.onOpenUserProfile(profileIntent.userId);
+      }
     }
 
     const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
@@ -1564,7 +1579,8 @@ export class ChatCoordinator {
       senderInfo.avatarPath,
       [],
       [],
-      linkPreviewInfo
+      linkPreviewInfo,
+      senderInfo.userId
     );
   }
 
@@ -1673,7 +1689,9 @@ export class ChatCoordinator {
       showUnreadSeparator,
       senderInfo.avatarPath,
       albumItems,
-      albumMessageIds
+      albumMessageIds,
+      undefined,
+      senderInfo.userId
     );
   }
 

@@ -98,7 +98,8 @@ import {
   ChatSearchQueryChanged,
   PerformChatSearch,
   JumpToSearchResult,
-  ClearJumpToMessage
+  ClearJumpToMessage,
+  OpenUserProfile
 } from '../contract/ChatIntent';
 import { isMessageSelected } from '../model/ForwardSelection';
 import { ChatSearchResultItem } from '../model/ChatSearchResultItem';
@@ -512,6 +513,13 @@ export struct ChatPage {
     this.highlightedMessageId = 0;
   }
 
+  /** PROFILE-101：群聊头像点按 → 用户资料页（仅用户发送者可进；频道身份/未知忽略）。 */
+  private onSenderAvatarClick(item: MessageItem): void {
+    if (item.senderUserId > 0) {
+      this.onDispatch(new OpenUserProfile(item.senderUserId));
+    }
+  }
+
   /**
    * SEARCH-102：按消息 id 在**当前**上屏数组里求下标；未命中返回 -1。
    * 跳转必须在滚动时刻现算（而不是用状态变更时算好的值），否则这段延迟里
@@ -793,6 +801,7 @@ export struct ChatPage {
         }
 
       // MSG-102 & MSG-102-AVATAR：群聊收到的消息在气泡左侧出小圆头像（真实头像 Cover 裁剪，缺省或下载中出彩色底 + 首字母）。
+      // PROFILE-101：头像可点击 → 打开发送者用户资料页（对齐 Android onAvatarClick）。
       if (this.showSenderUi(item)) {
         if (item.senderAvatarPath !== null && item.senderAvatarPath.length > 0) {
           Image(toSandboxUri(item.senderAvatarPath))
@@ -801,6 +810,7 @@ export struct ChatPage {
             .borderRadius(T.radius.full)
             .objectFit(ImageFit.Cover)
             .margin({ right: T.spacing.xs })
+            .onClick(() => this.onSenderAvatarClick(item))
         } else {
           Text(avatarLettersForName(item.senderName))
             .width(SENDER_AVATAR_SIZE)
@@ -811,6 +821,7 @@ export struct ChatPage {
             .fontSize(T.typography.footnote.fontSize)
             .textAlign(TextAlign.Center)
             .margin({ right: T.spacing.xs })
+            .onClick(() => this.onSenderAvatarClick(item))
         }
       }
 

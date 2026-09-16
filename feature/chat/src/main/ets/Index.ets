@@ -92,6 +92,7 @@ export {
   JumpToSearchResult,
   OnJumpToMessageReady,
   ClearJumpToMessage,
+  OpenUserProfile,
   ChatIntent
 } from './contract/ChatIntent';
 

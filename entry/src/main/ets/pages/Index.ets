@@ -30,7 +30,7 @@ import { hilog } from '@kit.PerformanceAnalysisKit';
 import { AccountDescriptor, AccountScope } from '@tgx/core-account';
 import { AppError, ManualClock, Result, SequentialIdGenerator } from '@tgx/core-common';
 import { ReducerEnv } from '@tgx/feature-template';
-import { AppRoute, ChatRoute } from '@tgx/core-navigation';
+import { AppRoute, ChatRoute, UserProfileRoute } from '@tgx/core-navigation';
 import { EntryNavigationController } from '../navigation/EntryNavigationController';
 import {
   AuthRootPage,
@@ -72,6 +72,12 @@ import {
   SearchChatMetadata,
   SearchCoordinator
 } from '@tgx/feature-search';
+import {
+  ProfilePage,
+  ProfileUiState,
+  ProfileIntent,
+  ProfileCoordinator
+} from '@tgx/feature-profile';
 import { BootstrapResult } from '../Bootstrap';
 import { ScopeAuthAdapter } from '../ScopeAuthAdapter';
 import { TELEGRAM_CREDENTIALS } from '../config/AppCredentials';
@@ -123,6 +129,11 @@ struct Index {
   private unsubscribeSettingsFn: (() => void) | null = null;
   private searchCoordinator: SearchCoordinator | null = null;
   private unsubscribeSearchFn: (() => void) | null = null;
+  // PROFILE-101：用户资料页（群聊点头像进入）。
+  @State profileUiState: ProfileUiState = ProfileUiState.initial();
+  private profileCoordinator: ProfileCoordinator | null = null;
+  private unsubscribeProfileFn: (() => void) | null = null;
+  private activeProfileUserId: number = 0;
   private accountScope: AccountScope | null = null;
   private bootstrapResult: BootstrapResult | null = null;
   private currentAccountKey: string = 'default';
@@ -201,6 +212,9 @@ struct Index {
     if (!this.navController.hasRoute('search') && this.searchCoordinator !== null) {
       this.closeSearch();
     }
+    if (!this.navController.hasRoute('userProfile') && this.profileCoordinator !== null) {
+      this.closeProfile();
+    }
 
     // 2. 根据当前栈顶路由，按需拉起对应协调器
     if (route.name === 'chat') {
@@ -211,6 +225,11 @@ struct Index {
         this.openChat(chatRoute.chatId, this.resolveChatTitle(chatRoute.chatId), jumpTo);
       } else {
         this.requestChatJump(chatRoute.chatId, jumpTo);
+      }
+    } else if (route.name === 'userProfile') {
+      const profileRoute: UserProfileRoute = route as UserProfileRoute;
+      if (this.profileCoordinator === null || this.activeProfileUserId !== profileRoute.userId) {
+        this.openProfile(profileRoute.userId);
       }
     } else if (route.name === 'settings' || route.name === 'settingsSection') {
       if (this.settingsCoordinator === null) {
@@ -312,6 +331,44 @@ struct Index {
       this.searchCoordinator.destroy();
       this.searchCoordinator = null;
     }
+  }
+
+  /** PROFILE-101：打开用户资料页协调器（群聊头像点按进入）。 */
+  private openProfile(userId: number): void {
+    if (this.accountScope === null) {
+      return;
+    }
+    this.closeProfile();
+    const coordinator: ProfileCoordinator = new ProfileCoordinator(
+      this.accountScope,
+      userId,
+      {
+        logger: this.logger,
+        onOpenChat: (chatId: number): void => {
+          // 「发消息」：私聊压栈到资料页之上，返回仍落回资料页。
+          this.navController.navigateTo({ name: 'chat', chatId: chatId });
+        }
+      }
+    );
+    this.profileCoordinator = coordinator;
+    this.activeProfileUserId = userId;
+    this.unsubscribeProfileFn = coordinator.subscribe((uiState: ProfileUiState): void => {
+      this.profileUiState = uiState;
+    });
+    coordinator.start();
+    hilog.info(DOMAIN, TAG, 'profile coordinator started for userId=%{public}s', `${userId}`);
+  }
+
+  private closeProfile(): void {
+    if (this.unsubscribeProfileFn !== null) {
+      this.unsubscribeProfileFn();
+      this.unsubscribeProfileFn = null;
+    }
+    if (this.profileCoordinator !== null) {
+      this.profileCoordinator.destroy();
+      this.profileCoordinator = null;
+    }
+    this.activeProfileUserId = 0;
   }
 
   /**
@@ -673,7 +730,11 @@ struct Index {
         clipboardPort: this.clipboardAdapter,
         toastPort: this.toastAdapter,
         mediaPickerPort: this.mediaPickerAdapter,
-        logger: this.logger
+        logger: this.logger,
+        // PROFILE-101：群聊点头像 → 压栈用户资料页。
+        onOpenUserProfile: (userId: number): void => {
+          this.navController.navigateTo({ name: 'userProfile', userId: userId });
+        }
       }
     );
     this.chatCoordinator = coordinator;
@@ -808,6 +869,18 @@ struct Index {
           },
           onNavigateToChat: (chatId: number, messageId?: number) => {
             this.navigateToChatFromSearch(chatId, messageId);
+          }
+        })
+      } else if (this.currentRoute.name === 'userProfile') {
+        ProfilePage({
+          uiState: this.profileUiState,
+          onDispatch: (intent: ProfileIntent) => {
+            if (this.profileCoordinator !== null) {
+              this.profileCoordinator.dispatch(intent);
+            }
+          },
+          onBack: () => {
+            this.navController.pop();
           }
         })
       } else if (this.currentRoute.name === 'home') {

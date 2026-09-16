@@ -437,6 +437,19 @@ export class ClearJumpToMessage implements Intent {
   readonly kind: 'clearJumpToMessage' = 'clearJumpToMessage';
 }
 
+/**
+ * PROFILE-101：群聊里点击发送者头像 → 打开该用户资料页。
+ * 纯导航意图：reducer 不改状态（default 分支），由 coordinator 转给装配层路由。
+ */
+export class OpenUserProfile implements Intent {
+  readonly kind: 'openUserProfile' = 'openUserProfile';
+  readonly userId: number;
+
+  constructor(userId: number) {
+    this.userId = userId;
+  }
+}
+
 export type ChatIntent =
   | LoadInitialMessages
   | LoadOlderMessages
@@ -486,4 +499,5 @@ export type ChatIntent =
   | OnChatSearchFailed
   | JumpToSearchResult
   | OnJumpToMessageReady
-  | ClearJumpToMessage;
+  | ClearJumpToMessage
+  | OpenUserProfile;
