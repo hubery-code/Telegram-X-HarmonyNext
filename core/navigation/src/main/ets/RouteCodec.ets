@@ -20,6 +20,8 @@ import {
   AuthRoute,
   ChatInfoRoute,
   UserProfileRoute,
+  ContactsRoute,
+  SelfProfileRoute,
   ChatRoute,
   HomeRoute,
   MediaViewerRoute,
@@ -294,6 +296,14 @@ function buildRoute(name: RouteName, params: Map<string, ParamValue>): Result<Ap
       const route: UserProfileRoute = { name: 'userProfile', userId: userId };
       return ok(route);
     }
+    case 'contacts': {
+      const route: ContactsRoute = { name: 'contacts' };
+      return ok(route);
+    }
+    case 'selfProfile': {
+      const route: SelfProfileRoute = { name: 'selfProfile' };
+      return ok(route);
+    }
     case 'settings': {
       const route: SettingsRoute = { name: 'settings' };
       return ok(route);
@@ -404,6 +414,9 @@ function collectRouteParams(route: AppRoute, out: Map<string, ParamValue>): Resu
       return ok(undefined);
     case 'userProfile':
       out.set('userId', route.userId);
+      return ok(undefined);
+    case 'contacts':
+    case 'selfProfile':
       return ok(undefined);
     case 'settingsSection':
       out.set('section', route.section);

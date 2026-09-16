@@ -7,6 +7,7 @@
   "license": "GPL-3.0",
   "dependencies": {
     "@tgx/core-account": "file:../core/account",
+    "@tgx/core-domain": "file:../core/domain",
     "@tgx/core-common": "file:../core/common",
     "@tgx/core-design-system": "file:../core/design_system",
     "@tgx/core-navigation": "file:../core/navigation",
@@ -14,6 +15,8 @@
     "@tgx/feature-chat": "file:../feature/chat",
     "@tgx/feature-chat-list": "file:../feature/chat_list",
     "@tgx/feature-profile": "file:../feature/profile",
+    "@tgx/feature-contact": "file:../feature/contact",
+    "@tgx/feature-self": "file:../feature/self",
     "@tgx/feature-search": "file:../feature/search",
     "@tgx/feature-settings": "file:../feature/settings",
     "@tgx/feature-template": "file:../feature/_template",

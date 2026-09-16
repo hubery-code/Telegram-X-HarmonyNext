@@ -30,7 +30,7 @@ import { hilog } from '@kit.PerformanceAnalysisKit';
 import { AccountDescriptor, AccountScope } from '@tgx/core-account';
 import { AppError, ManualClock, Result, SequentialIdGenerator } from '@tgx/core-common';
 import { ReducerEnv } from '@tgx/feature-template';
-import { AppRoute, ChatRoute, UserProfileRoute } from '@tgx/core-navigation';
+import { AppRoute, ChatRoute, ChatInfoRoute, UserProfileRoute } from '@tgx/core-navigation';
 import { EntryNavigationController } from '../navigation/EntryNavigationController';
 import {
   AuthRootPage,
@@ -44,17 +44,20 @@ import {
   ChatListPage,
   ChatListUiState,
   ChatListIntent,
+  ChatListCoordinator,
   ChatListItem,
-  ChatListCoordinator
+  DrawerState
 } from '@tgx/feature-chat-list';
 import {
   ChatPage,
   ChatUiState,
-  ChatIntent,
-  BackToChatList,
-  ChatCoordinator,
-  ForwardPickerPage,
   ForwardTarget,
+  ChatIntent,
+  ChatCoordinator,
+  BackToChatList,
+  MessageItem,
+  ComposerReplyMode,
+  ForwardPickerPage,
   ForwardSelectedToChat
 } from '@tgx/feature-chat';
 import {
@@ -76,8 +79,28 @@ import {
   ProfilePage,
   ProfileUiState,
   ProfileIntent,
-  ProfileCoordinator
+  ProfileCoordinator,
+  ChatProfilePage,
+  ChatProfileUiState,
+  ChatProfileIntent,
+  ChatProfileCoordinator
 } from '@tgx/feature-profile';
+import {
+  ContactsPage,
+  ContactsUiState,
+  ContactsIntent,
+  ContactsCoordinator
+} from '@tgx/feature-contact';
+import {
+  SelfProfilePage,
+  SelfProfileUiState,
+  SelfProfileIntent,
+  SelfProfileCoordinator
+} from '@tgx/feature-self';
+import { formatFullName, getAvatarLetters } from '@tgx/core-domain';
+import { GetMe, encodeGetMe, decodeUser, TdJsonRaw } from '@tgx/core-td-api-generated';
+import type { TdPendingRequest, TdWireObject } from '@tgx/td-gateway';
+import { ChatRegistry } from '@tgx/core-domain';
 import { BootstrapResult } from '../Bootstrap';
 import { ScopeAuthAdapter } from '../ScopeAuthAdapter';
 import { TELEGRAM_CREDENTIALS } from '../config/AppCredentials';
@@ -134,6 +157,21 @@ struct Index {
   private profileCoordinator: ProfileCoordinator | null = null;
   private unsubscribeProfileFn: (() => void) | null = null;
   private activeProfileUserId: number = 0;
+  // PROFILE-102：群组/频道资料页（点击群聊标题进入）。
+  @State chatProfileUiState: ChatProfileUiState = ChatProfileUiState.initial();
+  private chatProfileCoordinator: ChatProfileCoordinator | null = null;
+  private activeChatProfileId: number = 0;
+  // TGX 对齐集成：联系人 / 我的资料 / 抽屉账号头（DSH 主会话）。
+  @State contactsUiState: ContactsUiState = ContactsUiState.initial();
+  private contactsCoordinator: ContactsCoordinator | null = null;
+  private unsubscribeContactsFn: (() => void) | null = null;
+  @State selfProfileUiState: SelfProfileUiState = SelfProfileUiState.initial();
+  private selfProfileCoordinator: SelfProfileCoordinator | null = null;
+  private unsubscribeSelfFn: (() => void) | null = null;
+  @State drawerAccountName: string = '';
+  @State drawerAccountPhone: string = '';
+  @State drawerAccountLetters: string = '';
+  private drawerAccountLoaded: boolean = false;
   private accountScope: AccountScope | null = null;
   private bootstrapResult: BootstrapResult | null = null;
   private currentAccountKey: string = 'default';
@@ -161,6 +199,7 @@ struct Index {
 
     this.initAuthCoordinatorSubscription(result.scope);
     this.updateAvailableAccounts();
+    this.fetchDrawerAccount();
   }
 
   aboutToDisappear(): void {
@@ -215,6 +254,15 @@ struct Index {
     if (!this.navController.hasRoute('userProfile') && this.profileCoordinator !== null) {
       this.closeProfile();
     }
+    if (!this.navController.hasRoute('chatInfo') && this.chatProfileCoordinator !== null) {
+      this.closeChatProfile();
+    }
+    if (!this.navController.hasRoute('contacts') && this.contactsCoordinator !== null) {
+      this.closeContacts();
+    }
+    if (!this.navController.hasRoute('selfProfile') && this.selfProfileCoordinator !== null) {
+      this.closeSelfProfile();
+    }
 
     // 2. 根据当前栈顶路由，按需拉起对应协调器
     if (route.name === 'chat') {
@@ -230,6 +278,19 @@ struct Index {
       const profileRoute: UserProfileRoute = route as UserProfileRoute;
       if (this.profileCoordinator === null || this.activeProfileUserId !== profileRoute.userId) {
         this.openProfile(profileRoute.userId);
+      }
+    } else if (route.name === 'chatInfo') {
+      const chatInfoRoute: ChatInfoRoute = route as ChatInfoRoute;
+      if (this.chatProfileCoordinator === null || this.activeChatProfileId !== chatInfoRoute.chatId) {
+        this.openChatProfile(chatInfoRoute.chatId);
+      }
+    } else if (route.name === 'contacts') {
+      if (this.contactsCoordinator === null) {
+        this.openContacts();
+      }
+    } else if (route.name === 'selfProfile') {
+      if (this.selfProfileCoordinator === null) {
+        this.openSelfProfile();
       }
     } else if (route.name === 'settings' || route.name === 'settingsSection') {
       if (this.settingsCoordinator === null) {
@@ -369,6 +430,129 @@ struct Index {
       this.profileCoordinator = null;
     }
     this.activeProfileUserId = 0;
+  }
+
+  // PROFILE-102：群聊/频道资料页打开与关闭
+  private openChatProfile(chatId: number): void {
+    if (this.accountScope === null) {
+      return;
+    }
+    this.closeChatProfile();
+    const coordinator: ChatProfileCoordinator = new ChatProfileCoordinator(
+      this.accountScope,
+      new ChatRegistry(),
+      this.clipboardAdapter,
+      this.toastAdapter,
+      this.logger,
+      {
+        onNavigateToUserProfile: (userId: number): void => {
+          this.navController.navigateTo({ name: 'userProfile', userId: userId });
+        },
+        onNavigateBack: (): void => {
+          this.navController.pop();
+        }
+      }
+    );
+    this.chatProfileCoordinator = coordinator;
+    this.activeChatProfileId = chatId;
+    coordinator.setOnStateChanged((uiState: ChatProfileUiState): void => {
+      this.chatProfileUiState = uiState;
+    });
+    coordinator.start(chatId);
+    hilog.info(DOMAIN, TAG, 'chat profile coordinator started for chatId=%{public}s', `${chatId}`);
+  }
+
+  private closeChatProfile(): void {
+    if (this.chatProfileCoordinator !== null) {
+      this.chatProfileCoordinator.destroy();
+      this.chatProfileCoordinator = null;
+    }
+    this.activeChatProfileId = 0;
+  }
+
+  /** CONTACT-101：联系人页。 */
+  private openContacts(): void {
+    if (this.accountScope === null) {
+      return;
+    }
+    this.closeContacts();
+    const coordinator: ContactsCoordinator = new ContactsCoordinator(this.accountScope, {
+      logger: this.logger,
+      onOpenUserProfile: (userId: number): void => {
+        this.navController.navigateTo({ name: 'userProfile', userId: userId });
+      }
+    });
+    this.contactsCoordinator = coordinator;
+    this.unsubscribeContactsFn = coordinator.subscribe((uiState: ContactsUiState): void => {
+      this.contactsUiState = uiState;
+    });
+    coordinator.start();
+    hilog.info(DOMAIN, TAG, 'contacts coordinator started');
+  }
+
+  private closeContacts(): void {
+    if (this.unsubscribeContactsFn !== null) {
+      this.unsubscribeContactsFn();
+      this.unsubscribeContactsFn = null;
+    }
+    if (this.contactsCoordinator !== null) {
+      this.contactsCoordinator.destroy();
+      this.contactsCoordinator = null;
+    }
+  }
+
+  /** SELF-101：我的资料页。 */
+  private openSelfProfile(): void {
+    if (this.accountScope === null) {
+      return;
+    }
+    this.closeSelfProfile();
+    const coordinator: SelfProfileCoordinator = new SelfProfileCoordinator(this.accountScope, {
+      logger: this.logger
+    });
+    this.selfProfileCoordinator = coordinator;
+    this.unsubscribeSelfFn = coordinator.subscribe((uiState: SelfProfileUiState): void => {
+      this.selfProfileUiState = uiState;
+    });
+    coordinator.start();
+    hilog.info(DOMAIN, TAG, 'self profile coordinator started');
+  }
+
+  private closeSelfProfile(): void {
+    if (this.unsubscribeSelfFn !== null) {
+      this.unsubscribeSelfFn();
+      this.unsubscribeSelfFn = null;
+    }
+    if (this.selfProfileCoordinator !== null) {
+      this.selfProfileCoordinator.destroy();
+      this.selfProfileCoordinator = null;
+    }
+  }
+
+  /** DRAWER-101：拉一次当前账号信息（getMe）注入抽屉头部；MVP 不含头像下载。 */
+  private fetchDrawerAccount(): void {
+    if (this.accountScope === null || this.drawerAccountLoaded) {
+      return;
+    }
+    const req: GetMe = new GetMe();
+    const res: Result<TdPendingRequest, AppError> =
+      this.accountScope.request('getMe', encodeGetMe(req) as TdWireObject);
+    if (res.ok) {
+      res.value.promise.then((out: Result<TdWireObject, AppError>): void => {
+        if (out.ok) {
+          const me = decodeUser(out.value as TdJsonRaw);
+          if (me !== null) {
+            this.drawerAccountLoaded = true;
+            this.drawerAccountName = formatFullName(me);
+            this.drawerAccountPhone = me.phone_number !== null && me.phone_number !== undefined
+              ? me.phone_number
+              : '';
+            this.drawerAccountLetters = getAvatarLetters(me);
+          }
+        }
+      }).catch((): void => {
+      });
+    }
   }
 
   /**
@@ -734,6 +918,10 @@ struct Index {
         // PROFILE-101：群聊点头像 → 压栈用户资料页。
         onOpenUserProfile: (userId: number): void => {
           this.navController.navigateTo({ name: 'userProfile', userId: userId });
+        },
+        // PROFILE-102：群聊/频道点击标题 → 压栈群组/频道资料页。
+        onOpenChatProfile: (targetChatId: number): void => {
+          this.navController.navigateTo({ name: 'chatInfo', chatId: targetChatId });
         }
       }
     );
@@ -883,6 +1071,45 @@ struct Index {
             this.navController.pop();
           }
         })
+      } else if (this.currentRoute.name === 'contacts') {
+        ContactsPage({
+          uiState: this.contactsUiState,
+          onDispatch: (intent: ContactsIntent) => {
+            if (this.contactsCoordinator !== null) {
+              this.contactsCoordinator.dispatch(intent);
+            }
+          },
+          onBack: () => {
+            this.navController.pop();
+          },
+          // 双路径防双开：只走 coordinator 的 onOpenUserProfile 回调，此 prop 恒 no-op。
+          onOpenUserProfile: (): void => {
+          }
+        })
+      } else if (this.currentRoute.name === 'selfProfile') {
+        SelfProfilePage({
+          uiState: this.selfProfileUiState,
+          onDispatch: (intent: SelfProfileIntent) => {
+            if (this.selfProfileCoordinator !== null) {
+              this.selfProfileCoordinator.dispatch(intent);
+            }
+          },
+          onBack: () => {
+            this.navController.pop();
+          }
+        })
+      } else if (this.currentRoute.name === 'chatInfo') {
+        ChatProfilePage({
+          uiState: this.chatProfileUiState,
+          onDispatch: (intent: ChatProfileIntent) => {
+            if (this.chatProfileCoordinator !== null) {
+              this.chatProfileCoordinator.dispatch(intent);
+            }
+          },
+          onBack: () => {
+            this.navController.pop();
+          }
+        })
       } else if (this.currentRoute.name === 'home') {
         ChatListPage({
           uiState: this.chatListUiState,
@@ -894,6 +1121,29 @@ struct Index {
           },
           onOpenSearch: () => {
             this.navController.navigateTo({ name: 'search' });
+          },
+          // DRAWER-101：抽屉（账号头 getMe 注入；菜单项路由；夜间模式/账号切换占位）。
+          drawerState: new DrawerState(
+            this.drawerAccountName,
+            this.drawerAccountPhone,
+            null,
+            this.drawerAccountLetters,
+            false
+          ),
+          onDrawerItem: (item: string): void => {
+            if (item === 'settings') {
+              this.navController.navigateTo({ name: 'settings' });
+            } else if (item === 'contacts') {
+              this.navController.navigateTo({ name: 'contacts' });
+            } else {
+              hilog.info(DOMAIN, TAG, 'drawer item placeholder: %{public}s', item);
+            }
+          },
+          onDrawerNightModeChanged: (on: boolean): void => {
+            hilog.info(DOMAIN, TAG, 'drawer night mode placeholder=%{public}s', `${on}`);
+          },
+          onDrawerSwitchAccount: (): void => {
+            hilog.info(DOMAIN, TAG, 'drawer switch account placeholder');
           }
         })
       } else {

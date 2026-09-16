@@ -56,6 +56,8 @@ export type RouteName =
   | 'chat'
   | 'chatInfo'
   | 'userProfile'
+  | 'contacts'
+  | 'selfProfile'
   | 'settings'
   | 'settingsSection'
   | 'search'
@@ -98,6 +100,16 @@ export interface UserProfileRoute {
   readonly userId: number;
 }
 
+/** DRAWER-101：联系人列表页路由。 */
+export interface ContactsRoute {
+  readonly name: 'contacts';
+}
+
+/** SELF-101：我的资料页路由。 */
+export interface SelfProfileRoute {
+  readonly name: 'selfProfile';
+}
+
 export interface SettingsRoute {
   readonly name: 'settings';
 }
@@ -126,6 +138,8 @@ export type AppRoute =
   | ChatRoute
   | ChatInfoRoute
   | UserProfileRoute
+  | ContactsRoute
+  | SelfProfileRoute
   | SettingsRoute
   | SettingsSectionRoute
   | SearchRoute
@@ -193,6 +207,8 @@ export const ROUTE_DEFINITIONS: RouteDefinition[] = [
     pathTemplate: 'userProfile/{userId}',
     params: [spec('userId', 'int', true, 1)]
   },
+  { name: 'contacts', pathTemplate: 'contacts', params: [] },
+  { name: 'selfProfile', pathTemplate: 'selfProfile', params: [] },
   { name: 'settings', pathTemplate: 'settings', params: [] },
   {
     name: 'settingsSection',

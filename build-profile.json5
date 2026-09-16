@@ -273,6 +273,30 @@
       ]
     },
     {
+      "name": "feature_contact",
+      "srcPath": "./feature/contact",
+      "targets": [
+        {
+          "name": "default",
+          "applyToProducts": [
+            "default"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "feature_self",
+      "srcPath": "./feature/self",
+      "targets": [
+        {
+          "name": "default",
+          "applyToProducts": [
+            "default"
+          ]
+        }
+      ]
+    },
+    {
       "name": "feature_profile",
       "srcPath": "./feature/profile",
       "targets": [
