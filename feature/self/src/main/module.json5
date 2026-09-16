@@ -1,0 +1,10 @@
+{
+  "module": {
+    "name": "feature_self",
+    "type": "har",
+    "deviceTypes": [
+      "default",
+      "tablet"
+    ]
+  }
+}
