@@ -4,6 +4,7 @@ import messageProjectionTest from './chat/MessageProjection.test';
 import fileRegistryTest from './file/FileRegistry.test';
 import fileStoreTest from './file/FileStore.test';
 import userRegistryTest from './user/UserRegistry.test';
+import groupRegistryTest from './group/GroupRegistry.test';
 
 export default function testsuite() {
   chatRegistryTest();
@@ -12,4 +13,5 @@ export default function testsuite() {
   fileRegistryTest();
   fileStoreTest();
   userRegistryTest();
+  groupRegistryTest();
 }

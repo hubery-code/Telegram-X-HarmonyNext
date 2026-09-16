@@ -3,3 +3,4 @@ export * from './chatlist/ChatListProjection';
 export * from './chat/MessageProjection';
 export * from './file/Index';
 export * from './user/Index';
+export * from './group/Index';
