@@ -64,31 +64,30 @@
 | NOTIF-101 | AGC 配置 | Push Kit token → RegisterDevice 闭环（FEAT-PUSH-001；AGC/签名配置需用户确认） |
 | NOTIF-102 | NOTIF-101 | 通知聚合 + 点击路由直达聊天（FEAT-PUSH-002） |
 
-### 官方 Telegram 对齐缺口（2026-09-16 用户截图盘点，优先级↑）
+### TGX 对齐缺口（2026-09-16 用户实拍 TGX Android 截图×19 盘点，优先级↑）
 
-> 来源：用户提供的 7 张官方 Telegram（HarmonyOS 版）实拍截图 vs 本工程已实现页面对比。
-> 映射到 FEATURE_MATRIX：`~` = 矩阵未单列的新增工作包；其余为矩阵行提升。
+> **基准更正**：此前一版按"官方 Telegram（HarmonyOS 版）"截图的盘点**作废**（官方版是底部 Tab，
+> TGX 是抽屉导航；对齐基准一律以 Telegram-X Android 工程 `org.thunderdog.challegram` 的
+> UI + 代码为准，截图仅为辅助）。下表已按 TGX 重排。
 
-| 顺序 | 工作包 | 对齐截图 | 矩阵映射 | 一句话 | 依赖 | 并行泳道 |
+| 顺序 | 工作包 | TGX 截图对标 | TGX 代码参考 | 一句话 | 依赖 | 并行泳道 |
 |---|---|---|---|---|---|---|
-| 1 | PROFILE-102 | 群标题区（成员数/在线数）+ 点标题进资料 | FEAT-P2-002↑ | 群/频道资料页：头像/名称/描述/成员数/成员列表第一页（点成员→PROFILE-101 用户资料）/邀请链接占位 | PROFILE-101（已 Accepted） | **A（现在可开）**：全新增文件（ChatProfilePage/ChatProfileCoordinator/contract 新文件 + core/domain 新 ChatFullInfo 提供者）；唯一共享面是 `ChatPage.ets` 标题 onClick 一行——由泳道 A 先落，或交由泳道 C 代加 |
-| 2 | PROFILE-103 | 资料页：通话/静音/视频 pills、共同频道/群组区、生日、位置、QR 图标、添加联系人、emoji 状态 | FEAT-P2-001/009↑ | 用户资料页增强（通话/视频 disabled 占位，等 P3；生日/位置来自 UserFullInfo） | PROFILE-101 | **B（现在可开，与 A 完全并行）**：只改 `feature/profile` 现有文件（ProfilePage/ProfileCoordinator），不进 entry、不碰 ChatPage |
-| 3 | MSG-109 | 私聊头部"最近曾上线"+📞+⋮；群头部"N 位成员, M 在线" | FEAT-MSG-001/002 增强~ | 聊天页头部信息区：私聊在线状态副标题+通话/菜单入口（通话占位 disabled）、群聊成员/在线数副标题 | 无 | **C（串行链头）**：改 `ChatPage.ets` Header + `ChatUiState`/`ChatCoordinator`，与 A/B 并行 OK，但同链内 MSG-108/CHANNEL-101 必须等它（共享 ChatPage/Coordinator 文件） |
-| 4 | MSG-108 | 置顶消息横条（带关闭） | FEAT-P2-003↑ | 会话内 pinned message 展示条（getChat.pinned_message），点击跳到该消息 | 无（实现上排 C 链第二） | **C（串行，接 MSG-109 后）** |
-| 5 | CHANNEL-101 | 频道"加入"按钮、底部搜索/静音/礼物栏、"6 条评论" | FEAT-P2-002↑ | 非成员频道访客模式：底部栏替换输入栏（搜索/静音占位/加入按钮）；评论 chip 占位 | PROFILE-102 | **C（串行，第三）** |
-| 6 | CONTACT-101 | Tab"联系人"页 | FEAT-P2-001↑ | GetContacts 联系人列表（字母排序/搜索）→ 点进 PROFILE-101 资料/发起私聊 | TAB-101（仅集成依赖） | **D（页面开发现在可开，与 A/B/C 并行）**：新 feature/contact 模块（新文件）；Tab 集成等 TAB-101 |
-| 7 | TAB-101 | 底部 Tab：聊天/联系人/设置/个人资料 | FEAT-UI-004（P1） | entry home 分支加底部 Tab 容器；设置/我的资料从 Tab 进 | ⚠️ 等 chat_list 在途改动落定 | **E（最后）**：集成枢纽，`entry/Index.ets` 的唯一归属者——各包 entry 接线由对应泳道写好后，E 只做 Tab 容器 |
+| 1 | PROFILE-103 | 资料页×6：共享媒体 Tab（媒体/文件/链接/群组）+ ⋮ 菜单（开始私密聊天/分享联系人/屏蔽/隐私例外/重命名/删除）+ 通知行 + 封面大图头部 | `ui/ProfileController.java`（6816 行，含 SharedMedia） | 用户资料页增强：四 Tab 共享内容列表（复用搜索/下载设施）、头部菜单、通知行、生日/emoji 状态；通话/视频 disabled 占位 | PROFILE-101（已 Accepted） | **A（现在可开）**：只动 feature/profile |
+| 2 | PROFILE-102 | 群标题点按 → 群资料（成员列表/描述/共享媒体） | `ProfileController.Args(chat)`、`ui/ChatLinksController.java` | 群/频道资料页：分流 ChatProfile（成员列表第一页 getSupergroupMembers，点成员→PROFILE-101 资料页） | PROFILE-103 同泳道顺序做（同模块） | **A（第二阶段）** |
+| 3 | MSG-109 | 聊天头部×6：私聊"最近在线"副标题、群"N 位成员, M 在线"、频道"N 位订阅者"、bot"服务通知"；头部 ⋮ 菜单（搜索/静音/清空历史/删除聊天；群版：举报/退出群组）；📞 通话入口（占位） | `ui/MessagesController.java`（openChatProfile/search 菜单） | 聊天页头部信息区：类型化副标题 + 聊天级 ⋮ 菜单 + 群标题点按进资料页（发 OpenChatProfile） | 无 | **B（串行链头，现在可开）** |
+| 4 | MSG-108 | 置顶消息横条（彩条+发送者+内容+展开∨+✕） | `MessagesController.java`（pinned message 渲染） | 会话内 pinned message 展示条，点击跳原消息、✕ 收起 | 无 | **B（第二）** |
+| 5 | CHANNEL-101 | 频道：帖子无气泡、反应 chips（🔥9 ❤1）、"6 条评论"+头像堆叠→评论页、"加入聊天"按钮 | `MessagesController.java`（channel 模式/comments） | 频道模式：非成员隐藏输入栏→加入按钮；评论入口；反应 chips 占位 | MSG-109 | **B（第三）** |
+| 6 | DRAWER-101 | 抽屉×2：≡ 账号头（头像/名/手机/账号切换⌄）、联系人/通话/我的收藏/设置(红铃)/邀请朋友/帮助、夜间模式开关 | `navigation/DrawerController.java` | 会话列表页改 TGX 抽屉导航（替换现 ⚙ 直进设置） | ⚠️ 等 chat_list 在途 WIP 落定 | **C（最后，集成枢纽）** |
+| 7 | CONTACT-101 | 抽屉"联系人"页 | `ui/ContactsController.java` | GetContacts 列表（字母序/搜索）→ 点人进 PROFILE-101 资料/发消息 | DRAWER-101（仅集成） | **D（页面开发现在可开，新模块并行）** |
+| 8 | SELF-101 | 我的资料×1：绿头+编辑 FAB+@username/手机/生日/bio+设备/通知/数据/隐私入口 | `ProfileController.Args(自己)`（editMode） | "我的资料"页（先只读+编辑占位 FAB） | DRAWER-101（仅集成） | **D（新页面，可并行开发）** |
 
 **并行规则（认领前必读）**：
-- 可立即并行：**泳道 A（PROFILE-102）＋ 泳道 B（PROFILE-103）＋ 泳道 C（MSG-109）＋ 泳道 D 的页面开发（CONTACT-101）**——四者文件面基本不相交（A 全新增、B 只在 feature/profile、C 只在 feature/chat、D 全新模块）。
-- `entry/Index.ets` 是共享集成文件：各泳道只加自己的路由分支，**禁止重构无关代码**；冲突时后合并者负责 rebase。
-- `ChatPage.ets`：泳道 A 只准加"标题 onClick 一行"；头部布局归泳道 C。若两泳道同帧并行，标题 onClick 由泳道 C 代加。
-- 泳道 C 内部（MSG-109→MSG-108→CHANNEL-101）**严格串行**（同文件演进）；若要给第三个 agent，只整链移交。
-- 泳道 E（TAB-101）**等 chat_list 在途 WIP 提交后**再开工，否则必撞车。
-
-**明确不现在做**：语音/视频通话（FEAT-P3-001/002，tgcalls 大工程，ADR-004 Deferred）；
-Push（FEAT-PUSH-001/002，Blocked 待用户配 AGC）；Stories（P3）；反应/投票（MSG-109 之后按序）；
-礼物（P3 商业功能）；深链 tg://（P2-010 维持）。
+- 可立即并行：**泳道 A（PROFILE-103）＋ 泳道 B（MSG-109 起）＋ 泳道 D 的 CONTACT-101/SELF-101 页面开发**。
+- 泳道 B 内部（MSG-109→MSG-108→CHANNEL-101）**严格串行**（同文件演进）；移交须整链。
+- 泳道 A 内部（PROFILE-103→PROFILE-102）串行；A 与 B 唯一共享面是 `ChatPage.ets` 群标题 onClick（一行）——若并行撞车由泳道 B 代加。
+- `entry/Index.ets` 共享：各泳道只加自己分支；**DRAWER-101（泳道 C）最后动工**且是 entry home 唯一改造者。
+- 后续独立小包（未排序）：REACT-101 消息反应（TDLib `addMessageReaction`，TGX `ReactionComponent`）；
+  EMOJI-101 composer emoji 面板（TGX `EmojiBoard`，工作量大，P2-004 内）；通话 P3 不提前。
 
 ### P2 及以后（Phase 5 Beta，暂不拆包）
 
