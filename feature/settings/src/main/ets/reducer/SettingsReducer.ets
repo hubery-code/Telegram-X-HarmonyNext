@@ -18,6 +18,8 @@ import {
   ChangeThemeMode,
   CloseAccountSwitcher,
   LoadNotificationSettings,
+  NotificationScopeUpdated,
+  NotificationScopeUpdateFailed,
   NotificationSettingsLoaded,
   NotificationSettingsUpdated,
   NotificationSettingsUpdateFailed,
@@ -29,7 +31,8 @@ import {
   SetLanguage,
   SettingsIntent,
   StorageStatsLoaded,
-  SwitchAccount
+  SwitchAccount,
+  ToggleNotificationScope
 } from '../contract/SettingsIntent';
 import {
   ClearCacheEffect,
@@ -40,9 +43,21 @@ import {
   RequestAddAccountEffect,
   SettingsEffect,
   ShowToastEffect,
+  SetNotificationScopeEnabledEffect,
   SetNotificationsEnabledEffect,
   SwitchAccountEffect
 } from '../contract/SettingsEffect';
+import { NotificationScopeKey } from '../model/NotificationSettings';
+
+function notificationScopeEnabled(state: SettingsUiState, scope: NotificationScopeKey): boolean {
+  if (scope === 'private') {
+    return state.privateNotificationsEnabled;
+  }
+  if (scope === 'group') {
+    return state.groupNotificationsEnabled;
+  }
+  return state.channelNotificationsEnabled;
+}
 
 export const settingsReducer: Reducer<SettingsUiState, SettingsIntent, SettingsEffect> = (
   state: SettingsUiState,
@@ -80,7 +95,7 @@ export const settingsReducer: Reducer<SettingsUiState, SettingsIntent, SettingsE
     }
 
     case 'toggleNotifications': {
-      if (state.isUpdatingNotifications) {
+      if (state.isUpdatingNotifications || state.updatingNotificationScope !== null) {
         return reduced(state);
       }
       const nextEnabled: boolean = !state.notificationsEnabled;
@@ -93,6 +108,22 @@ export const settingsReducer: Reducer<SettingsUiState, SettingsIntent, SettingsE
       return reduced(nextState, effects);
     }
 
+    case 'toggleNotificationScope': {
+      if (state.isUpdatingNotifications || state.updatingNotificationScope !== null) {
+        return reduced(state);
+      }
+      const scopeIntent: ToggleNotificationScope = intent as ToggleNotificationScope;
+      const nextEnabled: boolean = !notificationScopeEnabled(state, scopeIntent.scope);
+      const options: SettingsUiStateOptions = {
+        updatingNotificationScope: scopeIntent.scope,
+        errorMessage: null
+      };
+      const effects: readonly SettingsEffect[] = [
+        new SetNotificationScopeEnabledEffect(scopeIntent.scope, nextEnabled)
+      ];
+      return reduced(state.copyWith(options), effects);
+    }
+
     case 'loadNotificationSettings': {
       const effects: readonly SettingsEffect[] = [new LoadNotificationSettingsEffect()];
       return reduced(state, effects);
@@ -102,7 +133,11 @@ export const settingsReducer: Reducer<SettingsUiState, SettingsIntent, SettingsE
       const loadedIntent: NotificationSettingsLoaded = intent as NotificationSettingsLoaded;
       const options: SettingsUiStateOptions = {
         notificationsEnabled: loadedIntent.enabled,
-        isUpdatingNotifications: false
+        privateNotificationsEnabled: loadedIntent.privateEnabled,
+        groupNotificationsEnabled: loadedIntent.groupEnabled,
+        channelNotificationsEnabled: loadedIntent.channelEnabled,
+        isUpdatingNotifications: false,
+        updatingNotificationScope: null
       };
       return reduced(state.copyWith(options));
     }
@@ -111,7 +146,11 @@ export const settingsReducer: Reducer<SettingsUiState, SettingsIntent, SettingsE
       const updatedIntent: NotificationSettingsUpdated = intent as NotificationSettingsUpdated;
       const options: SettingsUiStateOptions = {
         notificationsEnabled: updatedIntent.enabled,
+        privateNotificationsEnabled: updatedIntent.enabled,
+        groupNotificationsEnabled: updatedIntent.enabled,
+        channelNotificationsEnabled: updatedIntent.enabled,
         isUpdatingNotifications: false,
+        updatingNotificationScope: null,
         errorMessage: null
       };
       const message: string = updatedIntent.enabled ? 'Notifications enabled' : 'Notifications disabled';
@@ -119,10 +158,43 @@ export const settingsReducer: Reducer<SettingsUiState, SettingsIntent, SettingsE
       return reduced(state.copyWith(options), effects);
     }
 
+    case 'notificationScopeUpdated': {
+      const updatedIntent: NotificationScopeUpdated = intent as NotificationScopeUpdated;
+      let privateEnabled: boolean = state.privateNotificationsEnabled;
+      let groupEnabled: boolean = state.groupNotificationsEnabled;
+      let channelEnabled: boolean = state.channelNotificationsEnabled;
+      if (updatedIntent.scope === 'private') {
+        privateEnabled = updatedIntent.enabled;
+      } else if (updatedIntent.scope === 'group') {
+        groupEnabled = updatedIntent.enabled;
+      } else {
+        channelEnabled = updatedIntent.enabled;
+      }
+      const options: SettingsUiStateOptions = {
+        notificationsEnabled: privateEnabled && groupEnabled && channelEnabled,
+        privateNotificationsEnabled: privateEnabled,
+        groupNotificationsEnabled: groupEnabled,
+        channelNotificationsEnabled: channelEnabled,
+        updatingNotificationScope: null,
+        errorMessage: null
+      };
+      return reduced(state.copyWith(options));
+    }
+
     case 'notificationSettingsUpdateFailed': {
       const failedIntent: NotificationSettingsUpdateFailed = intent as NotificationSettingsUpdateFailed;
       const options: SettingsUiStateOptions = {
         isUpdatingNotifications: false,
+        updatingNotificationScope: null,
+        errorMessage: failedIntent.errorMessage
+      };
+      return reduced(state.copyWith(options));
+    }
+
+    case 'notificationScopeUpdateFailed': {
+      const failedIntent: NotificationScopeUpdateFailed = intent as NotificationScopeUpdateFailed;
+      const options: SettingsUiStateOptions = {
+        updatingNotificationScope: null,
         errorMessage: failedIntent.errorMessage
       };
       return reduced(state.copyWith(options));

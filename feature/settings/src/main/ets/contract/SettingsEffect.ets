@@ -8,6 +8,7 @@
  */
 
 import { Effect } from '@tgx/feature-template';
+import { NotificationScopeKey } from '../model/NotificationSettings';
 
 export class LoadProfileEffect implements Effect {
   readonly kind: 'loadProfile' = 'loadProfile';
@@ -22,6 +23,17 @@ export class SetNotificationsEnabledEffect implements Effect {
   readonly enabled: boolean;
 
   constructor(enabled: boolean) {
+    this.enabled = enabled;
+  }
+}
+
+export class SetNotificationScopeEnabledEffect implements Effect {
+  readonly kind: 'setNotificationScopeEnabled' = 'setNotificationScopeEnabled';
+  readonly scope: NotificationScopeKey;
+  readonly enabled: boolean;
+
+  constructor(scope: NotificationScopeKey, enabled: boolean) {
+    this.scope = scope;
     this.enabled = enabled;
   }
 }
@@ -69,6 +81,7 @@ export type SettingsEffect =
   | LoadProfileEffect
   | LoadNotificationSettingsEffect
   | SetNotificationsEnabledEffect
+  | SetNotificationScopeEnabledEffect
   | LogoutEffect
   | ClearCacheEffect
   | LoadStorageStatsEffect

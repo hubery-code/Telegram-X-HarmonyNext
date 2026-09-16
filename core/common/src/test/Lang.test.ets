@@ -120,7 +120,11 @@ export default function langTest(): void {
         'Search': '搜索',
         'Send': '发送',
         'Photos': '照片',
-        'Files': '文件'
+        'Files': '文件',
+        'All Notifications': '全部通知',
+        'Private Chats': '私聊',
+        'Group Chats': '群组',
+        'Channels': '频道'
       };
 
       const keys: string[] = Object.keys(requiredEntries);

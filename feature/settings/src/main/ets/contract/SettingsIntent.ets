@@ -9,6 +9,7 @@
 import { Intent } from '@tgx/feature-template';
 import { LanguagePreference } from '@tgx/core-common';
 import { SettingsThemeMode } from './SettingsUiState';
+import { NotificationScopeKey } from '../model/NotificationSettings';
 
 export interface UserProfileData {
   readonly userId: number;
@@ -27,6 +28,15 @@ export class ToggleNotifications implements Intent {
   readonly kind: 'toggleNotifications' = 'toggleNotifications';
 }
 
+export class ToggleNotificationScope implements Intent {
+  readonly kind: 'toggleNotificationScope' = 'toggleNotificationScope';
+  readonly scope: NotificationScopeKey;
+
+  constructor(scope: NotificationScopeKey) {
+    this.scope = scope;
+  }
+}
+
 export class LoadNotificationSettings implements Intent {
   readonly kind: 'loadNotificationSettings' = 'loadNotificationSettings';
 }
@@ -34,9 +44,15 @@ export class LoadNotificationSettings implements Intent {
 export class NotificationSettingsLoaded implements Intent {
   readonly kind: 'notificationSettingsLoaded' = 'notificationSettingsLoaded';
   readonly enabled: boolean;
+  readonly privateEnabled: boolean;
+  readonly groupEnabled: boolean;
+  readonly channelEnabled: boolean;
 
-  constructor(enabled: boolean) {
+  constructor(enabled: boolean, privateEnabled: boolean, groupEnabled: boolean, channelEnabled: boolean) {
     this.enabled = enabled;
+    this.privateEnabled = privateEnabled;
+    this.groupEnabled = groupEnabled;
+    this.channelEnabled = channelEnabled;
   }
 }
 
@@ -54,6 +70,28 @@ export class NotificationSettingsUpdateFailed implements Intent {
   readonly errorMessage: string;
 
   constructor(errorMessage: string) {
+    this.errorMessage = errorMessage;
+  }
+}
+
+export class NotificationScopeUpdated implements Intent {
+  readonly kind: 'notificationScopeUpdated' = 'notificationScopeUpdated';
+  readonly scope: NotificationScopeKey;
+  readonly enabled: boolean;
+
+  constructor(scope: NotificationScopeKey, enabled: boolean) {
+    this.scope = scope;
+    this.enabled = enabled;
+  }
+}
+
+export class NotificationScopeUpdateFailed implements Intent {
+  readonly kind: 'notificationScopeUpdateFailed' = 'notificationScopeUpdateFailed';
+  readonly scope: NotificationScopeKey;
+  readonly errorMessage: string;
+
+  constructor(scope: NotificationScopeKey, errorMessage: string) {
+    this.scope = scope;
     this.errorMessage = errorMessage;
   }
 }
@@ -184,10 +222,13 @@ export class SetAvailableAccounts implements Intent {
 export type SettingsIntent =
   | LoadUserProfile
   | ToggleNotifications
+  | ToggleNotificationScope
   | LoadNotificationSettings
   | NotificationSettingsLoaded
   | NotificationSettingsUpdated
   | NotificationSettingsUpdateFailed
+  | NotificationScopeUpdated
+  | NotificationScopeUpdateFailed
   | ChangeThemeMode
   | ChangeLanguage
   | SetLanguage

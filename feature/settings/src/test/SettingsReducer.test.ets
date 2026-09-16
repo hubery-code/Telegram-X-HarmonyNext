@@ -14,6 +14,8 @@ import {
   LoadNotificationSettings,
   LoadStorageStats,
   LoadUserProfile,
+  NotificationScopeUpdated,
+  NotificationScopeUpdateFailed,
   NotificationSettingsLoaded,
   NotificationSettingsUpdated,
   NotificationSettingsUpdateFailed,
@@ -26,6 +28,7 @@ import {
   SetLanguage,
   StorageStatsLoaded,
   SwitchAccount,
+  ToggleNotificationScope,
   ToggleNotifications,
   UserProfileData
 } from '../main/ets/contract/SettingsIntent';
@@ -36,6 +39,7 @@ import {
   LoadStorageStatsEffect,
   LogoutEffect,
   RequestAddAccountEffect,
+  SetNotificationScopeEnabledEffect,
   SetNotificationsEnabledEffect,
   ShowToastEffect,
   SwitchAccountEffect
@@ -61,7 +65,11 @@ export default function settingsReducerTest(): void {
       expect(state.avatarLocalPath).assertNull();
       expect(state.bio).assertEqual('');
       expect(state.notificationsEnabled).assertTrue();
+      expect(state.privateNotificationsEnabled).assertTrue();
+      expect(state.groupNotificationsEnabled).assertTrue();
+      expect(state.channelNotificationsEnabled).assertTrue();
       expect(state.isUpdatingNotifications).assertTrue();
+      expect(state.updatingNotificationScope).assertNull();
       expect(state.storageCacheSize).assertEqual('0 B');
       expect(state.themeMode).assertEqual('system');
       expect(state.appVersion).assertEqual('1.0.0');
@@ -152,9 +160,16 @@ export default function settingsReducerTest(): void {
 
     it('notificationSettingsLoaded_reflectsAllScopeState', 0, () => {
       const state = SettingsUiState.initial();
-      const result = settingsReducer(state, new NotificationSettingsLoaded(false), makeEnv());
+      const result = settingsReducer(
+        state,
+        new NotificationSettingsLoaded(false, true, false, true),
+        makeEnv()
+      );
 
       expect(result.state.notificationsEnabled).assertFalse();
+      expect(result.state.privateNotificationsEnabled).assertTrue();
+      expect(result.state.groupNotificationsEnabled).assertFalse();
+      expect(result.state.channelNotificationsEnabled).assertTrue();
       expect(result.state.isUpdatingNotifications).assertFalse();
       expect(result.effects.length).assertEqual(0);
     });
@@ -167,6 +182,9 @@ export default function settingsReducerTest(): void {
       const result = settingsReducer(state, new NotificationSettingsUpdated(false), makeEnv());
 
       expect(result.state.notificationsEnabled).assertFalse();
+      expect(result.state.privateNotificationsEnabled).assertFalse();
+      expect(result.state.groupNotificationsEnabled).assertFalse();
+      expect(result.state.channelNotificationsEnabled).assertFalse();
       expect(result.state.isUpdatingNotifications).assertFalse();
       expect(result.effects.length).assertEqual(1);
       expect((result.effects[0] as ShowToastEffect).message).assertEqual('Notifications disabled');
@@ -182,6 +200,52 @@ export default function settingsReducerTest(): void {
 
       expect(result.state.notificationsEnabled).assertTrue();
       expect(result.state.isUpdatingNotifications).assertFalse();
+      expect(result.state.errorMessage).assertEqual('Unable to update notification settings.');
+      expect(result.effects.length).assertEqual(0);
+    });
+
+    it('toggleNotificationScope_waitsForTdlibAndTargetsOneScope', 0, () => {
+      const state = SettingsUiState.initial().copyWith({ isUpdatingNotifications: false });
+      const result = settingsReducer(state, new ToggleNotificationScope('group'), makeEnv());
+
+      expect(result.state.groupNotificationsEnabled).assertTrue();
+      expect(result.state.updatingNotificationScope).assertEqual('group');
+      expect(result.effects.length).assertEqual(1);
+      const effect: SetNotificationScopeEnabledEffect =
+        result.effects[0] as SetNotificationScopeEnabledEffect;
+      expect(effect.kind).assertEqual('setNotificationScopeEnabled');
+      expect(effect.scope).assertEqual('group');
+      expect(effect.enabled).assertFalse();
+    });
+
+    it('notificationScopeUpdated_updatesAggregateState', 0, () => {
+      const state = SettingsUiState.initial().copyWith({
+        isUpdatingNotifications: false,
+        updatingNotificationScope: 'private'
+      });
+      const result = settingsReducer(state, new NotificationScopeUpdated('private', false), makeEnv());
+
+      expect(result.state.privateNotificationsEnabled).assertFalse();
+      expect(result.state.groupNotificationsEnabled).assertTrue();
+      expect(result.state.channelNotificationsEnabled).assertTrue();
+      expect(result.state.notificationsEnabled).assertFalse();
+      expect(result.state.updatingNotificationScope).assertNull();
+      expect(result.effects.length).assertEqual(0);
+    });
+
+    it('notificationScopeUpdateFailed_preservesScopeAndUnlocksControls', 0, () => {
+      const state = SettingsUiState.initial().copyWith({
+        isUpdatingNotifications: false,
+        updatingNotificationScope: 'channel'
+      });
+      const result = settingsReducer(
+        state,
+        new NotificationScopeUpdateFailed('channel', 'Unable to update notification settings.'),
+        makeEnv()
+      );
+
+      expect(result.state.channelNotificationsEnabled).assertTrue();
+      expect(result.state.updatingNotificationScope).assertNull();
       expect(result.state.errorMessage).assertEqual('Unable to update notification settings.');
       expect(result.effects.length).assertEqual(0);
     });

@@ -1,6 +1,7 @@
 import { ScopeNotificationSettings } from '@tgx/core-td-api-generated';
 
 export const NOTIFICATIONS_MUTED_FOREVER_SECONDS: number = 2147483647;
+export type NotificationScopeKey = 'private' | 'group' | 'channel';
 
 /**
  * Copy one TDLib scope setting while changing only the global mute duration.
@@ -34,4 +35,8 @@ export function areNotificationsEnabled(settings: readonly ScopeNotificationSett
     }
   }
   return true;
+}
+
+export function isNotificationScopeEnabled(settings: ScopeNotificationSettings): boolean {
+  return settings.mute_for <= 0;
 }

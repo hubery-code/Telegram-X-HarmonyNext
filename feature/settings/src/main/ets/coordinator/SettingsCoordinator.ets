@@ -56,12 +56,19 @@ import { TdPendingRequest, TdWireObject } from '@tgx/td-gateway';
 import { ReducerEnv, ReducerResult } from '@tgx/feature-template';
 import { SettingsUiState } from '../contract/SettingsUiState';
 import { formatStorageLabel } from '../model/StorageSize';
-import { areNotificationsEnabled, withNotificationsEnabled } from '../model/NotificationSettings';
+import {
+  NotificationScopeKey,
+  areNotificationsEnabled,
+  isNotificationScopeEnabled,
+  withNotificationsEnabled
+} from '../model/NotificationSettings';
 import {
   CacheCleared,
   LoadNotificationSettings,
   LoadStorageStats,
   LoadUserProfile,
+  NotificationScopeUpdated,
+  NotificationScopeUpdateFailed,
   NotificationSettingsLoaded,
   NotificationSettingsUpdated,
   NotificationSettingsUpdateFailed,
@@ -81,6 +88,7 @@ import {
   NavigateToAuthEffect,
   RequestAddAccountEffect,
   SettingsEffect,
+  SetNotificationScopeEnabledEffect,
   SetNotificationsEnabledEffect,
   ShowToastEffect,
   SwitchAccountEffect
@@ -257,6 +265,12 @@ export class SettingsCoordinator {
       case 'setNotificationsEnabled': {
         const notificationEffect: SetNotificationsEnabledEffect = effect as SetNotificationsEnabledEffect;
         this.handleSetNotificationsEnabled(notificationEffect.enabled);
+        break;
+      }
+
+      case 'setNotificationScopeEnabled': {
+        const scopeEffect: SetNotificationScopeEnabledEffect = effect as SetNotificationScopeEnabledEffect;
+        this.handleSetNotificationScopeEnabled(scopeEffect.scope, scopeEffect.enabled);
         break;
       }
 
@@ -562,7 +576,12 @@ export class SettingsCoordinator {
       }
       if (result.ok) {
         this.notificationScopeSettings = result.value;
-        this.dispatch(new NotificationSettingsLoaded(areNotificationsEnabled(result.value)));
+        this.dispatch(new NotificationSettingsLoaded(
+          areNotificationsEnabled(result.value),
+          isNotificationScopeEnabled(result.value[0]),
+          isNotificationScopeEnabled(result.value[1]),
+          isNotificationScopeEnabled(result.value[2])
+        ));
         return;
       }
       if (result.err) {
@@ -590,6 +609,82 @@ export class SettingsCoordinator {
 
   private handleSetNotificationsEnabled(enabled: boolean): void {
     this.setNotificationsEnabled(enabled);
+  }
+
+  private notificationScopeIndex(scope: NotificationScopeKey): number {
+    if (scope === 'private') {
+      return 0;
+    }
+    if (scope === 'group') {
+      return 1;
+    }
+    return 2;
+  }
+
+  private handleSetNotificationScopeEnabled(scope: NotificationScopeKey, enabled: boolean): void {
+    this.setNotificationScopeEnabled(scope, enabled);
+  }
+
+  private async setNotificationScopeEnabled(scope: NotificationScopeKey, enabled: boolean): Promise<void> {
+    try {
+      let currentSettings: ScopeNotificationSettings[] = this.notificationScopeSettings;
+      if (currentSettings.length !== 3) {
+        const loadResult: Result<ScopeNotificationSettings[], AppError> =
+          await this.fetchAllNotificationSettings();
+        if (loadResult.ok) {
+          currentSettings = loadResult.value;
+        }
+        if (loadResult.err) {
+          if (!this.destroyed) {
+            this.logger.logError(TAG, loadResult.error);
+            this.dispatch(new NotificationScopeUpdateFailed(
+              scope,
+              this.notificationErrorMessage(loadResult.error, 'update')
+            ));
+          }
+          return;
+        }
+      }
+
+      const index: number = this.notificationScopeIndex(scope);
+      const next: ScopeNotificationSettings = withNotificationsEnabled(currentSettings[index], enabled);
+      const writeResult: Result<void, AppError> =
+        await this.writeNotificationSettings(this.notificationScopes()[index], next);
+      if (writeResult.ok) {
+        if (this.destroyed) {
+          return;
+        }
+        const updatedSettings: ScopeNotificationSettings[] = [];
+        for (let i = 0; i < currentSettings.length; i++) {
+          updatedSettings.push(i === index ? next : currentSettings[i]);
+        }
+        this.notificationScopeSettings = updatedSettings;
+        this.dispatch(new NotificationScopeUpdated(scope, enabled));
+        return;
+      }
+      if (writeResult.err && !this.destroyed) {
+        this.logger.logError(TAG, writeResult.error);
+        this.dispatch(new NotificationScopeUpdateFailed(
+          scope,
+          this.notificationErrorMessage(writeResult.error, 'update')
+        ));
+      }
+    } catch (e) {
+      if (this.destroyed) {
+        return;
+      }
+      const cause: string = e instanceof Error ? e.name : 'non-error';
+      const error: AppError = AppErrors.unknown(
+        'settings-notification-scope-update',
+        'Unexpected notification scope update failure',
+        cause
+      );
+      this.logger.logError(TAG, error);
+      this.dispatch(new NotificationScopeUpdateFailed(
+        scope,
+        this.notificationErrorMessage(error, 'update')
+      ));
+    }
   }
 
   private async setNotificationsEnabled(enabled: boolean): Promise<void> {

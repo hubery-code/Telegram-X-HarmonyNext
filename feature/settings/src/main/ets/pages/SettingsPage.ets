@@ -26,8 +26,10 @@ import {
   SetErrorMessage,
   SettingsIntent,
   SwitchAccount,
+  ToggleNotificationScope,
   ToggleNotifications
 } from '../contract/SettingsIntent';
+import { NotificationScopeKey } from '../model/NotificationSettings';
 
 const AVATAR_SIZE: number = 64;
 const BACK_ARROW_SIZE: number = 44;
@@ -345,24 +347,58 @@ export struct SettingsPage {
 
   @Builder
   NotificationsCardView() {
-    Row() {
-      Text(this.t('Notifications'))
-        .fontSize(this.getTheme().typography.body.fontSize)
-        .fontColor(this.getTheme().colors.textPrimary)
-        .layoutWeight(1)
+    Column() {
+      Row() {
+        Text(this.t('All Notifications'))
+          .fontSize(this.getTheme().typography.body.fontSize)
+          .fontWeight(this.getTheme().typography.headline.fontWeight)
+          .fontColor(this.getTheme().colors.textPrimary)
+          .layoutWeight(1)
 
-      Toggle({ type: ToggleType.Switch, isOn: this.uiState.notificationsEnabled })
-        .enabled(!this.uiState.isUpdatingNotifications)
-        .onChange((isOn: boolean): void => {
-          if (isOn !== this.uiState.notificationsEnabled) {
-            this.onDispatch(new ToggleNotifications());
-          }
-        })
+        Toggle({ type: ToggleType.Switch, isOn: this.uiState.notificationsEnabled })
+          .enabled(!this.uiState.isUpdatingNotifications && this.uiState.updatingNotificationScope === null)
+          .onChange((isOn: boolean): void => {
+            if (isOn !== this.uiState.notificationsEnabled) {
+              this.onDispatch(new ToggleNotifications());
+            }
+          })
+      }
+      .width('100%')
+      .alignItems(VerticalAlign.Center)
+
+      Divider()
+        .color(this.getTheme().colors.divider)
+        .margin({ top: this.getTheme().spacing.sm, bottom: this.getTheme().spacing.xs })
+
+      this.NotificationScopeRow('Private Chats', 'private', this.uiState.privateNotificationsEnabled)
+      this.NotificationScopeRow('Group Chats', 'group', this.uiState.groupNotificationsEnabled)
+      this.NotificationScopeRow('Channels', 'channel', this.uiState.channelNotificationsEnabled)
     }
     .width('100%')
     .padding(this.getTheme().spacing.md)
     .backgroundColor(this.getTheme().colors.surface)
     .borderRadius(this.getTheme().radius.md)
+  }
+
+  @Builder
+  NotificationScopeRow(labelKey: string, scope: NotificationScopeKey, enabled: boolean) {
+    Row() {
+      Text(this.t(labelKey))
+        .fontSize(this.getTheme().typography.subheadline.fontSize)
+        .fontColor(this.getTheme().colors.textPrimary)
+        .layoutWeight(1)
+
+      Toggle({ type: ToggleType.Switch, isOn: enabled })
+        .enabled(!this.uiState.isUpdatingNotifications && this.uiState.updatingNotificationScope === null)
+        .onChange((isOn: boolean): void => {
+          if (isOn !== enabled) {
+            this.onDispatch(new ToggleNotificationScope(scope));
+          }
+        })
+    }
+    .width('100%')
+    .height(40)
+    .alignItems(VerticalAlign.Center)
   }
 
   @Builder

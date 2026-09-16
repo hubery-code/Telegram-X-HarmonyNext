@@ -10,6 +10,7 @@
 import { UiState } from '@tgx/feature-template';
 import { ThemePreference } from '@tgx/core-design-system';
 import { LanguagePreference } from '@tgx/core-common';
+import { NotificationScopeKey } from '../model/NotificationSettings';
 
 export type SettingsThemeMode = ThemePreference;
 
@@ -21,7 +22,11 @@ export interface SettingsUiStateOptions {
   readonly avatarLocalPath?: string | null;
   readonly bio?: string;
   readonly notificationsEnabled?: boolean;
+  readonly privateNotificationsEnabled?: boolean;
+  readonly groupNotificationsEnabled?: boolean;
+  readonly channelNotificationsEnabled?: boolean;
   readonly isUpdatingNotifications?: boolean;
+  readonly updatingNotificationScope?: NotificationScopeKey | null;
   readonly storageCacheSize?: string;
   readonly languageCode?: string;
   readonly languagePreference?: LanguagePreference;
@@ -45,7 +50,11 @@ export class SettingsUiState implements UiState {
   readonly bio: string;
 
   readonly notificationsEnabled: boolean;
+  readonly privateNotificationsEnabled: boolean;
+  readonly groupNotificationsEnabled: boolean;
+  readonly channelNotificationsEnabled: boolean;
   readonly isUpdatingNotifications: boolean;
+  readonly updatingNotificationScope: NotificationScopeKey | null;
   readonly storageCacheSize: string;
   readonly languageCode: string;
   readonly languagePreference: LanguagePreference;
@@ -69,7 +78,11 @@ export class SettingsUiState implements UiState {
     avatarLocalPath: string | null,
     bio: string,
     notificationsEnabled: boolean,
+    privateNotificationsEnabled: boolean,
+    groupNotificationsEnabled: boolean,
+    channelNotificationsEnabled: boolean,
     isUpdatingNotifications: boolean,
+    updatingNotificationScope: NotificationScopeKey | null,
     storageCacheSize: string,
     languageCode: string,
     languagePreference: LanguagePreference,
@@ -90,7 +103,11 @@ export class SettingsUiState implements UiState {
     this.avatarLocalPath = avatarLocalPath;
     this.bio = bio;
     this.notificationsEnabled = notificationsEnabled;
+    this.privateNotificationsEnabled = privateNotificationsEnabled;
+    this.groupNotificationsEnabled = groupNotificationsEnabled;
+    this.channelNotificationsEnabled = channelNotificationsEnabled;
     this.isUpdatingNotifications = isUpdatingNotifications;
+    this.updatingNotificationScope = updatingNotificationScope;
     this.storageCacheSize = storageCacheSize;
     this.languageCode = languageCode;
     this.languagePreference = languagePreference;
@@ -121,6 +138,10 @@ export class SettingsUiState implements UiState {
       '',
       true,
       true,
+      true,
+      true,
+      true,
+      null,
       '0 B',
       languageCode,
       languagePreference,
@@ -145,9 +166,21 @@ export class SettingsUiState implements UiState {
       options.avatarLocalPath !== undefined ? options.avatarLocalPath : this.avatarLocalPath,
       options.bio !== undefined ? options.bio : this.bio,
       options.notificationsEnabled !== undefined ? options.notificationsEnabled : this.notificationsEnabled,
+      options.privateNotificationsEnabled !== undefined
+        ? options.privateNotificationsEnabled
+        : this.privateNotificationsEnabled,
+      options.groupNotificationsEnabled !== undefined
+        ? options.groupNotificationsEnabled
+        : this.groupNotificationsEnabled,
+      options.channelNotificationsEnabled !== undefined
+        ? options.channelNotificationsEnabled
+        : this.channelNotificationsEnabled,
       options.isUpdatingNotifications !== undefined
         ? options.isUpdatingNotifications
         : this.isUpdatingNotifications,
+      options.updatingNotificationScope !== undefined
+        ? options.updatingNotificationScope
+        : this.updatingNotificationScope,
       options.storageCacheSize !== undefined ? options.storageCacheSize : this.storageCacheSize,
       options.languageCode !== undefined ? options.languageCode : this.languageCode,
       options.languagePreference !== undefined ? options.languagePreference : this.languagePreference,

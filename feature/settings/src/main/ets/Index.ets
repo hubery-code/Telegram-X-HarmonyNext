@@ -14,10 +14,13 @@ export {
   UserProfileData,
   LoadUserProfile,
   ToggleNotifications,
+  ToggleNotificationScope,
   LoadNotificationSettings,
   NotificationSettingsLoaded,
   NotificationSettingsUpdated,
   NotificationSettingsUpdateFailed,
+  NotificationScopeUpdated,
+  NotificationScopeUpdateFailed,
   ChangeThemeMode,
   RequestLogout,
   CancelLogout,
@@ -41,6 +44,7 @@ export {
   LoadProfileEffect,
   LoadNotificationSettingsEffect,
   SetNotificationsEnabledEffect,
+  SetNotificationScopeEnabledEffect,
   LogoutEffect,
   ClearCacheEffect,
   LoadStorageStatsEffect,
@@ -54,9 +58,11 @@ export {
 // Model
 export { formatBytes, formatStorageLabel } from './model/StorageSize';
 export {
+  NotificationScopeKey,
   NOTIFICATIONS_MUTED_FOREVER_SECONDS,
   withNotificationsEnabled,
-  areNotificationsEnabled
+  areNotificationsEnabled,
+  isNotificationScopeEnabled
 } from './model/NotificationSettings';
 
 // Reducer

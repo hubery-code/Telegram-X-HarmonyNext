@@ -3,6 +3,7 @@ import { ScopeNotificationSettings } from '@tgx/core-td-api-generated';
 import {
   NOTIFICATIONS_MUTED_FOREVER_SECONDS,
   areNotificationsEnabled,
+  isNotificationScopeEnabled,
   withNotificationsEnabled
 } from '../main/ets/model/NotificationSettings';
 
@@ -58,6 +59,11 @@ export default function notificationSettingsTest(): void {
       ];
       expect(areNotificationsEnabled(oneMuted)).assertFalse();
       expect(areNotificationsEnabled([])).assertFalse();
+    });
+
+    it('isNotificationScopeEnabled_reflectsMuteDuration', 0, () => {
+      expect(isNotificationScopeEnabled(sampleSettings(0))).assertTrue();
+      expect(isNotificationScopeEnabled(sampleSettings(1))).assertFalse();
     });
   });
 }
