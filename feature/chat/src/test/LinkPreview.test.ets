@@ -130,5 +130,68 @@ export default function linkPreviewTest(): void {
       expect(item.linkPreview).assertNull();
     });
 
+    it('linkPreviewInfo_aspectRatio_calculatesProperly', 0, (): void => {
+      const defaultInfo: LinkPreviewInfo = new LinkPreviewInfo();
+      expect(defaultInfo.aspectRatio).assertEqual(1.777);
+
+      const landscapeInfo: LinkPreviewInfo = new LinkPreviewInfo(
+        'https://github.com',
+        'github.com',
+        'GitHub',
+        'Title',
+        'Desc',
+        '',
+        false,
+        null,
+        0,
+        false,
+        true,
+        true,
+        1200,
+        600
+      );
+      expect(landscapeInfo.showMediaAboveDescription).assertTrue();
+      expect(landscapeInfo.mediaWidth).assertEqual(1200);
+      expect(landscapeInfo.mediaHeight).assertEqual(600);
+      expect(landscapeInfo.aspectRatio).assertEqual(2.0);
+
+      // 极端高瘦比例 clamp 到 0.5
+      const tallInfo: LinkPreviewInfo = new LinkPreviewInfo(
+        'https://example.com',
+        'example.com',
+        '',
+        '',
+        '',
+        '',
+        false,
+        null,
+        0,
+        false,
+        true,
+        false,
+        100,
+        500
+      );
+      expect(tallInfo.aspectRatio).assertEqual(0.5);
+
+      // 极端扁平比例 clamp 到 2.5
+      const wideInfo: LinkPreviewInfo = new LinkPreviewInfo(
+        'https://example.com',
+        'example.com',
+        '',
+        '',
+        '',
+        '',
+        false,
+        null,
+        0,
+        false,
+        true,
+        false,
+        1000,
+        100
+      );
+      expect(wideInfo.aspectRatio).assertEqual(2.5);
+    });
   });
 }

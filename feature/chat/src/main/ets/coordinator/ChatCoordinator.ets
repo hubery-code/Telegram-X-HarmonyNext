@@ -1258,10 +1258,13 @@ export class ChatCoordinator {
     const description: string = linkPreview.description !== null ? linkPreview.description.text : '';
     const author: string = linkPreview.author;
     const showAboveText: boolean = linkPreview.show_above_text;
+    const showMediaAboveDescription: boolean = linkPreview.show_media_above_description;
 
     let thumbFileId: number = 0;
     let isPhoto: boolean = false;
     let isLargeMedia: boolean = linkPreview.show_large_media;
+    let mediaWidth: number = 0;
+    let mediaHeight: number = 0;
 
     if (linkPreview.type_ !== null) {
       const t = linkPreview.type_;
@@ -1274,37 +1277,53 @@ export class ChatCoordinator {
           if (size.photo !== null) {
             thumbFileId = size.photo.id;
           }
+          mediaWidth = size.width;
+          mediaHeight = size.height;
         }
       } else if (t.type === 'linkPreviewTypeArticle') {
         const photo = (t as LinkPreviewTypeArticle).photo;
         if (photo !== null && photo.sizes.length > 0) {
-          const size = photo.sizes[0];
+          const size = isLargeMedia ? this.chooseDisplaySize(photo.sizes) : photo.sizes[0];
           if (size.photo !== null) {
             thumbFileId = size.photo.id;
           }
+          mediaWidth = size.width;
+          mediaHeight = size.height;
         }
       } else if (t.type === 'linkPreviewTypeApp') {
         const photo = (t as LinkPreviewTypeApp).photo;
         if (photo !== null && photo.sizes.length > 0) {
-          const size = photo.sizes[0];
+          const size = isLargeMedia ? this.chooseDisplaySize(photo.sizes) : photo.sizes[0];
           if (size.photo !== null) {
             thumbFileId = size.photo.id;
           }
+          mediaWidth = size.width;
+          mediaHeight = size.height;
         }
       } else if (t.type === 'linkPreviewTypeVideo') {
         const video = (t as LinkPreviewTypeVideo).video;
-        if (video !== null && video.thumbnail !== null && video.thumbnail.file !== null) {
-          thumbFileId = video.thumbnail.file.id;
+        if (video !== null) {
+          mediaWidth = video.width;
+          mediaHeight = video.height;
+          if (video.thumbnail !== null && video.thumbnail.file !== null) {
+            thumbFileId = video.thumbnail.file.id;
+          }
         }
       } else if (t.type === 'linkPreviewTypeAnimation') {
         const anim = (t as LinkPreviewTypeAnimation).animation;
-        if (anim !== null && anim.thumbnail !== null && anim.thumbnail.file !== null) {
-          thumbFileId = anim.thumbnail.file.id;
+        if (anim !== null) {
+          mediaWidth = anim.width;
+          mediaHeight = anim.height;
+          if (anim.thumbnail !== null && anim.thumbnail.file !== null) {
+            thumbFileId = anim.thumbnail.file.id;
+          }
         }
       } else if (t.type === 'linkPreviewTypeDocument') {
         const doc = (t as LinkPreviewTypeDocument).document;
         if (doc !== null && doc.thumbnail !== null && doc.thumbnail.file !== null) {
           thumbFileId = doc.thumbnail.file.id;
+          mediaWidth = doc.thumbnail.width;
+          mediaHeight = doc.thumbnail.height;
         }
       }
     }
@@ -1328,7 +1347,10 @@ export class ChatCoordinator {
       thumbnailPath,
       thumbFileId,
       isPhoto,
-      isLargeMedia
+      isLargeMedia,
+      showMediaAboveDescription,
+      mediaWidth,
+      mediaHeight
     );
 
     return info.hasContent() ? info : null;

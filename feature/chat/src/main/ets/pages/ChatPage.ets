@@ -196,7 +196,7 @@ function messageRowKey(item: MessageItem, selected: boolean): string {
   if (item.linkPreview !== null) {
     const lp: LinkPreviewInfo = item.linkPreview;
     const thumb: string = lp.thumbnailPath !== null ? lp.thumbnailPath : '';
-    linkPreviewSig = `${lp.url}|${lp.siteName}|${lp.title}|${lp.description}|${thumb}|${lp.showAboveText}|${lp.isLargeMedia}`;
+    linkPreviewSig = `${lp.url}|${lp.siteName}|${lp.title}|${lp.description}|${thumb}|${lp.showAboveText}|${lp.isLargeMedia}|${lp.showMediaAboveDescription}|${lp.mediaWidth}|${lp.mediaHeight}`;
   }
   const signature: string =
     `${item.sendState}|${item.isRead}|${item.isEdited}|${item.senderColorIndex}|` +
@@ -1485,84 +1485,112 @@ export struct ChatPage {
     })
   }
 
-  /** 链接预览卡片（MSG-107 / FEAT-COMP-002）：左侧 accent 竖条 + 站点/标题/描述 + 缩略图/大图。 */
+  /** 链接预览卡片（MSG-107 / FEAT-COMP-002）：左侧 accent 竖条贯穿 + 站点/标题/描述 + 媒体自适应比例展示。 */
   @Builder
   LinkPreviewBubble(preview: LinkPreviewInfo) {
-    Column() {
-      Row() {
-        // 左侧细竖条（宽 2vp，高自适应，accent 强调色，圆角 1vp）
-        Column()
-          .width(2)
-          .backgroundColor(T.colors.accent)
-          .borderRadius(1)
-          .alignSelf(ItemAlign.Stretch)
+    Row() {
+      // 1. 左侧 Telegram 风格细竖条（宽 3vp，accent 强调色，圆角 1.5vp，贯穿整个卡片包括大图/小图）
+      Column()
+        .width(3)
+        .backgroundColor(T.colors.accent)
+        .borderRadius(1.5)
+        .alignSelf(ItemAlign.Stretch)
 
-        // 中间文本列（站点名、标题、描述）
-        Column() {
-          if (preview.siteName.length > 0) {
-            Text(preview.siteName)
-              .fontSize(12)
-              .fontWeight(FontWeight.Bold)
-              .fontColor(T.colors.accent)
-              .maxLines(1)
-              .textOverflow({ overflow: TextOverflow.Ellipsis })
-          }
+      // 2. 右侧主体内容区（站点名、标题、媒体大图、描述文本、媒体小图）
+      Column() {
+        // 站点名称（如 GitHub、Baidu）
+        if (preview.siteName.length > 0) {
+          Text(preview.siteName)
+            .fontSize(12)
+            .fontWeight(FontWeight.Bold)
+            .fontColor(T.colors.accent)
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+        }
 
-          if (preview.title.length > 0) {
-            Text(preview.title)
-              .fontSize(T.typography.body.fontSize)
-              .fontWeight(FontWeight.Medium)
-              .fontColor(T.colors.chatText)
-              .maxLines(2)
-              .textOverflow({ overflow: TextOverflow.Ellipsis })
-              .margin({ top: preview.siteName.length > 0 ? 2 : 0 })
-          }
+        // 页面标题
+        if (preview.title.length > 0) {
+          Text(preview.title)
+            .fontSize(14)
+            .fontWeight(FontWeight.Bold)
+            .fontColor(T.colors.chatText)
+            .maxLines(2)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+            .margin({ top: preview.siteName.length > 0 ? 2 : 0 })
+        }
 
+        // 大图模式 - 若 showMediaAboveDescription 为 true，则大图放于描述上方
+        if (preview.isLargeMedia && preview.showMediaAboveDescription && preview.thumbnailPath !== null) {
+          Image(toSandboxUri(preview.thumbnailPath))
+            .width('100%')
+            .aspectRatio(preview.aspectRatio)
+            .borderRadius(T.radius.sm)
+            .objectFit(ImageFit.Cover)
+            .constraintSize({ maxHeight: 220 })
+            .margin({ top: 4, bottom: 4 })
+        }
+
+        // 描述区域
+        if (preview.isLargeMedia) {
+          // 大图模式：描述为单列文本
           if (preview.description.length > 0) {
             Text(preview.description)
-              .fontSize(12)
+              .fontSize(13)
               .fontColor(T.colors.textSecondary)
               .maxLines(3)
               .textOverflow({ overflow: TextOverflow.Ellipsis })
               .margin({ top: 2 })
           }
-        }
-        .alignItems(HorizontalAlign.Start)
-        .justifyContent(FlexAlign.Center)
-        .layoutWeight(1)
-        .margin({ left: 6, right: (preview.thumbnailPath !== null && !preview.isLargeMedia) ? 6 : 0 })
 
-        // 小图模式：右侧 52x52 方形缩略图
-        if (preview.thumbnailPath !== null && !preview.isLargeMedia) {
-          Image(toSandboxUri(preview.thumbnailPath))
-            .width(52)
-            .height(52)
-            .borderRadius(T.radius.sm)
-            .objectFit(ImageFit.Cover)
-        }
-      }
-      .width('100%')
-      .alignItems(VerticalAlign.Center)
+          // 大图模式 - 若 showMediaAboveDescription 为 false，则大图放于描述下方
+          if (!preview.showMediaAboveDescription && preview.thumbnailPath !== null) {
+            Image(toSandboxUri(preview.thumbnailPath))
+              .width('100%')
+              .aspectRatio(preview.aspectRatio)
+              .borderRadius(T.radius.sm)
+              .objectFit(ImageFit.Cover)
+              .constraintSize({ maxHeight: 220 })
+              .margin({ top: 4 })
+          }
+        } else {
+          // 小图模式：描述文本在左，52x52 方形缩略图在右
+          Row() {
+            if (preview.description.length > 0) {
+              Text(preview.description)
+                .fontSize(13)
+                .fontColor(T.colors.textSecondary)
+                .maxLines(4)
+                .textOverflow({ overflow: TextOverflow.Ellipsis })
+                .layoutWeight(1)
+            }
 
-      // 大图模式：下方单行大图展示
-      if (preview.thumbnailPath !== null && preview.isLargeMedia) {
-        Image(toSandboxUri(preview.thumbnailPath))
+            if (preview.thumbnailPath !== null) {
+              Image(toSandboxUri(preview.thumbnailPath))
+                .width(52)
+                .height(52)
+                .borderRadius(T.radius.sm)
+                .objectFit(ImageFit.Cover)
+                .margin({ left: preview.description.length > 0 ? 6 : 0 })
+            }
+          }
           .width('100%')
-          .height(160)
-          .borderRadius(T.radius.sm)
-          .objectFit(ImageFit.Cover)
-          .margin({ top: 6 })
+          .alignItems(VerticalAlign.Center)
+          .margin({ top: (preview.siteName.length > 0 || preview.title.length > 0) ? 2 : 0 })
+        }
       }
+      .alignItems(HorizontalAlign.Start)
+      .layoutWeight(1)
+      .margin({ left: 8 })
     }
     .alignSelf(ItemAlign.Start)
+    .width('100%')
     .padding({
-      left: 2,
-      right: 4,
-      top: 4,
-      bottom: 4
+      left: 1,
+      right: 2,
+      top: 2,
+      bottom: 2
     })
-    .backgroundColor(Color.Transparent)
-    .margin({ top: T.spacing.xs, bottom: T.spacing.xs })
+    .margin({ top: 6, bottom: 4 })
     .onClick(() => {
       if (preview.url.length > 0) {
         this.openLink(preview.url);

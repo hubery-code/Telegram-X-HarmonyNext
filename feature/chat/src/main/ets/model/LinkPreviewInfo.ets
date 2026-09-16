@@ -17,6 +17,9 @@ export class LinkPreviewInfo {
   readonly fileId: number;
   readonly isPhoto: boolean;
   readonly isLargeMedia: boolean;
+  readonly showMediaAboveDescription: boolean;
+  readonly mediaWidth: number;
+  readonly mediaHeight: number;
 
   constructor(
     url: string = '',
@@ -29,7 +32,10 @@ export class LinkPreviewInfo {
     thumbnailPath: string | null = null,
     fileId: number = 0,
     isPhoto: boolean = false,
-    isLargeMedia: boolean = false
+    isLargeMedia: boolean = false,
+    showMediaAboveDescription: boolean = false,
+    mediaWidth: number = 0,
+    mediaHeight: number = 0
   ) {
     this.url = url;
     this.displayUrl = displayUrl;
@@ -42,6 +48,23 @@ export class LinkPreviewInfo {
     this.fileId = fileId;
     this.isPhoto = isPhoto;
     this.isLargeMedia = isLargeMedia;
+    this.showMediaAboveDescription = showMediaAboveDescription;
+    this.mediaWidth = mediaWidth;
+    this.mediaHeight = mediaHeight;
+  }
+
+  get aspectRatio(): number {
+    if (this.mediaWidth > 0 && this.mediaHeight > 0) {
+      const ratio: number = this.mediaWidth / this.mediaHeight;
+      if (ratio < 0.5) {
+        return 0.5;
+      }
+      if (ratio > 2.5) {
+        return 2.5;
+      }
+      return ratio;
+    }
+    return 1.777;
   }
 
   hasContent(): boolean {
