@@ -14,6 +14,10 @@ export {
   UserProfileData,
   LoadUserProfile,
   ToggleNotifications,
+  LoadNotificationSettings,
+  NotificationSettingsLoaded,
+  NotificationSettingsUpdated,
+  NotificationSettingsUpdateFailed,
   ChangeThemeMode,
   RequestLogout,
   CancelLogout,
@@ -35,6 +39,8 @@ export {
 // Contract: Effect
 export {
   LoadProfileEffect,
+  LoadNotificationSettingsEffect,
+  SetNotificationsEnabledEffect,
   LogoutEffect,
   ClearCacheEffect,
   LoadStorageStatsEffect,
@@ -47,6 +53,11 @@ export {
 
 // Model
 export { formatBytes, formatStorageLabel } from './model/StorageSize';
+export {
+  NOTIFICATIONS_MUTED_FOREVER_SECONDS,
+  withNotificationsEnabled,
+  areNotificationsEnabled
+} from './model/NotificationSettings';
 
 // Reducer
 export { settingsReducer } from './reducer/SettingsReducer';

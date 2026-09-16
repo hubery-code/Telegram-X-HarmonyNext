@@ -352,6 +352,7 @@ export struct SettingsPage {
         .layoutWeight(1)
 
       Toggle({ type: ToggleType.Switch, isOn: this.uiState.notificationsEnabled })
+        .enabled(!this.uiState.isUpdatingNotifications)
         .onChange((isOn: boolean): void => {
           if (isOn !== this.uiState.notificationsEnabled) {
             this.onDispatch(new ToggleNotifications());

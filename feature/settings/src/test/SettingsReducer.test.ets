@@ -11,8 +11,12 @@ import {
   ClearCacheRequested,
   CloseAccountSwitcher,
   ConfirmLogout,
+  LoadNotificationSettings,
   LoadStorageStats,
   LoadUserProfile,
+  NotificationSettingsLoaded,
+  NotificationSettingsUpdated,
+  NotificationSettingsUpdateFailed,
   OpenAccountSwitcher,
   ProfileLoaded,
   RequestAddAccount,
@@ -27,10 +31,12 @@ import {
 } from '../main/ets/contract/SettingsIntent';
 import {
   ClearCacheEffect,
+  LoadNotificationSettingsEffect,
   LoadProfileEffect,
   LoadStorageStatsEffect,
   LogoutEffect,
   RequestAddAccountEffect,
+  SetNotificationsEnabledEffect,
   ShowToastEffect,
   SwitchAccountEffect
 } from '../main/ets/contract/SettingsEffect';
@@ -55,6 +61,7 @@ export default function settingsReducerTest(): void {
       expect(state.avatarLocalPath).assertNull();
       expect(state.bio).assertEqual('');
       expect(state.notificationsEnabled).assertTrue();
+      expect(state.isUpdatingNotifications).assertTrue();
       expect(state.storageCacheSize).assertEqual('0 B');
       expect(state.themeMode).assertEqual('system');
       expect(state.appVersion).assertEqual('1.0.0');
@@ -112,20 +119,71 @@ export default function settingsReducerTest(): void {
       expect(result.effects.length).assertEqual(0);
     });
 
-    it('toggleNotifications_togglesValueAndEmitsToast', 0, () => {
+    it('loadNotificationSettings_emitsLoadEffect', 0, () => {
       const state = SettingsUiState.initial();
+      const result = settingsReducer(state, new LoadNotificationSettings(), makeEnv());
+
+      expect(result.state === state).assertTrue();
+      expect(result.effects.length).assertEqual(1);
+      expect((result.effects[0] as LoadNotificationSettingsEffect).kind)
+        .assertEqual('loadNotificationSettings');
+    });
+
+    it('toggleNotifications_waitsForTdlibBeforeChangingValue', 0, () => {
+      const state = SettingsUiState.initial().copyWith({ isUpdatingNotifications: false });
       expect(state.notificationsEnabled).assertTrue();
 
-      const r1 = settingsReducer(state, new ToggleNotifications(), makeEnv());
-      expect(r1.state.notificationsEnabled).assertFalse();
-      expect(r1.effects.length).assertEqual(1);
-      expect(r1.effects[0].kind).assertEqual('showToast');
-      expect((r1.effects[0] as ShowToastEffect).message).assertEqual('Notifications disabled');
+      const result = settingsReducer(state, new ToggleNotifications(), makeEnv());
+      expect(result.state.notificationsEnabled).assertTrue();
+      expect(result.state.isUpdatingNotifications).assertTrue();
+      expect(result.effects.length).assertEqual(1);
+      const effect: SetNotificationsEnabledEffect = result.effects[0] as SetNotificationsEnabledEffect;
+      expect(effect.kind).assertEqual('setNotificationsEnabled');
+      expect(effect.enabled).assertFalse();
+    });
 
-      const r2 = settingsReducer(r1.state, new ToggleNotifications(), makeEnv());
-      expect(r2.state.notificationsEnabled).assertTrue();
-      expect(r2.effects.length).assertEqual(1);
-      expect((r2.effects[0] as ShowToastEffect).message).assertEqual('Notifications enabled');
+    it('toggleNotifications_whileUpdating_isIdempotent', 0, () => {
+      const state = SettingsUiState.initial();
+      const result = settingsReducer(state, new ToggleNotifications(), makeEnv());
+
+      expect(result.state === state).assertTrue();
+      expect(result.effects.length).assertEqual(0);
+    });
+
+    it('notificationSettingsLoaded_reflectsAllScopeState', 0, () => {
+      const state = SettingsUiState.initial();
+      const result = settingsReducer(state, new NotificationSettingsLoaded(false), makeEnv());
+
+      expect(result.state.notificationsEnabled).assertFalse();
+      expect(result.state.isUpdatingNotifications).assertFalse();
+      expect(result.effects.length).assertEqual(0);
+    });
+
+    it('notificationSettingsUpdated_commitsValueAndEmitsToast', 0, () => {
+      const state = SettingsUiState.initial().copyWith({
+        notificationsEnabled: true,
+        isUpdatingNotifications: true
+      });
+      const result = settingsReducer(state, new NotificationSettingsUpdated(false), makeEnv());
+
+      expect(result.state.notificationsEnabled).assertFalse();
+      expect(result.state.isUpdatingNotifications).assertFalse();
+      expect(result.effects.length).assertEqual(1);
+      expect((result.effects[0] as ShowToastEffect).message).assertEqual('Notifications disabled');
+    });
+
+    it('notificationSettingsUpdateFailed_keepsValueAndUnlocksToggle', 0, () => {
+      const state = SettingsUiState.initial().copyWith({ isUpdatingNotifications: true });
+      const result = settingsReducer(
+        state,
+        new NotificationSettingsUpdateFailed('Unable to update notification settings.'),
+        makeEnv()
+      );
+
+      expect(result.state.notificationsEnabled).assertTrue();
+      expect(result.state.isUpdatingNotifications).assertFalse();
+      expect(result.state.errorMessage).assertEqual('Unable to update notification settings.');
+      expect(result.effects.length).assertEqual(0);
     });
 
     it('changeThemeMode_updatesThemeAndEmitsToast', 0, () => {
@@ -281,14 +339,16 @@ export default function settingsReducerTest(): void {
     });
 
     it('reducer_isPure_sameInputsProduceIdenticalOutputs', 0, () => {
-      const state = SettingsUiState.initial();
+      const state = SettingsUiState.initial().copyWith({ isUpdatingNotifications: false });
       const intent = new ToggleNotifications();
       const r1 = settingsReducer(state, intent, makeEnv(100, 200));
       const r2 = settingsReducer(state, intent, makeEnv(100, 200));
 
       expect(r1.state.notificationsEnabled).assertEqual(r2.state.notificationsEnabled);
       expect(r1.effects.length).assertEqual(r2.effects.length);
-      expect((r1.effects[0] as ShowToastEffect).message).assertEqual((r2.effects[0] as ShowToastEffect).message);
+      expect(r1.effects[0].kind).assertEqual(r2.effects[0].kind);
+      expect((r1.effects[0] as SetNotificationsEnabledEffect).enabled)
+        .assertEqual((r2.effects[0] as SetNotificationsEnabledEffect).enabled);
     });
 
     // ---- SET-104 存储占用 ----

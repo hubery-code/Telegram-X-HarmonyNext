@@ -13,6 +13,19 @@ export class LoadProfileEffect implements Effect {
   readonly kind: 'loadProfile' = 'loadProfile';
 }
 
+export class LoadNotificationSettingsEffect implements Effect {
+  readonly kind: 'loadNotificationSettings' = 'loadNotificationSettings';
+}
+
+export class SetNotificationsEnabledEffect implements Effect {
+  readonly kind: 'setNotificationsEnabled' = 'setNotificationsEnabled';
+  readonly enabled: boolean;
+
+  constructor(enabled: boolean) {
+    this.enabled = enabled;
+  }
+}
+
 export class LogoutEffect implements Effect {
   readonly kind: 'logout' = 'logout';
 }
@@ -54,6 +67,8 @@ export class RequestAddAccountEffect implements Effect {
 
 export type SettingsEffect =
   | LoadProfileEffect
+  | LoadNotificationSettingsEffect
+  | SetNotificationsEnabledEffect
   | LogoutEffect
   | ClearCacheEffect
   | LoadStorageStatsEffect

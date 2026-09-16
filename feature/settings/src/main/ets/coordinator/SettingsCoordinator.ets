@@ -11,42 +11,60 @@
 import { Logger } from '@tgx/observability';
 import {
   AppError,
+  AppErrors,
   Lang,
   LanguagePreference,
   ManualClock,
   Result,
   SequentialIdGenerator,
-  SupportedLanguage
+  SupportedLanguage,
+  err,
+  ok
 } from '@tgx/core-common';
 import { AccountScope } from '@tgx/core-account';
 import { UserRegistry } from '@tgx/core-domain';
 import {
   GetMe,
+  GetScopeNotificationSettings,
   GetStorageStatistics,
   GetUserFullInfo,
   LogOut,
+  NotificationSettingsScopeChannelChats,
+  NotificationSettingsScopeGroupChats,
+  NotificationSettingsScopePrivateChats,
   OptimizeStorage,
+  ScopeNotificationSettings,
+  SetScopeNotificationSettings,
   StorageStatistics,
   TdJsonRaw,
   User,
   UserFullInfo,
+  TdNotificationSettingsScope,
+  decodeScopeNotificationSettings,
   decodeStorageStatistics,
   decodeUser,
   decodeUserFullInfo,
   encodeGetMe,
+  encodeGetScopeNotificationSettings,
   encodeGetStorageStatistics,
   encodeGetUserFullInfo,
   encodeLogOut,
-  encodeOptimizeStorage
+  encodeOptimizeStorage,
+  encodeSetScopeNotificationSettings
 } from '@tgx/core-td-api-generated';
 import { TdPendingRequest, TdWireObject } from '@tgx/td-gateway';
 import { ReducerEnv, ReducerResult } from '@tgx/feature-template';
 import { SettingsUiState } from '../contract/SettingsUiState';
 import { formatStorageLabel } from '../model/StorageSize';
+import { areNotificationsEnabled, withNotificationsEnabled } from '../model/NotificationSettings';
 import {
   CacheCleared,
+  LoadNotificationSettings,
   LoadStorageStats,
   LoadUserProfile,
+  NotificationSettingsLoaded,
+  NotificationSettingsUpdated,
+  NotificationSettingsUpdateFailed,
   ProfileLoaded,
   SetAvailableAccounts,
   SetErrorMessage,
@@ -56,12 +74,14 @@ import {
 } from '../contract/SettingsIntent';
 import {
   ClearCacheEffect,
+  LoadNotificationSettingsEffect,
   LoadProfileEffect,
   LoadStorageStatsEffect,
   LogoutEffect,
   NavigateToAuthEffect,
   RequestAddAccountEffect,
   SettingsEffect,
+  SetNotificationsEnabledEffect,
   ShowToastEffect,
   SwitchAccountEffect
 } from '../contract/SettingsEffect';
@@ -86,6 +106,7 @@ export class SettingsCoordinator {
   private unsubscribeTheme: (() => void) | null = null;
   private unsubscribeLang: (() => void) | null = null;
   private subscribedUserId: number = 0;
+  private notificationScopeSettings: ScopeNotificationSettings[] = [];
   private destroyed: boolean = false;
 
   constructor(
@@ -167,6 +188,7 @@ export class SettingsCoordinator {
 
   start(): void {
     this.dispatch(new LoadUserProfile());
+    this.dispatch(new LoadNotificationSettings());
     // SET-104：进页即静默拉一次真实存储占用（此前 storageCacheSize 是硬编码占位）。
     this.dispatch(new LoadStorageStats());
   }
@@ -227,6 +249,16 @@ export class SettingsCoordinator {
       case 'loadProfile':
         this.handleLoadProfile();
         break;
+
+      case 'loadNotificationSettings':
+        this.handleLoadNotificationSettings();
+        break;
+
+      case 'setNotificationsEnabled': {
+        const notificationEffect: SetNotificationsEnabledEffect = effect as SetNotificationsEnabledEffect;
+        this.handleSetNotificationsEnabled(notificationEffect.enabled);
+        break;
+      }
 
       case 'logout':
         this.handleLogout();
@@ -410,6 +442,218 @@ export class SettingsCoordinator {
     }
     if (result.err) {
       this.dispatch(new SetErrorMessage(result.error.message));
+    }
+  }
+
+  private notificationScopes(): TdNotificationSettingsScope[] {
+    const scopes: TdNotificationSettingsScope[] = [];
+    scopes.push(new NotificationSettingsScopePrivateChats());
+    scopes.push(new NotificationSettingsScopeGroupChats());
+    scopes.push(new NotificationSettingsScopeChannelChats());
+    return scopes;
+  }
+
+  private async fetchNotificationSettings(
+    scope: TdNotificationSettingsScope
+  ): Promise<Result<ScopeNotificationSettings, AppError>> {
+    const request: GetScopeNotificationSettings = new GetScopeNotificationSettings();
+    request.scope = scope;
+    const pendingResult: Result<TdPendingRequest, AppError> = this.scope.request(
+      'getScopeNotificationSettings',
+      encodeGetScopeNotificationSettings(request) as TdWireObject
+    );
+    if (pendingResult.ok) {
+      const response: Result<TdWireObject, AppError> = await pendingResult.value.promise;
+      if (response.ok) {
+        const settings: ScopeNotificationSettings | null =
+          decodeScopeNotificationSettings(response.value as TdJsonRaw);
+        if (settings === null) {
+          return err<ScopeNotificationSettings, AppError>(
+            AppErrors.internal(
+              'settings_notification_decode',
+              'TDLib scope notification settings response could not be decoded'
+            )
+          );
+        }
+        return ok<ScopeNotificationSettings, AppError>(settings);
+      }
+      if (response.err) {
+        return err<ScopeNotificationSettings, AppError>(response.error);
+      }
+      return err<ScopeNotificationSettings, AppError>(
+        AppErrors.internal('settings_notification_response', 'TDLib returned no notification settings result')
+      );
+    }
+    if (pendingResult.err) {
+      return err<ScopeNotificationSettings, AppError>(pendingResult.error);
+    }
+    return err<ScopeNotificationSettings, AppError>(
+      AppErrors.internal('settings_notification_request', 'TDLib notification settings request was not created')
+    );
+  }
+
+  private async fetchAllNotificationSettings(): Promise<Result<ScopeNotificationSettings[], AppError>> {
+    const scopes: TdNotificationSettingsScope[] = this.notificationScopes();
+    const settings: ScopeNotificationSettings[] = [];
+    for (let i = 0; i < scopes.length; i++) {
+      const result: Result<ScopeNotificationSettings, AppError> =
+        await this.fetchNotificationSettings(scopes[i]);
+      if (result.ok) {
+        settings.push(result.value);
+      }
+      if (result.err) {
+        return err<ScopeNotificationSettings[], AppError>(result.error);
+      }
+    }
+    return ok<ScopeNotificationSettings[], AppError>(settings);
+  }
+
+  private async writeNotificationSettings(
+    scope: TdNotificationSettingsScope,
+    settings: ScopeNotificationSettings
+  ): Promise<Result<void, AppError>> {
+    const request: SetScopeNotificationSettings = new SetScopeNotificationSettings();
+    request.scope = scope;
+    request.notification_settings = settings;
+    const pendingResult: Result<TdPendingRequest, AppError> = this.scope.request(
+      'setScopeNotificationSettings',
+      encodeSetScopeNotificationSettings(request) as TdWireObject
+    );
+    if (pendingResult.ok) {
+      const response: Result<TdWireObject, AppError> = await pendingResult.value.promise;
+      if (response.ok) {
+        return ok<void, AppError>(undefined);
+      }
+      if (response.err) {
+        return err<void, AppError>(response.error);
+      }
+      return err<void, AppError>(
+        AppErrors.internal('settings_notification_write_response', 'TDLib returned no notification write result')
+      );
+    }
+    if (pendingResult.err) {
+      return err<void, AppError>(pendingResult.error);
+    }
+    return err<void, AppError>(
+      AppErrors.internal('settings_notification_write_request', 'TDLib notification write request was not created')
+    );
+  }
+
+  private notificationErrorMessage(error: AppError, action: string): string {
+    if (error.kind === 'tdlib' && error.code === 'too_many_requests') {
+      return 'Too many requests. Please wait and try again.';
+    }
+    if (error.kind === 'network') {
+      return `Unable to ${action} notification settings. Check your connection.`;
+    }
+    return `Unable to ${action} notification settings. Please try again.`;
+  }
+
+  private handleLoadNotificationSettings(): void {
+    this.loadNotificationSettings();
+  }
+
+  private async loadNotificationSettings(): Promise<void> {
+    try {
+      const result: Result<ScopeNotificationSettings[], AppError> =
+        await this.fetchAllNotificationSettings();
+      if (this.destroyed) {
+        return;
+      }
+      if (result.ok) {
+        this.notificationScopeSettings = result.value;
+        this.dispatch(new NotificationSettingsLoaded(areNotificationsEnabled(result.value)));
+        return;
+      }
+      if (result.err) {
+        this.logger.logError(TAG, result.error);
+        this.dispatch(new NotificationSettingsUpdateFailed(
+          this.notificationErrorMessage(result.error, 'load')
+        ));
+      }
+    } catch (e) {
+      if (this.destroyed) {
+        return;
+      }
+      const cause: string = e instanceof Error ? e.name : 'non-error';
+      const error: AppError = AppErrors.unknown(
+        'settings-notification-load',
+        'Unexpected notification settings load failure',
+        cause
+      );
+      this.logger.logError(TAG, error);
+      this.dispatch(new NotificationSettingsUpdateFailed(
+        this.notificationErrorMessage(error, 'load')
+      ));
+    }
+  }
+
+  private handleSetNotificationsEnabled(enabled: boolean): void {
+    this.setNotificationsEnabled(enabled);
+  }
+
+  private async setNotificationsEnabled(enabled: boolean): Promise<void> {
+    try {
+      let currentSettings: ScopeNotificationSettings[] = this.notificationScopeSettings;
+      if (currentSettings.length !== 3) {
+        const loadResult: Result<ScopeNotificationSettings[], AppError> =
+          await this.fetchAllNotificationSettings();
+        if (loadResult.ok) {
+          currentSettings = loadResult.value;
+        }
+        if (loadResult.err) {
+          if (!this.destroyed) {
+            this.logger.logError(TAG, loadResult.error);
+            this.dispatch(new NotificationSettingsUpdateFailed(
+              this.notificationErrorMessage(loadResult.error, 'update')
+            ));
+          }
+          return;
+        }
+      }
+
+      const scopes: TdNotificationSettingsScope[] = this.notificationScopes();
+      const updatedSettings: ScopeNotificationSettings[] = [];
+      for (let i = 0; i < scopes.length; i++) {
+        const next: ScopeNotificationSettings = withNotificationsEnabled(currentSettings[i], enabled);
+        const writeResult: Result<void, AppError> = await this.writeNotificationSettings(scopes[i], next);
+        if (writeResult.err) {
+          // Best-effort rollback keeps the three TDLib scopes from being left in a
+          // mixed state when a later write fails after earlier scopes succeeded.
+          for (let rollbackIndex = 0; rollbackIndex < updatedSettings.length; rollbackIndex++) {
+            await this.writeNotificationSettings(scopes[rollbackIndex], currentSettings[rollbackIndex]);
+          }
+          if (!this.destroyed) {
+            this.logger.logError(TAG, writeResult.error);
+            this.dispatch(new NotificationSettingsUpdateFailed(
+              this.notificationErrorMessage(writeResult.error, 'update')
+            ));
+            this.loadNotificationSettings();
+          }
+          return;
+        }
+        updatedSettings.push(next);
+      }
+
+      if (this.destroyed) {
+        return;
+      }
+      this.notificationScopeSettings = updatedSettings;
+      this.dispatch(new NotificationSettingsUpdated(enabled));
+    } catch (e) {
+      if (this.destroyed) {
+        return;
+      }
+      const cause: string = e instanceof Error ? e.name : 'non-error';
+      const error: AppError = AppErrors.unknown(
+        'settings-notification-update',
+        'Unexpected notification settings update failure',
+        cause
+      );
+      this.logger.logError(TAG, error);
+      this.dispatch(new NotificationSettingsUpdateFailed(
+        this.notificationErrorMessage(error, 'update')
+      ));
     }
   }
 

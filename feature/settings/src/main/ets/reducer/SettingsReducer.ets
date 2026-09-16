@@ -17,6 +17,10 @@ import {
   ChangeLanguage,
   ChangeThemeMode,
   CloseAccountSwitcher,
+  LoadNotificationSettings,
+  NotificationSettingsLoaded,
+  NotificationSettingsUpdated,
+  NotificationSettingsUpdateFailed,
   OpenAccountSwitcher,
   ProfileLoaded,
   RequestAddAccount,
@@ -29,12 +33,14 @@ import {
 } from '../contract/SettingsIntent';
 import {
   ClearCacheEffect,
+  LoadNotificationSettingsEffect,
   LoadProfileEffect,
   LoadStorageStatsEffect,
   LogoutEffect,
   RequestAddAccountEffect,
   SettingsEffect,
   ShowToastEffect,
+  SetNotificationsEnabledEffect,
   SwitchAccountEffect
 } from '../contract/SettingsEffect';
 
@@ -74,14 +80,52 @@ export const settingsReducer: Reducer<SettingsUiState, SettingsIntent, SettingsE
     }
 
     case 'toggleNotifications': {
+      if (state.isUpdatingNotifications) {
+        return reduced(state);
+      }
       const nextEnabled: boolean = !state.notificationsEnabled;
       const options: SettingsUiStateOptions = {
-        notificationsEnabled: nextEnabled
+        isUpdatingNotifications: true,
+        errorMessage: null
       };
       const nextState: SettingsUiState = state.copyWith(options);
-      const message: string = nextEnabled ? 'Notifications enabled' : 'Notifications disabled';
-      const effects: readonly SettingsEffect[] = [new ShowToastEffect(message)];
+      const effects: readonly SettingsEffect[] = [new SetNotificationsEnabledEffect(nextEnabled)];
       return reduced(nextState, effects);
+    }
+
+    case 'loadNotificationSettings': {
+      const effects: readonly SettingsEffect[] = [new LoadNotificationSettingsEffect()];
+      return reduced(state, effects);
+    }
+
+    case 'notificationSettingsLoaded': {
+      const loadedIntent: NotificationSettingsLoaded = intent as NotificationSettingsLoaded;
+      const options: SettingsUiStateOptions = {
+        notificationsEnabled: loadedIntent.enabled,
+        isUpdatingNotifications: false
+      };
+      return reduced(state.copyWith(options));
+    }
+
+    case 'notificationSettingsUpdated': {
+      const updatedIntent: NotificationSettingsUpdated = intent as NotificationSettingsUpdated;
+      const options: SettingsUiStateOptions = {
+        notificationsEnabled: updatedIntent.enabled,
+        isUpdatingNotifications: false,
+        errorMessage: null
+      };
+      const message: string = updatedIntent.enabled ? 'Notifications enabled' : 'Notifications disabled';
+      const effects: readonly SettingsEffect[] = [new ShowToastEffect(message)];
+      return reduced(state.copyWith(options), effects);
+    }
+
+    case 'notificationSettingsUpdateFailed': {
+      const failedIntent: NotificationSettingsUpdateFailed = intent as NotificationSettingsUpdateFailed;
+      const options: SettingsUiStateOptions = {
+        isUpdatingNotifications: false,
+        errorMessage: failedIntent.errorMessage
+      };
+      return reduced(state.copyWith(options));
     }
 
     case 'changeThemeMode': {

@@ -27,6 +27,37 @@ export class ToggleNotifications implements Intent {
   readonly kind: 'toggleNotifications' = 'toggleNotifications';
 }
 
+export class LoadNotificationSettings implements Intent {
+  readonly kind: 'loadNotificationSettings' = 'loadNotificationSettings';
+}
+
+export class NotificationSettingsLoaded implements Intent {
+  readonly kind: 'notificationSettingsLoaded' = 'notificationSettingsLoaded';
+  readonly enabled: boolean;
+
+  constructor(enabled: boolean) {
+    this.enabled = enabled;
+  }
+}
+
+export class NotificationSettingsUpdated implements Intent {
+  readonly kind: 'notificationSettingsUpdated' = 'notificationSettingsUpdated';
+  readonly enabled: boolean;
+
+  constructor(enabled: boolean) {
+    this.enabled = enabled;
+  }
+}
+
+export class NotificationSettingsUpdateFailed implements Intent {
+  readonly kind: 'notificationSettingsUpdateFailed' = 'notificationSettingsUpdateFailed';
+  readonly errorMessage: string;
+
+  constructor(errorMessage: string) {
+    this.errorMessage = errorMessage;
+  }
+}
+
 export class ChangeThemeMode implements Intent {
   readonly kind: 'changeThemeMode' = 'changeThemeMode';
   readonly themeMode: SettingsThemeMode;
@@ -153,6 +184,10 @@ export class SetAvailableAccounts implements Intent {
 export type SettingsIntent =
   | LoadUserProfile
   | ToggleNotifications
+  | LoadNotificationSettings
+  | NotificationSettingsLoaded
+  | NotificationSettingsUpdated
+  | NotificationSettingsUpdateFailed
   | ChangeThemeMode
   | ChangeLanguage
   | SetLanguage

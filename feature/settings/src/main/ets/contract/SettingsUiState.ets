@@ -21,6 +21,7 @@ export interface SettingsUiStateOptions {
   readonly avatarLocalPath?: string | null;
   readonly bio?: string;
   readonly notificationsEnabled?: boolean;
+  readonly isUpdatingNotifications?: boolean;
   readonly storageCacheSize?: string;
   readonly languageCode?: string;
   readonly languagePreference?: LanguagePreference;
@@ -44,6 +45,7 @@ export class SettingsUiState implements UiState {
   readonly bio: string;
 
   readonly notificationsEnabled: boolean;
+  readonly isUpdatingNotifications: boolean;
   readonly storageCacheSize: string;
   readonly languageCode: string;
   readonly languagePreference: LanguagePreference;
@@ -67,6 +69,7 @@ export class SettingsUiState implements UiState {
     avatarLocalPath: string | null,
     bio: string,
     notificationsEnabled: boolean,
+    isUpdatingNotifications: boolean,
     storageCacheSize: string,
     languageCode: string,
     languagePreference: LanguagePreference,
@@ -87,6 +90,7 @@ export class SettingsUiState implements UiState {
     this.avatarLocalPath = avatarLocalPath;
     this.bio = bio;
     this.notificationsEnabled = notificationsEnabled;
+    this.isUpdatingNotifications = isUpdatingNotifications;
     this.storageCacheSize = storageCacheSize;
     this.languageCode = languageCode;
     this.languagePreference = languagePreference;
@@ -116,6 +120,7 @@ export class SettingsUiState implements UiState {
       null,
       '',
       true,
+      true,
       '0 B',
       languageCode,
       languagePreference,
@@ -140,6 +145,9 @@ export class SettingsUiState implements UiState {
       options.avatarLocalPath !== undefined ? options.avatarLocalPath : this.avatarLocalPath,
       options.bio !== undefined ? options.bio : this.bio,
       options.notificationsEnabled !== undefined ? options.notificationsEnabled : this.notificationsEnabled,
+      options.isUpdatingNotifications !== undefined
+        ? options.isUpdatingNotifications
+        : this.isUpdatingNotifications,
       options.storageCacheSize !== undefined ? options.storageCacheSize : this.storageCacheSize,
       options.languageCode !== undefined ? options.languageCode : this.languageCode,
       options.languagePreference !== undefined ? options.languagePreference : this.languagePreference,
