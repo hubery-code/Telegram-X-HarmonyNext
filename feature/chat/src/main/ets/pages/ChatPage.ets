@@ -745,12 +745,14 @@ export struct ChatPage {
       .alignItems(HorizontalAlign.End)
       .backgroundColor(this.isSticker(item) ? Color.Transparent : (item.isOutgoing ? T.colors.chatOutgoing : T.colors.chatIncoming))
       .borderRadius(this.isSticker(item) ? 0 : T.radius.lg)
+      .clip(this.isSticker(item) ? false : true)
       .padding(this.isSticker(item) ? 0 : {
         left: T.spacing.md,
         right: T.spacing.md,
         top: T.spacing.sm,
         bottom: T.spacing.xs
       })
+      .width(item.linkPreview !== null ? BUBBLE_MAX_WIDTH : undefined)
       .constraintSize({ maxWidth: BUBBLE_MAX_WIDTH })
       .onClick(() => {
         // MSG-106：多选态下点击气泡 = 切换勾选（不再触发重发）。
@@ -1525,6 +1527,7 @@ export struct ChatPage {
             .width('100%')
             .aspectRatio(preview.aspectRatio)
             .borderRadius(T.radius.sm)
+            .clip(true)
             .objectFit(ImageFit.Cover)
             .constraintSize({ maxHeight: 220 })
             .margin({ top: 4, bottom: 4 })
@@ -1548,6 +1551,7 @@ export struct ChatPage {
               .width('100%')
               .aspectRatio(preview.aspectRatio)
               .borderRadius(T.radius.sm)
+              .clip(true)
               .objectFit(ImageFit.Cover)
               .constraintSize({ maxHeight: 220 })
               .margin({ top: 4 })
@@ -1569,6 +1573,7 @@ export struct ChatPage {
                 .width(52)
                 .height(52)
                 .borderRadius(T.radius.sm)
+                .clip(true)
                 .objectFit(ImageFit.Cover)
                 .margin({ left: preview.description.length > 0 ? 6 : 0 })
             }
