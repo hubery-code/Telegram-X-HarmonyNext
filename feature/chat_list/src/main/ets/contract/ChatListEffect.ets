@@ -5,13 +5,16 @@
  */
 
 import { Effect } from '@tgx/feature-template';
+import { ChatListKind } from './ChatListUiState';
 
 export class FetchChatList implements Effect {
   readonly kind: 'fetchChatList' = 'fetchChatList';
   readonly limit: number;
+  readonly listKind: ChatListKind;
 
-  constructor(limit: number) {
+  constructor(limit: number, listKind: ChatListKind = 'main') {
     this.limit = limit;
+    this.listKind = listKind;
   }
 }
 
@@ -62,9 +65,21 @@ export class SetChatReadState implements Effect {
   }
 }
 
+export class SetChatArchived implements Effect {
+  readonly kind: 'setChatArchived' = 'setChatArchived';
+  readonly chatId: number;
+  readonly archived: boolean;
+
+  constructor(chatId: number, archived: boolean) {
+    this.chatId = chatId;
+    this.archived = archived;
+  }
+}
+
 export type ChatListEffect =
   | FetchChatList
   | NavigateToChat
   | ShowToast
   | SetChatPinned
-  | SetChatReadState;
+  | SetChatReadState
+  | SetChatArchived;

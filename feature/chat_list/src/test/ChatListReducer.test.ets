@@ -19,14 +19,19 @@ import {
   ChatActionRequested,
   ToggleChatPinned,
   ToggleChatMarkedUnread,
+  ToggleChatArchived,
+  OpenArchivedChats,
+  CloseArchivedChats,
   DismissChatActionMenu,
   OnChatActionFailed,
   OnChatsLoaded
 } from '../main/ets/contract/ChatListIntent';
 import {
   ChatListEffect,
+  FetchChatList,
   SetChatPinned,
-  SetChatReadState
+  SetChatReadState,
+  SetChatArchived
 } from '../main/ets/contract/ChatListEffect';
 import { chatListReducer, canMarkChatAsRead } from '../main/ets/reducer/ChatListReducer';
 
@@ -233,6 +238,120 @@ export default function chatListReducerTest() {
       );
       expect(loaded.state.items.length).assertEqual(1);
       expect(loaded.state.items[0].chatId).assertEqual(8);
+    });
+
+    it('openArchivedChats_switchesToArchiveAndEmitsFetch', 0, () => {
+      const state: ChatListUiState = makeState([makeItem(1)]);
+      const result: ReducerResult<ChatListUiState, ChatListEffect> = chatListReducer(
+        state,
+        new OpenArchivedChats(),
+        makeEnv()
+      );
+
+      expect(result.state.listKind).assertEqual('archive');
+      expect(result.state.items.length).assertEqual(0);
+      expect(result.state.isLoading).assertTrue();
+      expect(result.effects.length).assertEqual(1);
+      expect(result.effects[0].kind).assertEqual('fetchChatList');
+      const fetchEffect: FetchChatList = result.effects[0] as FetchChatList;
+      expect(fetchEffect.listKind).assertEqual('archive');
+
+      // 已在 archive 时再发 openArchivedChats 为 no-op
+      const noOpResult: ReducerResult<ChatListUiState, ChatListEffect> = chatListReducer(
+        result.state,
+        new OpenArchivedChats(),
+        makeEnv()
+      );
+      expect(noOpResult.state === result.state).assertTrue();
+      expect(noOpResult.effects.length).assertEqual(0);
+    });
+
+    it('closeArchivedChats_switchesToMainAndEmitsFetch', 0, () => {
+      const archiveState: ChatListUiState = new ChatListUiState([makeItem(9)], false, null, null, 'archive', 0);
+      const result: ReducerResult<ChatListUiState, ChatListEffect> = chatListReducer(
+        archiveState,
+        new CloseArchivedChats(),
+        makeEnv()
+      );
+
+      expect(result.state.listKind).assertEqual('main');
+      expect(result.state.items.length).assertEqual(0);
+      expect(result.state.isLoading).assertTrue();
+      expect(result.effects.length).assertEqual(1);
+      expect(result.effects[0].kind).assertEqual('fetchChatList');
+      const fetchEffect: FetchChatList = result.effects[0] as FetchChatList;
+      expect(fetchEffect.listKind).assertEqual('main');
+
+      // 已在 main 时再发 closeArchivedChats 为 no-op
+      const noOpResult: ReducerResult<ChatListUiState, ChatListEffect> = chatListReducer(
+        result.state,
+        new CloseArchivedChats(),
+        makeEnv()
+      );
+      expect(noOpResult.state === result.state).assertTrue();
+      expect(noOpResult.effects.length).assertEqual(0);
+    });
+
+    it('toggleChatArchived_inMainList_emitsArchive', 0, () => {
+      const menu: ChatActionMenuState = new ChatActionMenuState(7, 'chat-7', false, false, false);
+      const state: ChatListUiState = makeState([makeItem(7)], menu);
+
+      const result: ReducerResult<ChatListUiState, ChatListEffect> = chatListReducer(
+        state,
+        new ToggleChatArchived(),
+        makeEnv()
+      );
+
+      expect(result.effects.length).assertEqual(1);
+      expect(result.effects[0].kind).assertEqual('setChatArchived');
+      const effect: SetChatArchived = result.effects[0] as SetChatArchived;
+      expect(effect.chatId).assertEqual(7);
+      expect(effect.archived).assertTrue();
+      expect(result.state.actionMenu).assertNull();
+    });
+
+    it('toggleChatArchived_inArchiveList_emitsUnarchive', 0, () => {
+      const menu: ChatActionMenuState = new ChatActionMenuState(7, 'chat-7', false, false, true);
+      const state: ChatListUiState = new ChatListUiState([makeItem(7)], false, null, menu, 'archive');
+
+      const result: ReducerResult<ChatListUiState, ChatListEffect> = chatListReducer(
+        state,
+        new ToggleChatArchived(),
+        makeEnv()
+      );
+
+      expect(result.effects.length).assertEqual(1);
+      expect(result.effects[0].kind).assertEqual('setChatArchived');
+      const effect: SetChatArchived = result.effects[0] as SetChatArchived;
+      expect(effect.chatId).assertEqual(7);
+      expect(effect.archived).assertFalse();
+      expect(result.state.actionMenu).assertNull();
+    });
+
+    it('chatActionRequested_inArchiveList_setsIsArchivedTrue', 0, () => {
+      const state: ChatListUiState = new ChatListUiState([makeItem(7)], false, null, null, 'archive');
+      const result: ReducerResult<ChatListUiState, ChatListEffect> = chatListReducer(
+        state,
+        new ChatActionRequested(7),
+        makeEnv()
+      );
+
+      expect(result.state.actionMenu !== null).assertTrue();
+      if (result.state.actionMenu !== null) {
+        expect(result.state.actionMenu.isArchived).assertTrue();
+      }
+    });
+
+    it('onChatsLoaded_carriesArchiveStats', 0, () => {
+      const state: ChatListUiState = makeState([]);
+      const loaded: ReducerResult<ChatListUiState, ChatListEffect> = chatListReducer(
+        state,
+        new OnChatsLoaded([makeItem(8)], 12, 3),
+        makeEnv()
+      );
+
+      expect(loaded.state.archiveUnreadCount).assertEqual(12);
+      expect(loaded.state.archiveChatCount).assertEqual(3);
     });
   });
 }

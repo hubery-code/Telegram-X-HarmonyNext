@@ -10,6 +10,8 @@
 import { UiState } from '@tgx/feature-template';
 import { ChatListItem } from '../model/ChatListItem';
 
+export type ChatListKind = 'main' | 'archive';
+
 /**
  * 长按会话行的操作菜单状态。
  * 文案在 reducer 内定稿（与 Android ChatsController 的单会话菜单一致）：
@@ -23,12 +25,20 @@ export class ChatActionMenuState {
   readonly title: string;
   readonly isPinned: boolean;
   readonly canMarkAsRead: boolean;
+  readonly isArchived: boolean;
 
-  constructor(chatId: number, title: string, isPinned: boolean, canMarkAsRead: boolean) {
+  constructor(
+    chatId: number,
+    title: string,
+    isPinned: boolean,
+    canMarkAsRead: boolean,
+    isArchived: boolean = false
+  ) {
     this.chatId = chatId;
     this.title = title;
     this.isPinned = isPinned;
     this.canMarkAsRead = canMarkAsRead;
+    this.isArchived = isArchived;
   }
 }
 
@@ -37,6 +47,9 @@ export interface ChatListUiStateOptions {
   readonly isLoading?: boolean;
   readonly errorMessage?: string | null;
   readonly actionMenu?: ChatActionMenuState | null;
+  readonly listKind?: ChatListKind;
+  readonly archiveUnreadCount?: number;
+  readonly archiveChatCount?: number;
 }
 
 export class ChatListUiState implements UiState {
@@ -44,21 +57,30 @@ export class ChatListUiState implements UiState {
   readonly isLoading: boolean;
   readonly errorMessage: string | null;
   readonly actionMenu: ChatActionMenuState | null;
+  readonly listKind: ChatListKind;
+  readonly archiveUnreadCount: number;
+  readonly archiveChatCount: number;
 
   constructor(
     items: readonly ChatListItem[],
     isLoading: boolean,
     errorMessage: string | null,
-    actionMenu: ChatActionMenuState | null = null
+    actionMenu: ChatActionMenuState | null = null,
+    listKind: ChatListKind = 'main',
+    archiveUnreadCount: number = 0,
+    archiveChatCount: number = 0
   ) {
     this.items = items;
     this.isLoading = isLoading;
     this.errorMessage = errorMessage;
     this.actionMenu = actionMenu;
+    this.listKind = listKind;
+    this.archiveUnreadCount = archiveUnreadCount;
+    this.archiveChatCount = archiveChatCount;
   }
 
   static initial(): ChatListUiState {
-    return new ChatListUiState([], false, null, null);
+    return new ChatListUiState([], false, null, null, 'main', 0, 0);
   }
 
   copyWith(options: ChatListUiStateOptions): ChatListUiState {
@@ -66,7 +88,10 @@ export class ChatListUiState implements UiState {
       options.items !== undefined ? options.items : this.items,
       options.isLoading !== undefined ? options.isLoading : this.isLoading,
       options.errorMessage !== undefined ? options.errorMessage : this.errorMessage,
-      options.actionMenu !== undefined ? options.actionMenu : this.actionMenu
+      options.actionMenu !== undefined ? options.actionMenu : this.actionMenu,
+      options.listKind !== undefined ? options.listKind : this.listKind,
+      options.archiveUnreadCount !== undefined ? options.archiveUnreadCount : this.archiveUnreadCount,
+      options.archiveChatCount !== undefined ? options.archiveChatCount : this.archiveChatCount
     );
   }
 }

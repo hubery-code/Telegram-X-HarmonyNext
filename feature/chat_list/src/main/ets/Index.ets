@@ -12,6 +12,7 @@ export {
 export { generateMockChats } from './model/MockChatData';
 
 export {
+  ChatListKind,
   ChatListUiStateOptions,
   ChatListUiState,
   ChatActionMenuState
@@ -23,9 +24,12 @@ export {
   ChatSelected,
   OnChatsLoaded,
   OnChatsLoadFailed,
+  OpenArchivedChats,
+  CloseArchivedChats,
   ChatActionRequested,
   ToggleChatPinned,
   ToggleChatMarkedUnread,
+  ToggleChatArchived,
   DismissChatActionMenu,
   OnChatActionFailed,
   ChatListIntent
@@ -37,6 +41,7 @@ export {
   ShowToast,
   SetChatPinned,
   SetChatReadState,
+  SetChatArchived,
   ChatListEffect
 } from './contract/ChatListEffect';
 

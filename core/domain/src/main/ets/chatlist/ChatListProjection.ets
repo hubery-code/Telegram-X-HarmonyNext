@@ -1,10 +1,12 @@
-import { encodeLoadChats, decodeTdUpdate,
+import { encodeAddChatToList,
+ encodeLoadChats, decodeTdUpdate,
  encodeToggleChatIsPinned,
  encodeToggleChatIsMarkedAsUnread,
  encodeViewMessages,
 
  ChatListFolder,
 
+  AddChatToList,
   Chat,
   ChatPosition,
   MessageSourceChatList,
@@ -196,6 +198,14 @@ export class ChatListProjection {
     req.chat_id = chatId;
     req.is_pinned = isPinned;
     return this.scope.request('toggleChatIsPinned', encodeToggleChatIsPinned(req) as TdWireObject);
+  }
+
+  /** Move a chat between Main and Archive. TDLib emits position updates for both lists. */
+  moveChatToList(chatId: number, targetList: TdChatList): Result<TdPendingRequest, AppError> {
+    const req: AddChatToList = new AddChatToList();
+    req.chat_id = chatId;
+    req.chat_list = targetList;
+    return this.scope.request('addChatToList', encodeAddChatToList(req) as TdWireObject);
   }
 
   /**

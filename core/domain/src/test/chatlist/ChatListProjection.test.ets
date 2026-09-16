@@ -229,6 +229,22 @@ export default function chatListProjectionTest() {
       proj.stop();
     });
 
+    it('moveChatToList sends addChatToList request with target list', 0, (): void => {
+      const bridge = new TestNativeBridge();
+      const scope = createScope(bridge);
+      const registry = new ChatRegistry();
+      const proj = new ChatListProjection(new ChatListMain(), registry, scope);
+
+      const result = proj.moveChatToList(42, new ChatListArchive());
+      expect(result.ok).assertTrue();
+      expect(bridge.sent.length).assertEqual(1);
+      const reqJson = JSON.parse(bridge.sent[0].utf8) as Record<string, Object>;
+      expect(reqJson['@type']).assertEqual('addChatToList');
+      expect(reqJson['chat_id']).assertEqual(42);
+      const targetChatList = reqJson['chat_list'] as Record<string, Object>;
+      expect(targetChatList['@type']).assertEqual('chatListArchive');
+    });
+
   });
 }
 

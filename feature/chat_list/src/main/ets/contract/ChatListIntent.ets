@@ -36,10 +36,26 @@ export class ChatSelected implements Intent {
 export class OnChatsLoaded implements Intent {
   readonly kind: 'onChatsLoaded' = 'onChatsLoaded';
   readonly items: readonly ChatListItem[];
+  readonly archiveUnreadCount: number;
+  readonly archiveChatCount: number;
 
-  constructor(items: readonly ChatListItem[]) {
+  constructor(
+    items: readonly ChatListItem[],
+    archiveUnreadCount: number = 0,
+    archiveChatCount: number = 0
+  ) {
     this.items = items;
+    this.archiveUnreadCount = archiveUnreadCount;
+    this.archiveChatCount = archiveChatCount;
   }
+}
+
+export class OpenArchivedChats implements Intent {
+  readonly kind: 'openArchivedChats' = 'openArchivedChats';
+}
+
+export class CloseArchivedChats implements Intent {
+  readonly kind: 'closeArchivedChats' = 'closeArchivedChats';
 }
 
 export class OnChatsLoadFailed implements Intent {
@@ -71,6 +87,10 @@ export class ToggleChatMarkedUnread implements Intent {
   readonly kind: 'toggleChatMarkedUnread' = 'toggleChatMarkedUnread';
 }
 
+export class ToggleChatArchived implements Intent {
+  readonly kind: 'toggleChatArchived' = 'toggleChatArchived';
+}
+
 /** MSG-108：关闭操作菜单（点遮罩 / 返回键）。 */
 export class DismissChatActionMenu implements Intent {
   readonly kind: 'dismissChatActionMenu' = 'dismissChatActionMenu';
@@ -92,8 +112,11 @@ export type ChatListIntent =
   | ChatSelected
   | OnChatsLoaded
   | OnChatsLoadFailed
+  | OpenArchivedChats
+  | CloseArchivedChats
   | ChatActionRequested
   | ToggleChatPinned
   | ToggleChatMarkedUnread
+  | ToggleChatArchived
   | DismissChatActionMenu
   | OnChatActionFailed;

@@ -59,7 +59,7 @@
 |---|---|---|---|---|---|---|---|---|
 | FEAT-CHAT-001 | 会话列表分页加载与排序 | P1 | `ui/ChatsController.java`, `telegram/Tdlib.java:1841`（LoadChats） | GetChats, LoadChats, updateNewChat, updateChatLastMessage | 冷启动首屏 ≤1s 出列表，滚动到底自动加载下一页 | — | Accepted | 迁移组 |
 | FEAT-CHAT-002 | 会话置顶/取消置顶 | P1 | `ui/ChatsController.java:1457`（ToggleChatIsPinned） | ToggleChatIsPinned, updateChatPosition | 置顶会话固定于列表顶部并按 pin 时间排序 | — | Accepted | 迁移组 |
-| FEAT-CHAT-003 | 归档/取消归档 | P1 | `ui/ChatsController.java:1766`（经 `telegram/TdlibUi.java` processChatAction, btn_archiveUnarchiveChat） | ChangeChatList（ChatListArchive ↔ ChatListMain）, updateNewChat | 归档会话移入归档区并可还原，归档未读可折叠计数 | — | Backlog | |
+| FEAT-CHAT-003 | 归档/取消归档 | P1 | `ui/ChatsController.java:1766`（经 `telegram/TdlibUi.java` processChatAction, btn_archiveUnarchiveChat） | ChangeChatList（ChatListArchive ↔ ChatListMain）, updateNewChat | 归档会话移入归档区并可还原，归档未读可折叠计数 | — | Accepted | 迁移组 |
 | FEAT-CHAT-004 | 未读数 / @提及计数 / 手动标未读 | P1 | `ui/ChatsController.java:2819`（onChatReadInbox）, `:3004`（onChatCounterChanged）, `telegram/Tdlib.java:1853`（ToggleChatIsMarkedAsUnread） | ToggleChatIsMarkedAsUnread, updateUnreadMessageCount, updateUnreadChatCount | 徽标数与 TDLib counter 一致，静音会话不计入全局角标 | — | Accepted | 迁移组 |
 | FEAT-CHAT-005 | 输入草稿保存与展示 | P1 | `component/chat/InputView.java`, `ui/MessagesController.java` | SetChatDraftMessage, updateChatDraftMessage | 离开聊天后列表项显示草稿前缀样式，重进恢复输入 | — | Accepted | 迁移组 |
 

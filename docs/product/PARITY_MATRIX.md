@@ -37,7 +37,7 @@
 | FEAT-ACC-003 | 登出当前账号 | Dev Match | SettingsCoordinator 登出触发会话销毁 |
 | FEAT-CHAT-001 | 会话列表分页加载与排序 | Dev Match | ChatListProjection 本地缓存加载与置顶重排对齐 |
 | FEAT-CHAT-002 | 置顶/取消置顶 | Dev Match | 长按菜单 Pin/Unpin，时间戳左侧 📌 标记对齐 |
-| FEAT-CHAT-003 | 归档/还原交互 | Not Started | 归档区待后续工作包接入 |
+| FEAT-CHAT-003 | 归档/还原交互 | Dev Match | 长按菜单 Archive/Unarchive，主列表归档区入口与未读摘要折叠计数对齐 |
 | FEAT-CHAT-004 | 未读数与手动标未读 | Dev Match | 长按标未读，未读数与蓝色圆点展示对齐 |
 | FEAT-CHAT-005 | 草稿展示样式 | Dev Match | 输入栏草稿退出自动保存至 TDLib，列表项红色 Draft: 前缀与重进恢复 |
 | FEAT-MSG-001 | 私聊消息流展示 | Dev Match | 气泡、时间戳、发送态（pending/sent/read）对齐 |

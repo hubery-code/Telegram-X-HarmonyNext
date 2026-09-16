@@ -20,6 +20,8 @@ import { AccountScope } from '@tgx/core-account';
 import {
   Chat,
   ChatListMain,
+  ChatListArchive,
+  TdChatList,
   File,
   Message,
   MessageSticker,
@@ -53,7 +55,8 @@ import {
   NavigateToChat,
   ShowToast,
   SetChatPinned,
-  SetChatReadState
+  SetChatReadState,
+  SetChatArchived
 } from '../contract/ChatListEffect';
 import { chatListReducer } from '../reducer/ChatListReducer';
 
@@ -113,7 +116,8 @@ function messagePreview(message: Message | null): string {
 
 export class ChatListCoordinator {
   private readonly registry: ChatRegistry;
-  private readonly projection: ChatListProjection;
+  private readonly mainProjection: ChatListProjection;
+  private readonly archiveProjection: ChatListProjection;
   private readonly fileRegistry: FileRegistry;
   private readonly scope: AccountScope;
   private readonly env: ReducerEnv;
@@ -124,8 +128,9 @@ export class ChatListCoordinator {
   private readonly avatarSubscriptions: Map<number, Subscription> = new Map();
   private syncScheduled: boolean = false;
   private destroyed: boolean = false;
-  /** MSG-108：本页对应的 TDLib 会话列表（置顶态要按列表判定，不能只看 chat 自身）。 */
-  private readonly chatList: ChatListMain;
+  /** CHAT-003：支持 Main 与 Archive 两个 TDLib 列表投影。 */
+  private readonly mainList: ChatListMain;
+  private readonly archiveList: ChatListArchive;
   private readonly logger: Logger;
 
   constructor(
@@ -135,8 +140,10 @@ export class ChatListCoordinator {
     logger?: Logger
   ) {
     this.registry = new ChatRegistry();
-    this.chatList = new ChatListMain();
-    this.projection = new ChatListProjection(this.chatList, this.registry, scope);
+    this.mainList = new ChatListMain();
+    this.archiveList = new ChatListArchive();
+    this.mainProjection = new ChatListProjection(this.mainList, this.registry, scope);
+    this.archiveProjection = new ChatListProjection(this.archiveList, this.registry, scope);
     this.fileRegistry = new FileRegistry(scope);
     // MSG-108：置顶/标未读是"改现状"的操作，请求级失败要回灌到操作菜单调用方，
     // 所以这里保留 scope 引用（投影只暴露状态，不暴露请求能力）。
@@ -172,17 +179,24 @@ export class ChatListCoordinator {
   }
 
   start(): void {
-    this.projection.setOnStateChanged(() => {
+    this.mainProjection.setOnStateChanged(() => {
       this.scheduleSyncFromProjection();
     });
-    this.projection.start();
+    this.archiveProjection.setOnStateChanged(() => {
+      this.scheduleSyncFromProjection();
+    });
+    this.mainProjection.start();
+    this.archiveProjection.start();
+    this.archiveProjection.loadNextPage(20);
     this.dispatch(new LoadChats());
   }
 
   destroy(): void {
     this.destroyed = true;
-    this.projection.setOnStateChanged(null);
-    this.projection.stop();
+    this.mainProjection.setOnStateChanged(null);
+    this.mainProjection.stop();
+    this.archiveProjection.setOnStateChanged(null);
+    this.archiveProjection.stop();
     this.fileRegistry.stop();
     const subs: Subscription[] = Array.from(this.avatarSubscriptions.values());
     for (let i = 0; i < subs.length; i++) {
@@ -241,9 +255,21 @@ export class ChatListCoordinator {
   }
 
   private syncFromProjection(): void {
-    const projectionState: ChatListState = this.projection.state;
-    const items: ChatListItem[] = this.mapChatsToItems(projectionState.chatIds);
-    this.dispatch(new OnChatsLoaded(items));
+    const isArchive: boolean = this.currentState.listKind === 'archive';
+    const currentProjection: ChatListProjection = isArchive ? this.archiveProjection : this.mainProjection;
+    const currentList: TdChatList = isArchive ? this.archiveList : this.mainList;
+    const items: ChatListItem[] = this.mapChatsToItems(currentProjection.state.chatIds, currentList);
+
+    let archiveUnreadCount: number = 0;
+    const archiveChatIds: readonly number[] = this.archiveProjection.state.chatIds;
+    for (let i = 0; i < archiveChatIds.length; i++) {
+      const chat: Chat | undefined = this.registry.getChat(archiveChatIds[i]);
+      if (chat !== undefined && chat.unread_count > 0) {
+        archiveUnreadCount += chat.unread_count;
+      }
+    }
+    const archiveChatCount: number = archiveChatIds.length;
+    this.dispatch(new OnChatsLoaded(items, archiveUnreadCount, archiveChatCount));
   }
 
   private requestAvatarDownload(fileId: number): void {
@@ -269,7 +295,7 @@ export class ChatListCoordinator {
     this.fileRegistry.downloadFile(fileId, 2);
   }
 
-  private mapChatsToItems(chatIds: readonly number[]): ChatListItem[] {
+  private mapChatsToItems(chatIds: readonly number[], currentList: TdChatList): ChatListItem[] {
     const items: ChatListItem[] = [];
     for (let i = 0; i < chatIds.length; i++) {
       const chat: Chat | undefined = this.registry.getChat(chatIds[i]);
@@ -307,9 +333,8 @@ export class ChatListCoordinator {
         chat.unread_count,
         avatarColorForChatId(chat.id),
         avatarLetterForTitle(chat.title),
-        // MSG-108：置顶态取 ChatPosition.is_pinned（按本页的 chatList 判定），
-        // 手动未读标记独立于 unread_count。
-        isChatPinnedInList(chat, this.chatList),
+        // MSG-108 / CHAT-003：置顶态按当前激活的 chatList 判定
+        isChatPinnedInList(chat, currentList),
         chat.is_marked_as_unread,
         avatarPath,
         draftText
@@ -322,13 +347,15 @@ export class ChatListCoordinator {
     switch (effect.kind) {
       case 'fetchChatList': {
         const fetchEffect: FetchChatList = effect as FetchChatList;
-        const result = this.projection.loadNextPage(fetchEffect.limit);
+        const targetProjection: ChatListProjection =
+          fetchEffect.listKind === 'archive' ? this.archiveProjection : this.mainProjection;
+        const result = targetProjection.loadNextPage(fetchEffect.limit);
         // FIX-001：null = 投影正在加载或已到末尾，属正常跳过——不打日志、不报错、
         // 不弹 toast（此前把守卫当错误，冷启动必留一条假错误）。
         if (result === null) {
           break;
         }
-        this.logger.info(TAG, 'executing_load_chats', `limit=${fetchEffect.limit}`);
+        this.logger.info(TAG, 'executing_load_chats', `limit=${fetchEffect.limit},kind=${fetchEffect.listKind}`);
         if (result.err) {
           this.logger.logError(TAG, result.error);
           this.dispatch(new OnChatsLoadFailed(result.error));
@@ -367,8 +394,10 @@ export class ChatListCoordinator {
       case 'setChatPinned': {
         const pin: SetChatPinned = effect as SetChatPinned;
         this.logger.info(TAG, 'toggle_chat_pinned', `chatId=${pin.chatId},isPinned=${pin.isPinned}`);
+        const targetProjection: ChatListProjection =
+          this.currentState.listKind === 'archive' ? this.archiveProjection : this.mainProjection;
         const result: Result<TdPendingRequest, AppError> =
-          this.projection.toggleChatIsPinned(pin.chatId, pin.isPinned);
+          targetProjection.toggleChatIsPinned(pin.chatId, pin.isPinned);
         this.settleChatAction(result, 'toggleChatIsPinned');
         break;
       }
@@ -376,17 +405,19 @@ export class ChatListCoordinator {
       case 'setChatReadState': {
         const readState: SetChatReadState = effect as SetChatReadState;
         this.logger.info(TAG, 'set_chat_read_state', `chatId=${readState.chatId},markAsUnread=${readState.markAsUnread}`);
+        const targetProjection: ChatListProjection =
+          this.currentState.listKind === 'archive' ? this.archiveProjection : this.mainProjection;
         if (readState.markAsUnread) {
           // 标未读：只置手动标记。未读数是 TDLib 的事，本端不臆造。
           const markResult: Result<TdPendingRequest, AppError> =
-            this.projection.toggleChatIsMarkedAsUnread(readState.chatId, true);
+            targetProjection.toggleChatIsMarkedAsUnread(readState.chatId, true);
           this.settleChatAction(markResult, 'toggleChatIsMarkedAsUnread(true)');
         } else {
           // 标记已读 = 清手动标记 + 把未读消息读掉（对齐 Android Tdlib.markAllAsRead：
           // 有未读数先 readMessages，再看 isMarkedAsUnread 清标记）。两件事独立请求，
           // 各自失败各自回灌；清标记无条件发（幂等），读消息需要 lastMessageId。
           const clearResult: Result<TdPendingRequest, AppError> =
-            this.projection.toggleChatIsMarkedAsUnread(readState.chatId, false);
+            targetProjection.toggleChatIsMarkedAsUnread(readState.chatId, false);
           this.settleChatAction(clearResult, 'toggleChatIsMarkedAsUnread(false)');
 
           const chat: Chat | undefined = this.registry.getChat(readState.chatId);
@@ -395,10 +426,20 @@ export class ChatListCoordinator {
             : 0;
           if (chat !== undefined && chat.unread_count > 0 && lastMessageId > 0) {
             const readResult: Result<TdPendingRequest, AppError> =
-              this.projection.markChatRead(readState.chatId, lastMessageId);
+              targetProjection.markChatRead(readState.chatId, lastMessageId);
             this.settleChatAction(readResult, 'viewMessages(read)');
           }
         }
+        break;
+      }
+
+      case 'setChatArchived': {
+        const archiveEffect: SetChatArchived = effect as SetChatArchived;
+        this.logger.info(TAG, 'toggle_chat_archived', `chatId=${archiveEffect.chatId},archived=${archiveEffect.archived}`);
+        const targetList: TdChatList = archiveEffect.archived ? this.archiveList : this.mainList;
+        const result: Result<TdPendingRequest, AppError> =
+          this.mainProjection.moveChatToList(archiveEffect.chatId, targetList);
+        this.settleChatAction(result, archiveEffect.archived ? 'addChatToList(archive)' : 'addChatToList(main)');
         break;
       }
 

@@ -32,6 +32,7 @@ import {
   FetchChatList,
   NavigateToChat,
   ShowToast,
+  SetChatArchived,
   SetChatPinned,
   SetChatReadState
 } from '../contract/ChatListEffect';
@@ -72,7 +73,7 @@ export const chatListReducer: Reducer<ChatListUiState, ChatListIntent, ChatListE
         isLoading: true,
         errorMessage: null
       });
-      const effects: ChatListEffect[] = [new FetchChatList(CHAT_LIST_PAGE_SIZE)];
+      const effects: ChatListEffect[] = [new FetchChatList(CHAT_LIST_PAGE_SIZE, state.listKind)];
       return reduced(nextState, effects);
     }
 
@@ -87,7 +88,9 @@ export const chatListReducer: Reducer<ChatListUiState, ChatListIntent, ChatListE
       const nextState: ChatListUiState = state.copyWith({
         items: loadedIntent.items,
         isLoading: false,
-        errorMessage: null
+        errorMessage: null,
+        archiveUnreadCount: loadedIntent.archiveUnreadCount,
+        archiveChatCount: loadedIntent.archiveChatCount
       });
       return reduced(nextState);
     }
@@ -99,6 +102,36 @@ export const chatListReducer: Reducer<ChatListUiState, ChatListIntent, ChatListE
         errorMessage: failedIntent.error.message
       });
       const effects: ChatListEffect[] = [new ShowToast(failedIntent.error.message)];
+      return reduced(nextState, effects);
+    }
+
+    case 'openArchivedChats': {
+      if (state.listKind === 'archive') {
+        return reduced(state);
+      }
+      const nextState: ChatListUiState = state.copyWith({
+        items: [],
+        listKind: 'archive',
+        isLoading: true,
+        actionMenu: null,
+        errorMessage: null
+      });
+      const effects: ChatListEffect[] = [new FetchChatList(CHAT_LIST_PAGE_SIZE, 'archive')];
+      return reduced(nextState, effects);
+    }
+
+    case 'closeArchivedChats': {
+      if (state.listKind === 'main') {
+        return reduced(state);
+      }
+      const nextState: ChatListUiState = state.copyWith({
+        items: [],
+        listKind: 'main',
+        isLoading: true,
+        actionMenu: null,
+        errorMessage: null
+      });
+      const effects: ChatListEffect[] = [new FetchChatList(CHAT_LIST_PAGE_SIZE, 'main')];
       return reduced(nextState, effects);
     }
 
@@ -114,7 +147,8 @@ export const chatListReducer: Reducer<ChatListUiState, ChatListIntent, ChatListE
         item.chatId,
         item.title,
         item.isPinned,
-        canMarkChatAsRead(item)
+        canMarkChatAsRead(item),
+        state.listKind === 'archive'
       );
       return reduced(state.copyWith({ actionMenu: menu }));
     }
@@ -137,6 +171,15 @@ export const chatListReducer: Reducer<ChatListUiState, ChatListIntent, ChatListE
       // canMarkAsRead=true（当前有未读/已标未读）→ 执行"标记已读"（markAsUnread=false）
       const markAsUnread: boolean = !menu.canMarkAsRead;
       const effects: ChatListEffect[] = [new SetChatReadState(menu.chatId, markAsUnread)];
+      return reduced(state.copyWith({ actionMenu: null, errorMessage: null }), effects);
+    }
+
+    case 'toggleChatArchived': {
+      const menu: ChatActionMenuState | null = state.actionMenu;
+      if (menu === null) {
+        return reduced(state);
+      }
+      const effects: ChatListEffect[] = [new SetChatArchived(menu.chatId, !menu.isArchived)];
       return reduced(state.copyWith({ actionMenu: null, errorMessage: null }), effects);
     }
 

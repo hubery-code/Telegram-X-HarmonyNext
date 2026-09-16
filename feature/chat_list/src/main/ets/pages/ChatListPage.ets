@@ -25,6 +25,9 @@ import {
   ChatActionRequested,
   ToggleChatPinned,
   ToggleChatMarkedUnread,
+  ToggleChatArchived,
+  OpenArchivedChats,
+  CloseArchivedChats,
   DismissChatActionMenu
 } from '../contract/ChatListIntent';
 
@@ -163,60 +166,89 @@ export struct ChatListPage {
   build() {
     Stack() {
       Column() {
-        Row() {
-          Text('Chats')
-            .fontSize(T.typography.largeTitle.fontSize)
-            .fontWeight(T.typography.largeTitle.fontWeight)
-            .fontColor(T.colors.textPrimary)
-            .layoutWeight(1)
+        if (this.uiState.listKind === 'archive') {
+          // CHAT-003：归档列表顶部导航栏（返回按钮 + 标题）
+          Row() {
+            Text('←')
+              .fontSize(T.typography.largeTitle.fontSize)
+              .fontWeight(T.typography.title.fontWeight)
+              .fontColor(T.colors.accent)
+              .width(SETTINGS_BUTTON_SIZE)
+              .height(SETTINGS_BUTTON_SIZE)
+              .textAlign(TextAlign.Center)
+              .margin({ right: T.spacing.sm })
+              .onClick(() => {
+                this.onDispatch(new CloseArchivedChats());
+              })
 
-          Text('⚙')
-            .fontSize(T.typography.largeTitle.fontSize)
-            .fontWeight(T.typography.title.fontWeight)
-            .fontColor(T.colors.accent)
-            .width(SETTINGS_BUTTON_SIZE)
-            .height(SETTINGS_BUTTON_SIZE)
-            .textAlign(TextAlign.Center)
-            .onClick(() => {
-              this.onOpenSettings();
-            })
+            Text('Archived Chats')
+              .fontSize(T.typography.largeTitle.fontSize)
+              .fontWeight(T.typography.largeTitle.fontWeight)
+              .fontColor(T.colors.textPrimary)
+              .layoutWeight(1)
+          }
+          .width('100%')
+          .alignItems(VerticalAlign.Center)
+          .padding({
+            left: T.spacing.screenInset,
+            right: T.spacing.screenInset,
+            top: T.spacing.lg,
+            bottom: T.spacing.md
+          })
+        } else {
+          Row() {
+            Text('Chats')
+              .fontSize(T.typography.largeTitle.fontSize)
+              .fontWeight(T.typography.largeTitle.fontWeight)
+              .fontColor(T.colors.textPrimary)
+              .layoutWeight(1)
+
+            Text('⚙')
+              .fontSize(T.typography.largeTitle.fontSize)
+              .fontWeight(T.typography.title.fontWeight)
+              .fontColor(T.colors.accent)
+              .width(SETTINGS_BUTTON_SIZE)
+              .height(SETTINGS_BUTTON_SIZE)
+              .textAlign(TextAlign.Center)
+              .onClick(() => {
+                this.onOpenSettings();
+              })
+          }
+          .width('100%')
+          .alignItems(VerticalAlign.Center)
+          .padding({
+            left: T.spacing.screenInset,
+            right: T.spacing.screenInset,
+            top: T.spacing.lg,
+            bottom: T.spacing.md
+          })
+
+          // INTEG-002：搜索入口。
+          Row() {
+            Text('🔍')
+              .fontSize(T.typography.subheadline.fontSize)
+              .margin({ right: T.spacing.xs })
+
+            Text('Search')
+              .fontSize(T.typography.body.fontSize)
+              .fontColor(T.colors.textSecondary)
+              .layoutWeight(1)
+          }
+          .width('100%')
+          .height(SEARCH_BAR_HEIGHT)
+          .alignItems(VerticalAlign.Center)
+          .padding({ left: T.spacing.md, right: T.spacing.md })
+          .backgroundColor(T.colors.surfaceVariant)
+          .borderRadius(T.radius.md)
+          .margin({
+            left: T.spacing.screenInset,
+            right: T.spacing.screenInset,
+            bottom: T.spacing.sm
+          })
+          .onClick(() => {
+            this.onOpenSearch();
+          })
         }
-        .width('100%')
-        .alignItems(VerticalAlign.Center)
-        .padding({
-          left: T.spacing.screenInset,
-          right: T.spacing.screenInset,
-          top: T.spacing.lg,
-          bottom: T.spacing.md
-        })
-
-        // INTEG-002：搜索入口。做成"长得像输入框的可点行"而非真输入框——
-        // 真输入框要把结果渲染进本列表，那属于会话列表内联搜索（SEARCH-102 方向）；
-        // 本包只负责把入口接到独立 SearchPage。
-        Row() {
-          Text('🔍')
-            .fontSize(T.typography.subheadline.fontSize)
-            .margin({ right: T.spacing.xs })
-
-          Text('Search')
-            .fontSize(T.typography.body.fontSize)
-            .fontColor(T.colors.textSecondary)
-            .layoutWeight(1)
-        }
-        .width('100%')
-        .height(SEARCH_BAR_HEIGHT)
-        .alignItems(VerticalAlign.Center)
-        .padding({ left: T.spacing.md, right: T.spacing.md })
-        .backgroundColor(T.colors.surfaceVariant)
-        .borderRadius(T.radius.md)
-        .margin({
-          left: T.spacing.screenInset,
-          right: T.spacing.screenInset,
-          bottom: T.spacing.sm
-        })
-        .onClick(() => {
-          this.onOpenSearch();
-        })
 
         // MSG-108：置顶/标未读失败的错误细条（不挡列表）。
         if (this.uiState.errorMessage !== null && this.uiState.items.length > 0) {
@@ -242,6 +274,13 @@ export struct ChatListPage {
         } else {
           Refresh({ refreshing: $$this.isRefreshing }) {
             List() {
+              // CHAT-003：主列表中且存在归档会话时，顶部展示归档区入口行
+              if (this.uiState.listKind === 'main' && (this.uiState.archiveChatCount > 0 || this.uiState.archiveUnreadCount > 0)) {
+                ListItem() {
+                  this.ArchivedChatsRow()
+                }
+              }
+
               LazyForEach(this.dataSource, (item: ChatListItem) => {
                 ListItem() {
                   this.ChatRow(item)
@@ -284,9 +323,74 @@ export struct ChatListPage {
   }
 
   /**
-   * MSG-108：单会话操作菜单。
+   * CHAT-003：主列表顶部的归档区入口行。
+   */
+  @Builder
+  ArchivedChatsRow() {
+    Row() {
+      Text('🗄️')
+        .width(AVATAR_SIZE)
+        .height(AVATAR_SIZE)
+        .borderRadius(T.radius.full)
+        .backgroundColor(T.colors.surfaceVariant)
+        .fontSize(T.typography.title.fontSize)
+        .textAlign(TextAlign.Center)
+        .margin({ right: T.spacing.md })
+
+      Column() {
+        Row() {
+          Text('Archived Chats')
+            .fontSize(T.typography.headline.fontSize)
+            .fontWeight(T.typography.headline.fontWeight)
+            .fontColor(T.colors.textPrimary)
+            .layoutWeight(1)
+
+          if (this.uiState.archiveUnreadCount > 0) {
+            Text(this.uiState.archiveUnreadCount > 99 ? '99+' : `${this.uiState.archiveUnreadCount}`)
+              .fontSize(T.typography.caption.fontSize)
+              .fontWeight(T.typography.headline.fontWeight)
+              .fontColor(T.colors.textOnAccent)
+              .backgroundColor(T.colors.accent)
+              .borderRadius(T.radius.full)
+              .height(BADGE_HEIGHT)
+              .constraintSize({ minWidth: BADGE_HEIGHT })
+              .padding({ left: T.spacing.xs + T.spacing.hairline, right: T.spacing.xs + T.spacing.hairline })
+              .textAlign(TextAlign.Center)
+              .margin({ left: T.spacing.sm })
+          }
+        }
+        .width('100%')
+        .margin({ bottom: T.spacing.xs })
+
+        Row() {
+          Text(this.uiState.archiveChatCount > 0 ? `${this.uiState.archiveChatCount} chats` : 'Archived chats')
+            .fontSize(T.typography.subheadline.fontSize)
+            .fontColor(T.colors.textSecondary)
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+            .layoutWeight(1)
+        }
+        .width('100%')
+      }
+      .layoutWeight(1)
+      .alignItems(HorizontalAlign.Start)
+    }
+    .width('100%')
+    .padding({
+      left: T.spacing.screenInset,
+      right: T.spacing.screenInset,
+      top: T.spacing.md,
+      bottom: T.spacing.md
+    })
+    .onClick(() => {
+      this.onDispatch(new OpenArchivedChats());
+    })
+  }
+
+  /**
+   * MSG-108 / CHAT-003：单会话操作菜单。
    * 项与文案对齐 Android ChatsController 单会话菜单：
-   * Pin/Unpin（依 isPinned）+ Mark as read/Mark as unread（依 canMarkAsRead）。
+   * Pin/Unpin + Mark as read/unread + Archive/Unarchive。
    */
   @Builder
   ChatActionSheet(menu: ChatActionMenuState) {
@@ -339,6 +443,20 @@ export struct ChatListPage {
           })
           .onClick(() => {
             this.onDispatch(new ToggleChatMarkedUnread());
+          })
+
+        Text(menu.isArchived ? 'Unarchive' : 'Archive')
+          .fontSize(T.typography.body.fontSize)
+          .fontColor(T.colors.textPrimary)
+          .width('100%')
+          .padding({
+            left: T.spacing.screenInset,
+            right: T.spacing.screenInset,
+            top: T.spacing.md,
+            bottom: T.spacing.md
+          })
+          .onClick(() => {
+            this.onDispatch(new ToggleChatArchived());
           })
       }
       .width('100%')
@@ -489,7 +607,7 @@ export struct ChatListPage {
   @Builder
   EmptyView() {
     Column() {
-      Text('No chats yet')
+      Text(this.uiState.listKind === 'archive' ? 'No archived chats' : 'No chats yet')
         .fontSize(T.typography.body.fontSize)
         .fontColor(T.colors.textSecondary)
     }
