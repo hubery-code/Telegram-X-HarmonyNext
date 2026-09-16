@@ -8,7 +8,15 @@
  */
 
 import { Logger } from '@tgx/observability';
-import { ManualClock, SequentialIdGenerator, Result, AppError } from '@tgx/core-common';
+import {
+  AppError,
+  AppErrors,
+  Result,
+  SequentialIdGenerator,
+  SystemClock,
+  err,
+  ok
+} from '@tgx/core-common';
 import { AccountScope } from '@tgx/core-account';
 import {
   Chats,
@@ -56,8 +64,18 @@ function formatMessageDate(unixSeconds: number): string {
 }
 
 export interface SearchQueryProvider {
-  searchChats(query: string, limit: number): Promise<SearchChatItem[]>;
-  searchMessages(query: string, limit: number): Promise<SearchMessageItem[]>;
+  searchChats(query: string, limit: number): Promise<Result<SearchChatItem[], AppError>>;
+  searchMessages(query: string, limit: number): Promise<Result<SearchMessageItem[], AppError>>;
+}
+
+export function searchErrorMessage(error: AppError): string {
+  if (error.kind === 'tdlib' && error.code === 'too_many_requests') {
+    return 'Too many searches. Please wait a moment and try again.';
+  }
+  if (error.kind === 'network') {
+    return 'Search is temporarily unavailable. Check your connection and try again.';
+  }
+  return 'Search failed. Please try again.';
 }
 
 /**
@@ -100,7 +118,7 @@ export class TdlibSearchQueryProvider implements SearchQueryProvider {
     return this.resolveChatMetadata !== null ? this.resolveChatMetadata(chatId) : null;
   }
 
-  async searchChats(query: string, limit: number): Promise<SearchChatItem[]> {
+  async searchChats(query: string, limit: number): Promise<Result<SearchChatItem[], AppError>> {
     const req = new SearchChats();
     req.query = query;
     req.limit = limit;
@@ -125,20 +143,30 @@ export class TdlibSearchQueryProvider implements SearchQueryProvider {
               false
             ));
           }
-          return items;
+          return ok<SearchChatItem[], AppError>(items);
         }
+        const decodeError: AppError = AppErrors.internal(
+          'search_chats_decode',
+          'TDLib searchChats response could not be decoded'
+        );
+        this.logger.logError(TAG, decodeError);
+        return err<SearchChatItem[], AppError>(decodeError);
       }
       if (response.err) {
         this.logger.logError(TAG, response.error);
+        return err<SearchChatItem[], AppError>(response.error);
       }
     }
     if (result.err) {
       this.logger.logError(TAG, result.error);
+      return err<SearchChatItem[], AppError>(result.error);
     }
-    return [];
+    return err<SearchChatItem[], AppError>(
+      AppErrors.internal('search_chats_result', 'TDLib searchChats returned no result')
+    );
   }
 
-  async searchMessages(query: string, limit: number): Promise<SearchMessageItem[]> {
+  async searchMessages(query: string, limit: number): Promise<Result<SearchMessageItem[], AppError>> {
     const req = new SearchMessages();
     req.query = query;
     req.limit = limit;
@@ -170,17 +198,27 @@ export class TdlibSearchQueryProvider implements SearchQueryProvider {
               formatMessageDate(msg.date)
             ));
           }
-          return items;
+          return ok<SearchMessageItem[], AppError>(items);
         }
+        const decodeError: AppError = AppErrors.internal(
+          'search_messages_decode',
+          'TDLib searchMessages response could not be decoded'
+        );
+        this.logger.logError(TAG, decodeError);
+        return err<SearchMessageItem[], AppError>(decodeError);
       }
       if (response.err) {
         this.logger.logError(TAG, response.error);
+        return err<SearchMessageItem[], AppError>(response.error);
       }
     }
     if (result.err) {
       this.logger.logError(TAG, result.error);
+      return err<SearchMessageItem[], AppError>(result.error);
     }
-    return [];
+    return err<SearchMessageItem[], AppError>(
+      AppErrors.internal('search_messages_result', 'TDLib searchMessages returned no result')
+    );
   }
 }
 
@@ -203,7 +241,7 @@ export class MockSearchQueryProvider implements SearchQueryProvider {
     ];
   }
 
-  async searchChats(query: string, limit: number): Promise<SearchChatItem[]> {
+  async searchChats(query: string, limit: number): Promise<Result<SearchChatItem[], AppError>> {
     const q: string = query.toLowerCase();
     const filtered: SearchChatItem[] = [];
     for (let i = 0; i < this.mockChats.length; i++) {
@@ -215,10 +253,10 @@ export class MockSearchQueryProvider implements SearchQueryProvider {
         }
       }
     }
-    return filtered;
+    return ok<SearchChatItem[], AppError>(filtered);
   }
 
-  async searchMessages(query: string, limit: number): Promise<SearchMessageItem[]> {
+  async searchMessages(query: string, limit: number): Promise<Result<SearchMessageItem[], AppError>> {
     const q: string = query.toLowerCase();
     const filtered: SearchMessageItem[] = [];
     for (let i = 0; i < this.mockMessages.length; i++) {
@@ -234,7 +272,7 @@ export class MockSearchQueryProvider implements SearchQueryProvider {
         }
       }
     }
-    return filtered;
+    return ok<SearchMessageItem[], AppError>(filtered);
   }
 }
 
@@ -244,6 +282,7 @@ export interface SearchCoordinatorOptions {
   readonly env?: ReducerEnv;
   readonly onNavigateToChat?: (chatId: number, messageId?: number) => void;
   readonly debounceMs?: number;
+  readonly throttleMs?: number;
   /** FIX-001：会话元数据解析（由装配层注入会话列表的本地缓存查询）。 */
   readonly resolveChatMetadata?: SearchChatMetadataResolver;
   readonly logger?: Logger;
@@ -251,15 +290,35 @@ export interface SearchCoordinatorOptions {
 
 export type SearchUiStateListener = (state: SearchUiState) => void;
 
+class PendingSearch {
+  readonly requestId: number;
+  readonly query: string;
+  readonly tab: string;
+  readonly key: string;
+
+  constructor(requestId: number, query: string, tab: string) {
+    this.requestId = requestId;
+    this.query = query;
+    this.tab = tab;
+    this.key = `${tab}:${query}`;
+  }
+}
+
 export class SearchCoordinator {
   private readonly provider: SearchQueryProvider;
   private readonly env: ReducerEnv;
   private readonly onNavigateToChat: (chatId: number, messageId?: number) => void;
   private readonly debounceMs: number;
+  private readonly throttleMs: number;
   private readonly logger: Logger;
   private currentState: SearchUiState;
   private readonly listeners: SearchUiStateListener[] = [];
   private debounceTimerId: number | null = null;
+  private throttleTimerId: number | null = null;
+  private pendingSearch: PendingSearch | null = null;
+  private inFlightSearchKey: string | null = null;
+  private inFlightSearchRequestId: number | null = null;
+  private lastSearchStartedAtMillis: number | null = null;
   private activeSearchRequestId: number = 0;
   private destroyed: boolean = false;
 
@@ -274,7 +333,7 @@ export class SearchCoordinator {
     }
 
     this.env = options !== undefined && options.env !== undefined ? options.env : {
-      clock: new ManualClock(1000, 500),
+      clock: new SystemClock(),
       ids: new SequentialIdGenerator('search-')
     };
 
@@ -285,6 +344,9 @@ export class SearchCoordinator {
     this.debounceMs = options !== undefined && options.debounceMs !== undefined
       ? options.debounceMs
       : 300;
+    this.throttleMs = options !== undefined && options.throttleMs !== undefined
+      ? Math.max(0, options.throttleMs)
+      : 750;
 
     this.currentState = SearchUiState.initial();
   }
@@ -310,6 +372,12 @@ export class SearchCoordinator {
       clearTimeout(this.debounceTimerId);
       this.debounceTimerId = null;
     }
+    if (this.throttleTimerId !== null) {
+      clearTimeout(this.throttleTimerId);
+      this.throttleTimerId = null;
+    }
+    this.pendingSearch = null;
+    this.activeSearchRequestId++;
     this.listeners.length = 0;
   }
 
@@ -370,6 +438,7 @@ export class SearchCoordinator {
       clearTimeout(this.debounceTimerId);
       this.debounceTimerId = null;
     }
+    this.cancelPendingSearch();
     this.dispatch(new ClearQuery());
   }
 
@@ -393,7 +462,7 @@ export class SearchCoordinator {
     switch (effect.kind) {
       case 'executeSearch': {
         const searchEffect: ExecuteSearchEffect = effect as ExecuteSearchEffect;
-        this.executeSearch(searchEffect.query, searchEffect.tab);
+        this.scheduleSearch(searchEffect.query, searchEffect.tab);
         break;
       }
       case 'saveRecentSearch': {
@@ -411,33 +480,124 @@ export class SearchCoordinator {
     }
   }
 
-  private async executeSearch(query: string, tab: string): Promise<void> {
-    const requestId: number = ++this.activeSearchRequestId;
+  private cancelPendingSearch(): void {
+    if (this.throttleTimerId !== null) {
+      clearTimeout(this.throttleTimerId);
+      this.throttleTimerId = null;
+    }
+    this.pendingSearch = null;
+    this.activeSearchRequestId++;
+  }
+
+  private scheduleSearch(query: string, tab: string): void {
+    const trimmedQuery: string = query.trim();
+    const key: string = `${tab}:${trimmedQuery}`;
+    const sameActiveRequest: boolean = this.inFlightSearchKey === key &&
+      this.inFlightSearchRequestId === this.activeSearchRequestId;
+    if (sameActiveRequest || (this.pendingSearch !== null && this.pendingSearch.key === key)) {
+      return;
+    }
+
+    const request: PendingSearch = new PendingSearch(++this.activeSearchRequestId, trimmedQuery, tab);
+    this.pendingSearch = request;
+    if (this.throttleTimerId !== null) {
+      clearTimeout(this.throttleTimerId);
+      this.throttleTimerId = null;
+    }
+
+    const nowMillis: number = this.env.clock.monotonicMillis();
+    const waitMillis: number = this.lastSearchStartedAtMillis === null
+      ? 0
+      : Math.max(0, this.throttleMs - (nowMillis - this.lastSearchStartedAtMillis));
+    if (waitMillis === 0) {
+      this.startPendingSearch();
+      return;
+    }
+
+    this.throttleTimerId = setTimeout(() => {
+      this.throttleTimerId = null;
+      this.startPendingSearch();
+    }, waitMillis);
+  }
+
+  private startPendingSearch(): void {
+    if (this.destroyed || this.pendingSearch === null) {
+      return;
+    }
+    const request: PendingSearch = this.pendingSearch;
+    this.pendingSearch = null;
+    this.lastSearchStartedAtMillis = this.env.clock.monotonicMillis();
+    this.inFlightSearchKey = request.key;
+    this.inFlightSearchRequestId = request.requestId;
+    this.executeSearch(request);
+  }
+
+  private failSearch(request: PendingSearch, error: AppError): void {
+    if (this.destroyed || request.requestId !== this.activeSearchRequestId) {
+      return;
+    }
+    this.logger.logError(TAG, error);
+    this.dispatch(new SearchFailed(searchErrorMessage(error)));
+  }
+
+  private async executeSearch(request: PendingSearch): Promise<void> {
     try {
       let chats: SearchChatItem[] = [];
       let messages: SearchMessageItem[] = [];
 
-      if (tab === 'all' || tab === 'chats') {
-        const chatLimit: number = tab === 'all' ? 20 : 50;
-        chats = await this.provider.searchChats(query, chatLimit);
+      if (request.tab === 'all' || request.tab === 'chats') {
+        const chatLimit: number = request.tab === 'all' ? 20 : 50;
+        const chatResult: Result<SearchChatItem[], AppError> =
+          await this.provider.searchChats(request.query, chatLimit);
+        // DSH 编译修复（SEARCH-103 进行中的窄化问题，逻辑未动）：ArkTS 不支持
+        // `if (x.err) return;` 之后的跨 return 收窄，必须 if(x.ok) 正向取 value。
+        if (chatResult.ok) {
+          chats = chatResult.value;
+        }
+        if (chatResult.err) {
+          this.failSearch(request, chatResult.error);
+          return;
+        }
       }
 
-      if (tab === 'all' || tab === 'messages' || tab === 'media') {
-        const msgLimit: number = tab === 'all' ? 20 : 50;
-        messages = await this.provider.searchMessages(query, msgLimit);
+      if (this.destroyed || request.requestId !== this.activeSearchRequestId) {
+        return;
       }
 
-      if (this.destroyed || requestId !== this.activeSearchRequestId) {
+      if (request.tab === 'all' || request.tab === 'messages' || request.tab === 'media') {
+        const msgLimit: number = request.tab === 'all' ? 20 : 50;
+        const messageResult: Result<SearchMessageItem[], AppError> =
+          await this.provider.searchMessages(request.query, msgLimit);
+        if (messageResult.ok) {
+          messages = messageResult.value;
+        }
+        if (messageResult.err) {
+          this.failSearch(request, messageResult.error);
+          return;
+        }
+      }
+
+      if (this.destroyed || request.requestId !== this.activeSearchRequestId) {
         return;
       }
 
       this.dispatch(new SearchSuccess(chats, messages));
     } catch (e) {
-      if (this.destroyed || requestId !== this.activeSearchRequestId) {
+      if (this.destroyed || request.requestId !== this.activeSearchRequestId) {
         return;
       }
-      const errMsg: string = e instanceof Error ? e.message : 'Search failed';
-      this.dispatch(new SearchFailed(errMsg));
+      const cause: string = e instanceof Error ? e.name : 'non-error';
+      const unexpected: AppError = AppErrors.unknown(
+        'search-coordinator',
+        'Unexpected search failure',
+        cause
+      );
+      this.failSearch(request, unexpected);
+    } finally {
+      if (this.inFlightSearchRequestId === request.requestId) {
+        this.inFlightSearchKey = null;
+        this.inFlightSearchRequestId = null;
+      }
     }
   }
 }

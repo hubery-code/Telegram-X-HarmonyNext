@@ -240,6 +240,15 @@ export struct SearchPage {
         .fontSize(T.typography.subheadline.fontSize)
         .fontColor(T.colors.textSecondary)
         .margin({ top: T.spacing.xs })
+      Button('Retry')
+        .fontSize(T.typography.subheadline.fontSize)
+        .fontColor(T.colors.textOnAccent)
+        .backgroundColor(T.colors.accent)
+        .borderRadius(T.radius.md)
+        .margin({ top: T.spacing.md })
+        .onClick(() => {
+          this.handleQuerySubmit(this.uiState.query);
+        })
     }
     .width('100%')
     .layoutWeight(1)
