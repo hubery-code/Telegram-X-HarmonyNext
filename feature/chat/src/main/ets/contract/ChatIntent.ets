@@ -25,6 +25,7 @@
 import { Intent } from '@tgx/feature-template';
 import { AppError } from '@tgx/core-common';
 import { MessageItem } from '../model/MessageItem';
+import { ChatSearchResultItem } from '../model/ChatSearchResultItem';
 
 export class LoadInitialMessages implements Intent {
   readonly kind: 'loadInitialMessages' = 'loadInitialMessages';
@@ -366,6 +367,76 @@ export class ResendFailedMessage implements Intent {
   }
 }
 
+/** SEARCH-102：展开聊天内搜索面板。 */
+export class OpenChatSearch implements Intent {
+  readonly kind: 'openChatSearch' = 'openChatSearch';
+}
+
+/** SEARCH-102：收起聊天内搜索面板并清空结果。 */
+export class CloseChatSearch implements Intent {
+  readonly kind: 'closeChatSearch' = 'closeChatSearch';
+}
+
+/** SEARCH-102：搜索关键词变化（受控输入，reducer 只更新文案并触发执行）。 */
+export class ChatSearchQueryChanged implements Intent {
+  readonly kind: 'chatSearchQueryChanged' = 'chatSearchQueryChanged';
+  readonly query: string;
+
+  constructor(query: string) {
+    this.query = query;
+  }
+}
+
+/** SEARCH-102：执行聊天内搜索（关键词非空时产生 FetchChatSearch effect）。 */
+export class PerformChatSearch implements Intent {
+  readonly kind: 'performChatSearch' = 'performChatSearch';
+}
+
+/** SEARCH-102：搜索完成，回灌命中结果列表。 */
+export class OnChatSearchLoaded implements Intent {
+  readonly kind: 'onChatSearchLoaded' = 'onChatSearchLoaded';
+  readonly results: readonly ChatSearchResultItem[];
+
+  constructor(results: readonly ChatSearchResultItem[]) {
+    this.results = results;
+  }
+}
+
+/** SEARCH-102：搜索失败，回灌错误信息。 */
+export class OnChatSearchFailed implements Intent {
+  readonly kind: 'onChatSearchFailed' = 'onChatSearchFailed';
+  readonly error: AppError;
+
+  constructor(error: AppError) {
+    this.error = error;
+  }
+}
+
+/** SEARCH-102：点击搜索结果，请求跳转定位到该消息（产生 JumpToMessage effect）。 */
+export class JumpToSearchResult implements Intent {
+  readonly kind: 'jumpToSearchResult' = 'jumpToSearchResult';
+  readonly messageId: number;
+
+  constructor(messageId: number) {
+    this.messageId = messageId;
+  }
+}
+
+/** SEARCH-102：围绕目标消息的历史已拉取完成，回灌待定位消息 id 供 UI 滚动。 */
+export class OnJumpToMessageReady implements Intent {
+  readonly kind: 'onJumpToMessageReady' = 'onJumpToMessageReady';
+  readonly messageId: number;
+
+  constructor(messageId: number) {
+    this.messageId = messageId;
+  }
+}
+
+/** SEARCH-102：UI 已完成跳转定位，清除待定位标记。 */
+export class ClearJumpToMessage implements Intent {
+  readonly kind: 'clearJumpToMessage' = 'clearJumpToMessage';
+}
+
 export type ChatIntent =
   | LoadInitialMessages
   | LoadOlderMessages
@@ -406,4 +477,13 @@ export type ChatIntent =
   | CloseAttachmentMenu
   | ToggleAttachmentMenu
   | CancelMediaDownload
-  | ResendFailedMessage;
+  | ResendFailedMessage
+  | OpenChatSearch
+  | CloseChatSearch
+  | ChatSearchQueryChanged
+  | PerformChatSearch
+  | OnChatSearchLoaded
+  | OnChatSearchFailed
+  | JumpToSearchResult
+  | OnJumpToMessageReady
+  | ClearJumpToMessage;

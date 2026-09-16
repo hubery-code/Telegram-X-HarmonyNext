@@ -752,5 +752,85 @@ export default function messageProjectionTest(): void {
       }
     });
 
+    // ---- SEARCH-102 聊天内搜索 ----
+
+    it('searchMessages_withEmptyQuery_rejectsParameterWithoutRequest', 0, (): void => {
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const scope: AccountScope = createScope(bridge);
+      const projection: MessageProjection = new MessageProjection(42, scope);
+
+      const result: Result<TdPendingRequest, AppError> = projection.searchMessages('   ', 0, 30);
+      expect(result.ok).assertFalse();
+      expect(findSentRequest(bridge, 'searchChatMessages')).assertNull();
+    });
+
+    it('searchMessages_assemblesSearchChatMessagesForChat', 0, async (): Promise<void> => {
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const scope: AccountScope = createScope(bridge);
+      const projection: MessageProjection = new MessageProjection(42, scope);
+
+      const result: Result<TdPendingRequest, AppError> = projection.searchMessages('hello', 0, 30);
+      expect(result.ok).assertTrue();
+
+      const searchReq: Record<string, TdWireValue> | null = findSentRequest(bridge, 'searchChatMessages');
+      expect(searchReq !== null).assertTrue();
+      if (searchReq !== null) {
+        expect(searchReq['chat_id']).assertEqual(42);
+        expect(searchReq['query']).assertEqual('hello');
+        expect(searchReq['from_message_id']).assertEqual(0);
+        expect(searchReq['limit']).assertEqual(30);
+        expect(searchReq['offset']).assertEqual(0);
+      }
+    });
+
+    it('searchMessages_withFromMessageId_keepsPaginationCursor', 0, async (): Promise<void> => {
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const scope: AccountScope = createScope(bridge);
+      const projection: MessageProjection = new MessageProjection(7, scope);
+
+      const result: Result<TdPendingRequest, AppError> = projection.searchMessages('telegram', 9000, 50);
+      expect(result.ok).assertTrue();
+
+      const searchReq: Record<string, TdWireValue> | null = findSentRequest(bridge, 'searchChatMessages');
+      expect(searchReq !== null).assertTrue();
+      if (searchReq !== null) {
+        expect(searchReq['chat_id']).assertEqual(7);
+        expect(searchReq['from_message_id']).assertEqual(9000);
+        expect(searchReq['limit']).assertEqual(50);
+      }
+    });
+
+    it('loadHistoryAroundSendsGetChatHistoryAroundTarget', 0, async (): Promise<void> => {
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const scope: AccountScope = createScope(bridge);
+      const projection: MessageProjection = new MessageProjection(42, scope);
+
+      const result: Result<TdPendingRequest, AppError> | null =
+        projection.loadHistoryAround(5000, 30);
+      expect(result !== null).assertTrue();
+
+      const historyReq: Record<string, TdWireValue> | null = findSentRequest(bridge, 'getChatHistory');
+      expect(historyReq !== null).assertTrue();
+      if (historyReq !== null) {
+        expect(historyReq['chat_id']).assertEqual(42);
+        expect(historyReq['from_message_id']).assertEqual(5000);
+        // 负 offset：TDLib 返回目标消息及其邻近，limit=2*radius 保证目标居中。
+        expect(historyReq['offset']).assertEqual(-30);
+        expect(historyReq['limit']).assertEqual(60);
+      }
+    });
+
+    it('loadHistoryAroundWhenLoadingReturnsNullWithoutRequest', 0, async (): Promise<void> => {
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const scope: AccountScope = createScope(bridge);
+      const projection: MessageProjection = new MessageProjection(42, scope);
+
+      // 先触发一次首屏历史加载（isLoading=true），再在同一时刻调 loadHistoryAround。
+      projection.loadInitialMessages(20);
+      const result: Result<TdPendingRequest, AppError> | null =
+        projection.loadHistoryAround(6000, 30);
+      expect(result === null).assertTrue();
+    });
+
   });
 }

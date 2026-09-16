@@ -206,6 +206,30 @@ export class CancelMediaDownloadEffect implements Effect {
   }
 }
 
+/** SEARCH-102：执行聊天内搜索（调用 projection.searchMessages，关键词非空）。 */
+export class FetchChatSearch implements Effect {
+  readonly kind: 'fetchChatSearch' = 'fetchChatSearch';
+  readonly chatId: number;
+  readonly query: string;
+  readonly fromMessageId: number;
+
+  constructor(chatId: number, query: string, fromMessageId: number = 0) {
+    this.chatId = chatId;
+    this.query = query;
+    this.fromMessageId = fromMessageId;
+  }
+}
+
+/** SEARCH-102：跳转定位到目标消息（调用 projection.loadHistoryAround 拉取历史后滚动）。 */
+export class JumpToMessage implements Effect {
+  readonly kind: 'jumpToMessage' = 'jumpToMessage';
+  readonly messageId: number;
+
+  constructor(messageId: number) {
+    this.messageId = messageId;
+  }
+}
+
 export type ChatEffect =
   | FetchInitialMessages
   | FetchOlderMessages
@@ -221,4 +245,6 @@ export type ChatEffect =
   | CopyTextToClipboard
   | PickAndSendPhotoEffect
   | PickAndSendFileEffect
-  | CancelMediaDownloadEffect;
+  | CancelMediaDownloadEffect
+  | FetchChatSearch
+  | JumpToMessage;

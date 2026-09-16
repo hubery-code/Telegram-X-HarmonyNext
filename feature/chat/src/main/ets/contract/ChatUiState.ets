@@ -21,6 +21,7 @@
 import { UiState } from '@tgx/feature-template';
 import { MessageItem } from '../model/MessageItem';
 import { MediaViewerItem } from '../model/MediaViewerItem';
+import { ChatSearchResultItem } from '../model/ChatSearchResultItem';
 
 /** 输入栏模式：回复某条消息。 */
 export class ComposerReplyMode {
@@ -118,6 +119,16 @@ export interface ChatUiStateOptions {
   readonly selectionMode?: boolean;
   readonly selectedMessageIds?: readonly number[];
   readonly showAttachmentMenu?: boolean;
+  /** SEARCH-102：聊天内搜索面板是否展开。 */
+  readonly showSearch?: boolean;
+  /** SEARCH-102：搜索关键词。 */
+  readonly searchQuery?: string;
+  /** SEARCH-102：搜索命中结果列表。 */
+  readonly searchResults?: readonly ChatSearchResultItem[];
+  /** SEARCH-102：搜索请求是否在途。 */
+  readonly isSearching?: boolean;
+  /** SEARCH-102：待跳转定位的消息 id（0=无；loadHistoryAround 完成后回灌）。 */
+  readonly jumpToMessageId?: number;
 }
 
 export class ChatUiState implements UiState {
@@ -140,6 +151,16 @@ export class ChatUiState implements UiState {
   readonly selectedMessageIds: readonly number[];
   /** COMPOSER-102：附件选择面板是否展示。 */
   readonly showAttachmentMenu: boolean;
+  /** SEARCH-102：聊天内搜索面板是否展开。 */
+  readonly showSearch: boolean;
+  /** SEARCH-102：搜索关键词。 */
+  readonly searchQuery: string;
+  /** SEARCH-102：搜索命中结果列表。 */
+  readonly searchResults: readonly ChatSearchResultItem[];
+  /** SEARCH-102：搜索请求是否在途。 */
+  readonly isSearching: boolean;
+  /** SEARCH-102：待跳转定位的消息 id（0=无；loadHistoryAround 完成后回灌）。 */
+  readonly jumpToMessageId: number;
 
   constructor(
     chatId: number,
@@ -157,7 +178,12 @@ export class ChatUiState implements UiState {
     unreadCount: number = 0,
     selectionMode: boolean = false,
     selectedMessageIds: readonly number[] = [],
-    showAttachmentMenu: boolean = false
+    showAttachmentMenu: boolean = false,
+    showSearch: boolean = false,
+    searchQuery: string = '',
+    searchResults: readonly ChatSearchResultItem[] = [],
+    isSearching: boolean = false,
+    jumpToMessageId: number = 0
   ) {
     this.chatId = chatId;
     this.chatTitle = chatTitle;
@@ -175,10 +201,15 @@ export class ChatUiState implements UiState {
     this.selectionMode = selectionMode;
     this.selectedMessageIds = selectedMessageIds;
     this.showAttachmentMenu = showAttachmentMenu;
+    this.showSearch = showSearch;
+    this.searchQuery = searchQuery;
+    this.searchResults = searchResults;
+    this.isSearching = isSearching;
+    this.jumpToMessageId = jumpToMessageId;
   }
 
   static initial(): ChatUiState {
-    return new ChatUiState(0, '', [], false, true, null, '', null, null, -1, [], 0, 0, false, [], false);
+    return new ChatUiState(0, '', [], false, true, null, '', null, null, -1, [], 0, 0, false, [], false, false, '', [], false, 0);
   }
 
   copyWith(options: ChatUiStateOptions): ChatUiState {
@@ -198,7 +229,12 @@ export class ChatUiState implements UiState {
       options.unreadCount !== undefined ? options.unreadCount : this.unreadCount,
       options.selectionMode !== undefined ? options.selectionMode : this.selectionMode,
       options.selectedMessageIds !== undefined ? options.selectedMessageIds : this.selectedMessageIds,
-      options.showAttachmentMenu !== undefined ? options.showAttachmentMenu : this.showAttachmentMenu
+      options.showAttachmentMenu !== undefined ? options.showAttachmentMenu : this.showAttachmentMenu,
+      options.showSearch !== undefined ? options.showSearch : this.showSearch,
+      options.searchQuery !== undefined ? options.searchQuery : this.searchQuery,
+      options.searchResults !== undefined ? options.searchResults : this.searchResults,
+      options.isSearching !== undefined ? options.isSearching : this.isSearching,
+      options.jumpToMessageId !== undefined ? options.jumpToMessageId : this.jumpToMessageId
     );
   }
 }

@@ -107,6 +107,11 @@ struct Index {
   private readonly navController: EntryNavigationController = new EntryNavigationController({ name: 'auth' });
   private unsubscribeNavFn: (() => void) | null = null;
   private activeChatId: number | null = null;
+  /**
+   * SEARCH-102：最近一次已请求过的「进会话并定位」目标（`chatId:messageId`）。
+   * 路由订阅在每次栈变化都会回调，同一目标只需请求一次跳转，避免重复滚动。
+   */
+  private lastJumpRequest: string = '';
 
   private coordinator: AuthCoordinator | null = null;
   private unsubscribeFn: (() => void) | null = null;
@@ -200,8 +205,12 @@ struct Index {
     // 2. 根据当前栈顶路由，按需拉起对应协调器
     if (route.name === 'chat') {
       const chatRoute: ChatRoute = route as ChatRoute;
+      // SEARCH-102：路由可携带目标消息 id（全局搜索结果 → 会话内定位）。
+      const jumpTo: number = chatRoute.messageId !== undefined ? chatRoute.messageId : 0;
       if (this.chatCoordinator === null || this.activeChatId !== chatRoute.chatId) {
-        this.openChat(chatRoute.chatId, this.resolveChatTitle(chatRoute.chatId));
+        this.openChat(chatRoute.chatId, this.resolveChatTitle(chatRoute.chatId), jumpTo);
+      } else {
+        this.requestChatJump(chatRoute.chatId, jumpTo);
       }
     } else if (route.name === 'settings' || route.name === 'settingsSection') {
       if (this.settingsCoordinator === null) {
@@ -307,11 +316,35 @@ struct Index {
 
   /**
    * 搜索结果 → 会话。通过 navController 压栈，保持 search 还在返回栈中。
+   * SEARCH-102：消息类结果附带 messageId，经路由带给会话页做滚动定位
+   * （会话列表/深链入口不带该字段，行为不变）。
    */
   private navigateToChatFromSearch(chatId: number, messageId?: number): void {
     hilog.info(DOMAIN, TAG, 'navigate from search chatId=%{public}s messageId=%{public}s',
       `${chatId}`, `${messageId !== undefined ? messageId : 0}`);
+    if (messageId !== undefined && messageId > 0) {
+      this.navController.navigateTo({ name: 'chat', chatId: chatId, messageId: messageId });
+      return;
+    }
     this.navController.navigateTo({ name: 'chat', chatId: chatId });
+  }
+
+  /**
+   * SEARCH-102：请求把已打开的会话定位到目标消息。同一目标只请求一次
+   * （路由订阅会在每次栈变化回调，重复请求会导致重复滚动）。
+   */
+  private requestChatJump(chatId: number, messageId: number): void {
+    if (messageId <= 0 || this.chatCoordinator === null) {
+      return;
+    }
+    const jumpKey: string = `${chatId}:${messageId}`;
+    if (this.lastJumpRequest === jumpKey) {
+      return;
+    }
+    this.lastJumpRequest = jumpKey;
+    hilog.info(DOMAIN, TAG, 'chat jump requested chatId=%{public}s messageId=%{public}s',
+      `${chatId}`, `${messageId}`);
+    this.chatCoordinator.requestJumpToMessage(messageId);
   }
 
   /** 从会话列表数据里取标题（搜索结果只给 chatId）；未命中回退空串，ChatPage 会显示空标题。 */
@@ -620,7 +653,7 @@ struct Index {
     }
   }
 
-  private openChat(chatId: number, chatTitle: string): void {
+  private openChat(chatId: number, chatTitle: string, jumpToMessageId: number = 0): void {
     if (this.accountScope === null) {
       return;
     }
@@ -650,10 +683,15 @@ struct Index {
     });
     coordinator.start();
     hilog.info(DOMAIN, TAG, 'chat coordinator started for chatId=%{public}s', `${chatId}`);
+    // SEARCH-102：从搜索结果进入且带目标消息时，等协调器就绪后请求定位
+    // （目标未在首屏缓存时，协调器会排队到首屏加载完成再拉围绕历史）。
+    this.requestChatJump(chatId, jumpToMessageId);
   }
 
   private closeChat(): void {
     this.closeForwardPicker();
+    // SEARCH-102：会话关闭后清掉跳转去重键，重新进入同一会话仍可再次定位。
+    this.lastJumpRequest = '';
     if (this.unsubscribeChatFn !== null) {
       this.unsubscribeChatFn();
       this.unsubscribeChatFn = null;

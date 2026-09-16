@@ -37,6 +37,8 @@ import {
   decodeChat,
   decodeMessage,
   decodeMessageProperties,
+  decodeFoundChatMessages,
+  FoundChatMessages,
   Document,
   DraftMessage,
   DraftMessageContentText,
@@ -47,8 +49,8 @@ import {
   GetMessage,
   InputMessageReplyToMessage,
   LinkPreview,
-  LinkPreviewTypePhoto,
   LinkPreviewTypeArticle,
+  LinkPreviewTypePhoto,
   LinkPreviewTypeVideo,
   LinkPreviewTypeAnimation,
   LinkPreviewTypeDocument,
@@ -83,6 +85,7 @@ import { MessageItem, MessageSendState } from '../model/MessageItem';
 import { MessageTextSpan } from '../model/MessageTextSpan';
 import { MediaAttachment } from '../model/MediaAttachment';
 import { LinkPreviewInfo } from '../model/LinkPreviewInfo';
+import { ChatSearchResultItem } from '../model/ChatSearchResultItem';
 import { parseFormattedText } from '../model/FormattedTextParser';
 import {
   ChatKind,
@@ -108,7 +111,10 @@ import {
   PickAndSendFile,
   ComposerTextChanged,
   CancelComposerMode,
-  RestoreDraft
+  RestoreDraft,
+  OnChatSearchLoaded,
+  OnChatSearchFailed,
+  OnJumpToMessageReady
 } from '../contract/ChatIntent';
 import {
   ChatEffect,
@@ -123,7 +129,9 @@ import {
   CopyTextToClipboard,
   PickAndSendPhotoEffect,
   PickAndSendFileEffect,
-  CancelMediaDownloadEffect
+  CancelMediaDownloadEffect,
+  FetchChatSearch,
+  JumpToMessage
 } from '../contract/ChatEffect';
 import { isOutgoingMessageRead, ReadReportThrottle } from '../model/ReadReceipt';
 import { chatReducer } from '../reducer/ChatReducer';
@@ -135,6 +143,10 @@ const OLDER_PAGE_SIZE: number = 20;
 const BACKFILL_THRESHOLD: number = 20;
 /** 补拉延迟：给 TDLib 后台 preload 留时间窗（服务器往返 1-2s）。 */
 const BACKFILL_DELAY_MS: number = 900;
+/** SEARCH-102：单次聊天内搜索返回的最大命中条数（TDLib 上限 100）。 */
+const CHAT_SEARCH_LIMIT: number = 30;
+/** SEARCH-102：跳转定位时围绕目标消息拉取的上下半径。 */
+const HISTORY_AROUND_RADIUS: number = 30;
 
 export type ChatUiStateListener = (state: ChatUiState) => void;
 
@@ -199,6 +211,23 @@ export function messageContentText(content: TdMessageContent | null): string {
     default:
       return '';
   }
+}
+
+/** SEARCH-102：搜索结果日期。当天显示 HH:mm，跨天显示 dd.MM（对齐简化的会话内时间呈现）。 */
+function formatSearchResultDate(unixSeconds: number): string {
+  const date: Date = new Date(unixSeconds * 1000);
+  const now: Date = new Date();
+  const sameDay: boolean = date.getFullYear() === now.getFullYear() &&
+    date.getMonth() === now.getMonth() &&
+    date.getDate() === now.getDate();
+  if (sameDay) {
+    return `${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
+  }
+  return `${pad2(date.getDate())}.${pad2(date.getMonth() + 1)}`;
+}
+
+function pad2(value: number): string {
+  return value < 10 ? `0${value}` : `${value}`;
 }
 
 /** Message.sending_state → MessageItem.sendState（CHAT-003）。 */
@@ -319,6 +348,15 @@ export class ChatCoordinator {
   /** MSG-103：进入会话时的首条未读消息 id（锁定后会话内保持书签不消失，重进或无未读时为 null）。 */
   private firstUnreadMessageId: number | null = null;
   private initialUnreadResolved: boolean = false;
+  /**
+   * SEARCH-102：待定位的目标消息 id（0 = 无）。
+   * 从全局搜索结果进会话时目标往往还没进缓存，而首屏加载在飞时投影会拒绝新的
+   * 历史请求（loadHistoryAround 返回 null）——这里先把目标记下来，等投影空闲
+   * （首屏/翻页完成）再拉围绕历史，避免"进会话后不定位"。
+   */
+  private pendingJumpMessageId: number = 0;
+  /** 待定位目标的围绕历史是否已在飞，防止重复请求。 */
+  private pendingJumpInFlight: boolean = false;
 
   constructor(
     scope: AccountScope,
@@ -404,9 +442,82 @@ export class ChatCoordinator {
     this.dispatch(new LoadInitialMessages());
   }
 
+  /**
+   * SEARCH-102：请求把视图定位到指定消息。两条入口共用：
+   * - 装配层打开会话时传入路由里的目标（全局搜索结果 → 会话内定位）；
+   * - 会话内搜索结果点击（经 JumpToSearchResult → JumpToMessage effect）。
+   * 目标已缓存 → 直接回灌 OnJumpToMessageReady；未缓存 → 拉一段围绕它的历史，
+   * 回包后目标进入投影再回灌；投影忙（首屏/翻页在飞）→ 记下目标，由
+   * syncFromProjection 在空闲时推进。
+   */
+  public requestJumpToMessage(messageId: number): void {
+    if (this.destroyed || messageId <= 0) {
+      return;
+    }
+    this.pendingJumpMessageId = messageId;
+    this.pendingJumpInFlight = false;
+    this.tryResolvePendingJump();
+  }
+
+  /** 投影空闲时推进待跳转：已缓存直接 Ready；否则拉围绕历史（每次只拉一趟，避免死循环）。 */
+  private tryResolvePendingJump(): void {
+    const target: number = this.pendingJumpMessageId;
+    if (this.destroyed || target <= 0) {
+      return;
+    }
+    if (this.projection.getMessageById(target) !== undefined) {
+      this.clearPendingJump();
+      this.logger.info(TAG, 'jump_to_message_ok', `messageId=${target},cached=true`);
+      this.dispatch(new OnJumpToMessageReady(target));
+      return;
+    }
+    if (this.projection.state.isLoading || this.pendingJumpInFlight) {
+      // 首屏/翻页/上一趟跳转在飞：等状态变更回调（syncFromProjection）再推进。
+      return;
+    }
+    this.pendingJumpInFlight = true;
+    this.logger.info(TAG, 'jump_to_message', `messageId=${target}`);
+    const result: Result<TdPendingRequest, AppError> | null =
+      this.projection.loadHistoryAround(target, HISTORY_AROUND_RADIUS);
+    if (result === null) {
+      this.pendingJumpInFlight = false;
+      return;
+    }
+    if (result.err) {
+      this.pendingJumpInFlight = false;
+      this.clearPendingJump();
+      this.logger.logError(TAG, result.error);
+      return;
+    }
+    if (result.ok) {
+      result.value.promise.then((res: Result<TdWireObject, AppError>) => {
+        if (this.destroyed) {
+          return;
+        }
+        this.pendingJumpInFlight = false;
+        const reached: boolean = res.ok && this.projection.getMessageById(target) !== undefined;
+        this.clearPendingJump();
+        if (reached) {
+          this.logger.info(TAG, 'jump_to_message_ok', `messageId=${target}`);
+          this.dispatch(new OnJumpToMessageReady(target));
+        } else {
+          // 消息被删/不可达：放弃定位，不做无限重试。
+          this.logger.info(TAG, 'jump_to_message_unreachable', `messageId=${target}`);
+        }
+      }).catch(() => {
+        this.pendingJumpInFlight = false;
+        this.clearPendingJump();
+      });
+    }
+  }
+
+  private clearPendingJump(): void {
+    this.pendingJumpMessageId = 0;
+    this.pendingJumpInFlight = false;
+  }
+
   /** COMPOSER-101：立即保存当前输入栏中的草稿至 TDLib。 */
-  public saveDraftNow(): void {
-    const text: string = this.currentState.composerText;
+  public saveDraftNow(): void {    const text: string = this.currentState.composerText;
     let replyToMessageId: number = 0;
     if (this.currentState.composerMode !== null && this.currentState.composerMode.kind === 'reply') {
       replyToMessageId = (this.currentState.composerMode as ComposerReplyMode).targetMessageId;
@@ -635,6 +746,9 @@ export class ChatCoordinator {
     // 已读。MVP 简化：聊天页开着即视为入屏（列表自动跟随到底时成立），
     // 精确可视范围由 onScrollIndex → OnVisibleRangeChanged 路径补充。
     this.reportReadUpTo(items, items.length - 1);
+    // SEARCH-102：投影刚推进过（首屏完成/历史回填），此时才可能在空闲状态下
+    // 推进"进会话定位"的待跳转目标。
+    this.tryResolvePendingJump();
   }
 
   /** MSG-104：节流后向 TDLib 发 viewMessages；失败只记日志，不打扰 UI。 */
@@ -1905,6 +2019,62 @@ export class ChatCoordinator {
       case 'cancelMediaDownload': {
         const cancel: CancelMediaDownloadEffect = effect as CancelMediaDownloadEffect;
         this.cancelMediaDownload(cancel.fileId);
+        break;
+      }
+
+      case 'fetchChatSearch': {
+        const search: FetchChatSearch = effect as FetchChatSearch;
+        this.logger.info(TAG, 'fetch_chat_search',
+          `chatId=${search.chatId},from=${search.fromMessageId}`);
+        const result: Result<TdPendingRequest, AppError> =
+          this.projection.searchMessages(search.query, search.fromMessageId, CHAT_SEARCH_LIMIT);
+        if (result.err) {
+          this.logger.logError(TAG, result.error);
+          this.dispatch(new OnChatSearchFailed(result.error));
+        }
+        if (result.ok) {
+          result.value.promise.then((res: Result<TdWireObject, AppError>) => {
+            if (this.destroyed) {
+              return;
+            }
+            if (res.err) {
+              this.logger.logError(TAG, res.error);
+              this.dispatch(new OnChatSearchFailed(res.error));
+            }
+            if (res.ok) {
+              const found: FoundChatMessages | null = decodeFoundChatMessages(res.value as TdJsonRaw);
+              if (found === null) {
+                this.dispatch(new OnChatSearchFailed(
+                  AppErrors.internal('chat.search_decode', 'failed to decode foundChatMessages')
+                ));
+                return;
+              }
+              const items: ChatSearchResultItem[] = [];
+              for (let i = 0; i < found.messages.length; i++) {
+                const msg: Message = found.messages[i];
+                const snippet: string = messageContentText(msg.content);
+                const jumpable: boolean = this.projection.getMessageById(msg.id) !== undefined;
+                items.push(new ChatSearchResultItem(
+                  msg.id,
+                  snippet,
+                  formatSearchResultDate(msg.date),
+                  jumpable
+                ));
+              }
+              this.logger.info(TAG, 'chat_search_ok',
+                `chatId=${search.chatId},hits=${items.length}`);
+              this.dispatch(new OnChatSearchLoaded(items));
+            }
+          }).catch(() => {
+          });
+        }
+        break;
+      }
+
+      case 'jumpToMessage': {
+        const jump: JumpToMessage = effect as JumpToMessage;
+        // SEARCH-102：与"进会话定位"共用同一条待跳转通道（投影忙时排队而非放弃）。
+        this.requestJumpToMessage(jump.messageId);
         break;
       }
 

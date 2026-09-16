@@ -48,6 +48,7 @@ import {
   encodeGetChat,
   encodeForwardMessages,
   encodeSetChatDraftMessage,
+  encodeSearchChatMessages,
   GetChatHistory,
   OpenChat,
   CloseChat,
@@ -60,6 +61,9 @@ import {
   GetChat,
   ForwardMessages,
   SetChatDraftMessage,
+  SearchChatMessages,
+  FoundChatMessages,
+  decodeFoundChatMessages,
   DraftMessage,
   DraftMessageContentText,
   Chat,
@@ -241,6 +245,50 @@ export class MessageProjection {
       return null;
     }
     return this.requestHistory(this.orderedIds[0], 0, limit);
+  }
+
+  /**
+   * SEARCH-102 聊天内搜索：组 SearchChatMessages 在**当前会话内**按关键词检索消息。
+   * 返回 pendingRequest，调用方经 promise 解码 FoundChatMessages（含 messages 与
+   * next_from_message_id 分页游标）。与全局搜索 SearchCoordinator 走 SearchMessages
+   * 不同，这里 chatId 已固定在投影上，天然单会话检索对齐 FEAT-SEARCH-002。
+   * 空关键词直接判 parameter/missing 不发起请求。
+   */
+  searchMessages(
+    query: string,
+    fromMessageId: number = 0,
+    limit: number = 30
+  ): Result<TdPendingRequest, AppError> {
+    const trimmed: string = query.trim();
+    if (trimmed.length === 0) {
+      return err(AppErrors.parameter('invalid', 'query', 'search query is empty'));
+    }
+    const req: SearchChatMessages = new SearchChatMessages();
+    req.chat_id = this.chatId;
+    req.query = trimmed;
+    req.from_message_id = fromMessageId;
+    req.limit = limit;
+    req.filter = null;
+    req.sender_id = null;
+    req.topic_id = null;
+    return this.scope.request('searchChatMessages', encodeSearchChatMessages(req) as TdWireObject);
+  }
+
+  /**
+   * SEARCH-102 结果跳转定位：围绕目标消息拉一段历史（GetChatHistory 从
+   * from_message_id=target 出发，负 offset 使得返回包含该消息本身及其邻近消息），
+   * 让目标消息进入本地缓存——ChatPage.scrollToMessageId 目前只对已加载的消息有效，
+   * 跨页跳转需先围绕目标拉历史。正在加载时忽略返回 null（复用既有加载守卫）。
+   */
+  loadHistoryAround(
+    messageId: number,
+    radius: number = 30
+  ): Result<TdPendingRequest, AppError> | null {
+    if (this.isLoading) {
+      return null;
+    }
+    // offset 为负：TDLib 返回指定消息及其更早的 radius 条，limit 取 2*radius 保证目标居中。
+    return this.requestHistory(messageId, -radius, radius * 2);
   }
 
   /**

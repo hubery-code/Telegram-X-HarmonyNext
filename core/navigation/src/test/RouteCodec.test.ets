@@ -165,5 +165,39 @@ export default function routeCodecTest() {
       const search: SearchRoute = route as SearchRoute;
       expect(search.query).assertEqual('hello world');
     });
+
+    // SEARCH-102：会话路由可携带目标消息 id（全局搜索结果 → 会话内定位）。
+    it('chatRoute_withMessageId_roundTrips', 0, () => {
+      roundTrip({ name: 'chat', chatId: 42, messageId: 60817408 });
+      roundTrip({ name: 'chat', chatId: 42, threadId: 7, messageId: 60817408 });
+    });
+
+    it('encode_chatMessageId_goesToQueryString', 0, () => {
+      const c: RouteCodec = codec();
+      expect(mustOk(c.encode({ name: 'chat', chatId: 5, messageId: 9 }))).assertEqual('chat/5?messageId=9');
+      expect(mustOk(c.encode({ name: 'chat', chatId: 5, threadId: 7, messageId: 9 })))
+        .assertEqual('chat/5?threadId=7&messageId=9');
+      // 不带 messageId 的既有形态保持不变（向后兼容）。
+      expect(mustOk(c.encode({ name: 'chat', chatId: 5 }))).assertEqual('chat/5');
+    });
+
+    it('parse_chatMessageId_resolved', 0, () => {
+      const route: ChatRoute = mustOk(codec().parse('chat/42?messageId=60817408')) as ChatRoute;
+      expect(route.chatId).assertEqual(42);
+      expect(route.messageId).assertEqual(60817408);
+    });
+
+    it('parse_chatMessageIdTypeMismatch_rejected', 0, () => {
+      const error: AppError = mustErr(codec().parse('chat/42?messageId=abc'));
+      expect(error.kind).assertEqual('parameter');
+      expect(paramCode(error)).assertEqual('invalid');
+      expect(paramField(error)).assertEqual('messageId');
+    });
+
+    it('parse_chatWithoutMessageId_leavesUndefined', 0, () => {
+      const route: ChatRoute = mustOk(codec().parse('chat/42?threadId=7')) as ChatRoute;
+      expect(route.threadId).assertEqual(7);
+      expect(route.messageId === undefined).assertTrue();
+    });
   });
 }

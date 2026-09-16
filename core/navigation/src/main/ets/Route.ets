@@ -74,6 +74,12 @@ export interface ChatRoute {
   readonly chatId: number;
   /** 论坛话题（forum topic）id，可选。 */
   readonly threadId?: number;
+  /**
+   * SEARCH-102：进入会话后需要定位到的目标消息 id，可选。
+   * 全局搜索结果（消息命中）经此字段把 messageId 交给会话页做滚动定位；
+   * 普通入口（会话列表、深链）不带该字段。
+   */
+  readonly messageId?: number;
 }
 
 export interface ChatInfoRoute {
@@ -160,7 +166,9 @@ export const ROUTE_DEFINITIONS: RouteDefinition[] = [
     pathTemplate: 'chat/{chatId}',
     params: [
       spec('chatId', 'int', true),
-      spec('threadId', 'int', false, 1)
+      spec('threadId', 'int', false, 1),
+      // SEARCH-102：搜索结果携带的目标消息 id（可选，用于进会话后滚动定位）。
+      spec('messageId', 'int', false, 1)
     ]
   },
   {

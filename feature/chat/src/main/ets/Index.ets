@@ -6,6 +6,7 @@ export { MessageItem, MessageSendState } from './model/MessageItem';
 export { MediaAttachment, MediaKind, formatFileSize } from './model/MediaAttachment';
 export { MediaViewerItem } from './model/MediaViewerItem';
 export { LinkPreviewInfo } from './model/LinkPreviewInfo';
+export { ChatSearchResultItem } from './model/ChatSearchResultItem';
 
 export { MessageTextSpan } from './model/MessageTextSpan';
 
@@ -82,6 +83,15 @@ export {
   ToggleAttachmentMenu,
   CancelMediaDownload,
   ResendFailedMessage,
+  OpenChatSearch,
+  CloseChatSearch,
+  ChatSearchQueryChanged,
+  PerformChatSearch,
+  OnChatSearchLoaded,
+  OnChatSearchFailed,
+  JumpToSearchResult,
+  OnJumpToMessageReady,
+  ClearJumpToMessage,
   ChatIntent
 } from './contract/ChatIntent';
 
@@ -101,6 +111,8 @@ export {
   PickAndSendPhotoEffect,
   PickAndSendFileEffect,
   CancelMediaDownloadEffect,
+  FetchChatSearch,
+  JumpToMessage,
   ChatEffect
 } from './contract/ChatEffect';
 

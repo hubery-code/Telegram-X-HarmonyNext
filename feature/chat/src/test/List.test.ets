@@ -11,6 +11,7 @@ import mediaAlbumTest from './MediaAlbum.test';
 import chatPhotoSendingTest from './ChatPhotoSending.test';
 import chatFileSendingTest from './ChatFileSending.test';
 import linkPreviewTest from './LinkPreview.test';
+import chatSearchJumpTest from './ChatSearchJump.test';
 
 export default function testsuite(): void {
   chatReducerTest();
@@ -26,4 +27,5 @@ export default function testsuite(): void {
   chatPhotoSendingTest();
   chatFileSendingTest();
   linkPreviewTest();
+  chatSearchJumpTest();
 }

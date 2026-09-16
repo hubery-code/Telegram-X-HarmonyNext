@@ -254,14 +254,24 @@ function buildRoute(name: RouteName, params: Map<string, ParamValue>): Result<Ap
     case 'chat': {
       const chatId: ParamValue | undefined = params.get('chatId');
       const threadId: ParamValue | undefined = params.get('threadId');
+      const messageId: ParamValue | undefined = params.get('messageId');
       if (typeof chatId !== 'number') {
         return err(AppErrors.parameter('invalid', 'chatId', 'chatId must be int'));
       }
-      if (threadId !== undefined) {
-        if (typeof threadId !== 'number') {
-          return err(AppErrors.parameter('invalid', 'threadId', 'threadId must be int'));
-        }
-        const route: ChatRoute = { name: 'chat', chatId: chatId, threadId: threadId };
+      if (threadId !== undefined && typeof threadId !== 'number') {
+        return err(AppErrors.parameter('invalid', 'threadId', 'threadId must be int'));
+      }
+      // SEARCH-102：搜索结果携带的目标消息 id（可选，向后兼容既有 chat 路由）。
+      if (messageId !== undefined && typeof messageId !== 'number') {
+        return err(AppErrors.parameter('invalid', 'messageId', 'messageId must be int'));
+      }
+      if (threadId !== undefined || messageId !== undefined) {
+        const route: ChatRoute = {
+          name: 'chat',
+          chatId: chatId,
+          threadId: threadId as number | undefined,
+          messageId: messageId as number | undefined
+        };
         return ok(route);
       }
       const route: ChatRoute = { name: 'chat', chatId: chatId };
@@ -373,6 +383,11 @@ function collectRouteParams(route: AppRoute, out: Map<string, ParamValue>): Resu
       out.set('chatId', route.chatId);
       if (route.threadId !== undefined) {
         out.set('threadId', route.threadId);
+      }
+      // SEARCH-102：带目标消息的会话路由（搜索结果跳转定位）编码为
+      // chat/{id}?messageId=N，返回时仍可还原同一路由。
+      if (route.messageId !== undefined) {
+        out.set('messageId', route.messageId);
       }
       return ok(undefined);
     case 'chatInfo':

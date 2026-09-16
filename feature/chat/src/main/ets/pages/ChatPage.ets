@@ -92,9 +92,16 @@ import {
   CloseAttachmentMenu,
   ToggleAttachmentMenu,
   CancelMediaDownload,
-  ResendFailedMessage
+  ResendFailedMessage,
+  OpenChatSearch,
+  CloseChatSearch,
+  ChatSearchQueryChanged,
+  PerformChatSearch,
+  JumpToSearchResult,
+  ClearJumpToMessage
 } from '../contract/ChatIntent';
 import { isMessageSelected } from '../model/ForwardSelection';
+import { ChatSearchResultItem } from '../model/ChatSearchResultItem';
 
 const T = LightTheme;
 
@@ -113,6 +120,15 @@ const SPOILER_MASK_COLOR: string = T.colors.textPrimary;
 const SENDER_AVATAR_SIZE: number = 28;
 /** MSG-106：多选勾选圈直径（vp）。 */
 const SELECTION_MARK_SIZE: number = 22;
+/** SEARCH-102：顶栏搜索入口按钮尺寸（vp）。 */
+const SEARCH_BUTTON_SIZE: number = 44;
+/**
+ * SEARCH-102：搜索结果跳转后目标消息的高亮时长（ms）。会话内短会话（几十条）里
+ * 跳转前后画面差别很小，没有高亮用户根本看不出落点，故落位后整行着色一段时间。
+ * 颜色用 `T.colors.chatOutgoing`：浅色主题 #FFD9F1FF、深色主题 #FF1D3D52，
+ * 两套主题下都是明显的蓝色调，比中性灰底更容易被注意到。
+ */
+const JUMP_HIGHLIGHT_MS: number = 4000;
 
 function pad2(value: number): string {
   return value < 10 ? `0${value}` : `${value}`;
@@ -172,7 +188,7 @@ function formatDuration(seconds: number): string {
  * selected 必须参与签名（MSG-106）：多选勾选圈是"同一 messageId 的原地变更"，
  * key 不含它就永远不重渲——这正是 MSG-104 已读勾踩过的坑。
  */
-function messageRowKey(item: MessageItem, selected: boolean): string {
+function messageRowKey(item: MessageItem, selected: boolean, highlighted: boolean = false): string {
   let mediaSig: string = '';
   if (item.albumItems.length > 0) {
     const parts: string[] = [];
@@ -202,7 +218,9 @@ function messageRowKey(item: MessageItem, selected: boolean): string {
     `${item.sendState}|${item.isRead}|${item.isEdited}|${item.senderColorIndex}|` +
     `${item.text}|${item.senderName}|${item.senderAvatarPath !== null ? item.senderAvatarPath : ''}|` +
     `${item.replyToSummary}|${mediaSig}|${replySig}|${linkPreviewSig}|${selected}|` +
-    `${item.showDateHeader ? item.dateHeaderText : ''}|${item.showUnreadSeparator}`;
+    `${item.showDateHeader ? item.dateHeaderText : ''}|${item.showUnreadSeparator}|` +
+    // SEARCH-102：高亮态参与 key，落位后该行才会局部重绘。
+    `${highlighted}`;
   return `${item.messageId}:${fnv1a32(signature)}`;
 }
 
@@ -265,6 +283,10 @@ export struct ChatPage {
   private shownMessages: readonly MessageItem[] = [];
   private shownCount: number = 0;
   private lastTailMessageId: number = 0;
+  /** SEARCH-102：搜索面板独立滚动器（避免与主列表 scroller 共享滚动位置）。 */
+  private searchScroller: Scroller = new Scroller();
+  /** SEARCH-102：搜索输入防抖定时器句柄（undefined=无在途定时器）。 */
+  private searchDebounceTimer: number | undefined = undefined;
   /** 已揭开的 spoiler span 集合，key = `${messageId}:${spanIndex}`（MSG-101）。 */
   @State private revealedSpoilers: string[] = [];
   /** MEDIA-103：全屏媒体查看器缩放比例与工具栏显隐状态。 */
@@ -274,6 +296,14 @@ export struct ChatPage {
   private swiperController: SwiperController = new SwiperController();
   /** 标记用户是否已手动滑动过列表；为 false 时新拉取历史保持目标定位。 */
   private hasUserScrolled: boolean = false;
+  /**
+   * SEARCH-102：跳转锚定锁。搜索结果跳转落位后置位，抑制"首屏未读/尾部新消息"
+   * 的自动定位把视图拉回；用户一旦手动滑动列表即释放（之后恢复既有的跟随行为）。
+   */
+  private jumpAnchorLock: boolean = false;
+  /** SEARCH-102：跳转落位后高亮的消息 id（0 = 无）。让用户一眼看到"跳到哪了"。 */
+  @State private highlightedMessageId: number = 0;
+  private highlightTimer: number | undefined = undefined;
   /** MSG-106：上次渲染的选择集签名，用于在多选态变化时触发列表重载。 */
   private shownSelectionSignature: string = '';
 
@@ -331,25 +361,62 @@ export struct ChatPage {
       this.lastTailMessageId = this.uiState.messages[this.shownCount - 1].messageId;
       const targetIdx: number = this.computeScrollTargetIndex(this.uiState.messages);
       const align: ScrollAlign = (targetIdx === this.shownCount - 1) ? ScrollAlign.END : ScrollAlign.START;
-      setTimeout(() => {
-        this.scroller.scrollToIndex(targetIdx, false, align);
-      }, 50);
+      // 首屏锚点同样要让位给搜索结果跳转（从搜索进会话时二者几乎同时发生）。
+      this.autoScrollUnlessJumped(targetIdx, false, align, 50);
+    }
+    // SEARCH-102：目标命中首屏缓存时，跳转早在首帧之前就解析完了（@Watch 不会触发），
+    // 这里补一次；目标还没进数组时留给后续状态变更处理。
+    const pendingJump: number = this.uiState.jumpToMessageId;
+    if (pendingJump > 0 && this.indexOfMessageId(pendingJump) >= 0) {
+      hilog.info(DOMAIN, TAG, 'chat_jump_from_first_frame messageId=%{public}s', `${pendingJump}`);
+      this.armJumpScroll(pendingJump);
     }
   }
 
   onUiStateChanged(): void {
+    // SEARCH-102：待跳转定位的消息 id 回灌后滚到目标（围绕历史已由 coordinator
+    // 通过 loadHistoryAround 拉好）。跳转必须压过"首屏未读/尾部新消息"的自动定位——
+    // 后者是 40-50ms 的延迟滚动，若走同一条路径会把跳转结果覆盖掉（表现为
+    // "点了搜索结果却停在最新消息处"）。命中目标时在此独占处理并 return。
+    const jumpTarget: number = this.uiState.jumpToMessageId;
+    let jumpIndex: number = -1;
+    if (jumpTarget > 0) {
+      for (let i = 0; i < this.uiState.messages.length; i++) {
+        if (this.uiState.messages[i].messageId === jumpTarget) {
+          jumpIndex = i;
+          break;
+        }
+      }
+    }
     if (this.uiState.activeViewerIndex < 0) {
       this.viewerScale = 1.0;
       this.viewerBarsVisible = true;
     }
     const messages: readonly MessageItem[] = this.uiState.messages;
+    const selectionSignature: string = this.selectionSignature();
+    const selectionChanged: boolean = selectionSignature !== this.shownSelectionSignature;
+    const messagesChanged: boolean = messages !== this.shownMessages;
+    if (jumpIndex >= 0) {
+      // 数据源先同步到最新，再延迟一帧居中定位（等列表完成一次布局）。
+      if (messagesChanged) {
+        this.dataSource.setItems(messages);
+        this.shownMessages = messages;
+        this.shownCount = messages.length;
+        this.lastTailMessageId = messages.length > 0 ? messages[messages.length - 1].messageId : 0;
+      } else if (selectionChanged) {
+        this.dataSource.setItems(messages);
+      }
+      if (selectionChanged) {
+        this.shownSelectionSignature = selectionSignature;
+      }
+      // 跳转是用户显式位移：置位后不再让"保持未读/末尾定位"把视图拉回。
+      this.armJumpScroll(jumpTarget);
+      return;
+    }
     // composerText 等变化不触碰列表：仅 messages 引用变化才刷新数据源，
     // 避免输入栏每次击键都触发 LazyForEach 全量重载。
     // MSG-106 例外：多选态变化也是"原地变更"，必须重载列表让勾选圈上屏
     // （messages 数组引用不变，但 row key 含 selected，需重新求 key）。
-    const selectionSignature: string = this.selectionSignature();
-    const selectionChanged: boolean = selectionSignature !== this.shownSelectionSignature;
-    const messagesChanged: boolean = messages !== this.shownMessages;
     if (!messagesChanged && !selectionChanged) {
       return;
     }
@@ -372,23 +439,107 @@ export struct ChatPage {
     this.lastTailMessageId = tailId;
     // 首屏出内容 → 定位到首条未读或最新；尾部来了新消息 → 平滑滚到底；
     // 顶部翻页/历史回填时，若用户尚未主动滑动，保持目标定位（未读定位未读，已读定位最新末尾）。
+    // SEARCH-102：跳转锚定期间（jumpAnchorLock）一律不执行这些自动定位——刚进会话时
+    // 首屏 preload 会让"尾部变化"，若照常滚到底就会把搜索结果跳转覆盖掉。
     if (firstContent) {
       const targetIdx: number = this.computeScrollTargetIndex(messages);
       const align: ScrollAlign = (targetIdx === count - 1) ? ScrollAlign.END : ScrollAlign.START;
-      setTimeout(() => {
-        this.scroller.scrollToIndex(targetIdx, false, align);
-      }, 50);
+      this.autoScrollUnlessJumped(targetIdx, false, align, 50);
     } else if (grewAtTail) {
-      setTimeout(() => {
-        this.scroller.scrollToIndex(count - 1, true, ScrollAlign.END);
-      }, 40);
+      this.autoScrollUnlessJumped(count - 1, true, ScrollAlign.END, 40);
     } else if (!this.hasUserScrolled && count > 0) {
       const targetIdx: number = this.computeScrollTargetIndex(messages);
       const align: ScrollAlign = (targetIdx === count - 1) ? ScrollAlign.END : ScrollAlign.START;
-      setTimeout(() => {
-        this.scroller.scrollToIndex(targetIdx, false, align);
-      }, 50);
+      this.autoScrollUnlessJumped(targetIdx, false, align, 50);
     }
+  }
+
+  /**
+   * SEARCH-102：执行跳转落位（置锚定锁 → 延迟居中滚动 → 高亮 → 清标记）。
+   *
+   * 两处调用，缺一不可：
+   * - `onUiStateChanged`：常规路径（目标需要拉历史时，Ready 晚于首帧到达）；
+   * - `aboutToAppear`：**目标命中首屏缓存时的快路径**——打开会话 → 首屏回包 → Ready
+   *   可能在 3ms 内全部跑完，比 ChatPage 首帧创建还早，此时 @Watch 只在"创建后的变化"
+   *   上触发，这个 transition 会被完全跳过（表现为"点了搜索结果完全没反应"）。
+   *
+   * 下标在滚动时刻重新解析：这段延迟里投影可能前插更早历史导致下标整体位移。
+   * 落位成功才清标记；清不掉（目标还没进数组）就留待下一次状态变更再跳。
+   */
+  private armJumpScroll(targetMessageId: number): void {
+    this.hasUserScrolled = true;
+    this.jumpAnchorLock = true;
+    setTimeout(() => {
+      if (this.uiState.jumpToMessageId !== targetMessageId) {
+        // 已由更早的回调完成落位：过期回调不得再把用户拉回。
+        return;
+      }
+      const currentIndex: number = this.indexOfMessageId(targetMessageId);
+      if (currentIndex < 0) {
+        return;
+      }
+      hilog.info(DOMAIN, TAG, 'chat_jump_scroll messageId=%{public}s index=%{public}s total=%{public}s',
+        `${targetMessageId}`, `${currentIndex}`, `${this.uiState.messages.length}`);
+      this.scroller.scrollToIndex(currentIndex, false, ScrollAlign.CENTER);
+      this.highlightJumpTarget(targetMessageId);
+      this.onDispatch(new ClearJumpToMessage());
+    }, 80);
+  }
+
+  /**
+   * SEARCH-102：落位后高亮目标消息一段时间（并记日志便于取证）。
+   * 用户手动滑动或再次跳转会立即结束上一次高亮，避免多处着色。
+   */
+  private highlightJumpTarget(messageId: number): void {
+    if (this.highlightTimer !== undefined) {
+      clearTimeout(this.highlightTimer);
+      this.highlightTimer = undefined;
+    }
+    this.highlightedMessageId = messageId;
+    hilog.info(DOMAIN, TAG, 'chat_jump_highlight messageId=%{public}s', `${messageId}`);
+    this.highlightTimer = setTimeout(() => {
+      this.highlightTimer = undefined;
+      this.highlightedMessageId = 0;
+    }, JUMP_HIGHLIGHT_MS);
+  }
+
+  /** SEARCH-102：立即结束跳转高亮（用户接管视图时调用）。 */
+  private clearJumpHighlight(): void {
+    if (this.highlightTimer !== undefined) {
+      clearTimeout(this.highlightTimer);
+      this.highlightTimer = undefined;
+    }
+    this.highlightedMessageId = 0;
+  }
+
+  /**
+   * SEARCH-102：按消息 id 在**当前**上屏数组里求下标；未命中返回 -1。
+   * 跳转必须在滚动时刻现算（而不是用状态变更时算好的值），否则这段延迟里
+   * 投影前插更早历史会让下标整体位移，滚到错误的消息。
+   */
+  private indexOfMessageId(messageId: number): number {
+    const messages: readonly MessageItem[] = this.uiState.messages;
+    for (let i = 0; i < messages.length; i++) {
+      if (messages[i].messageId === messageId) {
+        return i;
+      }
+    }
+    return -1;
+  }
+
+  /**
+   * SEARCH-102：延迟执行的"自动定位"（未读/末尾）。已在跳转锚定期间则跳过——
+   * 回调是延迟 40–50ms 才跑的，必须在触发时刻再判断一次，否则跳转（无论先后）
+   * 都可能被这一枪打回最新消息处。
+   */
+  private autoScrollUnlessJumped(index: number, smooth: boolean, align: ScrollAlign, delayMs: number): void {
+    setTimeout(() => {
+      // 跳转锚定中，或还有待落位的跳转目标（Ready 还没到）→ 让位给跳转。
+      if (this.jumpAnchorLock || this.uiState.jumpToMessageId > 0) {
+        return;
+      }
+      this.scroller.scrollToIndex(index, smooth, align);
+    }, delayMs);
   }
 
   build() {
@@ -420,7 +571,11 @@ export struct ChatPage {
               ListItem() {
                 this.MessageRow(item)
               }
-            }, (item: MessageItem) => messageRowKey(item, this.isSelected(item.messageId)))
+            }, (item: MessageItem) => messageRowKey(
+              item,
+              this.isSelected(item.messageId),
+              this.highlightedMessageId === item.messageId
+            ))
           }
           .width('100%')
           .layoutWeight(1)
@@ -429,6 +584,9 @@ export struct ChatPage {
           .onTouch((event: TouchEvent) => {
             if (event.type === TouchType.Down || event.type === TouchType.Move) {
               this.hasUserScrolled = true;
+              // SEARCH-102：用户接管视图，解除跳转锚定与高亮，恢复既有的自动跟随。
+              this.jumpAnchorLock = false;
+              this.clearJumpHighlight();
             }
           })
           .onScrollIndex((start: number, end: number) => {
@@ -481,6 +639,11 @@ export struct ChatPage {
       // 全屏媒体查看器（MEDIA-103 / FEAT-MEDIA-006）
       if (this.uiState.activeViewerIndex >= 0) {
         this.MediaViewerOverlay()
+      }
+
+      // SEARCH-102：聊天内搜索面板（顶栏 🔍 展开的覆盖层：搜索栏 + 结果列表）。
+      if (this.uiState.showSearch) {
+        this.SearchPanel()
       }
     }
     .width('100%')
@@ -535,6 +698,17 @@ export struct ChatPage {
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
           .layoutWeight(1)
+
+        // SEARCH-102：聊天内搜索入口（🔍 图标 → 展开搜索面板）。
+        Text('🔍')
+          .fontSize(T.typography.title.fontSize)
+          .fontColor(T.colors.accent)
+          .width(SEARCH_BUTTON_SIZE)
+          .height(SEARCH_BUTTON_SIZE)
+          .textAlign(TextAlign.Center)
+          .onClick(() => {
+            this.onDispatch(new OpenChatSearch());
+          })
       }
     }
     .width('100%')
@@ -791,6 +965,11 @@ export struct ChatPage {
     })
     }
     .width('100%')
+    // SEARCH-102：跳转落位后目标行整行着色，让用户看清"跳到了哪条"
+    // （短会话里跳转前后画面差别小，仅靠滚动位置无法辨认）。
+    .backgroundColor(this.highlightedMessageId === item.messageId
+      ? T.colors.chatOutgoing
+      : Color.Transparent)
   }
 
   /** MSG-106：一条消息的勾选圈（选中实心 + ✓，未选中空心）。 */
@@ -2461,5 +2640,135 @@ export struct ChatPage {
     .layoutWeight(1)
     .justifyContent(FlexAlign.Center)
     .alignItems(HorizontalAlign.Center)
+  }
+
+  /** SEARCH-102：聊天内搜索面板。全屏覆盖：顶部搜索栏（返回 X + 输入框），
+   *  中部命中结果列表（含原文摘要 + 日期，点击 → jumpToSearchResult 定位），
+   *  空态/加载态，底部由装配层透传的 keyboardAvoidMode 由系统承担。 */
+  @Builder
+  SearchPanel() {
+    Column() {
+      // 面板头：返回（收起搜索）+ 搜索输入框
+      Row() {
+        Text('✕')
+          .fontSize(T.typography.title.fontSize)
+          .fontWeight(T.typography.title.fontWeight)
+          .fontColor(T.colors.accent)
+          .width(BACK_ARROW_SIZE)
+          .height(BACK_ARROW_SIZE)
+          .textAlign(TextAlign.Center)
+          .onClick(() => {
+            this.onDispatch(new CloseChatSearch());
+          })
+
+        TextInput({ placeholder: 'Search in chat...' })
+          .width('100%')
+          .height(COMPOSER_INPUT_HEIGHT)
+          .fontSize(T.typography.body.fontSize)
+          .fontColor(T.colors.textPrimary)
+          .backgroundColor(T.colors.backgroundSecondary)
+          .borderRadius(T.radius.sm)
+          .padding({ left: T.spacing.sm, right: T.spacing.sm })
+          .onChange((value: string) => {
+            this.onDispatch(new ChatSearchQueryChanged(value));
+            // 防抖：输入停顿 300ms 后自动执行搜索（对齐 Telegram X 即时搜索体验）。
+            if (this.searchDebounceTimer !== undefined) {
+              clearTimeout(this.searchDebounceTimer);
+              this.searchDebounceTimer = undefined;
+            }
+            if (value.trim().length > 0) {
+              this.searchDebounceTimer = setTimeout(() => {
+                this.searchDebounceTimer = undefined;
+                this.onDispatch(new PerformChatSearch());
+              }, 300);
+            }
+          })
+      }
+      .width('100%')
+      .alignItems(VerticalAlign.Center)
+      .padding({
+        left: T.spacing.sm,
+        right: T.spacing.screenInset,
+        top: T.spacing.sm,
+        bottom: T.spacing.sm
+      })
+      .borderWidth({ bottom: 1 })
+      .borderColor(T.colors.divider)
+
+      // 结果列表
+      if (this.uiState.isSearching) {
+        Column() {
+          LoadingProgress()
+            .width(40)
+            .height(40)
+            .color(T.colors.accent)
+        }
+        .width('100%')
+        .layoutWeight(1)
+        .justifyContent(FlexAlign.Center)
+        .alignItems(HorizontalAlign.Center)
+      } else if (this.uiState.searchResults.length === 0) {
+        Column() {
+          // 未输入关键词时给引导文案；输入过但无命中才提示 No results
+          // （否则一打开面板就是"No results"，看起来像搜索坏了）。
+          Text(this.uiState.searchQuery.trim().length === 0
+            ? 'Search messages in this chat'
+            : 'No results')
+            .fontSize(T.typography.body.fontSize)
+            .fontColor(T.colors.textSecondary)
+            .textAlign(TextAlign.Center)
+        }
+        .width('100%')
+        .layoutWeight(1)
+        .justifyContent(FlexAlign.Center)
+        .alignItems(HorizontalAlign.Center)
+      } else {
+        List({ scroller: this.searchScroller }) {
+          ForEach(this.uiState.searchResults.slice(), (result: ChatSearchResultItem) => {
+            ListItem() {
+              Column() {
+                Row() {
+                  Text(result.textSnippet.length > 0 ? result.textSnippet : '[Message]')
+                    .fontSize(T.typography.body.fontSize)
+                    .fontColor(T.colors.textPrimary)
+                    .maxLines(2)
+                    .textOverflow({ overflow: TextOverflow.Ellipsis })
+                    .layoutWeight(1)
+
+                  Text(result.dateText)
+                    .fontSize(T.typography.footnote.fontSize)
+                    .fontColor(T.colors.textSecondary)
+                }
+                .width('100%')
+                .alignItems(VerticalAlign.Center)
+
+                if (!result.jumpable) {
+                  Text('Tap to load')
+                    .fontSize(T.typography.footnote.fontSize)
+                    .fontColor(T.colors.accent)
+                }
+              }
+              .width('100%')
+              .padding({
+                left: T.spacing.screenInset,
+                right: T.spacing.screenInset,
+                top: T.spacing.sm,
+                bottom: T.spacing.sm
+              })
+              .backgroundColor(T.colors.background)
+            }
+            .onClick(() => {
+              this.onDispatch(new JumpToSearchResult(result.messageId));
+            })
+          }, (result: ChatSearchResultItem) => `srch_${result.messageId}_${result.textSnippet.length}`)
+        }
+        .width('100%')
+        .layoutWeight(1)
+        .scrollBar(BarState.Off)
+      }
+    }
+    .width('100%')
+    .height('100%')
+    .backgroundColor(T.colors.background)
   }
 }

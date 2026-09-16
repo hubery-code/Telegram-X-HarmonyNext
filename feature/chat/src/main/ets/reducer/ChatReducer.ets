@@ -67,7 +67,12 @@ import {
   CancelMediaUpload,
   RestoreDraft,
   CancelMediaDownload,
-  ResendFailedMessage
+  ResendFailedMessage,
+  ChatSearchQueryChanged,
+  OnChatSearchLoaded,
+  OnChatSearchFailed,
+  JumpToSearchResult,
+  OnJumpToMessageReady
 } from '../contract/ChatIntent';
 import {
   ChatEffect,
@@ -85,7 +90,9 @@ import {
   CopyTextToClipboard,
   PickAndSendPhotoEffect,
   PickAndSendFileEffect,
-  CancelMediaDownloadEffect
+  CancelMediaDownloadEffect,
+  FetchChatSearch,
+  JumpToMessage
 } from '../contract/ChatEffect';
 import { incomingIdUpTo } from '../model/ReadReceipt';
 import {
@@ -779,6 +786,93 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
         return reduced(state);
       }
       return reduced(state.copyWith({ activeViewerIndex: changeIntent.newIndex }));
+    }
+
+    // ---- SEARCH-102 聊天内搜索 ----
+    case 'openChatSearch': {
+      if (state.showSearch) {
+        return reduced(state);
+      }
+      // 清空在途标记，展开搜索面板。
+      return reduced(state.copyWith({
+        showSearch: true,
+        searchQuery: '',
+        searchResults: [],
+        isSearching: false,
+        jumpToMessageId: 0
+      }));
+    }
+
+    case 'closeChatSearch': {
+      if (!state.showSearch) {
+        return reduced(state);
+      }
+      return reduced(state.copyWith({
+        showSearch: false,
+        searchQuery: '',
+        searchResults: [],
+        isSearching: false,
+        jumpToMessageId: 0
+      }));
+    }
+
+    case 'chatSearchQueryChanged': {
+      const queryIntent: ChatSearchQueryChanged = intent as ChatSearchQueryChanged;
+      return reduced(state.copyWith({
+        searchQuery: queryIntent.query,
+        jumpToMessageId: 0
+      }));
+    }
+
+    case 'performChatSearch': {
+      const query: string = state.searchQuery.trim();
+      if (query.length === 0 || state.isSearching) {
+        return reduced(state);
+      }
+      const effects: ChatEffect[] = [new FetchChatSearch(state.chatId, query, 0)];
+      return reduced(state.copyWith({ isSearching: true }), effects);
+    }
+
+    case 'onChatSearchLoaded': {
+      const loadedIntent: OnChatSearchLoaded = intent as OnChatSearchLoaded;
+      return reduced(state.copyWith({
+        isSearching: false,
+        searchResults: loadedIntent.results
+      }));
+    }
+
+    case 'onChatSearchFailed': {
+      const failedIntent: OnChatSearchFailed = intent as OnChatSearchFailed;
+      return reduced(state.copyWith({
+        isSearching: false,
+        errorMessage: failedIntent.error.message
+      }));
+    }
+
+    case 'jumpToSearchResult': {
+      const jumpIntent: JumpToSearchResult = intent as JumpToSearchResult;
+      if (jumpIntent.messageId <= 0 || state.jumpToMessageId !== 0) {
+        return reduced(state);
+      }
+      const effects: ChatEffect[] = [new JumpToMessage(jumpIntent.messageId)];
+      // 关闭搜索面板，发起历史围绕拉取。
+      return reduced(state.copyWith({
+        showSearch: false,
+        jumpToMessageId: jumpIntent.messageId,
+        searchResults: []
+      }), effects);
+    }
+
+    case 'onJumpToMessageReady': {
+      const readyIntent: OnJumpToMessageReady = intent as OnJumpToMessageReady;
+      return reduced(state.copyWith({ jumpToMessageId: readyIntent.messageId }));
+    }
+
+    case 'clearJumpToMessage': {
+      if (state.jumpToMessageId === 0) {
+        return reduced(state);
+      }
+      return reduced(state.copyWith({ jumpToMessageId: 0 }));
     }
   }
 

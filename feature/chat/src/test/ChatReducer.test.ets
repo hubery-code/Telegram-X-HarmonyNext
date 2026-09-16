@@ -39,7 +39,16 @@ import {
   CloseAttachmentMenu,
   ToggleAttachmentMenu,
   CancelMediaDownload,
-  ResendFailedMessage
+  ResendFailedMessage,
+  OpenChatSearch,
+  CloseChatSearch,
+  ChatSearchQueryChanged,
+  PerformChatSearch,
+  OnChatSearchLoaded,
+  OnChatSearchFailed,
+  JumpToSearchResult,
+  OnJumpToMessageReady,
+  ClearJumpToMessage
 } from '../main/ets/contract/ChatIntent';
 import {
   ChatEffect,
@@ -53,8 +62,11 @@ import {
   CopyTextToClipboard,
   PickAndSendPhotoEffect,
   CancelMediaDownloadEffect,
-  ResendMessage
+  ResendMessage,
+  FetchChatSearch,
+  JumpToMessage
 } from '../main/ets/contract/ChatEffect';
+import { ChatSearchResultItem } from '../main/ets/model/ChatSearchResultItem';
 import { chatReducer, extractFirstLink } from '../main/ets/reducer/ChatReducer';
 import { MessageTextSpan } from '../main/ets/model/MessageTextSpan';
 
@@ -951,6 +963,206 @@ export default function chatReducerTest() {
       );
 
       expect(result.effects.length).assertEqual(0);
+    });
+
+    // ---- SEARCH-102 聊天内搜索 ----
+
+    it('openChatSearch_expandsSearchPanelAndClearsState', 0, () => {
+      const initial: ChatUiState = makeState('', null);
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        initial,
+        new OpenChatSearch(),
+        makeEnv()
+      );
+
+      expect(result.state.showSearch).assertTrue();
+      expect(result.state.searchQuery).assertEqual('');
+      expect(result.state.searchResults.length).assertEqual(0);
+      expect(result.state.jumpToMessageId).assertEqual(0);
+      expect(result.effects.length).assertEqual(0);
+    });
+
+    it('openChatSearch_whenAlreadyOpen_isNoOp', 0, () => {
+      const opened: ChatUiState = makeState('', null).copyWith({ showSearch: true });
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        opened,
+        new OpenChatSearch(),
+        makeEnv()
+      );
+      expect(result.state === opened).assertTrue();
+    });
+
+    it('closeChatSearch_collapsesPanelAndResetsResults', 0, () => {
+      const opened: ChatUiState = makeState('', null).copyWith({
+        showSearch: true,
+        searchQuery: 'hello',
+        searchResults: [new ChatSearchResultItem(10, 'hello world', '10:30')],
+        isSearching: true
+      });
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        opened,
+        new CloseChatSearch(),
+        makeEnv()
+      );
+
+      expect(result.state.showSearch).assertFalse();
+      expect(result.state.searchQuery).assertEqual('');
+      expect(result.state.searchResults.length).assertEqual(0);
+      expect(result.state.isSearching).assertFalse();
+    });
+
+    it('chatSearchQueryChanged_updatesQuery_only', 0, () => {
+      const opened: ChatUiState = makeState('', null).copyWith({ showSearch: true });
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        opened,
+        new ChatSearchQueryChanged('  telegram  '),
+        makeEnv()
+      );
+
+      expect(result.state.searchQuery).assertEqual('  telegram  ');
+      expect(result.effects.length).assertEqual(0);
+    });
+
+    it('performChatSearch_emptyQuery_isNoOp', 0, () => {
+      const opened: ChatUiState = makeState('', null).copyWith({ showSearch: true, searchQuery: '   ' });
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        opened,
+        new PerformChatSearch(),
+        makeEnv()
+      );
+
+      expect(result.effects.length).assertEqual(0);
+    });
+
+    it('performChatSearch_withQuery_emitsFetchChatSearch', 0, () => {
+      const opened: ChatUiState = makeState('', null).copyWith({
+        showSearch: true,
+        searchQuery: '  hello  '
+      });
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        opened,
+        new PerformChatSearch(),
+        makeEnv()
+      );
+
+      expect(result.state.isSearching).assertTrue();
+      expect(result.effects.length).assertEqual(1);
+      expect(result.effects[0].kind).assertEqual('fetchChatSearch');
+      const effect: FetchChatSearch = result.effects[0] as FetchChatSearch;
+      expect(effect.chatId).assertEqual(42);
+      expect(effect.query).assertEqual('hello');
+    });
+
+    it('performChatSearch_whenAlreadySearching_isNoOp', 0, () => {
+      const opened: ChatUiState = makeState('', null).copyWith({
+        showSearch: true,
+        searchQuery: 'hello',
+        isSearching: true
+      });
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        opened,
+        new PerformChatSearch(),
+        makeEnv()
+      );
+
+      expect(result.effects.length).assertEqual(0);
+    });
+
+    it('onChatSearchLoaded_storesResultsAndStopsSearching', 0, () => {
+      const opened: ChatUiState = makeState('', null).copyWith({
+        showSearch: true,
+        searchQuery: 'hello',
+        isSearching: true
+      });
+      const results: ChatSearchResultItem[] = [
+        new ChatSearchResultItem(10, 'hello world', '10:30', true),
+        new ChatSearchResultItem(20, 'say hello back', '10:31', false)
+      ];
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        opened,
+        new OnChatSearchLoaded(results),
+        makeEnv()
+      );
+
+      expect(result.state.isSearching).assertFalse();
+      expect(result.state.searchResults.length).assertEqual(2);
+      expect(result.state.searchResults[0].messageId).assertEqual(10);
+      expect(result.state.searchResults[1].jumpable).assertFalse();
+    });
+
+    it('onChatSearchFailed_setsErrorMessageAndStopsSearching', 0, () => {
+      const opened: ChatUiState = makeState('', null).copyWith({
+        showSearch: true,
+        searchQuery: 'hello',
+        isSearching: true
+      });
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        opened,
+        new OnChatSearchFailed(AppErrors.parameter('invalid', 'query', 'search failed')),
+        makeEnv()
+      );
+
+      expect(result.state.isSearching).assertFalse();
+      expect(result.state.errorMessage).assertEqual('search failed');
+    });
+
+    it('jumpToSearchResult_emitsJumpToMessage_andClosesPanel', 0, () => {
+      const opened: ChatUiState = makeState('', null).copyWith({
+        showSearch: true,
+        searchResults: [new ChatSearchResultItem(10, 'hello world', '10:30')]
+      });
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        opened,
+        new JumpToSearchResult(10),
+        makeEnv()
+      );
+
+      expect(result.state.showSearch).assertFalse();
+      expect(result.state.jumpToMessageId).assertEqual(10);
+      expect(result.effects.length).assertEqual(1);
+      expect(result.effects[0].kind).assertEqual('jumpToMessage');
+      const jump: JumpToMessage = result.effects[0] as JumpToMessage;
+      expect(jump.messageId).assertEqual(10);
+    });
+
+    it('jumpToSearchResult_invalidOrAlreadyJumping_isNoOp', 0, () => {
+      const opened: ChatUiState = makeState('', null).copyWith({
+        showSearch: true,
+        jumpToMessageId: 5
+      });
+      const resultNoOp: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        opened,
+        new JumpToSearchResult(0),
+        makeEnv()
+      );
+      expect(resultNoOp.effects.length).assertEqual(0);
+
+      const resultBusy: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        opened,
+        new JumpToSearchResult(10),
+        makeEnv()
+      );
+      expect(resultBusy.effects.length).assertEqual(0);
+    });
+
+    it('onJumpToMessageReady_marksTargetReady', 0, () => {
+      const initial: ChatUiState = makeState('', null);
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        initial,
+        new OnJumpToMessageReady(77),
+        makeEnv()
+      );
+      expect(result.state.jumpToMessageId).assertEqual(77);
+    });
+
+    it('clearJumpToMessage_resetsTarget', 0, () => {
+      const withTarget: ChatUiState = makeState('', null).copyWith({ jumpToMessageId: 77 });
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        withTarget,
+        new ClearJumpToMessage(),
+        makeEnv()
+      );
+      expect(result.state.jumpToMessageId).assertEqual(0);
     });
   });
 }
