@@ -75,13 +75,16 @@ Ordered Event Router ← TdGateway ← 生成的 TDLib DTO/Codec
 echo "telegram.api_id=你的ID" >> local.properties
 echo "telegram.api_hash=你的HASH" >> local.properties
 
-# 2. 签名：用 DevEco 打开工程，File → Project Structure → Signing Configs
-#    勾选 Automatically generate signature 自动生成；
-#    或将自己的 p12/cer/p7b 放入 signing/ 并修改 build-profile.json5。
-#    （只想编出不签名的 hap：删除 product 里的 "signingConfig": "default" 一行）
+# 2. 构建与部署（纯命令行无头闭环，无需打开 IDE 界面）
+# 详见 runbook: docs/runbooks/build.md §7
 
-# 3. 构建（wrapper 会自动使用 DevEco 内置的 node / hvigor）
-./tools/ci/build.sh debug     # 或 release
+# 方案 A：针对物理真机（带签名编译 + 自动推包装机 + 唤醒拉起）
+./tools/ci/build-signed.sh debug   # 自动读取 local.signing.json5 出 signed.hap
+./tools/ci/device-install.sh        # 自动探测真机、安装、唤醒并启动 EntryAbility
+
+# 方案 B：针对模拟器（免签名）
+./tools/ci/build.sh debug          # 产出 entry-default-unsigned.hap
+./tools/ci/device-install.sh        # 自动探测模拟器并安装拉起
 ```
 
 ### 其他常用命令
@@ -89,6 +92,7 @@ echo "telegram.api_hash=你的HASH" >> local.properties
 ```bash
 ./tools/ci/ci.sh          # 完整门禁：工具链校验 → 秘密扫描 → lint/类型检查 → 单元测试 → Debug/Release 构建
 ./tools/ci/setup-check.sh # 校验本机工具链版本与锁定清单一致
+./tools/ci/device-install.sh # 一键推包到设备并拉起 Ability
 ```
 
 ## 参与贡献

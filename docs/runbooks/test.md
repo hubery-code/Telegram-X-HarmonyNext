@@ -53,14 +53,23 @@ CLI 与 IDE 底层同为 hvigor `test` 任务，结果等价。
 任何一步失败立即非 0 退出。GitHub Actions 模板见 `.github/workflows/ci.yml`
 （self-hosted macOS runner + DevEco 检测，无 DevEco 则跳过并注明）。
 
-## 3. 设备测试（Hypium / DevEco Testing，待启用）
+## 3. 设备测试与自动化部署（真机 / 模拟器）
 
-前置：DEVICE_MATRIX.md 真机冻结；hdc 可用：
+前置：DEVICE_MATRIX.md 真机冻结；使用工具链自动发现（或直接使用快捷脚本）：
 
 ```bash
-/Applications/DevEco-Studio.app/Contents/sdk/default/openharmony/toolchains/hdc list targets
+# 一键自动识别目标设备、推包并拉起 EntryAbility
+./tools/ci/device-install.sh
+
+# 或通过底层工具链：
+source tools/ci/resolve-toolchain.sh
+$HDC_PATH list targets
+$HDC_PATH -t <TARGET> app install -r entry/build/default/outputs/default/entry-default-signed.hap
+$HDC_PATH -t <TARGET> shell "power-shell wakeup"
+$HDC_PATH -t <TARGET> shell aa start -a EntryAbility -b org.telegram.x.harmony
 ```
 
+详细签名出包、无头截图诊断与常见报错（如锁屏 10106102、缺签名 9568320）见 [`docs/runbooks/build.md §7`](build.md)。
 启用时验证 `hvigorw onDeviceTest`（ohosTest 壳的编译与执行路径），并补充截图基线流程。
 
 ## 4. 证据要求
