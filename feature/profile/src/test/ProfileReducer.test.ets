@@ -12,9 +12,24 @@ import {
   OnProfileLoaded,
   OnBioLoaded,
   OnAvatarFileLoaded,
-  OnProfileFailed
+  OnProfileFailed,
+  OnBirthdayLoaded,
+  OnSharedTabSelected,
+  OnSharedContentLoaded,
+  OnSharedGroupsLoaded
 } from '../main/ets/contract/ProfileIntent';
-import { ProfileEffect, CreatePrivateChatEffect } from '../main/ets/contract/ProfileEffect';
+import {
+  ProfileEffect,
+  CreatePrivateChatEffect,
+  FetchSharedContent,
+  FetchSharedGroups
+} from '../main/ets/contract/ProfileEffect';
+import {
+  SharedMediaItem,
+  SharedFileItem,
+  SharedLinkItem,
+  SharedGroupItem
+} from '../main/ets/contract/SharedContentItems';
 import { profileReducer } from '../main/ets/reducer/ProfileReducer';
 
 function makeEnv(): ReducerEnv {
@@ -104,6 +119,136 @@ export default function profileReducerTest(): void {
       );
       expect(result.state.isLoading).assertFalse();
       expect(result.state.errorMessage !== null).assertTrue();
+    });
+
+    it('onBirthdayLoaded_updatesBirthdayText', 0, () => {
+      const state: ProfileUiState = makeState(42);
+      const result: ReducerResult<ProfileUiState, ProfileEffect> = profileReducer(
+        state,
+        new OnBirthdayLoaded('1990年5月20日 (34 岁)'),
+        makeEnv()
+      );
+      expect(result.state.birthdayText).assertEqual('1990年5月20日 (34 岁)');
+      expect(result.effects.length).assertEqual(0);
+    });
+
+    it('onSharedTabSelected_switchesTabAndEmitsFetchSharedContent', 0, () => {
+      const state: ProfileUiState = makeState(42);
+      const result: ReducerResult<ProfileUiState, ProfileEffect> = profileReducer(
+        state,
+        new OnSharedTabSelected(1),
+        makeEnv()
+      );
+      expect(result.state.activeSharedTab).assertEqual(1);
+      expect(result.state.sharedLoading).assertTrue();
+      expect(result.effects.length).assertEqual(1);
+      expect(result.effects[0].kind).assertEqual('fetchSharedContent');
+      const effect: FetchSharedContent = result.effects[0] as FetchSharedContent;
+      expect(effect.tab).assertEqual(1);
+    });
+
+    it('onSharedTabSelected_groupsTabEmitsFetchSharedGroups', 0, () => {
+      const state: ProfileUiState = makeState(42);
+      const result: ReducerResult<ProfileUiState, ProfileEffect> = profileReducer(
+        state,
+        new OnSharedTabSelected(3),
+        makeEnv()
+      );
+      expect(result.state.activeSharedTab).assertEqual(3);
+      expect(result.state.sharedLoading).assertTrue();
+      expect(result.effects.length).assertEqual(1);
+      expect(result.effects[0].kind).assertEqual('fetchSharedGroups');
+      const effect: FetchSharedGroups = result.effects[0] as FetchSharedGroups;
+      expect(effect !== null).assertTrue();
+    });
+
+    it('onSharedTabSelected_alreadyLoadedTabEmitsNoEffect', 0, () => {
+      const loaded: ProfileUiState = makeState(42).copyWith({
+        sharedFiles: [new SharedFileItem('a.pdf', '1.0 MB', '12.05', null)]
+      });
+      const result: ReducerResult<ProfileUiState, ProfileEffect> = profileReducer(
+        loaded,
+        new OnSharedTabSelected(1),
+        makeEnv()
+      );
+      expect(result.state.activeSharedTab).assertEqual(1);
+      expect(result.state.sharedLoading).assertFalse();
+      expect(result.effects.length).assertEqual(0);
+    });
+
+    it('onSharedTabSelected_sameTabIsNoOp', 0, () => {
+      const state: ProfileUiState = makeState(42);
+      const result: ReducerResult<ProfileUiState, ProfileEffect> = profileReducer(
+        state,
+        new OnSharedTabSelected(0),
+        makeEnv()
+      );
+      expect(result.state === state).assertTrue();
+      expect(result.effects.length).assertEqual(0);
+    });
+
+    it('onSharedTabSelected_invalidTabIsNoOp', 0, () => {
+      const state: ProfileUiState = makeState(42);
+      const result: ReducerResult<ProfileUiState, ProfileEffect> = profileReducer(
+        state,
+        new OnSharedTabSelected(4),
+        makeEnv()
+      );
+      expect(result.state === state).assertTrue();
+      expect(result.effects.length).assertEqual(0);
+    });
+
+    it('onSharedContentLoaded_replacesArraysAndStopsSharedLoading', 0, () => {
+      const loading: ProfileUiState = makeState(42).copyWith({ activeSharedTab: 0, sharedLoading: true });
+      const media: SharedMediaItem[] = [new SharedMediaItem(7, '/data/photo.jpg', true)];
+      const files: SharedFileItem[] = [new SharedFileItem('a.pdf', '1.0 MB', '12.05', null)];
+      const links: SharedLinkItem[] = [new SharedLinkItem('https://example.com', 'Example', 'desc')];
+      const result: ReducerResult<ProfileUiState, ProfileEffect> = profileReducer(
+        loading,
+        new OnSharedContentLoaded(0, media, files, links),
+        makeEnv()
+      );
+      expect(result.state.sharedMedia.length).assertEqual(1);
+      expect(result.state.sharedMedia[0].fileId).assertEqual(7);
+      expect(result.state.sharedFiles.length).assertEqual(1);
+      expect(result.state.sharedLinks.length).assertEqual(1);
+      expect(result.state.sharedLoading).assertFalse();
+      expect(result.effects.length).assertEqual(0);
+    });
+
+    it('onSharedContentLoaded_keepsGroupsUntouched', 0, () => {
+      const groups: SharedGroupItem[] = [new SharedGroupItem(99, 'Group', 'subtitle')];
+      const loading: ProfileUiState = makeState(42).copyWith({
+        activeSharedTab: 2,
+        sharedLoading: true,
+        sharedGroups: groups
+      });
+      const result: ReducerResult<ProfileUiState, ProfileEffect> = profileReducer(
+        loading,
+        new OnSharedContentLoaded(2, [], [], [new SharedLinkItem('https://a.b', '', '')]),
+        makeEnv()
+      );
+      expect(result.state.sharedLinks.length).assertEqual(1);
+      expect(result.state.sharedGroups.length).assertEqual(1);
+      expect(result.state.sharedGroups[0].chatId).assertEqual(99);
+      expect(result.state.sharedLoading).assertFalse();
+    });
+
+    it('onSharedGroupsLoaded_replacesGroupsAndStopsSharedLoading', 0, () => {
+      const loading: ProfileUiState = makeState(42).copyWith({ activeSharedTab: 3, sharedLoading: true });
+      const items: SharedGroupItem[] = [
+        new SharedGroupItem(1, 'Group A', 'hello'),
+        new SharedGroupItem(2, 'Group B', '群组')
+      ];
+      const result: ReducerResult<ProfileUiState, ProfileEffect> = profileReducer(
+        loading,
+        new OnSharedGroupsLoaded(items),
+        makeEnv()
+      );
+      expect(result.state.sharedGroups.length).assertEqual(2);
+      expect(result.state.sharedGroups[1].title).assertEqual('Group B');
+      expect(result.state.sharedLoading).assertFalse();
+      expect(result.effects.length).assertEqual(0);
     });
   });
 }

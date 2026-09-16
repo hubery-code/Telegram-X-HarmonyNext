@@ -28,6 +28,31 @@ import {
   CreatePrivateChat,
   encodeCreatePrivateChat,
   decodeChat,
+  SearchChatMessages,
+  encodeSearchChatMessages,
+  SearchMessagesFilterPhotoAndVideo,
+  SearchMessagesFilterDocument,
+  SearchMessagesFilterUrl,
+  TdSearchMessagesFilter,
+  FoundChatMessages,
+  decodeFoundChatMessages,
+  GetGroupsInCommon,
+  encodeGetGroupsInCommon,
+  Chats,
+  decodeChats,
+  GetChat,
+  encodeGetChat,
+  Message,
+  TdMessageContent,
+  MessageText,
+  MessagePhoto,
+  MessageDocument,
+  MessageVideo,
+  PhotoSize,
+  File,
+  LinkPreview,
+  TdChatType,
+  ChatTypeSupergroup,
   TdJsonRaw
 } from '@tgx/core-td-api-generated';
 import { TdPendingRequest, TdWireObject } from '@tgx/td-gateway';
@@ -35,14 +60,222 @@ import { Logger } from '@tgx/observability';
 import { Subscription } from '@tgx/platform-ports';
 import { ReducerEnv, ReducerResult } from '@tgx/feature-template';
 import { ProfileUiState } from '../contract/ProfileUiState';
-import { ProfileIntent, OnProfileLoaded, OnBioLoaded, OnAvatarFileLoaded, OnProfileFailed } from '../contract/ProfileIntent';
-import { ProfileEffect, CreatePrivateChatEffect } from '../contract/ProfileEffect';
+import {
+  ProfileIntent,
+  OnProfileLoaded,
+  OnBioLoaded,
+  OnAvatarFileLoaded,
+  OnProfileFailed,
+  OnBirthdayLoaded,
+  OnSharedContentLoaded,
+  OnSharedGroupsLoaded
+} from '../contract/ProfileIntent';
+import {
+  ProfileEffect,
+  CreatePrivateChatEffect,
+  FetchSharedContent,
+  FetchSharedGroups
+} from '../contract/ProfileEffect';
+import { SharedMediaItem, SharedFileItem, SharedLinkItem, SharedGroupItem } from '../contract/SharedContentItems';
 import { profileReducer } from '../reducer/ProfileReducer';
 
 const TAG: string = 'ProfileCoordinator';
 
 /** 头像下载优先级（对齐 ChatCoordinator 拉取头像的 priority=2）。 */
 const AVATAR_DOWNLOAD_PRIORITY: number = 2;
+
+/** PROFILE-103：共享内容每页拉取条数（对齐 TGX shared media 默认页大小）。 */
+const SHARED_PAGE_LIMIT: number = 20;
+
+/** PROFILE-103：共享媒体缩略图下载优先级。 */
+const SHARED_THUMB_DOWNLOAD_PRIORITY: number = 2;
+
+/** 文件大小文案（与 feature/chat 的 formatFileSize 同规则，feature 间不可互引故本地实现）。 */
+function formatFileSizeText(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) {
+    return '0 B';
+  }
+  const KB: number = 1024;
+  const MB: number = 1024 * 1024;
+  const GB: number = 1024 * 1024 * 1024;
+  if (bytes < KB) {
+    return `${Math.round(bytes)} B`;
+  }
+  if (bytes < MB) {
+    return `${(bytes / KB).toFixed(1)} KB`;
+  }
+  if (bytes < GB) {
+    return `${(bytes / MB).toFixed(1)} MB`;
+  }
+  return `${(bytes / GB).toFixed(1)} GB`;
+}
+
+/** PROFILE-103：共享内容条目日期。当天 HH:mm，跨天 dd.MM（与 feature/chat 搜索结果一致）。 */
+function formatSharedDate(unixSeconds: number): string {
+  if (unixSeconds <= 0) {
+    return '';
+  }
+  const date: Date = new Date(unixSeconds * 1000);
+  const now: Date = new Date();
+  const sameDay: boolean = date.getFullYear() === now.getFullYear() &&
+    date.getMonth() === now.getMonth() &&
+    date.getDate() === now.getDate();
+  if (sameDay) {
+    return `${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
+  }
+  return `${pad2(date.getDate())}.${pad2(date.getMonth() + 1)}`;
+}
+
+function pad2(value: number): string {
+  return value < 10 ? `0${value}` : `${value}`;
+}
+
+/** 按当前日期计算周岁。 */
+function ageOf(year: number, month: number, day: number, now: Date): number {
+  let age: number = now.getFullYear() - year;
+  const m: number = now.getMonth() + 1;
+  const d: number = now.getDate();
+  if (m < month || (m === month && d < day)) {
+    age--;
+  }
+  return age < 0 ? 0 : age;
+}
+
+/**
+ * PROFILE-103：UserFullInfo.birthdate → 'YYYY年M月D日 (N 岁)'（year=0 时仅 'M月D日'）。
+ * 无生日返回空串。
+ */
+function formatBirthdayText(info: UserFullInfo, now: Date): string {
+  const birth = info.birthdate;
+  if (birth === null || birth === undefined) {
+    return '';
+  }
+  if (birth.day <= 0 || birth.month <= 0 || birth.month > 12) {
+    return '';
+  }
+  if (birth.year > 0) {
+    const age: number = ageOf(birth.year, birth.month, birth.day, now);
+    return `${birth.year}年${birth.month}月${birth.day}日 (${age} 岁)`;
+  }
+  return `${birth.month}月${birth.day}日`;
+}
+
+/** 从文本中提取首个 http(s) URL；无则空串。 */
+function firstUrlInText(text: string): string {
+  if (text.length === 0) {
+    return '';
+  }
+  const match: RegExpMatchArray | null = text.match(/https?:\/\/[^\s"'<>()]+/i);
+  if (match === null) {
+    return '';
+  }
+  return match[0];
+}
+
+/** 宫格缩略图选尺寸：优先宽度 >=320 的最小档，否则最大档。 */
+function pickThumbPhotoSize(sizes: PhotoSize[]): PhotoSize | null {
+  if (sizes.length === 0) {
+    return null;
+  }
+  let chosen: PhotoSize = sizes[sizes.length - 1];
+  for (let i = 0; i < sizes.length; i++) {
+    const size: PhotoSize = sizes[i];
+    if (size.photo === null) {
+      continue;
+    }
+    if (size.width >= 320) {
+      chosen = size;
+      break;
+    }
+  }
+  return chosen.photo !== null ? chosen : null;
+}
+
+/** 会话类型文案（共同群组副标题兜底）。 */
+function chatTypeLabel(type: TdChatType | null): string {
+  if (type === null || type === undefined) {
+    return '';
+  }
+  if (type.type === 'chatTypeSupergroup') {
+    const supergroup: ChatTypeSupergroup = type as ChatTypeSupergroup;
+    return supergroup.is_channel ? '频道' : '超级群组';
+  }
+  if (type.type === 'chatTypeBasicGroup') {
+    return '群组';
+  }
+  if (type.type === 'chatTypePrivate') {
+    return '私聊';
+  }
+  return '';
+}
+
+/** 消息内容摘要（共同群组副标题；与 feature/chat 的 messageContentText 同思路，本地实现）。 */
+function messageContentSummary(content: TdMessageContent | null): string {
+  if (content === null) {
+    return '';
+  }
+  switch (content.type) {
+    case 'messageText': {
+      const text: MessageText = content as MessageText;
+      return text.text !== null ? text.text.text : '';
+    }
+    case 'messagePhoto':
+      return '[照片]';
+    case 'messageVideo':
+      return '[视频]';
+    case 'messageDocument':
+      return '[文件]';
+    case 'messageAudio':
+      return '[音频]';
+    case 'messageVoiceNote':
+      return '[语音]';
+    case 'messageSticker':
+      return '[贴纸]';
+    case 'messageAnimation':
+      return '[GIF]';
+    default:
+      return '';
+  }
+}
+
+/** messageDocument → SharedFileItem（大小/日期文案 + 本地路径可空）。 */
+function fileItemOf(msg: Message): SharedFileItem | null {
+  const content: TdMessageContent | null = msg.content;
+  if (content === null || content.type !== 'messageDocument') {
+    return null;
+  }
+  const docMsg: MessageDocument = content as MessageDocument;
+  if (docMsg.document === null) {
+    return null;
+  }
+  const file: File | null = docMsg.document.document;
+  const localPath: string | null =
+    (file !== null && file.local !== null && file.local.path.length > 0) ? file.local.path : null;
+  const sizeText: string = file !== null ? formatFileSizeText(file.size) : '';
+  const name: string = docMsg.document.file_name.length > 0 ? docMsg.document.file_name : 'File';
+  return new SharedFileItem(name, sizeText, formatSharedDate(msg.date), localPath);
+}
+
+/** messageText → SharedLinkItem：优先 link_preview 的 url/site_name/description，无则取文本中的 URL。 */
+function linkItemOf(content: TdMessageContent | null): SharedLinkItem | null {
+  if (content === null || content.type !== 'messageText') {
+    return null;
+  }
+  const text: MessageText = content as MessageText;
+  const body: string = text.text !== null ? text.text.text : '';
+  const preview: LinkPreview | null = text.link_preview;
+  if (preview !== null && preview !== undefined && preview.url.length > 0) {
+    const desc: string = preview.description !== null && preview.description !== undefined
+      ? preview.description.text
+      : '';
+    return new SharedLinkItem(preview.url, preview.site_name, desc);
+  }
+  const url: string = firstUrlInText(body);
+  if (url.length === 0) {
+    return null;
+  }
+  return new SharedLinkItem(url, '', '');
+}
 
 export interface ProfileCoordinatorOptions {
   /** 私聊创建成功后交给装配层导航（缺省 no-op）。 */
@@ -110,6 +343,8 @@ export class ProfileCoordinator {
   private readonly subscriptions: Subscription[] = [];
   /** 已订阅下载回调的头像 fileId，防重复订阅。 */
   private subscribedAvatarFileId: number = -1;
+  /** PROFILE-103：已订阅下载回调的共享媒体缩略图 fileId，防重复订阅。 */
+  private readonly subscribedSharedFileIds: Set<number> = new Set();
   private destroyed: boolean = false;
 
   constructor(scope: AccountScope, userId: number, options?: ProfileCoordinatorOptions) {
@@ -148,14 +383,16 @@ export class ProfileCoordinator {
       this.dispatch(new OnProfileFailed(userRes.error));
     }
 
-    // 完整资料（bio）：同样缓存优先 + 订阅 updateUserFullInfo。
+    // 完整资料（bio + 生日）：同样缓存优先 + 订阅 updateUserFullInfo。
     const cachedInfo = this.userRegistry.getUserFullInfo(this.userId);
     if (cachedInfo !== null) {
       this.dispatch(new OnBioLoaded(bioTextOf(cachedInfo)));
+      this.dispatch(new OnBirthdayLoaded(formatBirthdayText(cachedInfo, new Date())));
     }
     this.subscriptions.push(this.userRegistry.subscribeUserFullInfo(this.userId, (info: UserFullInfo): void => {
       if (!this.destroyed) {
         this.dispatch(new OnBioLoaded(bioTextOf(info)));
+        this.dispatch(new OnBirthdayLoaded(formatBirthdayText(info, new Date())));
       }
     }));
     const infoRes: Result<TdPendingRequest, AppError> = this.userRegistry.requestUserFullInfo(this.userId);
@@ -284,8 +521,353 @@ export class ProfileCoordinator {
         }
         break;
       }
+
+      case 'fetchSharedContent': {
+        const fetch: FetchSharedContent = effect as FetchSharedContent;
+        this.fetchSharedContent(fetch.tab);
+        break;
+      }
+
+      case 'fetchSharedGroups': {
+        this.fetchSharedGroups();
+        break;
+      }
+
       default:
         break;
     }
+  }
+
+  // ------------------------------------------------------------------
+  // PROFILE-103：共享内容（媒体/文件/链接/群组）
+  // ------------------------------------------------------------------
+
+  /**
+   * Tab 0..2：先 createPrivateChat 拿 chatId，再 searchChatMessages 按
+   * 照片视频/文件/链接过滤器检索。失败只 logError，并以当前数组回灌
+   * OnSharedContentLoaded 仅用于复位 sharedLoading（不打扰 UI）。
+   */
+  private fetchSharedContent(tab: number): void {
+    this.logger.info(TAG, 'fetch_shared_content', `userId=${this.userId},tab=${tab}`);
+    const req: CreatePrivateChat = new CreatePrivateChat();
+    req.user_id = this.userId;
+    const res: Result<TdPendingRequest, AppError> =
+      this.scope.request('createPrivateChat', encodeCreatePrivateChat(req) as TdWireObject);
+    if (res.ok) {
+      res.value.promise.then((out: Result<TdWireObject, AppError>): void => {
+        if (this.destroyed) {
+          return;
+        }
+        if (out.err) {
+          this.logger.logError(TAG, out.error);
+          this.stopSharedContentLoading(tab);
+          return;
+        }
+        if (out.ok) {
+          const chat: Chat | null = decodeChat(out.value as TdJsonRaw);
+          if (chat === null) {
+            this.stopSharedContentLoading(tab);
+            return;
+          }
+          this.searchSharedContent(tab, chat.id);
+        }
+      }).catch((): void => {
+      });
+    }
+    if (res.err) {
+      this.logger.logError(TAG, res.error);
+      this.stopSharedContentLoading(tab);
+    }
+  }
+
+  private searchSharedContent(tab: number, chatId: number): void {
+    const req: SearchChatMessages = new SearchChatMessages();
+    req.chat_id = chatId;
+    req.query = '';
+    req.from_message_id = 0;
+    req.offset = 0;
+    req.limit = SHARED_PAGE_LIMIT;
+    req.sender_id = null;
+    req.topic_id = null;
+    if (tab === 0) {
+      const filter: TdSearchMessagesFilter = new SearchMessagesFilterPhotoAndVideo();
+      req.filter = filter;
+    } else if (tab === 1) {
+      const filter: TdSearchMessagesFilter = new SearchMessagesFilterDocument();
+      req.filter = filter;
+    } else {
+      const filter: TdSearchMessagesFilter = new SearchMessagesFilterUrl();
+      req.filter = filter;
+    }
+    const res: Result<TdPendingRequest, AppError> =
+      this.scope.request('searchChatMessages', encodeSearchChatMessages(req) as TdWireObject);
+    if (res.ok) {
+      res.value.promise.then((out: Result<TdWireObject, AppError>): void => {
+        if (this.destroyed) {
+          return;
+        }
+        if (out.err) {
+          this.logger.logError(TAG, out.error);
+          this.stopSharedContentLoading(tab);
+          return;
+        }
+        if (out.ok) {
+          const found: FoundChatMessages | null = decodeFoundChatMessages(out.value as TdJsonRaw);
+          if (found === null) {
+            this.stopSharedContentLoading(tab);
+            return;
+          }
+          this.handleSharedMessages(tab, found);
+        }
+      }).catch((): void => {
+      });
+    }
+    if (res.err) {
+      this.logger.logError(TAG, res.error);
+      this.stopSharedContentLoading(tab);
+    }
+  }
+
+  /** FoundChatMessages → 按 Tab 映射条目；只覆盖本次拉取的数组，其余透传当前状态。 */
+  private handleSharedMessages(tab: number, found: FoundChatMessages): void {
+    if (tab === 0) {
+      const media: SharedMediaItem[] = [];
+      for (let i = 0; i < found.messages.length; i++) {
+        const msg: Message = found.messages[i];
+        const item: SharedMediaItem | null = this.mediaItemOf(msg.content);
+        if (item !== null) {
+          media.push(item);
+        }
+      }
+      this.logger.info(TAG, 'shared_media_ok', `count=${media.length}`);
+      this.dispatch(new OnSharedContentLoaded(0, media, this.currentState.sharedFiles, this.currentState.sharedLinks));
+      return;
+    }
+    if (tab === 1) {
+      const files: SharedFileItem[] = [];
+      for (let i = 0; i < found.messages.length; i++) {
+        const msg: Message = found.messages[i];
+        const item: SharedFileItem | null = fileItemOf(msg);
+        if (item !== null) {
+          files.push(item);
+        }
+      }
+      this.logger.info(TAG, 'shared_files_ok', `count=${files.length}`);
+      this.dispatch(new OnSharedContentLoaded(1, this.currentState.sharedMedia, files, this.currentState.sharedLinks));
+      return;
+    }
+    const links: SharedLinkItem[] = [];
+    for (let i = 0; i < found.messages.length; i++) {
+      const msg: Message = found.messages[i];
+      const item: SharedLinkItem | null = linkItemOf(msg.content);
+      if (item !== null) {
+        links.push(item);
+      }
+    }
+    this.logger.info(TAG, 'shared_links_ok', `count=${links.length}`);
+    this.dispatch(new OnSharedContentLoaded(2, this.currentState.sharedMedia, this.currentState.sharedFiles, links));
+  }
+
+  /** messagePhoto/messageVideo → SharedMediaItem；缩略图未就绪则触发下载订阅（局部回灌）。 */
+  private mediaItemOf(content: TdMessageContent | null): SharedMediaItem | null {
+    if (content === null) {
+      return null;
+    }
+    if (content.type === 'messagePhoto') {
+      const photo: MessagePhoto = content as MessagePhoto;
+      if (photo.photo === null) {
+        return null;
+      }
+      const size: PhotoSize | null = pickThumbPhotoSize(photo.photo.sizes);
+      if (size === null || size.photo === null) {
+        return null;
+      }
+      return this.sharedMediaItemOfFile(size.photo, true);
+    }
+    if (content.type === 'messageVideo') {
+      const videoMsg: MessageVideo = content as MessageVideo;
+      // 优先新版 cover（Photo），退回 video.thumbnail 的 JPEG 缩略图。
+      if (videoMsg.cover !== null) {
+        const coverSize: PhotoSize | null = pickThumbPhotoSize(videoMsg.cover.sizes);
+        if (coverSize !== null && coverSize.photo !== null) {
+          return this.sharedMediaItemOfFile(coverSize.photo, false);
+        }
+      }
+      if (videoMsg.video !== null &&
+        videoMsg.video.thumbnail !== null &&
+        videoMsg.video.thumbnail.file !== null) {
+        return this.sharedMediaItemOfFile(videoMsg.video.thumbnail.file, false);
+      }
+      return null;
+    }
+    return null;
+  }
+
+  private sharedMediaItemOfFile(file: File, isPhoto: boolean): SharedMediaItem {
+    const fileId: number = file.id;
+    let localPath: string | null = this.fileRegistry.getLocalPath(fileId);
+    if (localPath === null) {
+      localPath = this.resolveSharedMediaFile(fileId);
+    }
+    return new SharedMediaItem(fileId, localPath, isPhoto);
+  }
+
+  /** 缩略图本地路径未就绪：订阅 updateFile，落盘后局部重写 media 数组中该条目的 localPath。 */
+  private resolveSharedMediaFile(fileId: number): string | null {
+    if (!this.subscribedSharedFileIds.has(fileId)) {
+      this.subscribedSharedFileIds.add(fileId);
+      this.subscriptions.push(this.fileRegistry.subscribeFile(fileId, (file: File): void => {
+        if (this.destroyed) {
+          return;
+        }
+        const path: string | null = this.fileRegistry.getLocalPath(file.id);
+        if (path === null || path.length === 0) {
+          return;
+        }
+        const media: SharedMediaItem[] = this.currentState.sharedMedia;
+        const updated: SharedMediaItem[] = [];
+        let touched: boolean = false;
+        for (let i = 0; i < media.length; i++) {
+          const it: SharedMediaItem = media[i];
+          if (it.fileId === file.id && (it.localPath === null || it.localPath.length === 0)) {
+            updated.push(new SharedMediaItem(it.fileId, path, it.isPhoto));
+            touched = true;
+          } else {
+            updated.push(it);
+          }
+        }
+        if (touched) {
+          this.dispatch(new OnSharedContentLoaded(0, updated, this.currentState.sharedFiles, this.currentState.sharedLinks));
+        }
+      }));
+      const res: Result<TdPendingRequest, AppError> =
+        this.fileRegistry.downloadFile(fileId, SHARED_THUMB_DOWNLOAD_PRIORITY);
+      if (res.err) {
+        this.logger.logError(TAG, res.error);
+      }
+    }
+    return null;
+  }
+
+  /** Tab 3：getGroupsInCommon → 逐 id getChat 解析标题/副标题，全部回灌。 */
+  private fetchSharedGroups(): void {
+    this.logger.info(TAG, 'fetch_shared_groups', `userId=${this.userId}`);
+    const req: GetGroupsInCommon = new GetGroupsInCommon();
+    req.user_id = this.userId;
+    req.offset_chat_id = 0;
+    req.limit = SHARED_PAGE_LIMIT;
+    const res: Result<TdPendingRequest, AppError> =
+      this.scope.request('getGroupsInCommon', encodeGetGroupsInCommon(req) as TdWireObject);
+    if (res.ok) {
+      res.value.promise.then((out: Result<TdWireObject, AppError>): void => {
+        if (this.destroyed) {
+          return;
+        }
+        if (out.err) {
+          this.logger.logError(TAG, out.error);
+          this.stopSharedGroupsLoading();
+          return;
+        }
+        if (out.ok) {
+          const chats: Chats | null = decodeChats(out.value as TdJsonRaw);
+          if (chats === null || chats.chat_ids.length === 0) {
+            this.dispatch(new OnSharedGroupsLoaded([]));
+            return;
+          }
+          this.resolveSharedGroupChats(chats.chat_ids);
+        }
+      }).catch((): void => {
+      });
+    }
+    if (res.err) {
+      this.logger.logError(TAG, res.error);
+      this.stopSharedGroupsLoading();
+    }
+  }
+
+  private resolveSharedGroupChats(chatIds: number[]): void {
+    const items: SharedGroupItem[] = [];
+    for (let i = 0; i < chatIds.length; i++) {
+      items.push(new SharedGroupItem(chatIds[i], '', ''));
+    }
+    const total: number = chatIds.length;
+    let settled: number = 0;
+    for (let i = 0; i < total; i++) {
+      const index: number = i;
+      const req: GetChat = new GetChat();
+      req.chat_id = chatIds[i];
+      const res: Result<TdPendingRequest, AppError> =
+        this.scope.request('getChat', encodeGetChat(req) as TdWireObject);
+      if (res.ok) {
+        res.value.promise.then((out: Result<TdWireObject, AppError>): void => {
+          settled++;
+          if (!this.destroyed) {
+            if (out.ok) {
+              const chat: Chat | null = decodeChat(out.value as TdJsonRaw);
+              if (chat !== null) {
+                items[index] = this.groupItemOf(chat);
+              }
+            }
+            if (out.err) {
+              this.logger.logError(TAG, out.error);
+            }
+          }
+          if (settled === total && !this.destroyed) {
+            this.finishSharedGroups(items);
+          }
+        }).catch((): void => {
+          settled++;
+          if (settled === total && !this.destroyed) {
+            this.finishSharedGroups(items);
+          }
+        });
+      }
+      if (res.err) {
+        this.logger.logError(TAG, res.error);
+        settled++;
+        if (settled === total && !this.destroyed) {
+          this.finishSharedGroups(items);
+        }
+      }
+    }
+  }
+
+  private finishSharedGroups(items: SharedGroupItem[]): void {
+    const result: SharedGroupItem[] = [];
+    for (let i = 0; i < items.length; i++) {
+      const it: SharedGroupItem = items[i];
+      if (it.title.length > 0) {
+        result.push(it);
+      }
+    }
+    this.logger.info(TAG, 'shared_groups_ok', `count=${result.length}`);
+    this.dispatch(new OnSharedGroupsLoaded(result));
+  }
+
+  /** 群组副标题：优先最后一条消息摘要，兜底会话类型文案。 */
+  private groupItemOf(chat: Chat): SharedGroupItem {
+    let subtitle: string = '';
+    const last: Message | null = chat.last_message;
+    if (last !== null && last !== undefined) {
+      subtitle = messageContentSummary(last.content);
+    }
+    if (subtitle.length === 0) {
+      subtitle = chatTypeLabel(chat.type_);
+    }
+    return new SharedGroupItem(chat.id, chat.title, subtitle);
+  }
+
+  /** 失败仅复位 sharedLoading：用当前数组回灌，不改变已展示数据。 */
+  private stopSharedContentLoading(tab: number): void {
+    this.dispatch(new OnSharedContentLoaded(
+      tab,
+      this.currentState.sharedMedia,
+      this.currentState.sharedFiles,
+      this.currentState.sharedLinks
+    ));
+  }
+
+  private stopSharedGroupsLoading(): void {
+    this.dispatch(new OnSharedGroupsLoaded(this.currentState.sharedGroups));
   }
 }

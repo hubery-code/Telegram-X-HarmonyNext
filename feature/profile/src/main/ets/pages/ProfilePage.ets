@@ -1,17 +1,21 @@
 /**
- * feature/profile — 用户资料页（PROFILE-101）。
+ * feature/profile — 用户资料页（PROFILE-101；PROFILE-103 增强）。
  *
- * 对齐 Android ProfileController 的信息面（查看他人资料的 MVP）：
- * 大头像 + 展示名 + 在线状态 + @username + 手机号 + 简介 + 「发消息」入口。
- * 共享媒体、举报/拉黑等动作留后续工作包。
+ * 对齐 Android ProfileController 的信息面：
+ * 大头像 + 展示名 + 在线状态 + @username + 手机号 + 简介 + 生日 + 通知 +
+ * ⋮ 动作菜单 + 下半页共享内容四 Tab（媒体/文件/链接/群组）。
  *
+ * 集成契约保持三 prop：uiState / onDispatch / onBack（entry 装配不变）。
  * 全部颜色/间距/字号走 design tokens（core-design-system）。
  */
 
 import { LightTheme } from '@tgx/core-design-system';
+import { getAvatarColorIndex } from '@tgx/core-domain';
 import { fileUri } from '@kit.CoreFileKit';
+import { hilog } from '@kit.PerformanceAnalysisKit';
 import { ProfileUiState } from '../contract/ProfileUiState';
-import { ProfileIntent, MessageUserRequested } from '../contract/ProfileIntent';
+import { ProfileIntent, MessageUserRequested, OnSharedTabSelected } from '../contract/ProfileIntent';
+import { SharedMediaItem, SharedFileItem, SharedLinkItem, SharedGroupItem } from '../contract/SharedContentItems';
 
 const T = LightTheme;
 
@@ -41,6 +45,36 @@ const BACK_ARROW_SIZE: number = 44;
 const AVATAR_SIZE: number = 96;
 const MESSAGE_BUTTON_HEIGHT: number = 44;
 
+/** 共享内容 Tab 描述（图标 + 文案）。 */
+interface SharedTabSpec {
+  icon: string;
+  label: string;
+}
+
+const SHARED_TABS: SharedTabSpec[] = [
+  { icon: '🖼', label: '媒体' },
+  { icon: '📄', label: '文件' },
+  { icon: '🔗', label: '链接' },
+  { icon: '👥', label: '群组' }
+];
+
+/** ⋮ 菜单占位项：仅 hilog 记录 profile_menu_<key>，无其它动作。 */
+interface ProfileMenuEntry {
+  key: string;
+  label: string;
+}
+
+const PLACEHOLDER_MENU: ProfileMenuEntry[] = [
+  { key: 'share_contact', label: '分享联系人信息' },
+  { key: 'block', label: '屏蔽用户' },
+  { key: 'privacy_exception', label: '隐私例外' },
+  { key: 'rename', label: '重命名联系人' },
+  { key: 'delete', label: '删除联系人' }
+];
+
+const DOMAIN: number = 0x0000;
+const PAGE_TAG: string = 'ProfilePage';
+
 @Component
 export struct ProfilePage {
   @Prop uiState: ProfileUiState = ProfileUiState.initial();
@@ -52,6 +86,42 @@ export struct ProfilePage {
       return AVATAR_PALETTE[0];
     }
     return AVATAR_PALETTE[index];
+  }
+
+  /** ⋮ 菜单：首项「开始私密聊天」真实派发，其余占位 hilog。 */
+  private menuElements(): MenuElement[] {
+    const items: MenuElement[] = [];
+    items.push({
+      value: '开始私密聊天',
+      action: (): void => {
+        this.onDispatch(new MessageUserRequested());
+      }
+    });
+    for (let i = 0; i < PLACEHOLDER_MENU.length; i++) {
+      const entry: ProfileMenuEntry = PLACEHOLDER_MENU[i];
+      items.push({
+        value: entry.label,
+        action: (): void => {
+          hilog.info(DOMAIN, PAGE_TAG, 'profile_menu_%{public}s', entry.key);
+        }
+      });
+    }
+    return items;
+  }
+
+  private groupLetters(title: string): string {
+    if (title.length === 0) {
+      return '?';
+    }
+    const first: string = title.trim();
+    if (first.length === 0) {
+      return '?';
+    }
+    const codePoint: number | undefined = first.codePointAt(0);
+    if (codePoint === undefined) {
+      return '?';
+    }
+    return String.fromCodePoint(codePoint).toUpperCase();
   }
 
   @Builder
@@ -74,8 +144,14 @@ export struct ProfilePage {
         .fontColor(T.colors.textPrimary)
         .layoutWeight(1)
 
-      Text('')
+      Text('⋮')
+        .fontSize(T.typography.title.fontSize)
+        .fontWeight(T.typography.title.fontWeight)
+        .fontColor(T.colors.textPrimary)
         .width(BACK_ARROW_SIZE)
+        .height(BACK_ARROW_SIZE)
+        .textAlign(TextAlign.Center)
+        .bindMenu(this.menuElements())
     }
     .width('100%')
     .height(56)
@@ -124,6 +200,269 @@ export struct ProfilePage {
       top: T.spacing.sm,
       bottom: T.spacing.sm
     })
+  }
+
+  /** PROFILE-103：通知行（🔔 通知 / 开启）。 */
+  @Builder
+  NotificationRow() {
+    Row() {
+      Text('🔔')
+        .fontSize(T.typography.body.fontSize)
+      Text('通知')
+        .fontSize(T.typography.body.fontSize)
+        .fontColor(T.colors.textPrimary)
+        .margin({ left: T.spacing.sm })
+        .layoutWeight(1)
+      Text(this.uiState.notificationText)
+        .fontSize(T.typography.subheadline.fontSize)
+        .fontColor(T.colors.textSecondary)
+    }
+    .width('100%')
+    .alignItems(VerticalAlign.Center)
+    .padding({
+      left: T.spacing.screenInset,
+      right: T.spacing.screenInset,
+      top: T.spacing.sm,
+      bottom: T.spacing.sm
+    })
+  }
+
+  /** PROFILE-103：共享内容 Tab 栏（选中 accent + 下划线）。 */
+  @Builder
+  SharedTabBar() {
+    Row() {
+      ForEach(SHARED_TABS.slice(), (tab: SharedTabSpec, index: number) => {
+        Column({ space: T.spacing.xs }) {
+          Text(tab.icon)
+            .fontSize(20)
+          Text(tab.label)
+            .fontSize(T.typography.footnote.fontSize)
+            .fontColor(this.uiState.activeSharedTab === index
+              ? T.colors.accent
+              : T.colors.textSecondary)
+          Blank()
+            .width(24)
+            .height(2)
+            .backgroundColor(this.uiState.activeSharedTab === index
+              ? T.colors.accent
+              : T.colors.background)
+        }
+        .layoutWeight(1)
+        .onClick(() => {
+          this.onDispatch(new OnSharedTabSelected(index));
+        })
+      }, (tab: SharedTabSpec, index: number) => `${index}`)
+    }
+    .width('100%')
+    .padding({ top: T.spacing.sm, bottom: T.spacing.sm })
+  }
+
+  /** PROFILE-103：内容区空态（对齐 TGX 文案）。 */
+  @Builder
+  SharedEmpty(title: string, subtitle: string) {
+    Column() {
+      Text(title)
+        .fontSize(T.typography.subheadline.fontSize)
+        .fontColor(T.colors.textPrimary)
+        .textAlign(TextAlign.Center)
+      Text(subtitle)
+        .fontSize(T.typography.footnote.fontSize)
+        .fontColor(T.colors.textSecondary)
+        .textAlign(TextAlign.Center)
+        .margin({ top: T.spacing.xs })
+    }
+    .width('100%')
+    .padding({ top: T.spacing.lg, bottom: T.spacing.lg, left: T.spacing.lg, right: T.spacing.lg })
+    .alignItems(HorizontalAlign.Center)
+  }
+
+  @Builder
+  SharedMediaGrid() {
+    if (this.uiState.sharedMedia.length === 0) {
+      this.SharedEmpty('暂无媒体文件', '在此聊天中分享图片和视频，并在您所有的设备上访问。')
+    } else {
+      Flex({ wrap: FlexWrap.Wrap }) {
+        ForEach(this.uiState.sharedMedia.slice(), (item: SharedMediaItem, index: number) => {
+          Column() {
+            if (item.localPath !== null && item.localPath.length > 0) {
+              Image(toSandboxUri(item.localPath))
+                .width('100%')
+                .aspectRatio(1)
+                .objectFit(ImageFit.Cover)
+            } else {
+              Column() {
+                Text(item.isPhoto ? '🖼' : '🎬')
+                  .fontSize(20)
+              }
+              .width('100%')
+              .aspectRatio(1)
+              .justifyContent(FlexAlign.Center)
+              .backgroundColor(T.colors.surfaceVariant)
+            }
+          }
+          .width('33.33%')
+          .padding(T.spacing.hairline)
+        }, (item: SharedMediaItem, index: number) => `${item.fileId}_${index}`)
+      }
+      .width('100%')
+    }
+  }
+
+  @Builder
+  SharedFileList() {
+    if (this.uiState.sharedFiles.length === 0) {
+      this.SharedEmpty('暂无文件', '在此聊天中分享文件，并在您所有的设备上访问。')
+    } else {
+      Column() {
+        ForEach(this.uiState.sharedFiles.slice(), (item: SharedFileItem, index: number) => {
+          Row() {
+            Text('📄')
+              .fontSize(28)
+            Column() {
+              Text(item.fileName)
+                .fontSize(T.typography.body.fontSize)
+                .fontColor(T.colors.textPrimary)
+                .maxLines(1)
+                .textOverflow({ overflow: TextOverflow.Ellipsis })
+              Text(item.fileSizeText.length > 0 && item.dateText.length > 0
+                ? `${item.fileSizeText} · ${item.dateText}`
+                : (item.fileSizeText.length > 0 ? item.fileSizeText : item.dateText))
+                .fontSize(T.typography.footnote.fontSize)
+                .fontColor(T.colors.textSecondary)
+                .margin({ top: T.spacing.hairline })
+            }
+            .margin({ left: T.spacing.sm })
+            .layoutWeight(1)
+            .alignItems(HorizontalAlign.Start)
+          }
+          .width('100%')
+          .alignItems(VerticalAlign.Center)
+          .padding({
+            left: T.spacing.screenInset,
+            right: T.spacing.screenInset,
+            top: T.spacing.sm,
+            bottom: T.spacing.sm
+          })
+        }, (item: SharedFileItem, index: number) => `${index}`)
+      }
+      .width('100%')
+    }
+  }
+
+  @Builder
+  SharedLinkList() {
+    if (this.uiState.sharedLinks.length === 0) {
+      this.SharedEmpty('暂无链接', '在此聊天中分享链接，并在您所有的设备上访问。')
+    } else {
+      Column({ space: T.spacing.sm }) {
+        ForEach(this.uiState.sharedLinks.slice(), (item: SharedLinkItem, index: number) => {
+          Column() {
+            if (item.siteName.length > 0) {
+              Text(item.siteName)
+                .fontSize(T.typography.body.fontSize)
+                .fontWeight(FontWeight.Medium)
+                .fontColor(T.colors.textPrimary)
+                .maxLines(1)
+                .textOverflow({ overflow: TextOverflow.Ellipsis })
+                .width('100%')
+            }
+            if (item.description.length > 0) {
+              Text(item.description)
+                .fontSize(T.typography.subheadline.fontSize)
+                .fontColor(T.colors.textSecondary)
+                .maxLines(2)
+                .textOverflow({ overflow: TextOverflow.Ellipsis })
+                .width('100%')
+                .margin({ top: item.siteName.length > 0 ? T.spacing.hairline : 0 })
+            }
+            Text(item.url)
+              .fontSize(T.typography.footnote.fontSize)
+              .fontColor(T.colors.link)
+              .maxLines(1)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+              .width('100%')
+              .margin({ top: T.spacing.xs })
+          }
+          .width('100%')
+          .padding(T.spacing.md)
+          .backgroundColor(T.colors.surfaceVariant)
+          .borderRadius(T.radius.md)
+          .alignItems(HorizontalAlign.Start)
+        }, (item: SharedLinkItem, index: number) => `${index}`)
+      }
+      .width('100%')
+      .padding({
+        left: T.spacing.screenInset,
+        right: T.spacing.screenInset,
+        top: T.spacing.sm,
+        bottom: T.spacing.sm
+      })
+    }
+  }
+
+  @Builder
+  SharedGroupList() {
+    if (this.uiState.sharedGroups.length === 0) {
+      this.SharedEmpty('暂无共同群组', '你们所在的共同群组会显示在这里。')
+    } else {
+      Column() {
+        ForEach(this.uiState.sharedGroups.slice(), (item: SharedGroupItem, index: number) => {
+          Row() {
+            Text(this.groupLetters(item.title))
+              .width(40)
+              .height(40)
+              .borderRadius(T.radius.full)
+              .backgroundColor(this.avatarColor(getAvatarColorIndex(item.chatId)))
+              .fontColor(T.colors.textOnAccent)
+              .fontSize(16)
+              .textAlign(TextAlign.Center)
+            Column() {
+              Text(item.title)
+                .fontSize(T.typography.body.fontSize)
+                .fontColor(T.colors.textPrimary)
+                .maxLines(1)
+                .textOverflow({ overflow: TextOverflow.Ellipsis })
+              if (item.subtitle.length > 0) {
+                Text(item.subtitle)
+                  .fontSize(T.typography.subheadline.fontSize)
+                  .fontColor(T.colors.textSecondary)
+                  .maxLines(1)
+                  .textOverflow({ overflow: TextOverflow.Ellipsis })
+                  .margin({ top: T.spacing.hairline })
+              }
+            }
+            .margin({ left: T.spacing.sm })
+            .layoutWeight(1)
+            .alignItems(HorizontalAlign.Start)
+          }
+          .width('100%')
+          .alignItems(VerticalAlign.Center)
+          .padding({
+            left: T.spacing.screenInset,
+            right: T.spacing.screenInset,
+            top: T.spacing.sm,
+            bottom: T.spacing.sm
+          })
+          .onClick(() => {
+            hilog.info(DOMAIN, PAGE_TAG, 'profile_shared_group_click chatId=%{public}d', item.chatId);
+          })
+        }, (item: SharedGroupItem, index: number) => `${item.chatId}_${index}`)
+      }
+      .width('100%')
+    }
+  }
+
+  @Builder
+  SharedContent() {
+    if (this.uiState.activeSharedTab === 0) {
+      this.SharedMediaGrid()
+    } else if (this.uiState.activeSharedTab === 1) {
+      this.SharedFileList()
+    } else if (this.uiState.activeSharedTab === 2) {
+      this.SharedLinkList()
+    } else {
+      this.SharedGroupList()
+    }
   }
 
   build() {
@@ -189,6 +528,31 @@ export struct ProfilePage {
             }
             if (this.uiState.bio.length > 0) {
               this.InfoRow('Bio', this.uiState.bio)
+            }
+            if (this.uiState.birthdayText.length > 0) {
+              this.InfoRow('生日', this.uiState.birthdayText)
+            }
+            this.NotificationRow()
+
+            Divider()
+              .color(T.colors.divider)
+              .margin({ left: T.spacing.screenInset, right: T.spacing.screenInset })
+
+            this.SharedTabBar()
+
+            if (this.uiState.sharedLoading) {
+              Column() {
+                LoadingProgress()
+                  .width(32)
+                  .height(32)
+                  .color(T.colors.accent)
+              }
+              .width('100%')
+              .padding({ top: T.spacing.lg, bottom: T.spacing.lg })
+              .justifyContent(FlexAlign.Center)
+              .alignItems(HorizontalAlign.Center)
+            } else {
+              this.SharedContent()
             }
           }
           .width('100%')

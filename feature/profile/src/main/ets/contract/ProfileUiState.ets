@@ -1,8 +1,11 @@
 /**
- * feature/profile — 用户资料页 UI 状态（PROFILE-101）。
+ * feature/profile — 用户资料页 UI 状态（PROFILE-101；PROFILE-103 扩展共享内容区）。
  *
  * 不可变 + copyWith，对齐 feature/chat 的 ChatUiState 约定。
+ * PROFILE-103 新增字段全部带默认值并置于构造末尾，保持旧调用点兼容。
  */
+
+import { SharedMediaItem, SharedFileItem, SharedLinkItem, SharedGroupItem } from './SharedContentItems';
 
 export interface ProfileUiStateOptions {
   userId?: number;
@@ -24,6 +27,22 @@ export interface ProfileUiStateOptions {
   avatarColorIndex?: number;
   isLoading?: boolean;
   errorMessage?: string | null;
+  /** 生日文案：'YYYY年M月D日 (N 岁)'；无生日为空串。 */
+  birthdayText?: string;
+  /** 通知状态文案（占位，默认 '开启'）。 */
+  notificationText?: string;
+  /** 共享内容当前选中 Tab：0 媒体 / 1 文件 / 2 链接 / 3 群组。 */
+  activeSharedTab?: number;
+  /** 共享媒体条目（已加载的缓存页）。 */
+  sharedMedia?: SharedMediaItem[];
+  /** 共享文件条目。 */
+  sharedFiles?: SharedFileItem[];
+  /** 共享链接条目。 */
+  sharedLinks?: SharedLinkItem[];
+  /** 共同群组条目。 */
+  sharedGroups?: SharedGroupItem[];
+  /** 共享内容加载中（切 Tab 触发请求后为 true，回灌后 false）。 */
+  sharedLoading?: boolean;
 }
 
 export class ProfileUiState {
@@ -38,6 +57,14 @@ export class ProfileUiState {
   readonly avatarColorIndex: number;
   readonly isLoading: boolean;
   readonly errorMessage: string | null;
+  readonly birthdayText: string;
+  readonly notificationText: string;
+  readonly activeSharedTab: number;
+  readonly sharedMedia: SharedMediaItem[];
+  readonly sharedFiles: SharedFileItem[];
+  readonly sharedLinks: SharedLinkItem[];
+  readonly sharedGroups: SharedGroupItem[];
+  readonly sharedLoading: boolean;
 
   constructor(
     userId: number = 0,
@@ -50,7 +77,15 @@ export class ProfileUiState {
     avatarLetters: string = '',
     avatarColorIndex: number = 0,
     isLoading: boolean = true,
-    errorMessage: string | null = null
+    errorMessage: string | null = null,
+    birthdayText: string = '',
+    notificationText: string = '开启',
+    activeSharedTab: number = 0,
+    sharedMedia: SharedMediaItem[] = [],
+    sharedFiles: SharedFileItem[] = [],
+    sharedLinks: SharedLinkItem[] = [],
+    sharedGroups: SharedGroupItem[] = [],
+    sharedLoading: boolean = false
   ) {
     this.userId = userId;
     this.displayName = displayName;
@@ -63,6 +98,14 @@ export class ProfileUiState {
     this.avatarColorIndex = avatarColorIndex;
     this.isLoading = isLoading;
     this.errorMessage = errorMessage;
+    this.birthdayText = birthdayText;
+    this.notificationText = notificationText;
+    this.activeSharedTab = activeSharedTab;
+    this.sharedMedia = sharedMedia;
+    this.sharedFiles = sharedFiles;
+    this.sharedLinks = sharedLinks;
+    this.sharedGroups = sharedGroups;
+    this.sharedLoading = sharedLoading;
   }
 
   static initial(userId: number = 0): ProfileUiState {
@@ -81,7 +124,15 @@ export class ProfileUiState {
       options.avatarLetters !== undefined ? options.avatarLetters : this.avatarLetters,
       options.avatarColorIndex !== undefined ? options.avatarColorIndex : this.avatarColorIndex,
       options.isLoading !== undefined ? options.isLoading : this.isLoading,
-      options.errorMessage !== undefined ? options.errorMessage : this.errorMessage
+      options.errorMessage !== undefined ? options.errorMessage : this.errorMessage,
+      options.birthdayText !== undefined ? options.birthdayText : this.birthdayText,
+      options.notificationText !== undefined ? options.notificationText : this.notificationText,
+      options.activeSharedTab !== undefined ? options.activeSharedTab : this.activeSharedTab,
+      options.sharedMedia !== undefined ? options.sharedMedia : this.sharedMedia,
+      options.sharedFiles !== undefined ? options.sharedFiles : this.sharedFiles,
+      options.sharedLinks !== undefined ? options.sharedLinks : this.sharedLinks,
+      options.sharedGroups !== undefined ? options.sharedGroups : this.sharedGroups,
+      options.sharedLoading !== undefined ? options.sharedLoading : this.sharedLoading
     );
   }
 }

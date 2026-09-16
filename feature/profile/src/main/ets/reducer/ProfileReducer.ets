@@ -13,9 +13,16 @@ import {
   OnBioLoaded,
   OnAvatarFileLoaded,
   OnProfileFailed,
+  OnBirthdayLoaded,
+  OnSharedTabSelected,
+  OnSharedContentLoaded,
+  OnSharedGroupsLoaded,
   ProfileIntent
 } from '../contract/ProfileIntent';
-import { CreatePrivateChatEffect, ProfileEffect } from '../contract/ProfileEffect';
+import { CreatePrivateChatEffect, FetchSharedContent, FetchSharedGroups, ProfileEffect } from '../contract/ProfileEffect';
+
+/** 共享内容 Tab 数（媒体/文件/链接/群组）。 */
+const SHARED_TAB_COUNT: number = 4;
 
 export const profileReducer: Reducer<ProfileUiState, ProfileIntent, ProfileEffect> = (
   state: ProfileUiState,
@@ -58,6 +65,61 @@ export const profileReducer: Reducer<ProfileUiState, ProfileIntent, ProfileEffec
     case 'onProfileFailed': {
       const failed: OnProfileFailed = intent as OnProfileFailed;
       return reduced(state.copyWith({ isLoading: false, errorMessage: failed.error.message }));
+    }
+
+    case 'onBirthdayLoaded': {
+      const birthday: OnBirthdayLoaded = intent as OnBirthdayLoaded;
+      return reduced(state.copyWith({ birthdayText: birthday.birthdayText }));
+    }
+
+    case 'onSharedTabSelected': {
+      const selected: OnSharedTabSelected = intent as OnSharedTabSelected;
+      if (selected.tab < 0 || selected.tab >= SHARED_TAB_COUNT) {
+        return reduced(state);
+      }
+      if (selected.tab === state.activeSharedTab) {
+        return reduced(state);
+      }
+      // 「未加载过」以该 Tab 条目非空判定（空结果会在下次进入时重试）。
+      let alreadyLoaded: boolean = false;
+      if (selected.tab === 0) {
+        alreadyLoaded = state.sharedMedia.length > 0;
+      } else if (selected.tab === 1) {
+        alreadyLoaded = state.sharedFiles.length > 0;
+      } else if (selected.tab === 2) {
+        alreadyLoaded = state.sharedLinks.length > 0;
+      } else {
+        alreadyLoaded = state.sharedGroups.length > 0;
+      }
+      if (alreadyLoaded) {
+        // 已加载：仅切 Tab，不触发请求也不转圈。
+        return reduced(state.copyWith({ activeSharedTab: selected.tab, sharedLoading: false }));
+      }
+      const next: ProfileUiState = state.copyWith({ activeSharedTab: selected.tab, sharedLoading: true });
+      if (selected.tab === 3) {
+        const effect: FetchSharedGroups = new FetchSharedGroups();
+        return reduced(next, [effect]);
+      }
+      const effect: FetchSharedContent = new FetchSharedContent(selected.tab);
+      return reduced(next, [effect]);
+    }
+
+    case 'onSharedContentLoaded': {
+      const loaded: OnSharedContentLoaded = intent as OnSharedContentLoaded;
+      return reduced(state.copyWith({
+        sharedMedia: loaded.media,
+        sharedFiles: loaded.files,
+        sharedLinks: loaded.links,
+        sharedLoading: false
+      }));
+    }
+
+    case 'onSharedGroupsLoaded': {
+      const loaded: OnSharedGroupsLoaded = intent as OnSharedGroupsLoaded;
+      return reduced(state.copyWith({
+        sharedGroups: loaded.items,
+        sharedLoading: false
+      }));
     }
 
     default:
