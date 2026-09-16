@@ -18,6 +18,8 @@
 import { LightTheme } from '@tgx/core-design-system';
 import { ChatListItem } from '../model/ChatListItem';
 import { ChatListUiState, ChatActionMenuState } from '../contract/ChatListUiState';
+import { DrawerState } from '../contract/DrawerState';
+import { DrawerMenu } from './DrawerMenu';
 import {
   LoadChats,
   RefreshChats,
@@ -146,7 +148,22 @@ export struct ChatListPage {
   /** INTEG-002：打开搜索页（纯导航回调，由装配层接线）。 */
   onOpenSearch: () => void = () => {};
 
+  /** DRAWER-101：抽屉状态（账号头 + 夜间模式），由装配层注入。 */
+  drawerState: DrawerState = DrawerState.empty();
+
+  /** DRAWER-101：抽屉菜单项点击（纯导航回调，'settings' 由装配层路由）。 */
+  onDrawerItem: (item: string) => void = () => {};
+
+  /** DRAWER-101：夜间模式开关变更（真实切换逻辑由装配层实现）。 */
+  onDrawerNightModeChanged: (on: boolean) => void = () => {};
+
+  /** DRAWER-101：账号切换（装配层弹账号选择器）。 */
+  onDrawerSwitchAccount: () => void = () => {};
+
   @State private isRefreshing: boolean = false;
+
+  /** DRAWER-101：≡ 抽屉面板可见性。 */
+  @State private showDrawer: boolean = false;
   private dataSource: ChatListDataSource = new ChatListDataSource();
 
   aboutToAppear(): void {
@@ -161,6 +178,16 @@ export struct ChatListPage {
     if (!this.uiState.isLoading) {
       this.isRefreshing = false;
     }
+  }
+
+  /**
+   * DRAWER-101：抽屉菜单项点击——先收起抽屉再上报（对齐 TGX 点项即收）。
+   * 'settings' 与顶栏 ⚙ 的 onOpenSettings 并存：抽屉项统一走 onDrawerItem
+   * 由装配层路由，⚙ 直进设置保留不动，两套入口互不耦合。
+   */
+  private handleDrawerItem(item: string): void {
+    this.showDrawer = false;
+    this.onDrawerItem(item);
   }
 
   build() {
@@ -197,12 +224,26 @@ export struct ChatListPage {
           })
         } else {
           Row() {
+            // DRAWER-101：TGX 抽屉导航入口。
+            Text('≡')
+              .fontSize(T.typography.largeTitle.fontSize)
+              .fontWeight(T.typography.title.fontWeight)
+              .fontColor(T.colors.accent)
+              .width(SETTINGS_BUTTON_SIZE)
+              .height(SETTINGS_BUTTON_SIZE)
+              .textAlign(TextAlign.Center)
+              .margin({ right: T.spacing.sm })
+              .onClick(() => {
+                this.showDrawer = true;
+              })
+
             Text('Chats')
               .fontSize(T.typography.largeTitle.fontSize)
               .fontWeight(T.typography.largeTitle.fontWeight)
               .fontColor(T.colors.textPrimary)
               .layoutWeight(1)
 
+            // DRAWER-101: TGX 为抽屉导航，⚙ 暂保留，入口切换由主会话统一。
             Text('⚙')
               .fontSize(T.typography.largeTitle.fontSize)
               .fontWeight(T.typography.title.fontWeight)
@@ -315,6 +356,35 @@ export struct ChatListPage {
       // MSG-108：长按会话行的操作菜单（遮罩 + 底部动作面板）。
       if (this.uiState.actionMenu !== null) {
         this.ChatActionSheet(this.uiState.actionMenu)
+      }
+
+      // DRAWER-101：TGX 抽屉导航（≡ 滑出 72% 面板 + 半透明 scrim）。
+      if (this.showDrawer) {
+        // 半透明遮罩：点击关闭抽屉。
+        Column()
+          .width('100%')
+          .height('100%')
+          .backgroundColor(T.colors.scrim)
+          .onClick(() => {
+            this.showDrawer = false;
+          })
+
+        DrawerMenu({
+          state: this.drawerState,
+          onItem: (item: string): void => {
+            this.handleDrawerItem(item);
+          },
+          onNightModeChanged: (on: boolean): void => {
+            this.onDrawerNightModeChanged(on);
+          },
+          onClose: (): void => {
+            this.showDrawer = false;
+          },
+          onSwitchAccount: (): void => {
+            this.onDrawerSwitchAccount();
+          }
+        })
+          .align(Alignment.TopStart)
       }
     }
     .width('100%')

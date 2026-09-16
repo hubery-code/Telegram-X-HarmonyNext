@@ -47,6 +47,10 @@ export {
 
 export { CHAT_LIST_PAGE_SIZE, chatListReducer, canMarkChatAsRead } from './reducer/ChatListReducer';
 
+export { DrawerState, DrawerItemKey, DRAWER_ITEM_KEYS } from './contract/DrawerState';
+
 export { ChatListUiStateListener, ChatListCoordinator } from './coordinator/ChatListCoordinator';
 
 export { ChatListDataSource, ChatListPage } from './pages/ChatListPage';
+
+export { DrawerMenu } from './pages/DrawerMenu';
