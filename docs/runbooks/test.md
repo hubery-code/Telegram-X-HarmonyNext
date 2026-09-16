@@ -44,7 +44,7 @@ HTML 报告：`entry/.test/default/outputs/test/reports/index.html`。
 `entry/src/test/List.test.ets` 右键 → Run 'List.test'；或 Run 窗口选择测试配置。
 CLI 与 IDE 底层同为 hvigor `test` 任务，结果等价。
 
-## 2. CI 全链路
+## 2. CI 全链路与测试执行规范
 
 ```bash
 ./tools/ci/ci.sh    # setup-check → secret-scan → check → 单测 → debug 构建 → release 构建
@@ -52,6 +52,14 @@ CLI 与 IDE 底层同为 hvigor `test` 任务，结果等价。
 
 任何一步失败立即非 0 退出。GitHub Actions 模板见 `.github/workflows/ci.yml`
 （self-hosted macOS runner + DevEco 检测，无 DevEco 则跳过并注明）。
+
+> 🚨 **AI Agent 协同红线（详见根目录 `AGENTS.md`）**：
+> 全量 CI 包含所有模块的 ArkTS coverage 编译与用例执行，耗时极长（20~30 分钟）。
+> **除非用户在对话中明确要求全量跑 CI，否则常规任务、修复或提交后严禁私自触发全量 CI（`./tools/ci/ci.sh`）或全模块单测（`test_all_modules.py`）。**
+> 日常仅需执行：
+> 1. 秒级门禁：`python3 tools/ci/check_architecture.py` & `python3 tools/ci/check_codegen.py`
+> 2. 仅跑当前修改模块的单测（如 `./hvigorw test --mode module -p module=<mod>@default --no-daemon`）
+
 
 ## 3. 设备测试与自动化部署（真机 / 模拟器）
 
