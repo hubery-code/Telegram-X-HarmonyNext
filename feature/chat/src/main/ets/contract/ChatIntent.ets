@@ -20,12 +20,18 @@
  * ForwardSelectedToChat（选择器里选中目标会话，带 sendCopy 隐藏来源）→
  * ForwardMessages effect → OnForwardCompleted（退出选择态）/
  * OnForwardFailed（保留选择态便于换目标重试）。
+ *
+ * MSG-109 新增头部信息区：
+ * - OnHeaderSubtitleChanged / OnChatKindChanged：coordinator 计算结果回灌；
+ * - OpenChatProfile：点击头部标题开会话资料（纯导航，default 透传）；
+ * - ChatMenuAction：⋮ 菜单占位动作统一入口（纯日志，default 透传）。
  */
 
 import { Intent } from '@tgx/feature-template';
 import { AppError } from '@tgx/core-common';
 import { MessageItem } from '../model/MessageItem';
 import { ChatSearchResultItem } from '../model/ChatSearchResultItem';
+import { ChatKind } from '../model/SenderInfo';
 
 export class LoadInitialMessages implements Intent {
   readonly kind: 'loadInitialMessages' = 'loadInitialMessages';
@@ -450,6 +456,52 @@ export class OpenUserProfile implements Intent {
   }
 }
 
+/** MSG-109：coordinator 计算出的头部副标题回灌（私聊状态 / 群成员数）。 */
+export class OnHeaderSubtitleChanged implements Intent {
+  readonly kind: 'onHeaderSubtitleChanged' = 'onHeaderSubtitleChanged';
+  readonly subtitle: string;
+
+  constructor(subtitle: string) {
+    this.subtitle = subtitle;
+  }
+}
+
+/** MSG-109：getChat 解析出会话种类后回灌（驱动头部通话按钮与 ⋮ 菜单）。 */
+export class OnChatKindChanged implements Intent {
+  readonly kind: 'onChatKindChanged' = 'onChatKindChanged';
+  readonly chatKind: ChatKind;
+
+  constructor(chatKind: ChatKind) {
+    this.chatKind = chatKind;
+  }
+}
+
+/**
+ * MSG-109：点击头部标题 → 打开会话资料页。
+ * 纯导航意图：reducer 不改状态（default 分支），由 coordinator 转给装配层路由。
+ */
+export class OpenChatProfile implements Intent {
+  readonly kind: 'openChatProfile' = 'openChatProfile';
+  readonly chatId: number;
+
+  constructor(chatId: number) {
+    this.chatId = chatId;
+  }
+}
+
+/**
+ * MSG-109：头部 ⋮ 菜单占位动作统一入口（静音/清空历史/删除聊天/举报等）。
+ * reducer 不改状态（default 分支），coordinator 只记日志，语义由后续泳道实现。
+ */
+export class ChatMenuAction implements Intent {
+  readonly kind: 'chatMenuAction' = 'chatMenuAction';
+  readonly action: string;
+
+  constructor(action: string) {
+    this.action = action;
+  }
+}
+
 export type ChatIntent =
   | LoadInitialMessages
   | LoadOlderMessages
@@ -500,4 +552,8 @@ export type ChatIntent =
   | JumpToSearchResult
   | OnJumpToMessageReady
   | ClearJumpToMessage
-  | OpenUserProfile;
+  | OpenUserProfile
+  | OnHeaderSubtitleChanged
+  | OnChatKindChanged
+  | OpenChatProfile
+  | ChatMenuAction;

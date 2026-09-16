@@ -30,6 +30,12 @@
  *   失败 OnForwardFailed 只提示、保留选择便于换目标重试；
  * - onMessagesLoaded 收敛选择集合（选中期间消息被删/撤回时剔除）；
  * - backToChatList 优先退出选择态（在操作菜单之后、输入栏模式之前）。
+ *
+ * MSG-109 头部信息区：
+ * - onHeaderSubtitleChanged / onChatKindChanged：coordinator 计算结果回灌，
+ *   值相同返回原引用；
+ * - openChatProfile / chatMenuAction：纯导航/占位意图不改状态、无 effect
+ *   （switch 无匹配分支，落到末尾 reduced(state) 透传）。
  */
 
 import { Reducer, ReducerEnv, ReducerResult, reduced } from '@tgx/feature-template';
@@ -72,7 +78,9 @@ import {
   OnChatSearchLoaded,
   OnChatSearchFailed,
   JumpToSearchResult,
-  OnJumpToMessageReady
+  OnJumpToMessageReady,
+  OnHeaderSubtitleChanged,
+  OnChatKindChanged
 } from '../contract/ChatIntent';
 import {
   ChatEffect,
@@ -874,6 +882,29 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
       }
       return reduced(state.copyWith({ jumpToMessageId: 0 }));
     }
+
+    // ---- MSG-109 头部信息区 ----
+
+    case 'onHeaderSubtitleChanged': {
+      // 副标题回灌：值相同不动状态，避免无关重渲。
+      const subtitleIntent: OnHeaderSubtitleChanged = intent as OnHeaderSubtitleChanged;
+      if (state.headerSubtitle === subtitleIntent.subtitle) {
+        return reduced(state);
+      }
+      return reduced(state.copyWith({ headerSubtitle: subtitleIntent.subtitle }));
+    }
+
+    case 'onChatKindChanged': {
+      // 会话种类回灌（驱动头部通话按钮与 ⋮ 菜单项）；值相同不动状态。
+      const kindIntent: OnChatKindChanged = intent as OnChatKindChanged;
+      if (state.chatKind === kindIntent.chatKind) {
+        return reduced(state);
+      }
+      return reduced(state.copyWith({ chatKind: kindIntent.chatKind }));
+    }
+
+    // openChatProfile / chatMenuAction：纯导航/占位意图，reducer 原样透传
+    // （落到 switch 后的 reduced(state)，状态引用不变、无 effect）。
   }
 
   return reduced(state);

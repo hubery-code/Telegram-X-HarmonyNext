@@ -48,7 +48,11 @@ import {
   OnChatSearchFailed,
   JumpToSearchResult,
   OnJumpToMessageReady,
-  ClearJumpToMessage
+  ClearJumpToMessage,
+  OnHeaderSubtitleChanged,
+  OnChatKindChanged,
+  OpenChatProfile,
+  ChatMenuAction
 } from '../main/ets/contract/ChatIntent';
 import {
   ChatEffect,
@@ -1163,6 +1167,74 @@ export default function chatReducerTest() {
         makeEnv()
       );
       expect(result.state.jumpToMessageId).assertEqual(0);
+    });
+
+    // ---- MSG-109 头部信息区 ----
+
+    it('onHeaderSubtitleChanged_updatesSubtitle', 0, () => {
+      const state: ChatUiState = makeState('', null);
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        state,
+        new OnHeaderSubtitleChanged('在线'),
+        makeEnv()
+      );
+      expect(result.state.headerSubtitle).assertEqual('在线');
+      expect(result.effects.length).assertEqual(0);
+    });
+
+    it('onHeaderSubtitleChanged_sameValue_isNoOpSameStateRef', 0, () => {
+      const state: ChatUiState = makeState('', null).copyWith({ headerSubtitle: '在线' });
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        state,
+        new OnHeaderSubtitleChanged('在线'),
+        makeEnv()
+      );
+      expect(result.state === state).assertTrue();
+      expect(result.effects.length).assertEqual(0);
+    });
+
+    it('onChatKindChanged_updatesChatKind', 0, () => {
+      const state: ChatUiState = makeState('', null);
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        state,
+        new OnChatKindChanged('group'),
+        makeEnv()
+      );
+      expect(result.state.chatKind).assertEqual('group');
+      expect(result.effects.length).assertEqual(0);
+    });
+
+    it('onChatKindChanged_sameValue_isNoOpSameStateRef', 0, () => {
+      const state: ChatUiState = makeState('', null).copyWith({ chatKind: 'private' });
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        state,
+        new OnChatKindChanged('private'),
+        makeEnv()
+      );
+      expect(result.state === state).assertTrue();
+      expect(result.effects.length).assertEqual(0);
+    });
+
+    it('openChatProfile_isPureNavigation_stateUnchanged_noEffects', 0, () => {
+      const state: ChatUiState = makeState('', null);
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        state,
+        new OpenChatProfile(42),
+        makeEnv()
+      );
+      expect(result.state === state).assertTrue();
+      expect(result.effects.length).assertEqual(0);
+    });
+
+    it('chatMenuAction_isPlaceholder_stateUnchanged_noEffects', 0, () => {
+      const state: ChatUiState = makeState('', null);
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        state,
+        new ChatMenuAction('mute'),
+        makeEnv()
+      );
+      expect(result.state === state).assertTrue();
+      expect(result.effects.length).assertEqual(0);
     });
   });
 }

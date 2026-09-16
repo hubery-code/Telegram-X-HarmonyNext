@@ -93,6 +93,10 @@ export {
   OnJumpToMessageReady,
   ClearJumpToMessage,
   OpenUserProfile,
+  OnHeaderSubtitleChanged,
+  OnChatKindChanged,
+  OpenChatProfile,
+  ChatMenuAction,
   ChatIntent
 } from './contract/ChatIntent';
 

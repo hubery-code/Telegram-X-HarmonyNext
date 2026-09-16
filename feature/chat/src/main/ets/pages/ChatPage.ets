@@ -36,6 +36,11 @@
  * 装配层弹出 ForwardPickerPage 选目标会话（含 Send as copy 隐藏来源）。
  * 注意：勾选圈是原地变更，selection 必须进 LazyForEach 的 key 才会重渲
  * （见 messageRowKey 与 onUiStateChanged 的 selectionSignature 分支）。
+ *
+ * MSG-109：头部信息区。标题下方出副标题行（headerSubtitle 非空时，私聊在线
+ * 状态 / 群成员数+在线人数）；私聊头部右侧 🔍 旁出 📞 通话占位；私聊/群/频道
+ * 标题点击 → OpenChatProfile（纯导航）；头部右侧 ⋮ 按 chatKind 弹菜单
+ * （删除聊天 destructive 色），菜单动作统一走 ChatMenuAction 占位入口。
  */
 
 import { LightTheme } from '@tgx/core-design-system';
@@ -99,7 +104,9 @@ import {
   PerformChatSearch,
   JumpToSearchResult,
   ClearJumpToMessage,
-  OpenUserProfile
+  OpenUserProfile,
+  OpenChatProfile,
+  ChatMenuAction
 } from '../contract/ChatIntent';
 import { isMessageSelected } from '../model/ForwardSelection';
 import { ChatSearchResultItem } from '../model/ChatSearchResultItem';
@@ -699,13 +706,42 @@ export struct ChatPage {
             this.onDispatch(new BackToChatList());
           })
 
-        Text(this.uiState.chatTitle)
-          .fontSize(T.typography.title.fontSize)
-          .fontWeight(T.typography.title.fontWeight)
-          .fontColor(T.colors.textPrimary)
-          .maxLines(1)
-          .textOverflow({ overflow: TextOverflow.Ellipsis })
-          .layoutWeight(1)
+        // MSG-109：标题 + 副标题（副标题非空时显示，subheadline 字号 textSecondary）。
+        Column() {
+          Text(this.uiState.chatTitle)
+            .fontSize(T.typography.title.fontSize)
+            .fontWeight(T.typography.title.fontWeight)
+            .fontColor(T.colors.textPrimary)
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+            .onClick(() => {
+              // MSG-109：私聊/群/频道标题点击 → 打开会话资料页（纯导航意图）。
+              this.onDispatch(new OpenChatProfile(this.uiState.chatId));
+            })
+
+          if (this.uiState.headerSubtitle.length > 0) {
+            Text(this.uiState.headerSubtitle)
+              .fontSize(T.typography.subheadline.fontSize)
+              .fontColor(T.colors.textSecondary)
+              .maxLines(1)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+          }
+        }
+        .layoutWeight(1)
+        .alignItems(HorizontalAlign.Start)
+
+        // MSG-109：私聊头部语音通话占位入口（📞，语义后续泳道实现）。
+        if (this.uiState.chatKind === 'private') {
+          Text('📞')
+            .fontSize(T.typography.title.fontSize)
+            .fontColor(T.colors.accent)
+            .width(SEARCH_BUTTON_SIZE)
+            .height(SEARCH_BUTTON_SIZE)
+            .textAlign(TextAlign.Center)
+            .onClick(() => {
+              hilog.info(DOMAIN, TAG, 'chat_call_placeholder');
+            })
+        }
 
         // SEARCH-102：聊天内搜索入口（🔍 图标 → 展开搜索面板）。
         Text('🔍')
@@ -717,6 +753,15 @@ export struct ChatPage {
           .onClick(() => {
             this.onDispatch(new OpenChatSearch());
           })
+
+        // MSG-109：头部 ⋮ 溢出菜单（按 chatKind 出项，删除聊天 destructive 色）。
+        Text('⋮')
+          .fontSize(T.typography.title.fontSize)
+          .fontColor(T.colors.accent)
+          .width(SEARCH_BUTTON_SIZE)
+          .height(SEARCH_BUTTON_SIZE)
+          .textAlign(TextAlign.Center)
+          .bindMenu(this.HeaderOverflowMenu)
       }
     }
     .width('100%')
@@ -729,6 +774,54 @@ export struct ChatPage {
     })
     .borderWidth({ bottom: 1 })
     .borderColor(T.colors.divider)
+  }
+
+  /**
+   * MSG-109：头部 ⋮ 溢出菜单（CustomBuilder 形式：MenuElement 数组不支持逐项着色，
+   * 删除聊天需 destructive 色，故用 Menu + MenuItem 构建，点击统一走 ChatMenuAction 占位）。
+   */
+  @Builder
+  HeaderOverflowMenu() {
+    Menu() {
+      MenuItem({ content: '搜索' })
+        .onClick(() => {
+          this.onDispatch(new OpenChatSearch());
+        })
+      if (this.uiState.chatKind === 'private') {
+        MenuItem({ content: '静音' })
+          .onClick(() => {
+            this.onDispatch(new ChatMenuAction('mute'));
+          })
+        MenuItem({ content: '清空历史记录' })
+          .onClick(() => {
+            this.onDispatch(new ChatMenuAction('clear_history'));
+          })
+        MenuItem({ content: '删除聊天' })
+          .contentFontColor(T.colors.destructive)
+          .onClick(() => {
+            this.onDispatch(new ChatMenuAction('delete_chat'));
+          })
+      } else if (this.uiState.chatKind === 'group' || this.uiState.chatKind === 'channel') {
+        MenuItem({ content: '开启通知' })
+          .onClick(() => {
+            this.onDispatch(new ChatMenuAction('enable_notifications'));
+          })
+        MenuItem({ content: '举报' })
+          .onClick(() => {
+            this.onDispatch(new ChatMenuAction('report'));
+          })
+        MenuItem({ content: this.uiState.chatKind === 'channel' ? '退出频道' : '退出群组' })
+          .onClick(() => {
+            this.onDispatch(new ChatMenuAction('leave'));
+          })
+        if (this.uiState.chatKind === 'group') {
+          MenuItem({ content: '已关联的频道' })
+            .onClick(() => {
+              this.onDispatch(new ChatMenuAction('linked_channel'));
+            })
+        }
+      }
+    }
   }
 
   /** MSG-103：日期胶囊头（居中展示半透明灰色胶囊卡片，如 9月11日 或 2024年9月11日）。 */

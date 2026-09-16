@@ -16,12 +16,19 @@
  *   （TDLib forwardMessages 要求 message_ids 严格递增）；
  * - MessageActionMenuState.showForward：由 messageProperties.can_be_forwarded
  *   过滤，禁止转发的消息（如受保护内容）不出现 Forward 项。
+ *
+ * MSG-109 新增：
+ * - headerSubtitle：头部副标题（私聊在线状态 / 群成员数；空串=不显示），
+ *   由 coordinator 计算后经 OnHeaderSubtitleChanged 回灌；
+ * - chatKind：会话种类（private/group/channel/unknown），getChat 解析后由
+ *   OnChatKindChanged 回灌，驱动头部通话按钮与 ⋮ 菜单项。
  */
 
 import { UiState } from '@tgx/feature-template';
 import { MessageItem } from '../model/MessageItem';
 import { MediaViewerItem } from '../model/MediaViewerItem';
 import { ChatSearchResultItem } from '../model/ChatSearchResultItem';
+import { ChatKind } from '../model/SenderInfo';
 
 /** 输入栏模式：回复某条消息。 */
 export class ComposerReplyMode {
@@ -129,6 +136,10 @@ export interface ChatUiStateOptions {
   readonly isSearching?: boolean;
   /** SEARCH-102：待跳转定位的消息 id（0=无；loadHistoryAround 完成后回灌）。 */
   readonly jumpToMessageId?: number;
+  /** MSG-109：头部副标题（私聊在线状态 / 群成员数等；空串=不显示）。 */
+  readonly headerSubtitle?: string;
+  /** MSG-109：会话种类（驱动头部通话按钮与 ⋮ 菜单项）。 */
+  readonly chatKind?: ChatKind;
 }
 
 export class ChatUiState implements UiState {
@@ -161,6 +172,10 @@ export class ChatUiState implements UiState {
   readonly isSearching: boolean;
   /** SEARCH-102：待跳转定位的消息 id（0=无；loadHistoryAround 完成后回灌）。 */
   readonly jumpToMessageId: number;
+  /** MSG-109：头部副标题（私聊在线状态 / 群成员数等；空串=不显示）。 */
+  readonly headerSubtitle: string;
+  /** MSG-109：会话种类（驱动头部通话按钮与 ⋮ 菜单项）。 */
+  readonly chatKind: ChatKind;
 
   constructor(
     chatId: number,
@@ -183,7 +198,9 @@ export class ChatUiState implements UiState {
     searchQuery: string = '',
     searchResults: readonly ChatSearchResultItem[] = [],
     isSearching: boolean = false,
-    jumpToMessageId: number = 0
+    jumpToMessageId: number = 0,
+    headerSubtitle: string = '',
+    chatKind: ChatKind = 'unknown'
   ) {
     this.chatId = chatId;
     this.chatTitle = chatTitle;
@@ -206,6 +223,8 @@ export class ChatUiState implements UiState {
     this.searchResults = searchResults;
     this.isSearching = isSearching;
     this.jumpToMessageId = jumpToMessageId;
+    this.headerSubtitle = headerSubtitle;
+    this.chatKind = chatKind;
   }
 
   static initial(): ChatUiState {
@@ -234,7 +253,9 @@ export class ChatUiState implements UiState {
       options.searchQuery !== undefined ? options.searchQuery : this.searchQuery,
       options.searchResults !== undefined ? options.searchResults : this.searchResults,
       options.isSearching !== undefined ? options.isSearching : this.isSearching,
-      options.jumpToMessageId !== undefined ? options.jumpToMessageId : this.jumpToMessageId
+      options.jumpToMessageId !== undefined ? options.jumpToMessageId : this.jumpToMessageId,
+      options.headerSubtitle !== undefined ? options.headerSubtitle : this.headerSubtitle,
+      options.chatKind !== undefined ? options.chatKind : this.chatKind
     );
   }
 }

@@ -21,6 +21,11 @@
  *   群聊收到的用户消息经 resolveSenderInfo 出署名，缓存未命中时
  *   requestUser + subscribeUser（requestedSenderIds 防重），User 晚到后
  *   scheduleSyncFromProjection 重映射上屏；
+ * - MSG-109：getChat 回包缓存 supergroupId/basicGroupId 并回灌 OnChatKindChanged；
+ *   buildHeaderSubtitle() 计算头部副标题（私聊状态 / 群成员数+在线人数）经
+ *   OnHeaderSubtitleChanged 回灌；私聊用户经 requestUser + subscribeUser 晚到重算，
+ *   群/频道经 getSupergroupFullInfo + updateChatOnlineMemberCount 订阅刷新；
+ *   openChatProfile 转 onOpenChatProfile 回调，chatMenuAction 只记日志。
  * - TDLib 更新成批到达，经 setTimeout(0) 合并为一个同步点，避免反复重绘。
  * - 日志不记录消息正文，send 结果只记 ok/err 与稳定错误分类。
  *
@@ -34,19 +39,25 @@ import { AccountScope } from '@tgx/core-account';
 import {
   Animation,
   Chat,
+  ChatTypeBasicGroup,
+  ChatTypeSupergroup,
   decodeChat,
   decodeMessage,
   decodeMessageProperties,
   decodeFoundChatMessages,
+  decodeSupergroupFullInfo,
+  decodeTdUpdate,
   FoundChatMessages,
   Document,
   DraftMessage,
   DraftMessageContentText,
   encodeGetChat,
   encodeGetMessage,
+  encodeGetSupergroupFullInfo,
   File,
   GetChat,
   GetMessage,
+  GetSupergroupFullInfo,
   InputMessageReplyToMessage,
   LinkPreview,
   LinkPreviewTypeArticle,
@@ -68,16 +79,20 @@ import {
   Photo,
   PhotoSize,
   Sticker,
+  SupergroupFullInfo,
   TdJsonRaw,
   TdMessageContent,
   TdMessageReplyTo,
   TdMessageSendingState,
+  TdUpdate,
+  TdUserStatus,
+  UpdateChatOnlineMemberCount,
   User,
   Video,
   VideoNote
 } from '@tgx/core-td-api-generated';
 import { FileRegistry, MessageListState, MessageProjection, UserRegistry } from '@tgx/core-domain';
-import { TdPendingRequest, TdWireObject, TdWireValue } from '@tgx/td-gateway';
+import { TdPendingRequest, TdRoutedEvent, TdUpdateFilter, TdUpdateSubscription, TdWireObject, TdWireValue } from '@tgx/td-gateway';
 import { Subscription } from '@tgx/platform-ports';
 import { Result } from '@tgx/core-common';
 import { ReducerEnv, ReducerResult } from '@tgx/feature-template';
@@ -115,7 +130,11 @@ import {
   OnChatSearchLoaded,
   OnChatSearchFailed,
   OnJumpToMessageReady,
-  OpenUserProfile
+  OpenUserProfile,
+  OnHeaderSubtitleChanged,
+  OnChatKindChanged,
+  OpenChatProfile,
+  ChatMenuAction
 } from '../contract/ChatIntent';
 import {
   ChatEffect,
@@ -303,6 +322,8 @@ export interface ChatCoordinatorOptions {
   readonly logger?: Logger;
   /** PROFILE-101：请求装配层打开指定用户的资料页（缺省 no-op）。 */
   readonly onOpenUserProfile?: (userId: number) => void;
+  /** MSG-109：请求装配层打开会话资料页（缺省 no-op）。 */
+  readonly onOpenChatProfile?: (chatId: number) => void;
 }
 
 class ParsedDraft {
@@ -330,6 +351,8 @@ export class ChatCoordinator {
   private readonly onOpenForwardPicker: (messageIds: number[]) => void;
   /** PROFILE-101：请求装配层打开用户资料页（缺省 no-op）。 */
   private readonly onOpenUserProfile: (userId: number) => void;
+  /** MSG-109：请求装配层打开会话资料页（缺省 no-op）。 */
+  private readonly onOpenChatProfile: (chatId: number) => void;
   private currentState: ChatUiState;
   private readonly listeners: ChatUiStateListener[] = [];
   private syncScheduled: boolean = false;
@@ -339,6 +362,22 @@ export class ChatCoordinator {
   /** MSG-102：会话种类（getChat 一次性解析，群聊才出署名）。 */
   private chatKind: ChatKind = 'unknown';
   private chatTypeRequested: boolean = false;
+  /** MSG-109：超级群/频道 id（getChat 解析缓存，供头部成员数查询）。 */
+  private supergroupId: number = 0;
+  /** MSG-109：基本群 id（getChat 解析缓存；当前副标题暂不消费）。 */
+  private basicGroupId: number = 0;
+  /** MSG-109：getSupergroupFullInfo 是否已发起（防重；失败复位可重试）。 */
+  private supergroupInfoRequested: boolean = false;
+  /** MSG-109：群/频道成员数缓存（0=未知）。 */
+  private memberCount: number = 0;
+  /** MSG-109：群在线人数缓存（updateChatOnlineMemberCount 推送；0=未知）。 */
+  private onlineMemberCount: number = 0;
+  /** MSG-109：updateChatOnlineMemberCount 订阅句柄（destroy 时退订）。 */
+  private onlineCountSubscription: TdUpdateSubscription | null = null;
+  /** MSG-109：私聊头部用户订阅句柄（destroy 时退订）。 */
+  private headerUserSubscription: Subscription | null = null;
+  /** MSG-109：私聊头部用户是否已发起 requestUser（防重）。 */
+  private headerUserRequested: boolean = false;
   /** MSG-102：已发起过 getUser 的 sender，防重复请求。 */
   private readonly requestedSenderIds: Set<number> = new Set();
   private readonly senderSubscriptions: Map<number, Subscription> = new Map();
@@ -385,6 +424,9 @@ export class ChatCoordinator {
     this.onOpenUserProfile = (options !== undefined && options.onOpenUserProfile !== undefined)
       ? options.onOpenUserProfile
       : (userId: number): void => {};
+    this.onOpenChatProfile = (options !== undefined && options.onOpenChatProfile !== undefined)
+      ? options.onOpenChatProfile
+      : (chatId: number): void => {};
     this.env = env !== undefined ? env : {
       clock: new ManualClock(1000, 500),
       ids: new SequentialIdGenerator('chat-')
@@ -447,6 +489,9 @@ export class ChatCoordinator {
       this.dispatch(new RestoreDraft(parsed.text, parsed.replyToId));
     }
     this.fetchChatKind();
+    // MSG-109：先按已知信息补一次副标题（chatKind 未回前为 no-op），
+    // getChat 回包 / 用户状态订阅 / 在线人数订阅到达后各自重算。
+    this.buildHeaderSubtitle();
     this.dispatch(new LoadInitialMessages());
   }
 
@@ -553,6 +598,15 @@ export class ChatCoordinator {
     });
     this.fileSubscriptions.clear();
     this.requestedFileIds.clear();
+    // MSG-109：退订头部新增的在线人数/私聊用户订阅。
+    if (this.onlineCountSubscription !== null) {
+      this.onlineCountSubscription.unsubscribe();
+      this.onlineCountSubscription = null;
+    }
+    if (this.headerUserSubscription !== null) {
+      this.headerUserSubscription.unsubscribe();
+      this.headerUserSubscription = null;
+    }
     this.fileRegistry.stop();
     this.userRegistry.stop();
     this.listeners.length = 0;
@@ -583,6 +637,19 @@ export class ChatCoordinator {
         this.logger.info(TAG, 'open_user_profile', `userId=${profileIntent.userId}`);
         this.onOpenUserProfile(profileIntent.userId);
       }
+    } else if (intent.kind === 'openChatProfile') {
+      // MSG-109：纯导航意图——reducer 原样透传（default 分支），这里转给装配层路由。
+      // 修复（DSH 集成验收）：群/频道 chatId 为负数（超级群 -100xxx），>0 守卫会让
+      // 群/频道标题点不动；合法条件是"非 0"。
+      const chatProfileIntent: OpenChatProfile = intent as OpenChatProfile;
+      if (chatProfileIntent.chatId !== 0) {
+        this.logger.info(TAG, 'open_chat_profile', `chatId=${chatProfileIntent.chatId}`);
+        this.onOpenChatProfile(chatProfileIntent.chatId);
+      }
+    } else if (intent.kind === 'chatMenuAction') {
+      // MSG-109：⋮ 菜单占位动作统一入口：只记日志，语义由后续泳道实现。
+      const menuIntent: ChatMenuAction = intent as ChatMenuAction;
+      this.logger.info(TAG, `chat_menu_${menuIntent.action}`);
     }
 
     const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
@@ -1753,7 +1820,18 @@ export class ChatCoordinator {
           const chat: Chat | null = decodeChat(res.value as TdJsonRaw);
           if (chat !== null) {
             this.chatKind = chatKindOf(chat.type_);
+            // MSG-109：缓存 supergroup/basicGroup id，供头部成员数副标题查询。
+            if (chat.type_ !== null) {
+              if (chat.type_.type === 'chatTypeSupergroup') {
+                this.supergroupId = (chat.type_ as ChatTypeSupergroup).supergroup_id;
+              } else if (chat.type_.type === 'chatTypeBasicGroup') {
+                this.basicGroupId = (chat.type_ as ChatTypeBasicGroup).basic_group_id;
+              }
+            }
             this.logger.info(TAG, 'chat_kind_resolved', `kind=${this.chatKind}`);
+            // MSG-109：回灌 reducer 驱动头部通话按钮/菜单，并启动副标题计算。
+            this.dispatch(new OnChatKindChanged(this.chatKind));
+            this.buildHeaderSubtitle();
             this.scheduleSyncFromProjection();
           }
         }
@@ -1778,6 +1856,165 @@ export class ChatCoordinator {
     if (result.err) {
       this.logger.logError(TAG, result.error);
     }
+  }
+
+  // ---- MSG-109 头部信息区：副标题计算 ----
+
+  /**
+   * 计算头部副标题并回灌（start()、chatKind 解析后及相关订阅回调里调用）：
+   * - private：777000 → '服务通知'；否则取 User.status 格式化（缓存未命中先空串，
+   *   requestUser + subscribeUser，User 到达后重算）；
+   * - group/channel：已知 supergroupId 时拉 getSupergroupFullInfo 出成员数，
+   *   并订阅 updateChatOnlineMemberCount 追加在线人数；基本群暂无副标题；
+   * - unknown：不动（保持空串）。
+   */
+  private buildHeaderSubtitle(): void {
+    if (this.destroyed) {
+      return;
+    }
+    if (this.chatKind === 'private') {
+      const chatId: number = this.currentState.chatId;
+      if (chatId === 777000) {
+        this.dispatch(new OnHeaderSubtitleChanged('服务通知'));
+        return;
+      }
+      const user: User | null = this.userRegistry.getUser(chatId);
+      if (user !== null && user.status !== null) {
+        this.dispatch(new OnHeaderSubtitleChanged(this.formatUserStatus(user.status)));
+        return;
+      }
+      // 缓存未命中：先空串，发起请求并订阅该用户，晚到后经回调重算。
+      this.requestHeaderUser(chatId);
+      this.dispatch(new OnHeaderSubtitleChanged(''));
+      return;
+    }
+    if (this.chatKind === 'group' || this.chatKind === 'channel') {
+      this.subscribeOnlineMemberCount();
+      if (this.supergroupId > 0) {
+        this.requestSupergroupMemberCount();
+      }
+      this.updateGroupHeaderSubtitle();
+    }
+  }
+
+  /** MSG-109：UserStatus → 头部副标题文案（对齐 TGX 中文截图）。 */
+  private formatUserStatus(status: TdUserStatus): string {
+    switch (status.type) {
+      case 'userStatusOnline':
+        return '在线';
+      case 'userStatusOffline':
+        return '最近在线';
+      case 'userStatusRecently':
+        return '最近上线';
+      case 'userStatusLastWeek':
+        return '最近一周内上线';
+      case 'userStatusLastMonth':
+        return '最近一个月内上线';
+      default:
+        return '';
+    }
+  }
+
+  /** MSG-109：私聊头部用户信息未命中时请求一次并订阅，User 到达后重算副标题。 */
+  private requestHeaderUser(userId: number): void {
+    if (this.destroyed) {
+      return;
+    }
+    if (this.headerUserSubscription === null) {
+      this.headerUserSubscription = this.userRegistry.subscribeUser(userId, () => {
+        if (!this.destroyed) {
+          this.buildHeaderSubtitle();
+        }
+      });
+    }
+    if (this.headerUserRequested) {
+      return;
+    }
+    this.headerUserRequested = true;
+    const result: Result<TdPendingRequest, AppError> = this.userRegistry.requestUser(userId);
+    if (result.err) {
+      this.logger.logError(TAG, result.error);
+    }
+  }
+
+  /** MSG-109：已知 supergroupId 时拉成员数；失败只记日志（复位后可重试）。 */
+  private requestSupergroupMemberCount(): void {
+    if (this.destroyed || this.supergroupId <= 0 || this.supergroupInfoRequested) {
+      return;
+    }
+    this.supergroupInfoRequested = true;
+    const req: GetSupergroupFullInfo = new GetSupergroupFullInfo();
+    req.supergroup_id = this.supergroupId;
+    const result: Result<TdPendingRequest, AppError> =
+      this.scope.request('getSupergroupFullInfo', encodeGetSupergroupFullInfo(req) as TdWireObject);
+    if (result.err) {
+      this.supergroupInfoRequested = false;
+      this.logger.logError(TAG, result.error);
+      return;
+    }
+    if (result.ok) {
+      result.value.promise.then((res: Result<TdWireObject, AppError>) => {
+        if (this.destroyed) {
+          return;
+        }
+        if (res.err) {
+          this.supergroupInfoRequested = false;
+          this.logger.logError(TAG, res.error);
+        }
+        if (res.ok) {
+          const info: SupergroupFullInfo | null = decodeSupergroupFullInfo(res.value as TdJsonRaw);
+          if (info !== null) {
+            this.memberCount = info.member_count;
+            this.updateGroupHeaderSubtitle();
+          }
+        }
+      }).catch(() => {
+      });
+    }
+  }
+
+  /** MSG-109：按已缓存的成员数/在线人数回灌群副标题（'N 位成员' / 'N 位成员, M 在线'）。 */
+  private updateGroupHeaderSubtitle(): void {
+    if (this.chatKind !== 'group' && this.chatKind !== 'channel') {
+      return;
+    }
+    let text: string = '';
+    if (this.memberCount > 0) {
+      text = this.chatKind === 'channel'
+        ? `${this.memberCount} 位订阅者`
+        : `${this.memberCount} 位成员`;
+    }
+    // 在线人数仅群聊展示（频道不显示在线数）。
+    if (this.chatKind === 'group' && this.onlineMemberCount > 0) {
+      text = text.length > 0 ? `${text}, ${this.onlineMemberCount} 在线` : `${this.onlineMemberCount} 在线`;
+    }
+    this.dispatch(new OnHeaderSubtitleChanged(text));
+  }
+
+  /** MSG-109：订阅 updateChatOnlineMemberCount（群在线人数推送），destroy 时退订。 */
+  private subscribeOnlineMemberCount(): void {
+    if (this.destroyed || this.onlineCountSubscription !== null) {
+      return;
+    }
+    const filter: TdUpdateFilter = {
+      clientId: this.scope.clientId,
+      types: ['updateChatOnlineMemberCount']
+    };
+    this.onlineCountSubscription = this.scope.gatewayInstance.subscribeUpdates(
+      filter,
+      (event: TdRoutedEvent): void => {
+        const update: TdUpdate | null = decodeTdUpdate(event.payload as TdJsonRaw);
+        if (update === null || update.type !== 'updateChatOnlineMemberCount') {
+          return;
+        }
+        const online: UpdateChatOnlineMemberCount = update as UpdateChatOnlineMemberCount;
+        if (online.chat_id !== this.currentState.chatId) {
+          return;
+        }
+        this.onlineMemberCount = online.online_member_count;
+        this.updateGroupHeaderSubtitle();
+      }
+    );
   }
 
   private executeEffect(effect: ChatEffect): void {
