@@ -38,15 +38,29 @@ export struct QrCodePage {
             .height(240)
             .color(Color.Black)
             .backgroundColor(Color.White)
+
+          Image($r('app.media.ic_qrcode_scan'))
+            .width(44)
+            .height(44)
+            .fillColor(T.colors.accent)
+            .backgroundColor(Color.White)
+            .borderRadius(T.radius.sm)
+            .padding(4)
         }
         .width(272)
         .height(272)
       } else {
         Column() {
           if (this.errorMessage === null) {
-            LoadingProgress()
+            Image($r('app.media.ic_qrcode_scan'))
               .width(48)
               .height(48)
+              .fillColor(T.colors.accent)
+              .margin({ bottom: T.spacing.md })
+
+            LoadingProgress()
+              .width(36)
+              .height(36)
               .color(T.colors.accent)
               .margin({ bottom: T.spacing.md })
 

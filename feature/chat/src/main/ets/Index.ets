@@ -3,10 +3,12 @@
  */
 
 export { MessageItem, MessageSendState } from './model/MessageItem';
+export { ReactionChip } from './model/ReactionChip';
 export { MediaAttachment, MediaKind, formatFileSize } from './model/MediaAttachment';
 export { MediaViewerItem } from './model/MediaViewerItem';
 export { LinkPreviewInfo } from './model/LinkPreviewInfo';
 export { ChatSearchResultItem } from './model/ChatSearchResultItem';
+export { PinnedMessageInfo } from './model/PinnedMessageInfo';
 
 export { MessageTextSpan } from './model/MessageTextSpan';
 
@@ -97,6 +99,13 @@ export {
   OnChatKindChanged,
   OpenChatProfile,
   ChatMenuAction,
+  OnPinnedMessageLoaded,
+  DismissPinnedBar,
+  JumpToPinnedMessage,
+  JoinChannel,
+  OnChannelMemberStatusChanged,
+  OpenMessageComments,
+  ToggleMessageReaction,
   ChatIntent
 } from './contract/ChatIntent';
 
@@ -118,6 +127,9 @@ export {
   CancelMediaDownloadEffect,
   FetchChatSearch,
   JumpToMessage,
+  JoinChannelEffect,
+  ToggleReactionEffect,
+  OpenCommentsEffect,
   ChatEffect
 } from './contract/ChatEffect';
 

@@ -74,7 +74,8 @@ import {
   ProfileEffect,
   CreatePrivateChatEffect,
   FetchSharedContent,
-  FetchSharedGroups
+  FetchSharedGroups,
+  FetchMoreSharedContent
 } from '../contract/ProfileEffect';
 import { SharedMediaItem, SharedFileItem, SharedLinkItem, SharedGroupItem } from '../contract/SharedContentItems';
 import { profileReducer } from '../reducer/ProfileReducer';
@@ -345,6 +346,10 @@ export class ProfileCoordinator {
   private subscribedAvatarFileId: number = -1;
   /** PROFILE-103：已订阅下载回调的共享媒体缩略图 fileId，防重复订阅。 */
   private readonly subscribedSharedFileIds: Set<number> = new Set();
+  /** PROFILE-103：各 Tab 的分页 offset（Tab 0..2 为 next_from_message_id，Tab 3 为 offset_chat_id）。 */
+  private readonly nextOffsets: Map<number, number> = new Map();
+  /** 缓存目标用户的 private chatId，避免重复调用 createPrivateChat。 */
+  private cachedPrivateChatId: number = 0;
   private destroyed: boolean = false;
 
   constructor(scope: AccountScope, userId: number, options?: ProfileCoordinatorOptions) {
@@ -524,12 +529,18 @@ export class ProfileCoordinator {
 
       case 'fetchSharedContent': {
         const fetch: FetchSharedContent = effect as FetchSharedContent;
-        this.fetchSharedContent(fetch.tab);
+        this.fetchSharedContent(fetch.tab, false);
         break;
       }
 
       case 'fetchSharedGroups': {
-        this.fetchSharedGroups();
+        this.fetchSharedGroups(false);
+        break;
+      }
+
+      case 'fetchMoreSharedContent': {
+        const fetchMore: FetchMoreSharedContent = effect as FetchMoreSharedContent;
+        this.fetchMoreSharedContent(fetchMore.tab);
         break;
       }
 
@@ -542,13 +553,25 @@ export class ProfileCoordinator {
   // PROFILE-103：共享内容（媒体/文件/链接/群组）
   // ------------------------------------------------------------------
 
+  private fetchMoreSharedContent(tab: number): void {
+    if (tab === 3) {
+      this.fetchSharedGroups(true);
+      return;
+    }
+    this.fetchSharedContent(tab, true);
+  }
+
   /**
    * Tab 0..2：先 createPrivateChat 拿 chatId，再 searchChatMessages 按
    * 照片视频/文件/链接过滤器检索。失败只 logError，并以当前数组回灌
    * OnSharedContentLoaded 仅用于复位 sharedLoading（不打扰 UI）。
    */
-  private fetchSharedContent(tab: number): void {
-    this.logger.info(TAG, 'fetch_shared_content', `userId=${this.userId},tab=${tab}`);
+  private fetchSharedContent(tab: number, isLoadMore: boolean = false): void {
+    this.logger.info(TAG, 'fetch_shared_content', `userId=${this.userId},tab=${tab},isLoadMore=${isLoadMore}`);
+    if (this.cachedPrivateChatId > 0) {
+      this.searchSharedContent(tab, this.cachedPrivateChatId, isLoadMore);
+      return;
+    }
     const req: CreatePrivateChat = new CreatePrivateChat();
     req.user_id = this.userId;
     const res: Result<TdPendingRequest, AppError> =
@@ -569,7 +592,8 @@ export class ProfileCoordinator {
             this.stopSharedContentLoading(tab);
             return;
           }
-          this.searchSharedContent(tab, chat.id);
+          this.cachedPrivateChatId = chat.id;
+          this.searchSharedContent(tab, chat.id, isLoadMore);
         }
       }).catch((): void => {
       });
@@ -580,11 +604,11 @@ export class ProfileCoordinator {
     }
   }
 
-  private searchSharedContent(tab: number, chatId: number): void {
+  private searchSharedContent(tab: number, chatId: number, isLoadMore: boolean = false): void {
     const req: SearchChatMessages = new SearchChatMessages();
     req.chat_id = chatId;
     req.query = '';
-    req.from_message_id = 0;
+    req.from_message_id = isLoadMore ? (this.nextOffsets.get(tab) ?? 0) : 0;
     req.offset = 0;
     req.limit = SHARED_PAGE_LIMIT;
     req.sender_id = null;
@@ -617,7 +641,7 @@ export class ProfileCoordinator {
             this.stopSharedContentLoading(tab);
             return;
           }
-          this.handleSharedMessages(tab, found);
+          this.handleSharedMessages(tab, found, isLoadMore);
         }
       }).catch((): void => {
       });
@@ -629,7 +653,11 @@ export class ProfileCoordinator {
   }
 
   /** FoundChatMessages → 按 Tab 映射条目；只覆盖本次拉取的数组，其余透传当前状态。 */
-  private handleSharedMessages(tab: number, found: FoundChatMessages): void {
+  private handleSharedMessages(tab: number, found: FoundChatMessages, isLoadMore: boolean = false): void {
+    const nextFromId: number = found.next_from_message_id;
+    const hasMore: boolean = nextFromId > 0 && found.messages.length > 0;
+    this.nextOffsets.set(tab, nextFromId);
+
     if (tab === 0) {
       const media: SharedMediaItem[] = [];
       for (let i = 0; i < found.messages.length; i++) {
@@ -639,8 +667,9 @@ export class ProfileCoordinator {
           media.push(item);
         }
       }
-      this.logger.info(TAG, 'shared_media_ok', `count=${media.length}`);
-      this.dispatch(new OnSharedContentLoaded(0, media, this.currentState.sharedFiles, this.currentState.sharedLinks));
+      const combined: SharedMediaItem[] = isLoadMore ? [...this.currentState.sharedMedia, ...media] : media;
+      this.logger.info(TAG, 'shared_media_ok', `count=${combined.length},hasMore=${hasMore}`);
+      this.dispatch(new OnSharedContentLoaded(0, combined, this.currentState.sharedFiles, this.currentState.sharedLinks, hasMore));
       return;
     }
     if (tab === 1) {
@@ -652,8 +681,9 @@ export class ProfileCoordinator {
           files.push(item);
         }
       }
-      this.logger.info(TAG, 'shared_files_ok', `count=${files.length}`);
-      this.dispatch(new OnSharedContentLoaded(1, this.currentState.sharedMedia, files, this.currentState.sharedLinks));
+      const combined: SharedFileItem[] = isLoadMore ? [...this.currentState.sharedFiles, ...files] : files;
+      this.logger.info(TAG, 'shared_files_ok', `count=${combined.length},hasMore=${hasMore}`);
+      this.dispatch(new OnSharedContentLoaded(1, this.currentState.sharedMedia, combined, this.currentState.sharedLinks, hasMore));
       return;
     }
     const links: SharedLinkItem[] = [];
@@ -664,8 +694,9 @@ export class ProfileCoordinator {
         links.push(item);
       }
     }
-    this.logger.info(TAG, 'shared_links_ok', `count=${links.length}`);
-    this.dispatch(new OnSharedContentLoaded(2, this.currentState.sharedMedia, this.currentState.sharedFiles, links));
+    const combined: SharedLinkItem[] = isLoadMore ? [...this.currentState.sharedLinks, ...links] : links;
+    this.logger.info(TAG, 'shared_links_ok', `count=${combined.length},hasMore=${hasMore}`);
+    this.dispatch(new OnSharedContentLoaded(2, this.currentState.sharedMedia, this.currentState.sharedFiles, combined, hasMore));
   }
 
   /** messagePhoto/messageVideo → SharedMediaItem；缩略图未就绪则触发下载订阅（局部回灌）。 */
@@ -737,7 +768,7 @@ export class ProfileCoordinator {
           }
         }
         if (touched) {
-          this.dispatch(new OnSharedContentLoaded(0, updated, this.currentState.sharedFiles, this.currentState.sharedLinks));
+          this.dispatch(new OnSharedContentLoaded(0, updated, this.currentState.sharedFiles, this.currentState.sharedLinks, this.currentState.sharedHasMore));
         }
       }));
       const res: Result<TdPendingRequest, AppError> =
@@ -750,11 +781,12 @@ export class ProfileCoordinator {
   }
 
   /** Tab 3：getGroupsInCommon → 逐 id getChat 解析标题/副标题，全部回灌。 */
-  private fetchSharedGroups(): void {
-    this.logger.info(TAG, 'fetch_shared_groups', `userId=${this.userId}`);
+  private fetchSharedGroups(isLoadMore: boolean = false): void {
+    this.logger.info(TAG, 'fetch_shared_groups', `userId=${this.userId},isLoadMore=${isLoadMore}`);
+    const offsetChatId: number = isLoadMore ? (this.nextOffsets.get(3) ?? 0) : 0;
     const req: GetGroupsInCommon = new GetGroupsInCommon();
     req.user_id = this.userId;
-    req.offset_chat_id = 0;
+    req.offset_chat_id = offsetChatId;
     req.limit = SHARED_PAGE_LIMIT;
     const res: Result<TdPendingRequest, AppError> =
       this.scope.request('getGroupsInCommon', encodeGetGroupsInCommon(req) as TdWireObject);
@@ -771,10 +803,13 @@ export class ProfileCoordinator {
         if (out.ok) {
           const chats: Chats | null = decodeChats(out.value as TdJsonRaw);
           if (chats === null || chats.chat_ids.length === 0) {
-            this.dispatch(new OnSharedGroupsLoaded([]));
+            const current: SharedGroupItem[] = isLoadMore ? this.currentState.sharedGroups : [];
+            this.dispatch(new OnSharedGroupsLoaded(current, false));
             return;
           }
-          this.resolveSharedGroupChats(chats.chat_ids);
+          const hasMore: boolean = chats.chat_ids.length >= SHARED_PAGE_LIMIT;
+          this.nextOffsets.set(3, chats.chat_ids[chats.chat_ids.length - 1]);
+          this.resolveSharedGroupChats(chats.chat_ids, isLoadMore, hasMore);
         }
       }).catch((): void => {
       });
@@ -785,7 +820,7 @@ export class ProfileCoordinator {
     }
   }
 
-  private resolveSharedGroupChats(chatIds: number[]): void {
+  private resolveSharedGroupChats(chatIds: number[], isLoadMore: boolean = false, hasMore: boolean = false): void {
     const items: SharedGroupItem[] = [];
     for (let i = 0; i < chatIds.length; i++) {
       items.push(new SharedGroupItem(chatIds[i], '', ''));
@@ -813,12 +848,12 @@ export class ProfileCoordinator {
             }
           }
           if (settled === total && !this.destroyed) {
-            this.finishSharedGroups(items);
+            this.finishSharedGroups(items, isLoadMore, hasMore);
           }
         }).catch((): void => {
           settled++;
           if (settled === total && !this.destroyed) {
-            this.finishSharedGroups(items);
+            this.finishSharedGroups(items, isLoadMore, hasMore);
           }
         });
       }
@@ -826,13 +861,13 @@ export class ProfileCoordinator {
         this.logger.logError(TAG, res.error);
         settled++;
         if (settled === total && !this.destroyed) {
-          this.finishSharedGroups(items);
+          this.finishSharedGroups(items, isLoadMore, hasMore);
         }
       }
     }
   }
 
-  private finishSharedGroups(items: SharedGroupItem[]): void {
+  private finishSharedGroups(items: SharedGroupItem[], isLoadMore: boolean = false, hasMore: boolean = false): void {
     const result: SharedGroupItem[] = [];
     for (let i = 0; i < items.length; i++) {
       const it: SharedGroupItem = items[i];
@@ -840,8 +875,9 @@ export class ProfileCoordinator {
         result.push(it);
       }
     }
-    this.logger.info(TAG, 'shared_groups_ok', `count=${result.length}`);
-    this.dispatch(new OnSharedGroupsLoaded(result));
+    const combined: SharedGroupItem[] = isLoadMore ? [...this.currentState.sharedGroups, ...result] : result;
+    this.logger.info(TAG, 'shared_groups_ok', `count=${combined.length},hasMore=${hasMore}`);
+    this.dispatch(new OnSharedGroupsLoaded(combined, hasMore));
   }
 
   /** 群组副标题：优先最后一条消息摘要，兜底会话类型文案。 */
@@ -863,11 +899,12 @@ export class ProfileCoordinator {
       tab,
       this.currentState.sharedMedia,
       this.currentState.sharedFiles,
-      this.currentState.sharedLinks
+      this.currentState.sharedLinks,
+      this.currentState.sharedHasMore
     ));
   }
 
   private stopSharedGroupsLoading(): void {
-    this.dispatch(new OnSharedGroupsLoaded(this.currentState.sharedGroups));
+    this.dispatch(new OnSharedGroupsLoaded(this.currentState.sharedGroups, this.currentState.sharedHasMore));
   }
 }

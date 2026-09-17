@@ -49,6 +49,12 @@ export struct PhonePage {
           .fontSize(T.typography.headline.fontSize)
           .fontColor(T.colors.accent)
           .fontWeight(T.typography.headline.fontWeight)
+
+        Image($r('app.media.ic_chevron_down'))
+          .width(20)
+          .height(20)
+          .fillColor(T.colors.textSecondary)
+          .margin({ left: T.spacing.xs })
       }
       .width('90%')
       .padding({ left: T.spacing.lg, right: T.spacing.lg, top: T.spacing.md, bottom: T.spacing.md })

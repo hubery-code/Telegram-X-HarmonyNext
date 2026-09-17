@@ -29,6 +29,7 @@ import { MessageItem } from '../model/MessageItem';
 import { MediaViewerItem } from '../model/MediaViewerItem';
 import { ChatSearchResultItem } from '../model/ChatSearchResultItem';
 import { ChatKind } from '../model/SenderInfo';
+import { PinnedMessageInfo } from '../model/PinnedMessageInfo';
 
 /** 输入栏模式：回复某条消息。 */
 export class ComposerReplyMode {
@@ -140,6 +141,12 @@ export interface ChatUiStateOptions {
   readonly headerSubtitle?: string;
   /** MSG-109：会话种类（驱动头部通话按钮与 ⋮ 菜单项）。 */
   readonly chatKind?: ChatKind;
+  /** MSG-108：当前会话置顶消息摘要（null=无置顶消息）。 */
+  readonly pinnedMessage?: PinnedMessageInfo | null;
+  /** MSG-108：置顶消息横条可见性（用户点击 ✕ 可临时收起）。 */
+  readonly showPinnedBar?: boolean;
+  /** CHANNEL-101：是否已加入频道（未加入频道时底栏显示"加入频道"按钮）。 */
+  readonly isChannelMember?: boolean;
 }
 
 export class ChatUiState implements UiState {
@@ -176,6 +183,12 @@ export class ChatUiState implements UiState {
   readonly headerSubtitle: string;
   /** MSG-109：会话种类（驱动头部通话按钮与 ⋮ 菜单项）。 */
   readonly chatKind: ChatKind;
+  /** MSG-108：当前会话置顶消息摘要（null=无置顶消息）。 */
+  readonly pinnedMessage: PinnedMessageInfo | null;
+  /** MSG-108：置顶消息横条可见性（用户点击 ✕ 可临时收起）。 */
+  readonly showPinnedBar: boolean;
+  /** CHANNEL-101：是否已加入频道（未加入频道时底栏显示"加入频道"按钮）。 */
+  readonly isChannelMember: boolean;
 
   constructor(
     chatId: number,
@@ -200,7 +213,10 @@ export class ChatUiState implements UiState {
     isSearching: boolean = false,
     jumpToMessageId: number = 0,
     headerSubtitle: string = '',
-    chatKind: ChatKind = 'unknown'
+    chatKind: ChatKind = 'unknown',
+    pinnedMessage: PinnedMessageInfo | null = null,
+    showPinnedBar: boolean = false,
+    isChannelMember: boolean = true
   ) {
     this.chatId = chatId;
     this.chatTitle = chatTitle;
@@ -225,10 +241,13 @@ export class ChatUiState implements UiState {
     this.jumpToMessageId = jumpToMessageId;
     this.headerSubtitle = headerSubtitle;
     this.chatKind = chatKind;
+    this.pinnedMessage = pinnedMessage;
+    this.showPinnedBar = showPinnedBar;
+    this.isChannelMember = isChannelMember;
   }
 
   static initial(): ChatUiState {
-    return new ChatUiState(0, '', [], false, true, null, '', null, null, -1, [], 0, 0, false, [], false, false, '', [], false, 0);
+    return new ChatUiState(0, '', [], false, true, null, '', null, null, -1, [], 0, 0, false, [], false, false, '', [], false, 0, '', 'unknown', null, false, true);
   }
 
   copyWith(options: ChatUiStateOptions): ChatUiState {
@@ -255,7 +274,10 @@ export class ChatUiState implements UiState {
       options.isSearching !== undefined ? options.isSearching : this.isSearching,
       options.jumpToMessageId !== undefined ? options.jumpToMessageId : this.jumpToMessageId,
       options.headerSubtitle !== undefined ? options.headerSubtitle : this.headerSubtitle,
-      options.chatKind !== undefined ? options.chatKind : this.chatKind
+      options.chatKind !== undefined ? options.chatKind : this.chatKind,
+      options.pinnedMessage !== undefined ? options.pinnedMessage : this.pinnedMessage,
+      options.showPinnedBar !== undefined ? options.showPinnedBar : this.showPinnedBar,
+      options.isChannelMember !== undefined ? options.isChannelMember : this.isChannelMember
     );
   }
 }

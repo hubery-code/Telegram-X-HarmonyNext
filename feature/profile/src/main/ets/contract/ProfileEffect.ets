@@ -29,4 +29,14 @@ export class FetchSharedGroups implements Effect {
   readonly kind: 'fetchSharedGroups' = 'fetchSharedGroups';
 }
 
-export type ProfileEffect = CreatePrivateChatEffect | FetchSharedContent | FetchSharedGroups;
+/** PROFILE-103：拉取更多共享内容（Tab 0..3 分页拉取）。 */
+export class FetchMoreSharedContent implements Effect {
+  readonly kind: 'fetchMoreSharedContent' = 'fetchMoreSharedContent';
+  readonly tab: number;
+
+  constructor(tab: number) {
+    this.tab = tab;
+  }
+}
+
+export type ProfileEffect = CreatePrivateChatEffect | FetchSharedContent | FetchSharedGroups | FetchMoreSharedContent;

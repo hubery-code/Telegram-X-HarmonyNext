@@ -28,6 +28,7 @@
  */
 
 import { Intent } from '@tgx/feature-template';
+import { PinnedMessageInfo } from '../model/PinnedMessageInfo';
 import { AppError } from '@tgx/core-common';
 import { MessageItem } from '../model/MessageItem';
 import { ChatSearchResultItem } from '../model/ChatSearchResultItem';
@@ -502,6 +503,63 @@ export class ChatMenuAction implements Intent {
   }
 }
 
+/** MSG-108：置顶消息加载回灌。 */
+export class OnPinnedMessageLoaded implements Intent {
+  readonly kind: 'onPinnedMessageLoaded' = 'onPinnedMessageLoaded';
+  readonly pinnedMessage: PinnedMessageInfo | null;
+
+  constructor(pinnedMessage: PinnedMessageInfo | null) {
+    this.pinnedMessage = pinnedMessage;
+  }
+}
+
+/** MSG-108：用户点击 ✕ 临时收起置顶横条。 */
+export class DismissPinnedBar implements Intent {
+  readonly kind: 'dismissPinnedBar' = 'dismissPinnedBar';
+}
+
+/** MSG-108：点击置顶横条，触发跳转至置顶消息并居中高亮。 */
+export class JumpToPinnedMessage implements Intent {
+  readonly kind: 'jumpToPinnedMessage' = 'jumpToPinnedMessage';
+}
+
+/** CHANNEL-101：用户点击底部"加入频道"按钮。 */
+export class JoinChannel implements Intent {
+  readonly kind: 'joinChannel' = 'joinChannel';
+}
+
+/** CHANNEL-101：频道成员状态变化回灌（true=已加入，false=未加入/已离开）。 */
+export class OnChannelMemberStatusChanged implements Intent {
+  readonly kind: 'onChannelMemberStatusChanged' = 'onChannelMemberStatusChanged';
+  readonly isMember: boolean;
+
+  constructor(isMember: boolean) {
+    this.isMember = isMember;
+  }
+}
+
+/** CHANNEL-101：用户点击消息评论入口（"N 条评论"）。 */
+export class OpenMessageComments implements Intent {
+  readonly kind: 'openMessageComments' = 'openMessageComments';
+  readonly messageId: number;
+
+  constructor(messageId: number) {
+    this.messageId = messageId;
+  }
+}
+
+/** CHANNEL-101：用户点击反应 chip 切换 reaction。 */
+export class ToggleMessageReaction implements Intent {
+  readonly kind: 'toggleMessageReaction' = 'toggleMessageReaction';
+  readonly messageId: number;
+  readonly emoji: string;
+
+  constructor(messageId: number, emoji: string) {
+    this.messageId = messageId;
+    this.emoji = emoji;
+  }
+}
+
 export type ChatIntent =
   | LoadInitialMessages
   | LoadOlderMessages
@@ -556,4 +614,11 @@ export type ChatIntent =
   | OnHeaderSubtitleChanged
   | OnChatKindChanged
   | OpenChatProfile
-  | ChatMenuAction;
+  | ChatMenuAction
+  | OnPinnedMessageLoaded
+  | DismissPinnedBar
+  | JumpToPinnedMessage
+  | JoinChannel
+  | OnChannelMemberStatusChanged
+  | OpenMessageComments
+  | ToggleMessageReaction;

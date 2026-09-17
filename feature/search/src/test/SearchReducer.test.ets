@@ -8,6 +8,8 @@ import {
   AddRecentSearch,
   ClearQuery,
   ClearRecentSearches,
+  OnSearchFailed,
+  OnSearchLoaded,
   PerformSearch,
   SearchFailed,
   SearchIntent,
@@ -230,14 +232,57 @@ export default function searchReducerTest() {
       expect(result.effects.length).assertEqual(0);
     });
 
-    it('searchFailed_setsErrorMessageAndLoadingFalse', 0, () => {
+    it('onSearchLoaded_updatesResultsAndSetsLoadingFalse', 0, () => {
       const env = makeEnv();
-      const state = SearchUiState.initial().copyWith({ isLoading: true });
+      const state = SearchUiState.initial().copyWith({
+        isLoading: true,
+        errorMessage: 'prior error'
+      });
+      const chats = sampleChats();
+      const messages = sampleMessages();
+
+      const result = searchReducer(state, new OnSearchLoaded(chats, messages), env);
+
+      expect(result.state.isLoading).assertFalse();
+      expect(result.state.chatResults.length).assertEqual(2);
+      expect(result.state.messageResults.length).assertEqual(2);
+      expect(result.state.chatResults[0].title).assertEqual('Telegram News');
+      expect(result.state.messageResults[0].textSnippet).assertEqual('Announcement');
+      expect(result.state.errorMessage).assertNull();
+      expect(result.effects.length).assertEqual(0);
+    });
+
+    it('searchFailed_setsErrorMessageAndClearsStaleResults', 0, () => {
+      const env = makeEnv();
+      const state = SearchUiState.initial().copyWith({
+        isLoading: true,
+        chatResults: sampleChats(),
+        messageResults: sampleMessages()
+      });
 
       const result = searchReducer(state, new SearchFailed('Network timeout'), env);
 
       expect(result.state.isLoading).assertFalse();
       expect(result.state.errorMessage).assertEqual('Network timeout');
+      expect(result.state.chatResults.length).assertEqual(0);
+      expect(result.state.messageResults.length).assertEqual(0);
+      expect(result.effects.length).assertEqual(0);
+    });
+
+    it('onSearchFailed_setsErrorMessageAndClearsStaleResults', 0, () => {
+      const env = makeEnv();
+      const state = SearchUiState.initial().copyWith({
+        isLoading: true,
+        chatResults: sampleChats(),
+        messageResults: sampleMessages()
+      });
+
+      const result = searchReducer(state, new OnSearchFailed('Flood wait error'), env);
+
+      expect(result.state.isLoading).assertFalse();
+      expect(result.state.errorMessage).assertEqual('Flood wait error');
+      expect(result.state.chatResults.length).assertEqual(0);
+      expect(result.state.messageResults.length).assertEqual(0);
       expect(result.effects.length).assertEqual(0);
     });
 

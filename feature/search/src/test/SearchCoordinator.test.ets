@@ -138,5 +138,42 @@ export default function searchCoordinatorTest(): void {
       expect(coordinator.state.messageResults.length).assertEqual(0);
       coordinator.destroy();
     });
+
+    it('floodWaitErrorInCauseOrMessage_mapsToRateLimitMessage', 0, () => {
+      const floodError1: AppError = AppErrors.tdlib('unknown', 'TDLib request failed', true, undefined, '429:FLOOD_WAIT_15');
+      expect(searchErrorMessage(floodError1)).assertEqual(
+        'Too many searches. Please wait a moment and try again.'
+      );
+
+      const floodError2: AppError = AppErrors.tdlib('internal', 'Search flood exceeded', true);
+      expect(searchErrorMessage(floodError2)).assertEqual(
+        'Too many searches. Please wait a moment and try again.'
+      );
+    });
+
+    it('debounceCoalescesRapidKeystrokesInUpdateQuery', 0, async (): Promise<void> => {
+      const provider = new RecordingSearchProvider();
+      const coordinator = new SearchCoordinator({
+        provider: provider,
+        debounceMs: 50,
+        throttleMs: 0
+      });
+
+      coordinator.updateQuery('a');
+      await waitFor(10);
+      coordinator.updateQuery('ab');
+      await waitFor(10);
+      coordinator.updateQuery('abc');
+
+      expect(provider.chatQueries.length).assertEqual(0);
+      expect(coordinator.state.query).assertEqual('abc');
+
+      await waitFor(80);
+
+      expect(provider.chatQueries.length).assertEqual(1);
+      expect(provider.chatQueries[0]).assertEqual('abc');
+      expect(coordinator.state.chatResults[0].title).assertEqual('abc');
+      coordinator.destroy();
+    });
   });
 }

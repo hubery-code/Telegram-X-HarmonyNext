@@ -56,6 +56,7 @@ export struct SearchPage {
   coordinator: SearchCoordinator | null = null;
   onDispatch: (intent: Object) => void = () => {};
   onNavigateToChat: (chatId: number, messageId?: number) => void = () => {};
+  onBack: () => void = () => {};
 
   private readonly tabs: SearchTab[] = ['all', 'chats', 'messages'];
 
@@ -143,6 +144,15 @@ export struct SearchPage {
     Column() {
       // 1. 搜索栏
       Row() {
+        Image($r('app.media.ic_back'))
+          .width(24)
+          .height(24)
+          .fillColor(T.colors.accent)
+          .margin({ right: T.spacing.sm })
+          .onClick(() => {
+            this.onBack();
+          })
+
         Search({ value: this.uiState.query, placeholder: 'Search chats, messages...' })
           .searchButton('Search')
           .layoutWeight(1)
@@ -236,9 +246,11 @@ export struct SearchPage {
         .fontSize(T.typography.headline.fontSize)
         .fontWeight(FontWeight.Bold)
         .fontColor(T.colors.destructive)
+        .textAlign(TextAlign.Center)
       Text(message)
         .fontSize(T.typography.subheadline.fontSize)
-        .fontColor(T.colors.textSecondary)
+        .fontColor(T.colors.destructive)
+        .textAlign(TextAlign.Center)
         .margin({ top: T.spacing.xs })
       Button('Retry')
         .fontSize(T.typography.subheadline.fontSize)
@@ -254,11 +266,20 @@ export struct SearchPage {
     .layoutWeight(1)
     .justifyContent(FlexAlign.Center)
     .alignItems(HorizontalAlign.Center)
+    .padding({
+      left: T.spacing.screenInset,
+      right: T.spacing.screenInset
+    })
   }
 
   @Builder
   private EmptyResultView() {
     Column() {
+      Image($r('app.media.ic_search'))
+        .width(48)
+        .height(48)
+        .fillColor(T.colors.textTertiary)
+        .margin({ bottom: T.spacing.md })
       Text('No Results')
         .fontSize(T.typography.headline.fontSize)
         .fontWeight(FontWeight.Bold)
@@ -328,6 +349,11 @@ export struct SearchPage {
         })
       } else {
         Column() {
+          Image($r('app.media.ic_search'))
+            .width(56)
+            .height(56)
+            .fillColor(T.colors.textTertiary)
+            .margin({ bottom: T.spacing.md })
           Text('Search Telegram')
             .fontSize(T.typography.headline.fontSize)
             .fontWeight(FontWeight.Bold)

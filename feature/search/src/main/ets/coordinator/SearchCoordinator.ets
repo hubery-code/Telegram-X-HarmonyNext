@@ -69,7 +69,13 @@ export interface SearchQueryProvider {
 }
 
 export function searchErrorMessage(error: AppError): string {
-  if (error.kind === 'tdlib' && error.code === 'too_many_requests') {
+  const causeLower: string = (error.cause !== undefined ? error.cause : '').toLowerCase();
+  const messageLower: string = (error.message !== undefined ? error.message : '').toLowerCase();
+  if (
+    (error.kind === 'tdlib' && error.code === 'too_many_requests') ||
+    causeLower.indexOf('flood') >= 0 ||
+    messageLower.indexOf('flood') >= 0
+  ) {
     return 'Too many searches. Please wait a moment and try again.';
   }
   if (error.kind === 'network') {

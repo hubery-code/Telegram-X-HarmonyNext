@@ -14,7 +14,7 @@ import { getAvatarColorIndex } from '@tgx/core-domain';
 import { fileUri } from '@kit.CoreFileKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { ProfileUiState } from '../contract/ProfileUiState';
-import { ProfileIntent, MessageUserRequested, OnSharedTabSelected } from '../contract/ProfileIntent';
+import { ProfileIntent, MessageUserRequested, OnSharedTabSelected, LoadMoreSharedContent } from '../contract/ProfileIntent';
 import { SharedMediaItem, SharedFileItem, SharedLinkItem, SharedGroupItem } from '../contract/SharedContentItems';
 
 const T = LightTheme;
@@ -47,15 +47,15 @@ const MESSAGE_BUTTON_HEIGHT: number = 44;
 
 /** 共享内容 Tab 描述（图标 + 文案）。 */
 interface SharedTabSpec {
-  icon: string;
+  icon: Resource;
   label: string;
 }
 
 const SHARED_TABS: SharedTabSpec[] = [
-  { icon: '🖼', label: '媒体' },
-  { icon: '📄', label: '文件' },
-  { icon: '🔗', label: '链接' },
-  { icon: '👥', label: '群组' }
+  { icon: $r('app.media.ic_photo'), label: '媒体' },
+  { icon: $r('app.media.ic_file'), label: '文件' },
+  { icon: $r('app.media.ic_link'), label: '链接' },
+  { icon: $r('app.media.ic_group'), label: '群组' }
 ];
 
 /** ⋮ 菜单占位项：仅 hilog 记录 profile_menu_<key>，无其它动作。 */
@@ -124,16 +124,27 @@ export struct ProfilePage {
     return String.fromCodePoint(codePoint).toUpperCase();
   }
 
+  private hasSharedItems(): boolean {
+    if (this.uiState.activeSharedTab === 0) {
+      return this.uiState.sharedMedia.length > 0;
+    }
+    if (this.uiState.activeSharedTab === 1) {
+      return this.uiState.sharedFiles.length > 0;
+    }
+    if (this.uiState.activeSharedTab === 2) {
+      return this.uiState.sharedLinks.length > 0;
+    }
+    return this.uiState.sharedGroups.length > 0;
+  }
+
   @Builder
   Header() {
     Row() {
-      Text('‹')
-        .fontSize(T.typography.title.fontSize)
-        .fontWeight(T.typography.title.fontWeight)
-        .fontColor(T.colors.accent)
-        .width(BACK_ARROW_SIZE)
-        .height(BACK_ARROW_SIZE)
-        .textAlign(TextAlign.Center)
+      Image($r('app.media.ic_back'))
+        .width(24)
+        .height(24)
+        .fillColor(T.colors.accent)
+        .margin({ left: T.spacing.xs, right: T.spacing.md })
         .onClick(() => {
           this.onBack();
         })
@@ -144,13 +155,11 @@ export struct ProfilePage {
         .fontColor(T.colors.textPrimary)
         .layoutWeight(1)
 
-      Text('⋮')
-        .fontSize(T.typography.title.fontSize)
-        .fontWeight(T.typography.title.fontWeight)
-        .fontColor(T.colors.textPrimary)
-        .width(BACK_ARROW_SIZE)
-        .height(BACK_ARROW_SIZE)
-        .textAlign(TextAlign.Center)
+      Image($r('app.media.ic_more_vert'))
+        .width(24)
+        .height(24)
+        .fillColor(T.colors.textPrimary)
+        .margin({ right: T.spacing.xs })
         .bindMenu(this.menuElements())
     }
     .width('100%')
@@ -182,18 +191,28 @@ export struct ProfilePage {
   }
 
   @Builder
-  InfoRow(label: string, value: string) {
-    Column() {
-      Text(label)
-        .fontSize(T.typography.footnote.fontSize)
-        .fontColor(T.colors.textSecondary)
-      Text(value)
-        .fontSize(T.typography.body.fontSize)
-        .fontColor(T.colors.textPrimary)
-        .margin({ top: T.spacing.hairline })
+  InfoRow(icon: Resource, label: string, value: string) {
+    Row() {
+      Image(icon)
+        .width(22)
+        .height(22)
+        .fillColor(T.colors.textSecondary)
+        .margin({ right: T.spacing.md })
+
+      Column() {
+        Text(label)
+          .fontSize(T.typography.footnote.fontSize)
+          .fontColor(T.colors.textSecondary)
+        Text(value)
+          .fontSize(T.typography.body.fontSize)
+          .fontColor(T.colors.textPrimary)
+          .margin({ top: T.spacing.hairline })
+      }
+      .layoutWeight(1)
+      .alignItems(HorizontalAlign.Start)
     }
     .width('100%')
-    .alignItems(HorizontalAlign.Start)
+    .alignItems(VerticalAlign.Center)
     .padding({
       left: T.spacing.screenInset,
       right: T.spacing.screenInset,
@@ -206,8 +225,10 @@ export struct ProfilePage {
   @Builder
   NotificationRow() {
     Row() {
-      Text('🔔')
-        .fontSize(T.typography.body.fontSize)
+      Image($r('app.media.ic_notifications'))
+        .width(22)
+        .height(22)
+        .fillColor(T.colors.textSecondary)
       Text('通知')
         .fontSize(T.typography.body.fontSize)
         .fontColor(T.colors.textPrimary)
@@ -233,8 +254,12 @@ export struct ProfilePage {
     Row() {
       ForEach(SHARED_TABS.slice(), (tab: SharedTabSpec, index: number) => {
         Column({ space: T.spacing.xs }) {
-          Text(tab.icon)
-            .fontSize(20)
+          Image(tab.icon)
+            .width(20)
+            .height(20)
+            .fillColor(this.uiState.activeSharedTab === index
+              ? T.colors.accent
+              : T.colors.textSecondary)
           Text(tab.label)
             .fontSize(T.typography.footnote.fontSize)
             .fontColor(this.uiState.activeSharedTab === index
@@ -291,8 +316,10 @@ export struct ProfilePage {
                 .objectFit(ImageFit.Cover)
             } else {
               Column() {
-                Text(item.isPhoto ? '🖼' : '🎬')
-                  .fontSize(20)
+                Image(item.isPhoto ? $r('app.media.ic_photo') : $r('app.media.ic_file'))
+                  .width(24)
+                  .height(24)
+                  .fillColor(T.colors.textSecondary)
               }
               .width('100%')
               .aspectRatio(1)
@@ -316,8 +343,10 @@ export struct ProfilePage {
       Column() {
         ForEach(this.uiState.sharedFiles.slice(), (item: SharedFileItem, index: number) => {
           Row() {
-            Text('📄')
-              .fontSize(28)
+            Image($r('app.media.ic_file'))
+              .width(28)
+              .height(28)
+              .fillColor(T.colors.accent)
             Column() {
               Text(item.fileName)
                 .fontSize(T.typography.body.fontSize)
@@ -521,16 +550,16 @@ export struct ProfilePage {
               .margin({ left: T.spacing.screenInset, right: T.spacing.screenInset })
 
             if (this.uiState.username.length > 0) {
-              this.InfoRow('Username', `@${this.uiState.username}`)
+              this.InfoRow($r('app.media.ic_username'), 'Username', `@${this.uiState.username}`)
             }
             if (this.uiState.phone.length > 0) {
-              this.InfoRow('Phone', this.uiState.phone)
+              this.InfoRow($r('app.media.ic_call'), 'Phone', this.uiState.phone)
             }
             if (this.uiState.bio.length > 0) {
-              this.InfoRow('Bio', this.uiState.bio)
+              this.InfoRow($r('app.media.ic_info'), 'Bio', this.uiState.bio)
             }
             if (this.uiState.birthdayText.length > 0) {
-              this.InfoRow('生日', this.uiState.birthdayText)
+              this.InfoRow($r('app.media.ic_cake'), '生日', this.uiState.birthdayText)
             }
             this.NotificationRow()
 
@@ -553,29 +582,76 @@ export struct ProfilePage {
               .alignItems(HorizontalAlign.Center)
             } else {
               this.SharedContent()
+
+              if (this.hasSharedItems()) {
+                if (this.uiState.sharedLoadingMore) {
+                  Row({ space: T.spacing.xs }) {
+                    LoadingProgress()
+                      .width(20)
+                      .height(20)
+                      .color(T.colors.accent)
+                    Text('正在加载更多...')
+                      .fontSize(T.typography.footnote.fontSize)
+                      .fontColor(T.colors.textSecondary)
+                  }
+                  .width('100%')
+                  .justifyContent(FlexAlign.Center)
+                  .padding({ top: T.spacing.md, bottom: T.spacing.md })
+                } else if (this.uiState.sharedHasMore) {
+                  Row() {
+                    Text('加载更多')
+                      .fontSize(T.typography.subheadline.fontSize)
+                      .fontColor(T.colors.accent)
+                  }
+                  .width('100%')
+                  .justifyContent(FlexAlign.Center)
+                  .padding({ top: T.spacing.sm, bottom: T.spacing.md })
+                  .onClick(() => {
+                    this.onDispatch(new LoadMoreSharedContent(this.uiState.activeSharedTab));
+                  })
+                }
+              }
             }
           }
           .width('100%')
         }
         .layoutWeight(1)
         .scrollBar(BarState.Off)
+        .onScrollEdge((side: Edge) => {
+          if (side === Edge.Bottom && this.uiState.sharedHasMore && !this.uiState.sharedLoadingMore && !this.uiState.sharedLoading) {
+            this.onDispatch(new LoadMoreSharedContent(this.uiState.activeSharedTab));
+          }
+        })
 
-        Button('Message')
-          .width('100%')
-          .height(MESSAGE_BUTTON_HEIGHT)
-          .fontSize(T.typography.body.fontSize)
-          .fontColor(T.colors.textOnAccent)
-          .backgroundColor(T.colors.accent)
-          .borderRadius(T.radius.md)
-          .margin({
-            left: T.spacing.screenInset,
-            right: T.spacing.screenInset,
-            top: T.spacing.sm,
-            bottom: T.spacing.md
-          })
-          .onClick(() => {
-            this.onDispatch(new MessageUserRequested());
-          })
+        Button() {
+          Row() {
+            Image($r('app.media.ic_comments'))
+              .width(20)
+              .height(20)
+              .fillColor(T.colors.textOnAccent)
+              .margin({ right: T.spacing.xs })
+
+            Text('Message')
+              .fontSize(T.typography.body.fontSize)
+              .fontWeight(FontWeight.Medium)
+              .fontColor(T.colors.textOnAccent)
+          }
+          .justifyContent(FlexAlign.Center)
+          .alignItems(VerticalAlign.Center)
+        }
+        .width('100%')
+        .height(MESSAGE_BUTTON_HEIGHT)
+        .backgroundColor(T.colors.accent)
+        .borderRadius(T.radius.md)
+        .margin({
+          left: T.spacing.screenInset,
+          right: T.spacing.screenInset,
+          top: T.spacing.sm,
+          bottom: T.spacing.md
+        })
+        .onClick(() => {
+          this.onDispatch(new MessageUserRequested());
+        })
       }
     }
     .width('100%')

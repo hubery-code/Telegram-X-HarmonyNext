@@ -832,5 +832,73 @@ export default function messageProjectionTest(): void {
       expect(result === null).assertTrue();
     });
 
+    it('getChatPinnedMessageSendsGetChatPinnedMessage', 0, async (): Promise<void> => {
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const scope: AccountScope = createScope(bridge);
+      const projection: MessageProjection = new MessageProjection(42, scope);
+
+      const result: Result<TdPendingRequest, AppError> = projection.getChatPinnedMessage();
+      expect(result.ok).assertTrue();
+
+      const pinnedReq: Record<string, TdWireValue> | null = findSentRequest(bridge, 'getChatPinnedMessage');
+      expect(pinnedReq !== null).assertTrue();
+      if (pinnedReq !== null) {
+        expect(pinnedReq['chat_id']).assertEqual(42);
+      }
+    });
+
+    it('joinChatSendsJoinChatRequest', 0, async (): Promise<void> => {
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const scope: AccountScope = createScope(bridge);
+      const projection: MessageProjection = new MessageProjection(42, scope);
+
+      const result: Result<TdPendingRequest, AppError> = projection.joinChat();
+      expect(result.ok).assertTrue();
+
+      const joinReq: Record<string, TdWireValue> | null = findSentRequest(bridge, 'joinChat');
+      expect(joinReq !== null).assertTrue();
+      if (joinReq !== null) {
+        expect(joinReq['chat_id']).assertEqual(42);
+      }
+    });
+
+    it('addMessageReactionSendsAddMessageReactionRequest', 0, async (): Promise<void> => {
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const scope: AccountScope = createScope(bridge);
+      const projection: MessageProjection = new MessageProjection(42, scope);
+
+      const result: Result<TdPendingRequest, AppError> = projection.addMessageReaction(1234, '🔥');
+      expect(result.ok).assertTrue();
+
+      const req: Record<string, TdWireValue> | null = findSentRequest(bridge, 'addMessageReaction');
+      expect(req !== null).assertTrue();
+      if (req !== null) {
+        expect(req['chat_id']).assertEqual(42);
+        expect(req['message_id']).assertEqual(1234);
+        const rType = req['reaction_type'] as Record<string, TdWireValue>;
+        expect(rType['@type']).assertEqual('reactionTypeEmoji');
+        expect(rType['emoji']).assertEqual('🔥');
+      }
+    });
+
+    it('removeMessageReactionSendsRemoveMessageReactionRequest', 0, async (): Promise<void> => {
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const scope: AccountScope = createScope(bridge);
+      const projection: MessageProjection = new MessageProjection(42, scope);
+
+      const result: Result<TdPendingRequest, AppError> = projection.removeMessageReaction(1234, '🔥');
+      expect(result.ok).assertTrue();
+
+      const req: Record<string, TdWireValue> | null = findSentRequest(bridge, 'removeMessageReaction');
+      expect(req !== null).assertTrue();
+      if (req !== null) {
+        expect(req['chat_id']).assertEqual(42);
+        expect(req['message_id']).assertEqual(1234);
+        const rType = req['reaction_type'] as Record<string, TdWireValue>;
+        expect(rType['@type']).assertEqual('reactionTypeEmoji');
+        expect(rType['emoji']).assertEqual('🔥');
+      }
+    });
+
   });
 }

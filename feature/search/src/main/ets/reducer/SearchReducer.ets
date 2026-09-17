@@ -11,6 +11,8 @@ import { Reducer, ReducerEnv, ReducerResult, reduced } from '@tgx/feature-templa
 import { SearchUiState, SearchUiStateOptions } from '../contract/SearchUiState';
 import {
   AddRecentSearch,
+  OnSearchFailed,
+  OnSearchLoaded,
   PerformSearch,
   SearchFailed,
   SearchIntent,
@@ -133,10 +135,34 @@ export const searchReducer: Reducer<SearchUiState, SearchIntent, SearchEffect> =
       return reduced(state.copyWith(opts));
     }
 
+    case 'onSearchLoaded': {
+      const loadedIntent: OnSearchLoaded = intent as OnSearchLoaded;
+      const opts: SearchUiStateOptions = {
+        isLoading: false,
+        chatResults: loadedIntent.chats,
+        messageResults: loadedIntent.messages,
+        errorMessage: null
+      };
+      return reduced(state.copyWith(opts));
+    }
+
     case 'searchFailed': {
       const failedIntent: SearchFailed = intent as SearchFailed;
       const opts: SearchUiStateOptions = {
         isLoading: false,
+        chatResults: [],
+        messageResults: [],
+        errorMessage: failedIntent.errorMessage
+      };
+      return reduced(state.copyWith(opts));
+    }
+
+    case 'onSearchFailed': {
+      const failedIntent: OnSearchFailed = intent as OnSearchFailed;
+      const opts: SearchUiStateOptions = {
+        isLoading: false,
+        chatResults: [],
+        messageResults: [],
         errorMessage: failedIntent.errorMessage
       };
       return reduced(state.copyWith(opts));

@@ -91,6 +91,16 @@ export class OnSharedTabSelected implements Intent {
   }
 }
 
+/** PROFILE-103：用户触发加载更多共享内容（滚动触底或点击加载更多）。 */
+export class LoadMoreSharedContent implements Intent {
+  readonly kind: 'loadMoreSharedContent' = 'loadMoreSharedContent';
+  readonly tab: number;
+
+  constructor(tab: number) {
+    this.tab = tab;
+  }
+}
+
 /**
  * PROFILE-103：searchChatMessages 回灌（Tab 0..2）。
  * media/files/links 为全量缓存：协调器只覆盖本次拉取的 Tab，其余透传旧数组，
@@ -102,12 +112,14 @@ export class OnSharedContentLoaded implements Intent {
   readonly media: SharedMediaItem[];
   readonly files: SharedFileItem[];
   readonly links: SharedLinkItem[];
+  readonly hasMore: boolean;
 
-  constructor(tab: number, media: SharedMediaItem[], files: SharedFileItem[], links: SharedLinkItem[]) {
+  constructor(tab: number, media: SharedMediaItem[], files: SharedFileItem[], links: SharedLinkItem[], hasMore: boolean = false) {
     this.tab = tab;
     this.media = media;
     this.files = files;
     this.links = links;
+    this.hasMore = hasMore;
   }
 }
 
@@ -115,9 +127,11 @@ export class OnSharedContentLoaded implements Intent {
 export class OnSharedGroupsLoaded implements Intent {
   readonly kind: 'onSharedGroupsLoaded' = 'onSharedGroupsLoaded';
   readonly items: SharedGroupItem[];
+  readonly hasMore: boolean;
 
-  constructor(items: SharedGroupItem[]) {
+  constructor(items: SharedGroupItem[], hasMore: boolean = false) {
     this.items = items;
+    this.hasMore = hasMore;
   }
 }
 
@@ -129,5 +143,6 @@ export type ProfileIntent =
   | OnProfileFailed
   | OnBirthdayLoaded
   | OnSharedTabSelected
+  | LoadMoreSharedContent
   | OnSharedContentLoaded
   | OnSharedGroupsLoaded;

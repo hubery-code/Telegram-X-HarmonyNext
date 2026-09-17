@@ -64,13 +64,18 @@ export struct ForwardPickerPage {
     Column() {
       // 顶栏：Cancel + 标题（对齐 Telegram X 的 ShareController 头部）
       Row() {
-        Text('Cancel')
-          .fontSize(T.typography.body.fontSize)
-          .fontColor(T.colors.accent)
-          .width(HEADER_BUTTON_WIDTH)
-          .onClick(() => {
-            this.onCancel();
-          })
+        Row() {
+          Image($r('app.media.ic_close'))
+            .width(24)
+            .height(24)
+            .fillColor(T.colors.textPrimary)
+        }
+        .width(HEADER_BUTTON_WIDTH)
+        .height(40)
+        .alignItems(VerticalAlign.Center)
+        .onClick(() => {
+          this.onCancel();
+        })
 
         Text('Forward to…')
           .fontSize(T.typography.title.fontSize)
@@ -80,7 +85,7 @@ export struct ForwardPickerPage {
           .layoutWeight(1)
 
         // 占位：与左侧 Cancel 等宽，保证标题视觉居中
-        Text('')
+        Row()
           .width(HEADER_BUTTON_WIDTH)
       }
       .width('100%')
@@ -113,17 +118,23 @@ export struct ForwardPickerPage {
 
       // "Send as copy" 开关（隐藏原发送者）
       Row() {
-        Text(this.sendCopy ? '✓' : '')
-          .width(CHECKBOX_SIZE)
-          .height(CHECKBOX_SIZE)
-          .borderRadius(T.radius.sm)
-          .borderWidth(1)
-          .borderColor(this.sendCopy ? T.colors.accent : T.colors.divider)
-          .backgroundColor(this.sendCopy ? T.colors.accent : Color.Transparent)
-          .fontColor(T.colors.textOnAccent)
-          .fontSize(T.typography.footnote.fontSize)
-          .textAlign(TextAlign.Center)
-          .margin({ right: T.spacing.sm })
+        Row() {
+          if (this.sendCopy) {
+            Image($r('app.media.ic_check_single'))
+              .width(14)
+              .height(14)
+              .fillColor(T.colors.textOnAccent)
+          }
+        }
+        .width(CHECKBOX_SIZE)
+        .height(CHECKBOX_SIZE)
+        .borderRadius(T.radius.sm)
+        .borderWidth(1)
+        .borderColor(this.sendCopy ? T.colors.accent : T.colors.divider)
+        .backgroundColor(this.sendCopy ? T.colors.accent : Color.Transparent)
+        .justifyContent(FlexAlign.Center)
+        .alignItems(VerticalAlign.Center)
+        .margin({ right: T.spacing.sm })
 
         Text('Send as copy')
           .fontSize(T.typography.body.fontSize)

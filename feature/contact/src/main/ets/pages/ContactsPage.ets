@@ -81,6 +81,7 @@ export struct ContactsPage {
   onDispatch: (intent: ContactsIntent) => void = (): void => {};
   onBack: () => void = (): void => {};
   onOpenUserProfile: (userId: number) => void = (): void => {};
+  onAddContact: () => void = (): void => {};
 
   private avatarColor(index: number): string {
     if (index < 0 || index >= AVATAR_PALETTE.length) {
@@ -103,13 +104,11 @@ export struct ContactsPage {
   Header() {
     Column() {
       Row() {
-        Text('‹')
-          .fontSize(T.typography.title.fontSize)
-          .fontWeight(T.typography.title.fontWeight)
-          .fontColor(T.colors.accent)
-          .width(BACK_ARROW_SIZE)
-          .height(BACK_ARROW_SIZE)
-          .textAlign(TextAlign.Center)
+        Image($r('app.media.ic_back'))
+          .width(24)
+          .height(24)
+          .fillColor(T.colors.accent)
+          .margin({ left: T.spacing.xs, right: T.spacing.md })
           .onClick(() => {
             this.onBack();
           })
@@ -120,26 +119,43 @@ export struct ContactsPage {
           .fontColor(T.colors.textPrimary)
           .layoutWeight(1)
 
-        Text('')
-          .width(BACK_ARROW_SIZE)
+        Image($r('app.media.ic_person_add'))
+          .width(24)
+          .height(24)
+          .fillColor(T.colors.accent)
+          .onClick(() => {
+            this.onAddContact();
+          })
       }
       .width('100%')
       .height(56)
       .alignItems(VerticalAlign.Center)
       .padding({ left: T.spacing.sm, right: T.spacing.sm })
 
-      TextInput({ placeholder: 'Search', text: this.uiState.query })
-        .width('100%')
-        .height(38)
-        .fontSize(T.typography.body.fontSize)
-        .fontColor(T.colors.textPrimary)
-        .backgroundColor(T.colors.backgroundSecondary)
-        .borderRadius(T.radius.sm)
-        .padding({ left: T.spacing.md, right: T.spacing.md })
-        .margin({ left: T.spacing.sm, right: T.spacing.sm })
-        .onChange((value: string) => {
-          this.handleQueryChange(value);
-        })
+      Row() {
+        Image($r('app.media.ic_search'))
+          .width(18)
+          .height(18)
+          .fillColor(T.colors.textSecondary)
+          .margin({ left: T.spacing.md, right: T.spacing.xs })
+
+        TextInput({ placeholder: 'Search', text: this.uiState.query })
+          .layoutWeight(1)
+          .height(38)
+          .fontSize(T.typography.body.fontSize)
+          .fontColor(T.colors.textPrimary)
+          .backgroundColor(Color.Transparent)
+          .padding({ left: 0, right: T.spacing.md })
+          .onChange((value: string) => {
+            this.handleQueryChange(value);
+          })
+      }
+      .width('100%')
+      .height(38)
+      .alignItems(VerticalAlign.Center)
+      .backgroundColor(T.colors.backgroundSecondary)
+      .borderRadius(T.radius.sm)
+      .margin({ left: T.spacing.sm, right: T.spacing.sm })
     }
     .width('100%')
     .backgroundColor(T.colors.background)

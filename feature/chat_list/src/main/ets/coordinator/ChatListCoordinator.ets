@@ -325,6 +325,10 @@ export class ChatListCoordinator {
           }
         }
       }
+      let isMuted: boolean = false;
+      if (chat.notification_settings !== null && chat.notification_settings !== undefined) {
+        isMuted = chat.notification_settings.mute_for > 0;
+      }
       items.push(new ChatListItem(
         chat.id,
         chat.title,
@@ -337,7 +341,8 @@ export class ChatListCoordinator {
         isChatPinnedInList(chat, currentList),
         chat.is_marked_as_unread,
         avatarPath,
-        draftText
+        draftText,
+        isMuted
       ));
     }
     return items;

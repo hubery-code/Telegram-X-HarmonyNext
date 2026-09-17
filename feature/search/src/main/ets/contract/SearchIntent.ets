@@ -51,8 +51,28 @@ export class SearchSuccess implements Intent {
   }
 }
 
+export class OnSearchLoaded implements Intent {
+  readonly kind: 'onSearchLoaded' = 'onSearchLoaded';
+  readonly chats: SearchChatItem[];
+  readonly messages: SearchMessageItem[];
+
+  constructor(chats: SearchChatItem[], messages: SearchMessageItem[]) {
+    this.chats = chats;
+    this.messages = messages;
+  }
+}
+
 export class SearchFailed implements Intent {
   readonly kind: 'searchFailed' = 'searchFailed';
+  readonly errorMessage: string;
+
+  constructor(errorMessage: string) {
+    this.errorMessage = errorMessage;
+  }
+}
+
+export class OnSearchFailed implements Intent {
+  readonly kind: 'onSearchFailed' = 'onSearchFailed';
   readonly errorMessage: string;
 
   constructor(errorMessage: string) {
@@ -79,6 +99,8 @@ export type SearchIntent =
   | SelectTab
   | PerformSearch
   | SearchSuccess
+  | OnSearchLoaded
   | SearchFailed
+  | OnSearchFailed
   | AddRecentSearch
   | ClearRecentSearches;

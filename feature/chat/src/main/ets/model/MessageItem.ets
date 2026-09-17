@@ -29,6 +29,7 @@
 import { MessageTextSpan } from './MessageTextSpan';
 import { MediaAttachment } from './MediaAttachment';
 import { LinkPreviewInfo } from './LinkPreviewInfo';
+import { ReactionChip } from './ReactionChip';
 
 /** 发送状态：none=已发送/收到的正常消息；pending=发送中；failed=发送失败。 */
 export type MessageSendState = 'none' | 'pending' | 'failed';
@@ -61,6 +62,12 @@ export class MessageItem {
   readonly linkPreview: LinkPreviewInfo | null;
   /** PROFILE-101：发送者用户 id（群聊用户消息 > 0）；0 = 头像不可点进资料页。 */
   readonly senderUserId: number;
+  /** CHANNEL-101：是否为频道帖子（贴边展示无气泡）。 */
+  readonly isChannelPost: boolean;
+  /** CHANNEL-101：消息反应 chips 列表。 */
+  readonly reactionChips: ReactionChip[];
+  /** CHANNEL-101：消息评论数（0=无评论）。 */
+  readonly commentCount: number;
 
   constructor(
     messageId: number,
@@ -88,7 +95,10 @@ export class MessageItem {
     albumItems: MediaAttachment[] = [],
     albumMessageIds: number[] = [],
     linkPreview: LinkPreviewInfo | null = null,
-    senderUserId: number = 0
+    senderUserId: number = 0,
+    isChannelPost: boolean = false,
+    reactionChips: ReactionChip[] = [],
+    commentCount: number = 0
   ) {
     this.messageId = messageId;
     this.text = text;
@@ -116,6 +126,9 @@ export class MessageItem {
     this.albumMessageIds = albumMessageIds;
     this.linkPreview = linkPreview;
     this.senderUserId = senderUserId;
+    this.isChannelPost = isChannelPost;
+    this.reactionChips = reactionChips;
+    this.commentCount = commentCount;
   }
 }
 

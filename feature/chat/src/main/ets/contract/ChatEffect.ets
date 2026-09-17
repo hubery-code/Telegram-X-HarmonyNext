@@ -230,6 +230,44 @@ export class JumpToMessage implements Effect {
   }
 }
 
+/** CHANNEL-101：调用 TDLib joinChat 加入频道。 */
+export class JoinChannelEffect implements Effect {
+  readonly kind: 'joinChannel' = 'joinChannel';
+  readonly chatId: number;
+
+  constructor(chatId: number) {
+    this.chatId = chatId;
+  }
+}
+
+/** CHANNEL-101：调用 TDLib addMessageReaction / removeMessageReaction 切换反应。 */
+export class ToggleReactionEffect implements Effect {
+  readonly kind: 'toggleReaction' = 'toggleReaction';
+  readonly chatId: number;
+  readonly messageId: number;
+  readonly emoji: string;
+  readonly isChosen: boolean;
+
+  constructor(chatId: number, messageId: number, emoji: string, isChosen: boolean) {
+    this.chatId = chatId;
+    this.messageId = messageId;
+    this.emoji = emoji;
+    this.isChosen = isChosen;
+  }
+}
+
+/** CHANNEL-101：打开消息评论（导航或日志）。 */
+export class OpenCommentsEffect implements Effect {
+  readonly kind: 'openComments' = 'openComments';
+  readonly chatId: number;
+  readonly messageId: number;
+
+  constructor(chatId: number, messageId: number) {
+    this.chatId = chatId;
+    this.messageId = messageId;
+  }
+}
+
 export type ChatEffect =
   | FetchInitialMessages
   | FetchOlderMessages
@@ -247,4 +285,7 @@ export type ChatEffect =
   | PickAndSendFileEffect
   | CancelMediaDownloadEffect
   | FetchChatSearch
-  | JumpToMessage;
+  | JumpToMessage
+  | JoinChannelEffect
+  | ToggleReactionEffect
+  | OpenCommentsEffect;

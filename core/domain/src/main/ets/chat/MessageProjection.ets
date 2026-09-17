@@ -49,6 +49,10 @@ import {
   encodeForwardMessages,
   encodeSetChatDraftMessage,
   encodeSearchChatMessages,
+  encodeGetChatPinnedMessage,
+  encodeJoinChat,
+  encodeAddMessageReaction,
+  encodeRemoveMessageReaction,
   GetChatHistory,
   OpenChat,
   CloseChat,
@@ -59,6 +63,11 @@ import {
   ViewMessages,
   ResendMessages,
   GetChat,
+  GetChatPinnedMessage,
+  JoinChat,
+  AddMessageReaction,
+  RemoveMessageReaction,
+  ReactionTypeEmoji,
   ForwardMessages,
   SetChatDraftMessage,
   SearchChatMessages,
@@ -289,6 +298,51 @@ export class MessageProjection {
     }
     // offset 为负：TDLib 返回指定消息及其更早的 radius 条，limit 取 2*radius 保证目标居中。
     return this.requestHistory(messageId, -radius, radius * 2);
+  }
+
+  /**
+   * MSG-108 置顶消息：向 TDLib 请求当前会话的置顶消息（GetChatPinnedMessage）。
+   * TDLib 返回最新的 Message，若无置顶消息则返回 404 错误。
+   */
+  getChatPinnedMessage(): Result<TdPendingRequest, AppError> {
+    const req: GetChatPinnedMessage = new GetChatPinnedMessage();
+    req.chat_id = this.chatId;
+    return this.scope.request('getChatPinnedMessage', encodeGetChatPinnedMessage(req) as TdWireObject);
+  }
+
+  /**
+   * CHANNEL-101 频道模式：加入当前频道/会话（JoinChat）。
+   */
+  joinChat(): Result<TdPendingRequest, AppError> {
+    const req: JoinChat = new JoinChat();
+    req.chat_id = this.chatId;
+    return this.scope.request('joinChat', encodeJoinChat(req) as TdWireObject);
+  }
+
+  /**
+   * CHANNEL-101 消息反应：为消息添加反应（AddMessageReaction）。
+   */
+  addMessageReaction(messageId: number, emoji: string): Result<TdPendingRequest, AppError> {
+    const req: AddMessageReaction = new AddMessageReaction();
+    req.chat_id = this.chatId;
+    req.message_id = messageId;
+    const reactionType: ReactionTypeEmoji = new ReactionTypeEmoji();
+    reactionType.emoji = emoji;
+    req.reaction_type = reactionType;
+    return this.scope.request('addMessageReaction', encodeAddMessageReaction(req) as TdWireObject);
+  }
+
+  /**
+   * CHANNEL-101 消息反应：移除已添加的反应（RemoveMessageReaction）。
+   */
+  removeMessageReaction(messageId: number, emoji: string): Result<TdPendingRequest, AppError> {
+    const req: RemoveMessageReaction = new RemoveMessageReaction();
+    req.chat_id = this.chatId;
+    req.message_id = messageId;
+    const reactionType: ReactionTypeEmoji = new ReactionTypeEmoji();
+    reactionType.emoji = emoji;
+    req.reaction_type = reactionType;
+    return this.scope.request('removeMessageReaction', encodeRemoveMessageReaction(req) as TdWireObject);
   }
 
   /**

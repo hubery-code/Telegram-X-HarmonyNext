@@ -40,6 +40,7 @@ const BADGE_HEIGHT: number = 20;
 const SETTINGS_BUTTON_SIZE: number = 44;
 /** INTEG-002：搜索入口行高（vp）。 */
 const SEARCH_BAR_HEIGHT: number = 40;
+const FAB_SIZE: number = 56;
 const ONE_DAY_MS: number = 24 * 60 * 60 * 1000;
 const WEEKDAY_NAMES: string[] = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
@@ -98,7 +99,7 @@ function toSandboxUri(path: string | null): string {
 function chatRowKey(item: ChatListItem): string {
   const signature: string =
     `${item.title}|${item.lastMessagePreview}|${item.unreadCount}|${item.timestampMs}|` +
-    `${item.isPinned}|${item.isMarkedAsUnread}|${item.avatarPath !== null ? item.avatarPath : ''}|${item.draftText !== null ? item.draftText : ''}`;
+    `${item.isPinned}|${item.isMuted}|${item.isMarkedAsUnread}|${item.avatarPath !== null ? item.avatarPath : ''}|${item.draftText !== null ? item.draftText : ''}`;
   return `${item.chatId}:${fnv1a32(signature)}`;
 }
 
@@ -148,6 +149,9 @@ export struct ChatListPage {
   /** INTEG-002：打开搜索页（纯导航回调，由装配层接线）。 */
   onOpenSearch: () => void = () => {};
 
+  /** 打开新会话/撰写页（纯导航回调，由装配层接线）。 */
+  onCompose: () => void = () => {};
+
   /** DRAWER-101：抽屉状态（账号头 + 夜间模式），由装配层注入。 */
   drawerState: DrawerState = DrawerState.empty();
 
@@ -191,18 +195,15 @@ export struct ChatListPage {
   }
 
   build() {
-    Stack() {
+    Stack({ alignContent: Alignment.BottomEnd }) {
       Column() {
         if (this.uiState.listKind === 'archive') {
           // CHAT-003：归档列表顶部导航栏（返回按钮 + 标题）
           Row() {
-            Text('←')
-              .fontSize(T.typography.largeTitle.fontSize)
-              .fontWeight(T.typography.title.fontWeight)
-              .fontColor(T.colors.accent)
-              .width(SETTINGS_BUTTON_SIZE)
-              .height(SETTINGS_BUTTON_SIZE)
-              .textAlign(TextAlign.Center)
+            Image($r('app.media.ic_back'))
+              .width(SETTINGS_BUTTON_SIZE * 0.6)
+              .height(SETTINGS_BUTTON_SIZE * 0.6)
+              .fillColor(T.colors.accent)
               .margin({ right: T.spacing.sm })
               .onClick(() => {
                 this.onDispatch(new CloseArchivedChats());
@@ -213,6 +214,14 @@ export struct ChatListPage {
               .fontWeight(T.typography.largeTitle.fontWeight)
               .fontColor(T.colors.textPrimary)
               .layoutWeight(1)
+
+            Image($r('app.media.ic_settings'))
+              .width(22)
+              .height(22)
+              .fillColor(T.colors.accent)
+              .onClick(() => {
+                this.onOpenSettings();
+              })
           }
           .width('100%')
           .alignItems(VerticalAlign.Center)
@@ -225,13 +234,10 @@ export struct ChatListPage {
         } else {
           Row() {
             // DRAWER-101：TGX 抽屉导航入口。
-            Text('≡')
-              .fontSize(T.typography.largeTitle.fontSize)
-              .fontWeight(T.typography.title.fontWeight)
-              .fontColor(T.colors.accent)
-              .width(SETTINGS_BUTTON_SIZE)
-              .height(SETTINGS_BUTTON_SIZE)
-              .textAlign(TextAlign.Center)
+            Image($r('app.media.ic_menu'))
+              .width(22)
+              .height(22)
+              .fillColor(T.colors.accent)
               .margin({ right: T.spacing.sm })
               .onClick(() => {
                 this.showDrawer = true;
@@ -243,16 +249,13 @@ export struct ChatListPage {
               .fontColor(T.colors.textPrimary)
               .layoutWeight(1)
 
-            // DRAWER-101: TGX 为抽屉导航，⚙ 暂保留，入口切换由主会话统一。
-            Text('⚙')
-              .fontSize(T.typography.largeTitle.fontSize)
-              .fontWeight(T.typography.title.fontWeight)
-              .fontColor(T.colors.accent)
-              .width(SETTINGS_BUTTON_SIZE)
-              .height(SETTINGS_BUTTON_SIZE)
-              .textAlign(TextAlign.Center)
+            // TGX 对齐：顶栏右侧为搜索入口（与 ChatsController.fillMenuItems 对齐），设置收敛至抽屉导航。
+            Image($r('app.media.ic_search'))
+              .width(22)
+              .height(22)
+              .fillColor(T.colors.accent)
               .onClick(() => {
-                this.onOpenSettings();
+                this.onOpenSearch();
               })
           }
           .width('100%')
@@ -266,8 +269,10 @@ export struct ChatListPage {
 
           // INTEG-002：搜索入口。
           Row() {
-            Text('🔍')
-              .fontSize(T.typography.subheadline.fontSize)
+            Image($r('app.media.ic_search'))
+              .width(18)
+              .height(18)
+              .fillColor(T.colors.textSecondary)
               .margin({ right: T.spacing.xs })
 
             Text('Search')
@@ -353,6 +358,33 @@ export struct ChatListPage {
       .height('100%')
       .backgroundColor(T.colors.background)
 
+      // TGX 标志性悬浮按钮 (Floating Action Button FAB)：圆形 56x56，背景 T.colors.accent，内嵌 24x24 白色 ic_compose 图标，带阴影
+      Column() {
+        Image($r('app.media.ic_compose'))
+          .width(24)
+          .height(24)
+          .fillColor(T.colors.textOnAccent)
+      }
+      .width(FAB_SIZE)
+      .height(FAB_SIZE)
+      .borderRadius(T.radius.full)
+      .backgroundColor(T.colors.accent)
+      .justifyContent(FlexAlign.Center)
+      .alignItems(HorizontalAlign.Center)
+      .shadow({
+        radius: 8,
+        color: T.colors.scrim,
+        offsetX: 0,
+        offsetY: 4
+      })
+      .margin({
+        right: T.spacing.screenInset,
+        bottom: T.spacing.xxl
+      })
+      .onClick(() => {
+        this.onCompose();
+      })
+
       // MSG-108：长按会话行的操作菜单（遮罩 + 底部动作面板）。
       if (this.uiState.actionMenu !== null) {
         this.ChatActionSheet(this.uiState.actionMenu)
@@ -398,14 +430,19 @@ export struct ChatListPage {
   @Builder
   ArchivedChatsRow() {
     Row() {
-      Text('🗄️')
-        .width(AVATAR_SIZE)
-        .height(AVATAR_SIZE)
-        .borderRadius(T.radius.full)
-        .backgroundColor(T.colors.surfaceVariant)
-        .fontSize(T.typography.title.fontSize)
-        .textAlign(TextAlign.Center)
-        .margin({ right: T.spacing.md })
+      Column() {
+        Image($r('app.media.ic_archive'))
+          .width(26)
+          .height(26)
+          .fillColor(T.colors.textSecondary)
+      }
+      .width(AVATAR_SIZE)
+      .height(AVATAR_SIZE)
+      .borderRadius(T.radius.full)
+      .backgroundColor(T.colors.surfaceVariant)
+      .justifyContent(FlexAlign.Center)
+      .alignItems(HorizontalAlign.Center)
+      .margin({ right: T.spacing.md })
 
       Column() {
         Row() {
@@ -574,8 +611,18 @@ export struct ChatListPage {
 
           // MSG-108：置顶标（时间戳左侧，对齐 Telegram X 的位置）。
           if (item.isPinned) {
-            Text('📌')
-              .fontSize(T.typography.caption.fontSize)
+            Image($r('app.media.ic_pin'))
+              .width(14)
+              .height(14)
+              .fillColor(T.colors.textSecondary)
+              .margin({ left: T.spacing.sm })
+          }
+
+          if (item.isMuted) {
+            Image($r('app.media.ic_mute'))
+              .width(14)
+              .height(14)
+              .fillColor(T.colors.textSecondary)
               .margin({ left: T.spacing.sm })
           }
 

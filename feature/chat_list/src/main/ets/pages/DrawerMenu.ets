@@ -29,11 +29,11 @@ const DRAWER_CHEVRON_SIZE: number = 40;
 /** 菜单行描述（类构造，避开对象字面量显式类型问题）。 */
 class DrawerMenuRow {
   readonly key: DrawerItemKey;
-  readonly icon: string;
+  readonly icon: Resource;
   readonly label: string;
   readonly enabled: boolean;
 
-  constructor(key: DrawerItemKey, icon: string, label: string, enabled: boolean) {
+  constructor(key: DrawerItemKey, icon: Resource, label: string, enabled: boolean) {
     this.key = key;
     this.icon = icon;
     this.label = label;
@@ -63,12 +63,12 @@ export struct DrawerMenu {
 
   /** 菜单项与顺序对齐 TGX DrawerController（enabled=false 先按 disabled 色展示）。 */
   private menuRows: DrawerMenuRow[] = [
-    new DrawerMenuRow('contacts', '👤', 'Contacts', true),
-    new DrawerMenuRow('calls', '📞', 'Calls', false),
-    new DrawerMenuRow('saved', '🔖', 'Saved Messages', false),
-    new DrawerMenuRow('settings', '⚙', 'Settings', true),
-    new DrawerMenuRow('invite', '👥', 'Invite Friends', false),
-    new DrawerMenuRow('help', '❓', 'Help', false)
+    new DrawerMenuRow('contacts', $r('app.media.ic_contacts'), 'Contacts', true),
+    new DrawerMenuRow('calls', $r('app.media.ic_call'), 'Calls', false),
+    new DrawerMenuRow('saved', $r('app.media.ic_bookmark'), 'Saved Messages', false),
+    new DrawerMenuRow('settings', $r('app.media.ic_settings'), 'Settings', true),
+    new DrawerMenuRow('invite', $r('app.media.ic_person_add'), 'Invite Friends', false),
+    new DrawerMenuRow('help', $r('app.media.ic_help'), 'Help', false)
   ];
 
   build() {
@@ -120,12 +120,10 @@ export struct DrawerMenu {
 
         // ⌄ 账号切换（TGX 位于头部右下）。
         Row() {
-          Text('⌄')
-            .fontSize(T.typography.title.fontSize)
-            .fontColor(T.colors.textOnAccent)
-            .width(DRAWER_CHEVRON_SIZE)
-            .height(DRAWER_CHEVRON_SIZE)
-            .textAlign(TextAlign.Center)
+          Image($r('app.media.ic_chevron_down'))
+            .width(DRAWER_CHEVRON_SIZE * 0.8)
+            .height(DRAWER_CHEVRON_SIZE * 0.8)
+            .fillColor(T.colors.textOnAccent)
             .onClick(() => {
               this.onSwitchAccount();
             })
@@ -147,10 +145,14 @@ export struct DrawerMenu {
       Column() {
         ForEach(this.menuRows.slice(), (row: DrawerMenuRow) => {
           Row() {
-            Text(row.icon)
-              .fontSize(T.typography.body.fontSize)
-              .width(DRAWER_ICON_WIDTH)
-              .fontColor(row.enabled ? T.colors.textPrimary : T.colors.disabled)
+            Row() {
+              Image(row.icon)
+                .width(22)
+                .height(22)
+                .fillColor(row.enabled ? T.colors.textSecondary : T.colors.disabled)
+            }
+            .width(DRAWER_ICON_WIDTH)
+            .justifyContent(FlexAlign.Start)
 
             Text(row.label)
               .fontSize(T.typography.body.fontSize)
@@ -182,10 +184,14 @@ export struct DrawerMenu {
 
       // ===== 底部：夜间模式开关 =====
       Row() {
-        Text('🌙')
-          .fontSize(T.typography.body.fontSize)
-          .width(DRAWER_ICON_WIDTH)
-          .fontColor(T.colors.textPrimary)
+        Row() {
+          Image($r('app.media.ic_night'))
+            .width(22)
+            .height(22)
+            .fillColor(T.colors.textSecondary)
+        }
+        .width(DRAWER_ICON_WIDTH)
+        .justifyContent(FlexAlign.Start)
 
         Text('Night Mode')
           .fontSize(T.typography.body.fontSize)
@@ -205,6 +211,9 @@ export struct DrawerMenu {
         right: T.spacing.screenInset,
         top: T.spacing.md,
         bottom: T.spacing.lg
+      })
+      .onClick(() => {
+        this.onNightModeChanged(!this.state.nightMode);
       })
     }
     .width('72%')

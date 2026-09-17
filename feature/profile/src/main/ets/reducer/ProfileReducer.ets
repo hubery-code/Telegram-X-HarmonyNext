@@ -15,11 +15,18 @@ import {
   OnProfileFailed,
   OnBirthdayLoaded,
   OnSharedTabSelected,
+  LoadMoreSharedContent,
   OnSharedContentLoaded,
   OnSharedGroupsLoaded,
   ProfileIntent
 } from '../contract/ProfileIntent';
-import { CreatePrivateChatEffect, FetchSharedContent, FetchSharedGroups, ProfileEffect } from '../contract/ProfileEffect';
+import {
+  CreatePrivateChatEffect,
+  FetchSharedContent,
+  FetchSharedGroups,
+  FetchMoreSharedContent,
+  ProfileEffect
+} from '../contract/ProfileEffect';
 
 /** 共享内容 Tab 数（媒体/文件/链接/群组）。 */
 const SHARED_TAB_COUNT: number = 4;
@@ -93,14 +100,37 @@ export const profileReducer: Reducer<ProfileUiState, ProfileIntent, ProfileEffec
       }
       if (alreadyLoaded) {
         // 已加载：仅切 Tab，不触发请求也不转圈。
-        return reduced(state.copyWith({ activeSharedTab: selected.tab, sharedLoading: false }));
+        return reduced(state.copyWith({
+          activeSharedTab: selected.tab,
+          sharedLoading: false,
+          sharedLoadingMore: false,
+          sharedHasMore: true
+        }));
       }
-      const next: ProfileUiState = state.copyWith({ activeSharedTab: selected.tab, sharedLoading: true });
+      const next: ProfileUiState = state.copyWith({
+        activeSharedTab: selected.tab,
+        sharedLoading: true,
+        sharedLoadingMore: false,
+        sharedHasMore: true
+      });
       if (selected.tab === 3) {
         const effect: FetchSharedGroups = new FetchSharedGroups();
         return reduced(next, [effect]);
       }
       const effect: FetchSharedContent = new FetchSharedContent(selected.tab);
+      return reduced(next, [effect]);
+    }
+
+    case 'loadMoreSharedContent': {
+      const loadMore: LoadMoreSharedContent = intent as LoadMoreSharedContent;
+      if (loadMore.tab < 0 || loadMore.tab >= SHARED_TAB_COUNT) {
+        return reduced(state);
+      }
+      if (state.sharedLoading || state.sharedLoadingMore || !state.sharedHasMore) {
+        return reduced(state);
+      }
+      const next: ProfileUiState = state.copyWith({ sharedLoadingMore: true });
+      const effect: FetchMoreSharedContent = new FetchMoreSharedContent(loadMore.tab);
       return reduced(next, [effect]);
     }
 
@@ -110,7 +140,9 @@ export const profileReducer: Reducer<ProfileUiState, ProfileIntent, ProfileEffec
         sharedMedia: loaded.media,
         sharedFiles: loaded.files,
         sharedLinks: loaded.links,
-        sharedLoading: false
+        sharedLoading: false,
+        sharedLoadingMore: false,
+        sharedHasMore: loaded.hasMore
       }));
     }
 
@@ -118,7 +150,9 @@ export const profileReducer: Reducer<ProfileUiState, ProfileIntent, ProfileEffec
       const loaded: OnSharedGroupsLoaded = intent as OnSharedGroupsLoaded;
       return reduced(state.copyWith({
         sharedGroups: loaded.items,
-        sharedLoading: false
+        sharedLoading: false,
+        sharedLoadingMore: false,
+        sharedHasMore: loaded.hasMore
       }));
     }
 

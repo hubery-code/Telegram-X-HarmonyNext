@@ -52,8 +52,17 @@ import {
   OnHeaderSubtitleChanged,
   OnChatKindChanged,
   OpenChatProfile,
-  ChatMenuAction
+  ChatMenuAction,
+  OnPinnedMessageLoaded,
+  DismissPinnedBar,
+  JumpToPinnedMessage,
+  JoinChannel,
+  OnChannelMemberStatusChanged,
+  OpenMessageComments,
+  ToggleMessageReaction
 } from '../main/ets/contract/ChatIntent';
+import { PinnedMessageInfo } from '../main/ets/model/PinnedMessageInfo';
+import { ReactionChip } from '../main/ets/model/ReactionChip';
 import {
   ChatEffect,
   SendTextMessage,
@@ -68,7 +77,10 @@ import {
   CancelMediaDownloadEffect,
   ResendMessage,
   FetchChatSearch,
-  JumpToMessage
+  JumpToMessage,
+  JoinChannelEffect,
+  OpenCommentsEffect,
+  ToggleReactionEffect
 } from '../main/ets/contract/ChatEffect';
 import { ChatSearchResultItem } from '../main/ets/model/ChatSearchResultItem';
 import { chatReducer, extractFirstLink } from '../main/ets/reducer/ChatReducer';
@@ -97,6 +109,45 @@ function makeStateWith(
 
 function makeTextMessage(messageId: number, isOutgoing: boolean, text: string = 'hello'): MessageItem {
   return new MessageItem(messageId, text, 1000, isOutgoing, '', 'none', true, false, null, '');
+}
+
+function makeChannelPost(
+  messageId: number,
+  text: string,
+  reactionChips: ReactionChip[] = [],
+  commentCount: number = 0
+): MessageItem {
+  return new MessageItem(
+    messageId,
+    text,
+    1000,
+    false,
+    'Channel Admin',
+    'none',
+    true,
+    false,
+    null,
+    '',
+    [],
+    -1,
+    true,
+    null,
+    '',
+    -1,
+    null,
+    false,
+    false,
+    '',
+    false,
+    null,
+    [],
+    [],
+    null,
+    0,
+    true,
+    reactionChips,
+    commentCount
+  );
 }
 
 /** 取菜单的 showForward（菜单为 null 时返回 false），避免非空断言。 */
@@ -1233,6 +1284,219 @@ export default function chatReducerTest() {
         new ChatMenuAction('mute'),
         makeEnv()
       );
+      expect(result.state === state).assertTrue();
+      expect(result.effects.length).assertEqual(0);
+    });
+
+    // ---- MSG-108 置顶消息横条 ----
+
+    it('onPinnedMessageLoaded_withMessage_setsPinnedAndShowsBar', 0, () => {
+      const state: ChatUiState = makeState('', null);
+      const pinned: PinnedMessageInfo = new PinnedMessageInfo(100, 'Alice', 'Meeting tomorrow');
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        state,
+        new OnPinnedMessageLoaded(pinned),
+        makeEnv()
+      );
+      expect(result.state.pinnedMessage !== null).assertTrue();
+      expect(result.state.pinnedMessage!.messageId).assertEqual(100);
+      expect(result.state.pinnedMessage!.senderTitle).assertEqual('Alice');
+      expect(result.state.pinnedMessage!.contentSnippet).assertEqual('Meeting tomorrow');
+      expect(result.state.showPinnedBar).assertTrue();
+      expect(result.effects.length).assertEqual(0);
+    });
+
+    it('onPinnedMessageLoaded_withNull_clearsPinnedAndHidesBar', 0, () => {
+      const pinned: PinnedMessageInfo = new PinnedMessageInfo(100, 'Alice', 'Meeting tomorrow');
+      const state: ChatUiState = makeState('', null).copyWith({
+        pinnedMessage: pinned,
+        showPinnedBar: true
+      });
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        state,
+        new OnPinnedMessageLoaded(null),
+        makeEnv()
+      );
+      expect(result.state.pinnedMessage === null).assertTrue();
+      expect(result.state.showPinnedBar).assertFalse();
+      expect(result.effects.length).assertEqual(0);
+    });
+
+    it('dismissPinnedBar_hidesBar_keepsPinnedInfo', 0, () => {
+      const pinned: PinnedMessageInfo = new PinnedMessageInfo(100, 'Alice', 'Meeting tomorrow');
+      const state: ChatUiState = makeState('', null).copyWith({
+        pinnedMessage: pinned,
+        showPinnedBar: true
+      });
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        state,
+        new DismissPinnedBar(),
+        makeEnv()
+      );
+      expect(result.state.showPinnedBar).assertFalse();
+      expect(result.state.pinnedMessage !== null).assertTrue();
+      expect(result.state.pinnedMessage!.messageId).assertEqual(100);
+      expect(result.effects.length).assertEqual(0);
+    });
+
+    it('jumpToPinnedMessage_withValidPinned_setsJumpIdAndEmitsJumpEffect', 0, () => {
+      const pinned: PinnedMessageInfo = new PinnedMessageInfo(100, 'Alice', 'Meeting tomorrow');
+      const state: ChatUiState = makeState('', null).copyWith({
+        pinnedMessage: pinned,
+        showPinnedBar: true
+      });
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        state,
+        new JumpToPinnedMessage(),
+        makeEnv()
+      );
+      expect(result.state.jumpToMessageId).assertEqual(100);
+      expect(result.effects.length).assertEqual(1);
+      expect(result.effects[0].kind).assertEqual('jumpToMessage');
+      const jumpEffect: JumpToMessage = result.effects[0] as JumpToMessage;
+      expect(jumpEffect.messageId).assertEqual(100);
+    });
+
+    it('jumpToPinnedMessage_whenNull_noOp', 0, () => {
+      const state: ChatUiState = makeState('', null);
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        state,
+        new JumpToPinnedMessage(),
+        makeEnv()
+      );
+      expect(result.state === state).assertTrue();
+      expect(result.effects.length).assertEqual(0);
+    });
+
+    // ---- CHANNEL-101 频道模式测试 ----
+
+    it('joinChannel_emitsJoinChannelEffect', 0, () => {
+      const state: ChatUiState = makeState('', null);
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        state,
+        new JoinChannel(),
+        makeEnv()
+      );
+      expect(result.effects.length).assertEqual(1);
+      expect(result.effects[0].kind).assertEqual('joinChannel');
+      const effect: JoinChannelEffect = result.effects[0] as JoinChannelEffect;
+      expect(effect.chatId).assertEqual(42);
+    });
+
+    it('onChannelMemberStatusChanged_updatesIsChannelMember', 0, () => {
+      const state: ChatUiState = makeState('', null).copyWith({ isChannelMember: true });
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        state,
+        new OnChannelMemberStatusChanged(false),
+        makeEnv()
+      );
+      expect(result.state.isChannelMember).assertFalse();
+      expect(result.effects.length).assertEqual(0);
+
+      // 再次发送相同状态，引用不变
+      const noopResult: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        result.state,
+        new OnChannelMemberStatusChanged(false),
+        makeEnv()
+      );
+      expect(noopResult.state === result.state).assertTrue();
+    });
+
+    it('openMessageComments_emitsOpenCommentsEffect', 0, () => {
+      const state: ChatUiState = makeState('', null);
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        state,
+        new OpenMessageComments(555),
+        makeEnv()
+      );
+      expect(result.effects.length).assertEqual(1);
+      expect(result.effects[0].kind).assertEqual('openComments');
+      const effect: OpenCommentsEffect = result.effects[0] as OpenCommentsEffect;
+      expect(effect.chatId).assertEqual(42);
+      expect(effect.messageId).assertEqual(555);
+    });
+
+    it('toggleMessageReaction_existingChip_togglesChosenAndIncrementsCount', 0, () => {
+      const initialChip: ReactionChip = new ReactionChip('🔥', 9, false);
+      const post: MessageItem = makeChannelPost(101, 'Hello Channel', [initialChip], 5);
+      const state: ChatUiState = makeStateWith([post]);
+
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        state,
+        new ToggleMessageReaction(101, '🔥'),
+        makeEnv()
+      );
+
+      expect(result.effects.length).assertEqual(1);
+      expect(result.effects[0].kind).assertEqual('toggleReaction');
+      const effect: ToggleReactionEffect = result.effects[0] as ToggleReactionEffect;
+      expect(effect.chatId).assertEqual(42);
+      expect(effect.messageId).assertEqual(101);
+      expect(effect.emoji).assertEqual('🔥');
+      expect(effect.isChosen).assertTrue();
+
+      const updatedPost: MessageItem = result.state.messages[0];
+      expect(updatedPost.reactionChips.length).assertEqual(1);
+      expect(updatedPost.reactionChips[0].emoji).assertEqual('🔥');
+      expect(updatedPost.reactionChips[0].count).assertEqual(10);
+      expect(updatedPost.reactionChips[0].isChosen).assertTrue();
+    });
+
+    it('toggleMessageReaction_existingChip_togglesChosenAndDecrementsCount', 0, () => {
+      const initialChip: ReactionChip = new ReactionChip('🔥', 10, true);
+      const post: MessageItem = makeChannelPost(101, 'Hello Channel', [initialChip], 5);
+      const state: ChatUiState = makeStateWith([post]);
+
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        state,
+        new ToggleMessageReaction(101, '🔥'),
+        makeEnv()
+      );
+
+      expect(result.effects.length).assertEqual(1);
+      const effect: ToggleReactionEffect = result.effects[0] as ToggleReactionEffect;
+      expect(effect.isChosen).assertFalse();
+
+      const updatedPost: MessageItem = result.state.messages[0];
+      expect(updatedPost.reactionChips.length).assertEqual(1);
+      expect(updatedPost.reactionChips[0].emoji).assertEqual('🔥');
+      expect(updatedPost.reactionChips[0].count).assertEqual(9);
+      expect(updatedPost.reactionChips[0].isChosen).assertFalse();
+    });
+
+    it('toggleMessageReaction_newChip_addsChipWithCount1AndChosenTrue', 0, () => {
+      const existingChip: ReactionChip = new ReactionChip('👍', 3, false);
+      const post: MessageItem = makeChannelPost(101, 'Hello Channel', [existingChip], 2);
+      const state: ChatUiState = makeStateWith([post]);
+
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        state,
+        new ToggleMessageReaction(101, '❤️'),
+        makeEnv()
+      );
+
+      expect(result.effects.length).assertEqual(1);
+      const effect: ToggleReactionEffect = result.effects[0] as ToggleReactionEffect;
+      expect(effect.emoji).assertEqual('❤️');
+      expect(effect.isChosen).assertTrue();
+
+      const updatedPost: MessageItem = result.state.messages[0];
+      expect(updatedPost.reactionChips.length).assertEqual(2);
+      expect(updatedPost.reactionChips[1].emoji).assertEqual('❤️');
+      expect(updatedPost.reactionChips[1].count).assertEqual(1);
+      expect(updatedPost.reactionChips[1].isChosen).assertTrue();
+    });
+
+    it('toggleMessageReaction_messageNotFound_noOp', 0, () => {
+      const post: MessageItem = makeChannelPost(101, 'Hello Channel');
+      const state: ChatUiState = makeStateWith([post]);
+
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        state,
+        new ToggleMessageReaction(999, '🔥'),
+        makeEnv()
+      );
+
       expect(result.state === state).assertTrue();
       expect(result.effects.length).assertEqual(0);
     });

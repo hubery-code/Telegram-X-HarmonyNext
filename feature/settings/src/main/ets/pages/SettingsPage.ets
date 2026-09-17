@@ -186,13 +186,11 @@ export struct SettingsPage {
   @Builder
   HeaderView() {
     Row() {
-      Text('‹')
-        .fontSize(this.getTheme().typography.largeTitle.fontSize)
-        .fontWeight(this.getTheme().typography.title.fontWeight)
-        .fontColor(this.getTheme().colors.accent)
-        .width(BACK_ARROW_SIZE)
-        .height(BACK_ARROW_SIZE)
-        .textAlign(TextAlign.Center)
+      Image($r('app.media.ic_back'))
+        .width(24)
+        .height(24)
+        .fillColor(this.getTheme().colors.accent)
+        .margin({ right: this.getTheme().spacing.md })
         .onClick((): void => {
           this.onBack();
         })
@@ -314,9 +312,10 @@ export struct SettingsPage {
 
       // Account switch indicator
       Row() {
-        Text('▾')
-          .fontSize(this.getTheme().typography.title.fontSize)
-          .fontColor(this.getTheme().colors.textSecondary)
+        Image($r('app.media.ic_chevron_down'))
+          .width(18)
+          .height(18)
+          .fillColor(this.getTheme().colors.textSecondary)
           .margin({ left: this.getTheme().spacing.sm })
       }
       .alignItems(VerticalAlign.Center)
@@ -349,6 +348,12 @@ export struct SettingsPage {
   NotificationsCardView() {
     Column() {
       Row() {
+        Image($r('app.media.ic_notifications'))
+          .width(22)
+          .height(22)
+          .fillColor(this.getTheme().colors.accent)
+          .margin({ right: this.getTheme().spacing.sm })
+
         Text(this.t('All Notifications'))
           .fontSize(this.getTheme().typography.body.fontSize)
           .fontWeight(this.getTheme().typography.headline.fontWeight)
@@ -404,6 +409,12 @@ export struct SettingsPage {
   @Builder
   StorageCardView() {
     Row() {
+      Image($r('app.media.ic_storage'))
+        .width(22)
+        .height(22)
+        .fillColor(this.getTheme().colors.accent)
+        .margin({ right: this.getTheme().spacing.sm })
+
       Column() {
         Text(this.t('Storage & Cache'))
           .fontSize(this.getTheme().typography.body.fontSize)
@@ -447,6 +458,12 @@ export struct SettingsPage {
   ThemeCardView() {
     Column() {
       Row() {
+        Image($r('app.media.ic_palette'))
+          .width(22)
+          .height(22)
+          .fillColor(this.getTheme().colors.accent)
+          .margin({ right: this.getTheme().spacing.sm })
+
         Text(this.t('Theme Mode'))
           .fontSize(this.getTheme().typography.body.fontSize)
           .fontWeight(this.getTheme().typography.headline.fontWeight)
@@ -521,6 +538,12 @@ export struct SettingsPage {
   LanguageCardView() {
     Column() {
       Row() {
+        Image($r('app.media.ic_language'))
+          .width(22)
+          .height(22)
+          .fillColor(this.getTheme().colors.accent)
+          .margin({ right: this.getTheme().spacing.sm })
+
         Text(this.t('Language'))
           .fontSize(this.getTheme().typography.body.fontSize)
           .fontWeight(this.getTheme().typography.headline.fontWeight)
@@ -583,6 +606,12 @@ export struct SettingsPage {
   @Builder
   AboutCardView() {
     Row() {
+      Image($r('app.media.ic_help_outline'))
+        .width(22)
+        .height(22)
+        .fillColor(this.getTheme().colors.accent)
+        .margin({ right: this.getTheme().spacing.sm })
+
       Text(this.t('App Version'))
         .fontSize(this.getTheme().typography.body.fontSize)
         .fontColor(this.getTheme().colors.textPrimary)
@@ -600,18 +629,30 @@ export struct SettingsPage {
 
   @Builder
   LogoutSectionView() {
-    Button(this.t('Log Out'))
-      .width('100%')
-      .height(48)
-      .margin({ top: this.getTheme().spacing.xl })
-      .fontSize(this.getTheme().typography.headline.fontSize)
-      .fontWeight(this.getTheme().typography.headline.fontWeight)
-      .fontColor(this.getTheme().colors.destructive)
-      .backgroundColor(this.getTheme().colors.surface)
-      .borderRadius(this.getTheme().radius.md)
-      .onClick((): void => {
-        this.onDispatch(new RequestLogout());
-      })
+    Button() {
+      Row() {
+        Image($r('app.media.ic_logout'))
+          .width(20)
+          .height(20)
+          .fillColor(this.getTheme().colors.destructive)
+          .margin({ right: this.getTheme().spacing.xs })
+
+        Text(this.t('Log Out'))
+          .fontSize(this.getTheme().typography.headline.fontSize)
+          .fontWeight(this.getTheme().typography.headline.fontWeight)
+          .fontColor(this.getTheme().colors.destructive)
+      }
+      .justifyContent(FlexAlign.Center)
+      .alignItems(VerticalAlign.Center)
+    }
+    .width('100%')
+    .height(48)
+    .margin({ top: this.getTheme().spacing.xl })
+    .backgroundColor(this.getTheme().colors.surface)
+    .borderRadius(this.getTheme().radius.md)
+    .onClick((): void => {
+      this.onDispatch(new RequestLogout());
+    })
   }
 
   @Builder
@@ -677,9 +718,10 @@ export struct SettingsPage {
                 .alignItems(HorizontalAlign.Start)
 
                 if (accountKey === this.uiState.currentAccountKey) {
-                  Text('✓')
-                    .fontSize(this.getTheme().typography.headline.fontSize)
-                    .fontColor(this.getTheme().colors.accent)
+                  Image($r('app.media.ic_check_single'))
+                    .width(20)
+                    .height(20)
+                    .fillColor(this.getTheme().colors.accent)
                 }
               }
               .width('100%')
@@ -705,18 +747,30 @@ export struct SettingsPage {
         .width('100%')
         .constraintSize({ maxHeight: 240 })
 
-        Button(this.t('+ Add Account'))
-          .width('100%')
-          .height(44)
-          .margin({ top: this.getTheme().spacing.md })
-          .fontSize(this.getTheme().typography.headline.fontSize)
-          .fontWeight(this.getTheme().typography.headline.fontWeight)
-          .fontColor(this.getTheme().colors.accent)
-          .backgroundColor(this.getTheme().colors.surfaceVariant)
-          .borderRadius(this.getTheme().radius.md)
-          .onClick((): void => {
-            this.onDispatch(new RequestAddAccount());
-          })
+        Button() {
+          Row() {
+            Image($r('app.media.ic_add'))
+              .width(18)
+              .height(18)
+              .fillColor(this.getTheme().colors.accent)
+              .margin({ right: this.getTheme().spacing.xs })
+
+            Text(this.t('Add Account'))
+              .fontSize(this.getTheme().typography.headline.fontSize)
+              .fontWeight(this.getTheme().typography.headline.fontWeight)
+              .fontColor(this.getTheme().colors.accent)
+          }
+          .justifyContent(FlexAlign.Center)
+          .alignItems(VerticalAlign.Center)
+        }
+        .width('100%')
+        .height(44)
+        .margin({ top: this.getTheme().spacing.md })
+        .backgroundColor(this.getTheme().colors.surfaceVariant)
+        .borderRadius(this.getTheme().radius.md)
+        .onClick((): void => {
+          this.onDispatch(new RequestAddAccount());
+        })
       }
       .width('88%')
       .padding(this.getTheme().spacing.lg)

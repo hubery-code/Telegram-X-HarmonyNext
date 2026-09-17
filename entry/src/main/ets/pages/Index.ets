@@ -25,7 +25,7 @@
  * 均由类型化控制器负责。
  */
 
-import { LightTheme } from '@tgx/core-design-system';
+import { LightTheme, Theme, ThemeManager } from '@tgx/core-design-system';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { AccountDescriptor, AccountScope } from '@tgx/core-account';
 import { AppError, ManualClock, Result, SequentialIdGenerator } from '@tgx/core-common';
@@ -172,6 +172,8 @@ struct Index {
   @State drawerAccountPhone: string = '';
   @State drawerAccountLetters: string = '';
   private drawerAccountLoaded: boolean = false;
+  @State isNightMode: boolean = false;
+  private unsubscribeThemeFn: (() => void) | null = null;
   private accountScope: AccountScope | null = null;
   private bootstrapResult: BootstrapResult | null = null;
   private currentAccountKey: string = 'default';
@@ -191,6 +193,11 @@ struct Index {
     if (result.cacheDir !== undefined && result.cacheDir.length > 0) {
       this.mediaPickerAdapter.setCacheDir(result.cacheDir);
     }
+
+    this.isNightMode = ThemeManager.getInstance().getTheme().mode === 'dark';
+    this.unsubscribeThemeFn = ThemeManager.getInstance().subscribe((theme: Theme): void => {
+      this.isNightMode = theme.mode === 'dark';
+    });
 
     this.unsubscribeNavFn = this.navController.subscribe((route: AppRoute, prev: AppRoute | null) => {
       this.currentRoute = route;
@@ -221,6 +228,10 @@ struct Index {
     if (this.unsubscribeFn !== null) {
       this.unsubscribeFn();
       this.unsubscribeFn = null;
+    }
+    if (this.unsubscribeThemeFn !== null) {
+      this.unsubscribeThemeFn();
+      this.unsubscribeThemeFn = null;
     }
   }
 
@@ -1057,6 +1068,9 @@ struct Index {
           },
           onNavigateToChat: (chatId: number, messageId?: number) => {
             this.navigateToChatFromSearch(chatId, messageId);
+          },
+          onBack: () => {
+            this.navController.pop();
           }
         })
       } else if (this.currentRoute.name === 'userProfile') {
@@ -1122,13 +1136,16 @@ struct Index {
           onOpenSearch: () => {
             this.navController.navigateTo({ name: 'search' });
           },
+          onCompose: () => {
+            this.navController.navigateTo({ name: 'contacts' });
+          },
           // DRAWER-101：抽屉（账号头 getMe 注入；菜单项路由；夜间模式/账号切换占位）。
           drawerState: new DrawerState(
             this.drawerAccountName,
             this.drawerAccountPhone,
             null,
             this.drawerAccountLetters,
-            false
+            this.isNightMode
           ),
           onDrawerItem: (item: string): void => {
             if (item === 'settings') {
@@ -1140,7 +1157,9 @@ struct Index {
             }
           },
           onDrawerNightModeChanged: (on: boolean): void => {
-            hilog.info(DOMAIN, TAG, 'drawer night mode placeholder=%{public}s', `${on}`);
+            this.isNightMode = on;
+            ThemeManager.getInstance().setPreference(on ? 'dark' : 'light');
+            hilog.info(DOMAIN, TAG, 'drawer night mode changed: %{public}s', `${on}`);
           },
           onDrawerSwitchAccount: (): void => {
             hilog.info(DOMAIN, TAG, 'drawer switch account placeholder');

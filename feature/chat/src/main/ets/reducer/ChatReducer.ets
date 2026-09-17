@@ -47,6 +47,7 @@ import {
   MessageActionMenuState
 } from '../contract/ChatUiState';
 import { MessageItem } from '../model/MessageItem';
+import { ReactionChip } from '../model/ReactionChip';
 import { MediaViewerItem } from '../model/MediaViewerItem';
 import { MediaAttachment } from '../model/MediaAttachment';
 import {
@@ -80,7 +81,14 @@ import {
   JumpToSearchResult,
   OnJumpToMessageReady,
   OnHeaderSubtitleChanged,
-  OnChatKindChanged
+  OnChatKindChanged,
+  OnPinnedMessageLoaded,
+  DismissPinnedBar,
+  JumpToPinnedMessage,
+  JoinChannel,
+  OnChannelMemberStatusChanged,
+  OpenMessageComments,
+  ToggleMessageReaction
 } from '../contract/ChatIntent';
 import {
   ChatEffect,
@@ -100,7 +108,10 @@ import {
   PickAndSendFileEffect,
   CancelMediaDownloadEffect,
   FetchChatSearch,
-  JumpToMessage
+  JumpToMessage,
+  JoinChannelEffect,
+  ToggleReactionEffect,
+  OpenCommentsEffect
 } from '../contract/ChatEffect';
 import { incomingIdUpTo } from '../model/ReadReceipt';
 import {
@@ -901,6 +912,114 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
         return reduced(state);
       }
       return reduced(state.copyWith({ chatKind: kindIntent.chatKind }));
+    }
+
+    // ---- MSG-108 置顶消息横条 ----
+
+    case 'onPinnedMessageLoaded': {
+      const pIntent: OnPinnedMessageLoaded = intent as OnPinnedMessageLoaded;
+      return reduced(state.copyWith({
+        pinnedMessage: pIntent.pinnedMessage,
+        showPinnedBar: pIntent.pinnedMessage !== null
+      }));
+    }
+
+    case 'dismissPinnedBar': {
+      return reduced(state.copyWith({ showPinnedBar: false }));
+    }
+
+    case 'jumpToPinnedMessage': {
+      if (state.pinnedMessage === null || state.pinnedMessage.messageId <= 0) {
+        return reduced(state);
+      }
+      return reduced(
+        state.copyWith({ jumpToMessageId: state.pinnedMessage.messageId }),
+        [new JumpToMessage(state.pinnedMessage.messageId)]
+      );
+    }
+
+    // ---- CHANNEL-101 频道模式 ----
+
+    case 'joinChannel': {
+      return reduced(state, [new JoinChannelEffect(state.chatId)]);
+    }
+
+    case 'onChannelMemberStatusChanged': {
+      const memberIntent: OnChannelMemberStatusChanged = intent as OnChannelMemberStatusChanged;
+      if (state.isChannelMember === memberIntent.isMember) {
+        return reduced(state);
+      }
+      return reduced(state.copyWith({ isChannelMember: memberIntent.isMember }));
+    }
+
+    case 'openMessageComments': {
+      const commentsIntent: OpenMessageComments = intent as OpenMessageComments;
+      return reduced(state, [new OpenCommentsEffect(state.chatId, commentsIntent.messageId)]);
+    }
+
+    case 'toggleMessageReaction': {
+      const reactionIntent: ToggleMessageReaction = intent as ToggleMessageReaction;
+      let targetChosen: boolean = false;
+      let targetFound: boolean = false;
+      const newMessages: MessageItem[] = state.messages.map((item: MessageItem): MessageItem => {
+        if (item.messageId !== reactionIntent.messageId) {
+          return item;
+        }
+        let chipUpdated: boolean = false;
+        const newChips: ReactionChip[] = item.reactionChips.map((chip: ReactionChip): ReactionChip => {
+          if (chip.emoji !== reactionIntent.emoji) {
+            return chip;
+          }
+          chipUpdated = true;
+          targetFound = true;
+          targetChosen = !chip.isChosen;
+          const newCount: number = Math.max(0, chip.count + (targetChosen ? 1 : -1));
+          return new ReactionChip(chip.emoji, newCount, targetChosen);
+        });
+        if (!chipUpdated) {
+          targetFound = true;
+          targetChosen = true;
+          newChips.push(new ReactionChip(reactionIntent.emoji, 1, true));
+        }
+        return new MessageItem(
+          item.messageId,
+          item.text,
+          item.timestampMs,
+          item.isOutgoing,
+          item.senderName,
+          item.sendState,
+          item.isTextMessage,
+          item.isEdited,
+          item.replyToMessageId,
+          item.replyToSummary,
+          item.spans,
+          item.senderColorIndex,
+          item.isRead,
+          item.media,
+          item.replySenderName,
+          item.replySenderColorIndex,
+          item.replyThumbnailPath,
+          item.replyIsSticker,
+          item.showDateHeader,
+          item.dateHeaderText,
+          item.showUnreadSeparator,
+          item.senderAvatarPath,
+          item.albumItems,
+          item.albumMessageIds,
+          item.linkPreview,
+          item.senderUserId,
+          item.isChannelPost,
+          newChips,
+          item.commentCount
+        );
+      });
+      if (!targetFound) {
+        return reduced(state);
+      }
+      return reduced(
+        state.copyWith({ messages: newMessages }),
+        [new ToggleReactionEffect(state.chatId, reactionIntent.messageId, reactionIntent.emoji, targetChosen)]
+      );
     }
 
     // openChatProfile / chatMenuAction：纯导航/占位意图，reducer 原样透传

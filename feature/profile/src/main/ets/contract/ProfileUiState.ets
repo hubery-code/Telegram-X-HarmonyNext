@@ -43,6 +43,10 @@ export interface ProfileUiStateOptions {
   sharedGroups?: SharedGroupItem[];
   /** 共享内容加载中（切 Tab 触发请求后为 true，回灌后 false）。 */
   sharedLoading?: boolean;
+  /** 当前共享内容 Tab 是否有更多数据可拉取（分页支持）。 */
+  sharedHasMore?: boolean;
+  /** 共享内容加载更多中（滚动或点击加载更多后为 true）。 */
+  sharedLoadingMore?: boolean;
 }
 
 export class ProfileUiState {
@@ -65,6 +69,8 @@ export class ProfileUiState {
   readonly sharedLinks: SharedLinkItem[];
   readonly sharedGroups: SharedGroupItem[];
   readonly sharedLoading: boolean;
+  readonly sharedHasMore: boolean;
+  readonly sharedLoadingMore: boolean;
 
   constructor(
     userId: number = 0,
@@ -85,7 +91,9 @@ export class ProfileUiState {
     sharedFiles: SharedFileItem[] = [],
     sharedLinks: SharedLinkItem[] = [],
     sharedGroups: SharedGroupItem[] = [],
-    sharedLoading: boolean = false
+    sharedLoading: boolean = false,
+    sharedHasMore: boolean = true,
+    sharedLoadingMore: boolean = false
   ) {
     this.userId = userId;
     this.displayName = displayName;
@@ -106,6 +114,8 @@ export class ProfileUiState {
     this.sharedLinks = sharedLinks;
     this.sharedGroups = sharedGroups;
     this.sharedLoading = sharedLoading;
+    this.sharedHasMore = sharedHasMore;
+    this.sharedLoadingMore = sharedLoadingMore;
   }
 
   static initial(userId: number = 0): ProfileUiState {
@@ -132,7 +142,9 @@ export class ProfileUiState {
       options.sharedFiles !== undefined ? options.sharedFiles : this.sharedFiles,
       options.sharedLinks !== undefined ? options.sharedLinks : this.sharedLinks,
       options.sharedGroups !== undefined ? options.sharedGroups : this.sharedGroups,
-      options.sharedLoading !== undefined ? options.sharedLoading : this.sharedLoading
+      options.sharedLoading !== undefined ? options.sharedLoading : this.sharedLoading,
+      options.sharedHasMore !== undefined ? options.sharedHasMore : this.sharedHasMore,
+      options.sharedLoadingMore !== undefined ? options.sharedLoadingMore : this.sharedLoadingMore
     );
   }
 }

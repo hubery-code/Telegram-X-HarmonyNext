@@ -61,13 +61,11 @@ export struct ChatProfilePage {
   @Builder
   Header() {
     Row() {
-      Text('‹')
-        .fontSize(T.typography.title.fontSize)
-        .fontWeight(T.typography.title.fontWeight)
-        .fontColor(T.colors.accent)
-        .width(BACK_ARROW_SIZE)
-        .height(BACK_ARROW_SIZE)
-        .textAlign(TextAlign.Center)
+      Image($r('app.media.ic_back'))
+        .width(24)
+        .height(24)
+        .fillColor(T.colors.accent)
+        .margin({ left: T.spacing.xs, right: T.spacing.md })
         .onClick(() => {
           this.onBack();
         })
@@ -78,8 +76,8 @@ export struct ChatProfilePage {
         .fontColor(T.colors.textPrimary)
         .layoutWeight(1)
 
-      Text('')
-        .width(BACK_ARROW_SIZE)
+      Blank()
+        .width(24)
     }
     .width('100%')
     .height(56)
@@ -172,11 +170,17 @@ export struct ChatProfilePage {
           .layoutWeight(1)
           .alignItems(HorizontalAlign.Start)
 
-          Text('Copy')
-            .fontSize(T.typography.caption.fontSize)
-            .fontColor(T.colors.accent)
-            .fontWeight(FontWeight.Bold)
-            .padding({ left: T.spacing.sm, right: T.spacing.sm, top: T.spacing.xs, bottom: T.spacing.xs })
+          Row({ space: T.spacing.xs }) {
+            Image($r('app.media.ic_copy'))
+              .width(16)
+              .height(16)
+              .fillColor(T.colors.accent)
+            Text('Copy')
+              .fontSize(T.typography.caption.fontSize)
+              .fontColor(T.colors.accent)
+              .fontWeight(FontWeight.Bold)
+          }
+          .padding({ left: T.spacing.sm, right: T.spacing.sm, top: T.spacing.xs, bottom: T.spacing.xs })
         }
         .width('100%')
         .alignItems(VerticalAlign.Center)

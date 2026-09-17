@@ -48,6 +48,7 @@ export interface ColorTokens extends Record<string, string> {
   border: string;
   scrim: string;
   disabled: string;
+  icon: string;
 }
 
 export const LightColors: ColorTokens = {
@@ -69,7 +70,8 @@ export const LightColors: ColorTokens = {
   divider: '#1F000000',
   border: '#33000000',
   scrim: '#66000000',
-  disabled: '#FFBDBDC2'
+  disabled: '#FFBDBDC2',
+  icon: '#FF8E8E93'
 };
 
 export const DarkColors: ColorTokens = {
@@ -91,7 +93,8 @@ export const DarkColors: ColorTokens = {
   divider: '#33FFFFFF',
   border: '#4DFFFFFF',
   scrim: '#99000000',
-  disabled: '#FF48484A'
+  disabled: '#FF48484A',
+  icon: '#FF98989F'
 };
 
 /** All semantic color token names, for iteration / exhaustive checks. */
@@ -114,7 +117,8 @@ export const COLOR_TOKEN_NAMES: string[] = [
   'divider',
   'border',
   'scrim',
-  'disabled'
+  'disabled',
+  'icon'
 ];
 
 /** '#' + 8-hex-digit string, e.g. '#FF2481CC'. */

@@ -49,10 +49,10 @@ export struct PasswordPage {
             this.onPasswordChanged(val);
           })
 
-        Text(this.isPasswordVisible ? 'Hide' : 'Show')
-          .fontSize(T.typography.subheadline.fontSize)
-          .fontColor(T.colors.accent)
-          .fontWeight(T.typography.headline.fontWeight)
+        Image($r(this.isPasswordVisible ? 'app.media.ic_visibility' : 'app.media.ic_visibility_off'))
+          .width(24)
+          .height(24)
+          .fillColor(T.colors.icon)
           .margin({ left: T.spacing.sm })
           .onClick(() => {
             this.onToggleVisibility();

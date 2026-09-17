@@ -38,9 +38,11 @@ import { ManualClock, SequentialIdGenerator, AppError, AppErrors } from '@tgx/co
 import { AccountScope } from '@tgx/core-account';
 import {
   Animation,
+  BasicGroup,
   Chat,
   ChatTypeBasicGroup,
   ChatTypeSupergroup,
+  decodeBasicGroup,
   decodeChat,
   decodeMessage,
   decodeMessageProperties,
@@ -51,10 +53,12 @@ import {
   Document,
   DraftMessage,
   DraftMessageContentText,
+  encodeGetBasicGroup,
   encodeGetChat,
   encodeGetMessage,
   encodeGetSupergroupFullInfo,
   File,
+  GetBasicGroup,
   GetChat,
   GetMessage,
   GetSupergroupFullInfo,
@@ -72,6 +76,7 @@ import {
   MessagePhoto,
   MessageProperties,
   MessageReplyToMessage,
+  MessageSenderUser,
   MessageSticker,
   MessageText,
   MessageVideo,
@@ -80,6 +85,11 @@ import {
   PhotoSize,
   Sticker,
   SupergroupFullInfo,
+  Supergroup,
+  decodeSupergroup,
+  GetSupergroup,
+  encodeGetSupergroup,
+  ReactionTypeEmoji,
   TdJsonRaw,
   TdMessageContent,
   TdMessageReplyTo,
@@ -91,16 +101,18 @@ import {
   Video,
   VideoNote
 } from '@tgx/core-td-api-generated';
-import { FileRegistry, MessageListState, MessageProjection, UserRegistry } from '@tgx/core-domain';
+import { FileRegistry, formatFullName, MessageListState, MessageProjection, UserRegistry } from '@tgx/core-domain';
 import { TdPendingRequest, TdRoutedEvent, TdUpdateFilter, TdUpdateSubscription, TdWireObject, TdWireValue } from '@tgx/td-gateway';
 import { Subscription } from '@tgx/platform-ports';
 import { Result } from '@tgx/core-common';
 import { ReducerEnv, ReducerResult } from '@tgx/feature-template';
 import { MessageItem, MessageSendState } from '../model/MessageItem';
+import { ReactionChip } from '../model/ReactionChip';
 import { MessageTextSpan } from '../model/MessageTextSpan';
 import { MediaAttachment } from '../model/MediaAttachment';
 import { LinkPreviewInfo } from '../model/LinkPreviewInfo';
 import { ChatSearchResultItem } from '../model/ChatSearchResultItem';
+import { PinnedMessageInfo } from '../model/PinnedMessageInfo';
 import { parseFormattedText } from '../model/FormattedTextParser';
 import {
   ChatKind,
@@ -134,7 +146,9 @@ import {
   OnHeaderSubtitleChanged,
   OnChatKindChanged,
   OpenChatProfile,
-  ChatMenuAction
+  ChatMenuAction,
+  OnPinnedMessageLoaded,
+  OnChannelMemberStatusChanged
 } from '../contract/ChatIntent';
 import {
   ChatEffect,
@@ -151,7 +165,10 @@ import {
   PickAndSendFileEffect,
   CancelMediaDownloadEffect,
   FetchChatSearch,
-  JumpToMessage
+  JumpToMessage,
+  JoinChannelEffect,
+  ToggleReactionEffect,
+  OpenCommentsEffect
 } from '../contract/ChatEffect';
 import { isOutgoingMessageRead, ReadReportThrottle } from '../model/ReadReceipt';
 import { chatReducer } from '../reducer/ChatReducer';
@@ -364,8 +381,10 @@ export class ChatCoordinator {
   private chatTypeRequested: boolean = false;
   /** MSG-109：超级群/频道 id（getChat 解析缓存，供头部成员数查询）。 */
   private supergroupId: number = 0;
-  /** MSG-109：基本群 id（getChat 解析缓存；当前副标题暂不消费）。 */
+  /** MSG-109：基本群 id（getChat 解析缓存，供头部成员数查询）。 */
   private basicGroupId: number = 0;
+  /** MSG-109：getBasicGroup 是否已发起（防重；失败复位可重试）。 */
+  private basicGroupInfoRequested: boolean = false;
   /** MSG-109：getSupergroupFullInfo 是否已发起（防重；失败复位可重试）。 */
   private supergroupInfoRequested: boolean = false;
   /** MSG-109：群/频道成员数缓存（0=未知）。 */
@@ -492,6 +511,8 @@ export class ChatCoordinator {
     // MSG-109：先按已知信息补一次副标题（chatKind 未回前为 no-op），
     // getChat 回包 / 用户状态订阅 / 在线人数订阅到达后各自重算。
     this.buildHeaderSubtitle();
+    // MSG-108：加载会话置顶消息
+    this.fetchPinnedMessage();
     this.dispatch(new LoadInitialMessages());
   }
 
@@ -1621,6 +1642,25 @@ export class ChatCoordinator {
         }
       }
     );
+
+    // CHANNEL-101：频道帖子（非己方）、反应 chips 与评论数解析
+    const isChannelPost: boolean = this.chatKind === 'channel' && !message.is_outgoing;
+    const reactionChips: ReactionChip[] = [];
+    if (message.interaction_info !== null && message.interaction_info.reactions !== null) {
+      const rawReactions = message.interaction_info.reactions.reactions;
+      for (let i = 0; i < rawReactions.length; i++) {
+        const r = rawReactions[i];
+        if (r.type_ !== null && r.type_.type === 'reactionTypeEmoji') {
+          const emoji: string = (r.type_ as ReactionTypeEmoji).emoji;
+          reactionChips.push(new ReactionChip(emoji, r.total_count, r.is_chosen));
+        }
+      }
+    }
+    let commentCount: number = 0;
+    if (message.interaction_info !== null && message.interaction_info.reply_info !== null) {
+      commentCount = message.interaction_info.reply_info.reply_count;
+    }
+
     return new MessageItem(
       message.id,
       displayText,
@@ -1647,7 +1687,10 @@ export class ChatCoordinator {
       [],
       [],
       linkPreviewInfo,
-      senderInfo.userId
+      senderInfo.userId,
+      isChannelPost,
+      reactionChips,
+      commentCount
     );
   }
 
@@ -1732,6 +1775,24 @@ export class ChatCoordinator {
 
     const primaryMedia: MediaAttachment | null = albumItems.length > 0 ? albumItems[0] : null;
 
+    // CHANNEL-101：相册所属频道帖子、反应 chips 与评论数解析
+    const isChannelPost: boolean = this.chatKind === 'channel' && !lastMsg.is_outgoing;
+    const albumReactionChips: ReactionChip[] = [];
+    if (lastMsg.interaction_info !== null && lastMsg.interaction_info.reactions !== null) {
+      const rawReactions = lastMsg.interaction_info.reactions.reactions;
+      for (let i = 0; i < rawReactions.length; i++) {
+        const r = rawReactions[i];
+        if (r.type_ !== null && r.type_.type === 'reactionTypeEmoji') {
+          const emoji: string = (r.type_ as ReactionTypeEmoji).emoji;
+          albumReactionChips.push(new ReactionChip(emoji, r.total_count, r.is_chosen));
+        }
+      }
+    }
+    let albumCommentCount: number = 0;
+    if (lastMsg.interaction_info !== null && lastMsg.interaction_info.reply_info !== null) {
+      albumCommentCount = lastMsg.interaction_info.reply_info.reply_count;
+    }
+
     return new MessageItem(
       lastMsg.id,
       commonCaption,
@@ -1757,8 +1818,11 @@ export class ChatCoordinator {
       senderInfo.avatarPath,
       albumItems,
       albumMessageIds,
-      undefined,
-      senderInfo.userId
+      null,
+      senderInfo.userId,
+      isChannelPost,
+      albumReactionChips,
+      albumCommentCount
     );
   }
 
@@ -1824,6 +1888,7 @@ export class ChatCoordinator {
             if (chat.type_ !== null) {
               if (chat.type_.type === 'chatTypeSupergroup') {
                 this.supergroupId = (chat.type_ as ChatTypeSupergroup).supergroup_id;
+                this.fetchSupergroupMemberStatus();
               } else if (chat.type_.type === 'chatTypeBasicGroup') {
                 this.basicGroupId = (chat.type_ as ChatTypeBasicGroup).basic_group_id;
               }
@@ -1838,6 +1903,114 @@ export class ChatCoordinator {
       }).catch(() => {
       });
     }
+  }
+
+  /**
+   * CHANNEL-101：拉取超级群/频道详情以确认当前用户的成员身份（GetSupergroup）。
+   * 若 status 为 chatMemberStatusLeft，则表示未加入频道（回灌 isMember=false）。
+   */
+  private fetchSupergroupMemberStatus(): void {
+    if (this.destroyed || this.supergroupId <= 0) {
+      return;
+    }
+    const req: GetSupergroup = new GetSupergroup();
+    req.supergroup_id = this.supergroupId;
+    const result: Result<TdPendingRequest, AppError> =
+      this.scope.request('getSupergroup', encodeGetSupergroup(req) as TdWireObject);
+    if (result.err) {
+      this.logger.logError(TAG, result.error);
+      return;
+    }
+    if (result.ok) {
+      result.value.promise.then((res: Result<TdWireObject, AppError>) => {
+        if (this.destroyed) {
+          return;
+        }
+        if (res.err) {
+          this.logger.logError(TAG, res.error);
+          return;
+        }
+        if (res.ok) {
+          const sg: Supergroup | null = decodeSupergroup(res.value as TdJsonRaw);
+          if (sg !== null && sg.status !== null) {
+            const isLeft: boolean = sg.status.type === 'chatMemberStatusLeft';
+            this.logger.info(TAG, 'supergroup_status_resolved', `isLeft=${isLeft}`);
+            this.dispatch(new OnChannelMemberStatusChanged(!isLeft));
+          }
+        }
+      }).catch(() => {
+      });
+    }
+  }
+
+  /**
+   * MSG-108：拉取当前会话的置顶消息（GetChatPinnedMessage）。
+   * 若无置顶消息，TDLib 返回 404，静默回灌 OnPinnedMessageLoaded(null)。
+   * 若拉取成功，解析消息并在缓存中留存，回灌 OnPinnedMessageLoaded(PinnedMessageInfo)。
+   */
+  private fetchPinnedMessage(): void {
+    if (this.destroyed) {
+      return;
+    }
+    const result: Result<TdPendingRequest, AppError> = this.projection.getChatPinnedMessage();
+    if (result.err) {
+      this.dispatch(new OnPinnedMessageLoaded(null));
+      return;
+    }
+    if (result.ok) {
+      result.value.promise.then((res: Result<TdWireObject, AppError>) => {
+        if (this.destroyed) {
+          return;
+        }
+        if (res.err) {
+          this.logger.info(TAG, 'pinned_message_none', `err=${res.error.message}`);
+          this.dispatch(new OnPinnedMessageLoaded(null));
+          return;
+        }
+        if (res.ok) {
+          const msg: Message | null = decodeMessage(res.value as TdJsonRaw);
+          if (msg === null || msg.id <= 0) {
+            this.dispatch(new OnPinnedMessageLoaded(null));
+            return;
+          }
+          this.projection.addCachedMessage(msg);
+          const senderTitle: string = this.resolvePinnedSenderTitle(msg);
+          const snippet: string = messageContentText(msg.content);
+          const pinnedInfo: PinnedMessageInfo = new PinnedMessageInfo(
+            msg.id,
+            senderTitle,
+            snippet.length > 0 ? snippet : 'Pinned message'
+          );
+          this.logger.info(TAG, 'pinned_message_loaded', `id=${msg.id} sender=${senderTitle}`);
+          this.dispatch(new OnPinnedMessageLoaded(pinnedInfo));
+        }
+      }).catch(() => {
+        if (!this.destroyed) {
+          this.dispatch(new OnPinnedMessageLoaded(null));
+        }
+      });
+    }
+  }
+
+  /** MSG-108：解析置顶消息展示标题（发送者名字/群名称/私聊用户名）。 */
+  private resolvePinnedSenderTitle(msg: Message): string {
+    if (msg.sender_id !== null && msg.sender_id !== undefined) {
+      if (msg.sender_id.type === 'messageSenderUser') {
+        const userId: number = (msg.sender_id as MessageSenderUser).user_id;
+        const user: User | null = this.userRegistry.getUser(userId);
+        if (user !== null) {
+          const name: string = formatFullName(user);
+          if (name.length > 0) {
+            return name;
+          }
+        }
+        this.requestSenderUser(userId);
+        return 'Pinned Message';
+      } else if (msg.sender_id.type === 'messageSenderChat') {
+        return this.currentState.chatTitle.length > 0 ? this.currentState.chatTitle : 'Pinned Message';
+      }
+    }
+    return 'Pinned Message';
   }
 
   /** MSG-102：缓存未命中的 sender 拉取一次并订阅，User 到达后重映射上屏。 */
@@ -1892,6 +2065,8 @@ export class ChatCoordinator {
       this.subscribeOnlineMemberCount();
       if (this.supergroupId > 0) {
         this.requestSupergroupMemberCount();
+      } else if (this.basicGroupId > 0) {
+        this.requestBasicGroupMemberCount();
       }
       this.updateGroupHeaderSubtitle();
     }
@@ -1965,6 +2140,42 @@ export class ChatCoordinator {
           const info: SupergroupFullInfo | null = decodeSupergroupFullInfo(res.value as TdJsonRaw);
           if (info !== null) {
             this.memberCount = info.member_count;
+            this.updateGroupHeaderSubtitle();
+          }
+        }
+      }).catch(() => {
+      });
+    }
+  }
+
+  /** MSG-109：已知 basicGroupId 时拉取成员数；失败只记日志（复位后可重试）。 */
+  private requestBasicGroupMemberCount(): void {
+    if (this.destroyed || this.basicGroupId <= 0 || this.basicGroupInfoRequested) {
+      return;
+    }
+    this.basicGroupInfoRequested = true;
+    const req: GetBasicGroup = new GetBasicGroup();
+    req.basic_group_id = this.basicGroupId;
+    const result: Result<TdPendingRequest, AppError> =
+      this.scope.request('getBasicGroup', encodeGetBasicGroup(req) as TdWireObject);
+    if (result.err) {
+      this.basicGroupInfoRequested = false;
+      this.logger.logError(TAG, result.error);
+      return;
+    }
+    if (result.ok) {
+      result.value.promise.then((res: Result<TdWireObject, AppError>) => {
+        if (this.destroyed) {
+          return;
+        }
+        if (res.err) {
+          this.basicGroupInfoRequested = false;
+          this.logger.logError(TAG, res.error);
+        }
+        if (res.ok) {
+          const group: BasicGroup | null = decodeBasicGroup(res.value as TdJsonRaw);
+          if (group !== null) {
+            this.memberCount = group.member_count;
             this.updateGroupHeaderSubtitle();
           }
         }
@@ -2330,6 +2541,48 @@ export class ChatCoordinator {
         const jump: JumpToMessage = effect as JumpToMessage;
         // SEARCH-102：与"进会话定位"共用同一条待跳转通道（投影忙时排队而非放弃）。
         this.requestJumpToMessage(jump.messageId);
+        break;
+      }
+
+      case 'joinChannel': {
+        this.logger.info(TAG, 'join_channel', `chatId=${this.currentState.chatId}`);
+        const result: Result<TdPendingRequest, AppError> = this.projection.joinChat();
+        if (result.err) {
+          this.logger.logError(TAG, result.error);
+        }
+        if (result.ok) {
+          result.value.promise.then((res: Result<TdWireObject, AppError>) => {
+            if (this.destroyed) {
+              return;
+            }
+            if (res.err) {
+              this.logger.logError(TAG, res.error);
+            }
+            if (res.ok) {
+              this.logger.info(TAG, 'join_channel_ok', `chatId=${this.currentState.chatId}`);
+              this.dispatch(new OnChannelMemberStatusChanged(true));
+            }
+          }).catch(() => {
+          });
+        }
+        break;
+      }
+
+      case 'toggleReaction': {
+        const tr: ToggleReactionEffect = effect as ToggleReactionEffect;
+        this.logger.info(TAG, 'toggle_reaction', `messageId=${tr.messageId},emoji=${tr.emoji},isChosen=${tr.isChosen}`);
+        const result: Result<TdPendingRequest, AppError> = tr.isChosen
+          ? this.projection.addMessageReaction(tr.messageId, tr.emoji)
+          : this.projection.removeMessageReaction(tr.messageId, tr.emoji);
+        if (result.err) {
+          this.logger.logError(TAG, result.error);
+        }
+        break;
+      }
+
+      case 'openComments': {
+        const oc: OpenCommentsEffect = effect as OpenCommentsEffect;
+        this.logger.info(TAG, 'open_comments', `chatId=${oc.chatId},messageId=${oc.messageId}`);
         break;
       }
 

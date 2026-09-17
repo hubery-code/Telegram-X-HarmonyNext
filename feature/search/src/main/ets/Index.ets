@@ -11,7 +11,9 @@ export {
   SelectTab,
   PerformSearch,
   SearchSuccess,
+  OnSearchLoaded,
   SearchFailed,
+  OnSearchFailed,
   AddRecentSearch,
   ClearRecentSearches,
   SearchIntent

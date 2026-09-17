@@ -15,6 +15,7 @@ import {
   OnProfileFailed,
   OnBirthdayLoaded,
   OnSharedTabSelected,
+  LoadMoreSharedContent,
   OnSharedContentLoaded,
   OnSharedGroupsLoaded
 } from '../main/ets/contract/ProfileIntent';
@@ -22,7 +23,8 @@ import {
   ProfileEffect,
   CreatePrivateChatEffect,
   FetchSharedContent,
-  FetchSharedGroups
+  FetchSharedGroups,
+  FetchMoreSharedContent
 } from '../main/ets/contract/ProfileEffect';
 import {
   SharedMediaItem,
@@ -249,6 +251,79 @@ export default function profileReducerTest(): void {
       expect(result.state.sharedGroups[1].title).assertEqual('Group B');
       expect(result.state.sharedLoading).assertFalse();
       expect(result.effects.length).assertEqual(0);
+    });
+
+    it('loadMoreSharedContent_emitsFetchMoreSharedContent', 0, () => {
+      const state: ProfileUiState = makeState(42).copyWith({
+        activeSharedTab: 1,
+        sharedLoading: false,
+        sharedLoadingMore: false,
+        sharedHasMore: true
+      });
+      const result: ReducerResult<ProfileUiState, ProfileEffect> = profileReducer(
+        state,
+        new LoadMoreSharedContent(1),
+        makeEnv()
+      );
+      expect(result.state.sharedLoadingMore).assertTrue();
+      expect(result.effects.length).assertEqual(1);
+      expect(result.effects[0].kind).assertEqual('fetchMoreSharedContent');
+      const effect: FetchMoreSharedContent = result.effects[0] as FetchMoreSharedContent;
+      expect(effect.tab).assertEqual(1);
+    });
+
+    it('loadMoreSharedContent_whenAlreadyLoading_isNoOp', 0, () => {
+      const state: ProfileUiState = makeState(42).copyWith({
+        sharedLoadingMore: true
+      });
+      const result: ReducerResult<ProfileUiState, ProfileEffect> = profileReducer(
+        state,
+        new LoadMoreSharedContent(0),
+        makeEnv()
+      );
+      expect(result.state === state).assertTrue();
+      expect(result.effects.length).assertEqual(0);
+    });
+
+    it('loadMoreSharedContent_whenNoMore_isNoOp', 0, () => {
+      const state: ProfileUiState = makeState(42).copyWith({
+        sharedHasMore: false
+      });
+      const result: ReducerResult<ProfileUiState, ProfileEffect> = profileReducer(
+        state,
+        new LoadMoreSharedContent(0),
+        makeEnv()
+      );
+      expect(result.state === state).assertTrue();
+      expect(result.effects.length).assertEqual(0);
+    });
+
+    it('onSharedContentLoaded_updatesHasMoreAndStopsLoadingMore', 0, () => {
+      const state: ProfileUiState = makeState(42).copyWith({
+        sharedLoadingMore: true,
+        sharedHasMore: true
+      });
+      const result: ReducerResult<ProfileUiState, ProfileEffect> = profileReducer(
+        state,
+        new OnSharedContentLoaded(0, [], [], [], false),
+        makeEnv()
+      );
+      expect(result.state.sharedLoadingMore).assertFalse();
+      expect(result.state.sharedHasMore).assertFalse();
+    });
+
+    it('onSharedGroupsLoaded_updatesHasMoreAndStopsLoadingMore', 0, () => {
+      const state: ProfileUiState = makeState(42).copyWith({
+        sharedLoadingMore: true,
+        sharedHasMore: true
+      });
+      const result: ReducerResult<ProfileUiState, ProfileEffect> = profileReducer(
+        state,
+        new OnSharedGroupsLoaded([], false),
+        makeEnv()
+      );
+      expect(result.state.sharedLoadingMore).assertFalse();
+      expect(result.state.sharedHasMore).assertFalse();
     });
   });
 }

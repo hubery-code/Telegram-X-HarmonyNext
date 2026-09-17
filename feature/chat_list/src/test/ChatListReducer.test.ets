@@ -85,6 +85,14 @@ export default function chatListReducerTest() {
       expect(itemWithoutAvatar.avatarPath).assertNull();
     });
 
+    it('chatListItem_preservesMuted', 0, () => {
+      const itemMuted = new ChatListItem(1, 'Test', 'msg', 1000, 0, '#FF0000', 'T', false, false, null, null, true);
+      expect(itemMuted.isMuted).assertTrue();
+
+      const itemDefault = new ChatListItem(2, 'Test 2', 'msg', 1000, 0, '#FF0000', 'T');
+      expect(itemDefault.isMuted).assertFalse();
+    });
+
     it('chatActionRequested_opensMenuWithCurrentPinAndReadState', 0, () => {
       const state: ChatListUiState = makeState([makeItem(7, 3, true, false)]);
       const result: ReducerResult<ChatListUiState, ChatListEffect> =

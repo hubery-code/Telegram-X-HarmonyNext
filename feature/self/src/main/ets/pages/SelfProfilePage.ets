@@ -43,13 +43,14 @@ interface SettingsEntry {
   readonly key: string;
   readonly label: string;
   readonly subtitle: string;
+  readonly icon: Resource;
 }
 
 const SETTINGS_ENTRIES: SettingsEntry[] = [
-  { key: 'devices', label: '设备', subtitle: '—' },
-  { key: 'notifications', label: '通知', subtitle: '开启' },
-  { key: 'data_and_storage', label: '数据和存储', subtitle: '' },
-  { key: 'privacy_and_security', label: '隐私和安全', subtitle: '' }
+  { key: 'devices', label: '设备', subtitle: '—', icon: $r('app.media.ic_devices') },
+  { key: 'notifications', label: '通知', subtitle: '开启', icon: $r('app.media.ic_notifications') },
+  { key: 'data_and_storage', label: '数据和存储', subtitle: '', icon: $r('app.media.ic_storage') },
+  { key: 'privacy_and_security', label: '隐私和安全', subtitle: '', icon: $r('app.media.ic_lock') }
 ];
 
 const BACK_ARROW_SIZE: number = 44;
@@ -73,13 +74,11 @@ export struct SelfProfilePage {
   Header() {
     Column() {
       Row() {
-        Text('‹')
-          .fontSize(T.typography.title.fontSize)
-          .fontWeight(T.typography.title.fontWeight)
-          .fontColor(T.colors.textOnAccent)
-          .width(BACK_ARROW_SIZE)
-          .height(BACK_ARROW_SIZE)
-          .textAlign(TextAlign.Center)
+        Image($r('app.media.ic_back'))
+          .width(24)
+          .height(24)
+          .fillColor(T.colors.textOnAccent)
+          .margin({ left: T.spacing.xs })
           .onClick(() => {
             this.onBack();
           })
@@ -139,18 +138,28 @@ export struct SelfProfilePage {
   }
 
   @Builder
-  InfoRow(label: string, value: string) {
-    Column() {
-      Text(label)
-        .fontSize(T.typography.footnote.fontSize)
-        .fontColor(T.colors.textSecondary)
-      Text(value)
-        .fontSize(T.typography.body.fontSize)
-        .fontColor(T.colors.textPrimary)
-        .margin({ top: T.spacing.hairline })
+  InfoRow(icon: Resource, label: string, value: string) {
+    Row() {
+      Image(icon)
+        .width(22)
+        .height(22)
+        .fillColor(T.colors.textSecondary)
+        .margin({ right: T.spacing.md })
+
+      Column() {
+        Text(label)
+          .fontSize(T.typography.footnote.fontSize)
+          .fontColor(T.colors.textSecondary)
+        Text(value)
+          .fontSize(T.typography.body.fontSize)
+          .fontColor(T.colors.textPrimary)
+          .margin({ top: T.spacing.hairline })
+      }
+      .layoutWeight(1)
+      .alignItems(HorizontalAlign.Start)
     }
     .width('100%')
-    .alignItems(HorizontalAlign.Start)
+    .alignItems(VerticalAlign.Center)
     .padding({
       left: T.spacing.screenInset,
       right: T.spacing.screenInset,
@@ -163,14 +172,14 @@ export struct SelfProfilePage {
   InfoSection() {
     Column() {
       if (this.uiState.username.length > 0) {
-        this.InfoRow('用户名', `@${this.uiState.username}`)
+        this.InfoRow($r('app.media.ic_username'), '用户名', `@${this.uiState.username}`)
       }
       if (this.uiState.phone.length > 0) {
-        this.InfoRow('手机', this.uiState.phone)
+        this.InfoRow($r('app.media.ic_call'), '手机', this.uiState.phone)
       }
-      this.InfoRow('个人简介', this.uiState.bio.length > 0 ? this.uiState.bio : '<空>')
+      this.InfoRow($r('app.media.ic_info'), '个人简介', this.uiState.bio.length > 0 ? this.uiState.bio : '<空>')
       if (this.uiState.birthdayText.length > 0) {
-        this.InfoRow('生日', this.uiState.birthdayText)
+        this.InfoRow($r('app.media.ic_cake'), '生日', this.uiState.birthdayText)
       }
     }
     .width('100%')
@@ -183,6 +192,12 @@ export struct SelfProfilePage {
       ForEach(SETTINGS_ENTRIES.slice(), (entry: SettingsEntry, index: number) => {
         Column() {
           Row() {
+            Image(entry.icon)
+              .width(22)
+              .height(22)
+              .fillColor(T.colors.textSecondary)
+              .margin({ right: T.spacing.md })
+
             Text(entry.label)
               .fontSize(T.typography.body.fontSize)
               .fontColor(T.colors.textPrimary)
@@ -194,9 +209,10 @@ export struct SelfProfilePage {
                 .fontColor(T.colors.textSecondary)
             }
 
-            Text('›')
-              .fontSize(T.typography.title.fontSize)
-              .fontColor(T.colors.textSecondary)
+            Image($r('app.media.ic_chevron_right'))
+              .width(18)
+              .height(18)
+              .fillColor(T.colors.textSecondary)
               .margin({ left: T.spacing.sm })
           }
           .width('100%')
@@ -275,9 +291,10 @@ export struct SelfProfilePage {
 
       if (!this.uiState.isLoading && this.uiState.errorMessage === null) {
         Column() {
-          Text('✎')
-            .fontSize(24)
-            .fontColor(T.colors.textOnAccent)
+          Image($r('app.media.ic_edit'))
+            .width(24)
+            .height(24)
+            .fillColor(T.colors.textOnAccent)
         }
         .width(FAB_SIZE)
         .height(FAB_SIZE)
