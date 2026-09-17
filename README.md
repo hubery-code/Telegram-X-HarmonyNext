@@ -6,6 +6,20 @@
 
 > ⚠️ 本项目是社区驱动的非官方迁移，与 Telegram、Telegram X（TGX-Android）团队及华为均无隶属关系。Telegram 是 Telegram FZ-LLC 的注册商标。
 
+## 界面预览 / Screenshots
+
+> 📱 截图均来自 HarmonyOS NEXT 真实运行环境下的原生 ArkUI 渲染界面（隐私敏感信息已做脱敏遮罩处理）。
+
+| 会话列表与置顶 | 聊天详情与富媒体 | 贴纸包预览与添加 |
+| :---: | :---: | :---: |
+| <img src="docs/images/preview_chats.png" width="240" alt="会话列表" /> | <img src="docs/images/preview_chat_detail.png" width="240" alt="聊天详情与贴纸/视频" /> | <img src="docs/images/preview_sticker_preview.png" width="240" alt="贴纸包详情与添加" /> |
+| **置顶、未读徽标与搜索** | **视频、链接卡片、贴纸与反应** | **半模态 Sticker Set 弹窗** |
+
+| 侧边栏抽屉导航 | 设置中心与存储管理 |
+| :---: | :---: |
+| <img src="docs/images/preview_drawer.png" width="240" alt="侧边栏抽屉" /> | <img src="docs/images/preview_settings.png" width="240" alt="设置中心" /> |
+| **快捷入口与夜间模式切换** | **通知、存储清理与外观主题** |
+
 ## 当前进展
 
 ### ✅ 已完成（真机验证通过）
@@ -13,6 +27,7 @@
 | 功能 | 说明 |
 |---|---|
 | TDLib 移植 | TDLib 1.8.67 经 HarmonyOS NDK 交叉编译跑在真机上，Node-API 桥异步事件有序不丢 |
+| 贴纸包详情与添加 | 表情面板贴纸分类浏览、点击即发；半模态弹窗展示贴纸包网格详情并支持一键安装已发布贴纸集 |
 | 扫码登录 | 用手机 Telegram 扫二维码完成授权，国内网络环境的人机验证拦截有兜底方案 |
 | 登录态恢复 | 杀进程冷启动直接回到会话列表，不用重新登录 |
 | 会话列表 | 真实会话数据：头像、未读角标、最后一条消息预览、分页加载、下拉刷新 |
