@@ -4,7 +4,7 @@
 
 export { MessageItem, MessageSendState } from './model/MessageItem';
 export { ReactionChip } from './model/ReactionChip';
-export { MediaAttachment, MediaKind, formatFileSize } from './model/MediaAttachment';
+export { MediaAttachment, MediaKind, formatFileSize, decodeWaveform, normalizeWaveform } from './model/MediaAttachment';
 export { MediaViewerItem } from './model/MediaViewerItem';
 export { LinkPreviewInfo } from './model/LinkPreviewInfo';
 export { ChatSearchResultItem } from './model/ChatSearchResultItem';

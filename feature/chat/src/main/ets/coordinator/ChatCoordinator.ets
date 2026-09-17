@@ -38,6 +38,7 @@ import { ManualClock, SequentialIdGenerator, AppError, AppErrors } from '@tgx/co
 import { AccountScope } from '@tgx/core-account';
 import {
   Animation,
+  Audio,
   BasicGroup,
   Chat,
   ChatTypeBasicGroup,
@@ -72,6 +73,7 @@ import {
   LinkPreviewTypeApp,
   Message,
   MessageAnimation,
+  MessageAudio,
   MessageDocument,
   MessagePhoto,
   MessageProperties,
@@ -81,6 +83,7 @@ import {
   MessageText,
   MessageVideo,
   MessageVideoNote,
+  MessageVoiceNote,
   Photo,
   PhotoSize,
   Sticker,
@@ -99,7 +102,8 @@ import {
   UpdateChatOnlineMemberCount,
   User,
   Video,
-  VideoNote
+  VideoNote,
+  VoiceNote
 } from '@tgx/core-td-api-generated';
 import { FileRegistry, formatFullName, MessageListState, MessageProjection, UserRegistry } from '@tgx/core-domain';
 import { TdPendingRequest, TdRoutedEvent, TdUpdateFilter, TdUpdateSubscription, TdWireObject, TdWireValue } from '@tgx/td-gateway';
@@ -109,7 +113,7 @@ import { ReducerEnv, ReducerResult } from '@tgx/feature-template';
 import { MessageItem, MessageSendState } from '../model/MessageItem';
 import { ReactionChip } from '../model/ReactionChip';
 import { MessageTextSpan } from '../model/MessageTextSpan';
-import { MediaAttachment } from '../model/MediaAttachment';
+import { MediaAttachment, decodeWaveform } from '../model/MediaAttachment';
 import { LinkPreviewInfo } from '../model/LinkPreviewInfo';
 import { ChatSearchResultItem } from '../model/ChatSearchResultItem';
 import { PinnedMessageInfo } from '../model/PinnedMessageInfo';
@@ -1181,7 +1185,7 @@ export class ChatCoordinator {
       }
 
       return new MediaAttachment(
-        'video',
+        'videoNote',
         fileId,
         localPath,
         thumbPath,
@@ -1316,6 +1320,147 @@ export class ChatCoordinator {
       );
     }
 
+    if (message.content.type === 'messageVoiceNote') {
+      const voiceContent: MessageVoiceNote = message.content as MessageVoiceNote;
+      if (voiceContent.voice_note === null) {
+        return null;
+      }
+      const vn: VoiceNote = voiceContent.voice_note;
+      const targetFile: File | null = vn.voice;
+      if (targetFile === null) {
+        return null;
+      }
+
+      const fileId: number = targetFile.id;
+      const localPath: string | null = this.fileRegistry.getLocalPath(fileId);
+      const isDownloaded: boolean = this.fileRegistry.isDownloaded(fileId);
+      const progress: number = this.fileRegistry.getDownloadProgress(fileId);
+      const latestFile: File | null = this.fileRegistry.getFile(fileId);
+      const isDownloading: boolean = latestFile !== null && latestFile.local !== null
+        ? latestFile.local.is_downloading_active
+        : (targetFile.local !== null ? targetFile.local.is_downloading_active : false);
+
+      const isUploading: boolean = this.fileRegistry.isUploading(fileId) ||
+        (message.is_outgoing && message.sending_state !== null && message.sending_state.type === 'messageSendingStatePending');
+      const uploadProgress: number = this.fileRegistry.getUploadProgress(fileId);
+
+      if (isUploading && !this.fileSubscriptions.has(fileId)) {
+        const sub: Subscription = this.fileRegistry.subscribeFile(fileId, (file: File) => {
+          if (!this.destroyed) {
+            if (file.remote !== null && file.remote.is_uploading_completed) {
+              this.scheduleSyncFromProjection();
+            } else {
+              this.scheduleThrottledSync();
+            }
+          }
+        });
+        this.fileSubscriptions.set(fileId, sub);
+      }
+
+      const captionText: string = voiceContent.caption !== null ? voiceContent.caption.text : '';
+      const captionSpans: MessageTextSpan[] = voiceContent.caption !== null ? parseFormattedText(voiceContent.caption) : [];
+      const waveform: number[] = decodeWaveform(vn.waveform);
+
+      return new MediaAttachment(
+        'voiceNote',
+        fileId,
+        localPath,
+        null,
+        0,
+        0,
+        vn.duration,
+        isDownloading,
+        isDownloaded,
+        progress,
+        captionText,
+        captionSpans,
+        false,
+        isUploading,
+        uploadProgress,
+        '',
+        targetFile.size,
+        vn.mime_type,
+        waveform,
+        '',
+        '',
+        voiceContent.is_listened
+      );
+    }
+
+    if (message.content.type === 'messageAudio') {
+      const audioContent: MessageAudio = message.content as MessageAudio;
+      if (audioContent.audio === null) {
+        return null;
+      }
+      const audio: Audio = audioContent.audio;
+      const targetFile: File | null = audio.audio;
+      if (targetFile === null) {
+        return null;
+      }
+
+      const fileId: number = targetFile.id;
+      const localPath: string | null = this.fileRegistry.getLocalPath(fileId);
+      const isDownloaded: boolean = this.fileRegistry.isDownloaded(fileId);
+      const progress: number = this.fileRegistry.getDownloadProgress(fileId);
+      const latestFile: File | null = this.fileRegistry.getFile(fileId);
+      const isDownloading: boolean = latestFile !== null && latestFile.local !== null
+        ? latestFile.local.is_downloading_active
+        : (targetFile.local !== null ? targetFile.local.is_downloading_active : false);
+
+      const isUploading: boolean = this.fileRegistry.isUploading(fileId) ||
+        (message.is_outgoing && message.sending_state !== null && message.sending_state.type === 'messageSendingStatePending');
+      const uploadProgress: number = this.fileRegistry.getUploadProgress(fileId);
+
+      if (isUploading && !this.fileSubscriptions.has(fileId)) {
+        const sub: Subscription = this.fileRegistry.subscribeFile(fileId, (file: File) => {
+          if (!this.destroyed) {
+            if (file.remote !== null && file.remote.is_uploading_completed) {
+              this.scheduleSyncFromProjection();
+            } else {
+              this.scheduleThrottledSync();
+            }
+          }
+        });
+        this.fileSubscriptions.set(fileId, sub);
+      }
+
+      let thumbPath: string | null = null;
+      if (audio.album_cover_thumbnail !== null && audio.album_cover_thumbnail.file !== null) {
+        thumbPath = this.fileRegistry.getLocalPath(audio.album_cover_thumbnail.file.id);
+        if (thumbPath === null) {
+          this.requestMediaDownload(audio.album_cover_thumbnail.file.id, 2);
+        }
+      }
+
+      const captionText: string = audioContent.caption !== null ? audioContent.caption.text : '';
+      const captionSpans: MessageTextSpan[] = audioContent.caption !== null ? parseFormattedText(audioContent.caption) : [];
+
+      return new MediaAttachment(
+        'audio',
+        fileId,
+        localPath,
+        thumbPath,
+        0,
+        0,
+        audio.duration,
+        isDownloading,
+        isDownloaded,
+        progress,
+        captionText,
+        captionSpans,
+        false,
+        isUploading,
+        uploadProgress,
+        audio.file_name,
+        targetFile.size,
+        audio.mime_type,
+        [],
+        audio.title,
+        audio.performer,
+        false
+      );
+    }
+
     return null;
   }
 
@@ -1447,6 +1592,42 @@ export class ChatCoordinator {
           const noteContent: MessageVideoNote = message.content as MessageVideoNote;
           if (noteContent.video_note !== null && noteContent.video_note.thumbnail !== null && noteContent.video_note.thumbnail.file !== null) {
             const fileId: number = noteContent.video_note.thumbnail.file.id;
+            thumbnailPath = this.fileRegistry.getLocalPath(fileId);
+            if (thumbnailPath === null && !this.fileRegistry.isDownloaded(fileId)) {
+              this.requestMediaDownload(fileId, 2);
+            }
+          }
+          break;
+        }
+        case 'messageVoiceNote': {
+          summary = 'Voice message';
+          break;
+        }
+        case 'messageAudio': {
+          const audioContent: MessageAudio = message.content as MessageAudio;
+          if (audioContent.audio !== null && audioContent.audio.title.length > 0) {
+            summary = audioContent.audio.title;
+          } else {
+            summary = 'Audio';
+          }
+          if (audioContent.audio !== null && audioContent.audio.album_cover_thumbnail !== null && audioContent.audio.album_cover_thumbnail.file !== null) {
+            const fileId: number = audioContent.audio.album_cover_thumbnail.file.id;
+            thumbnailPath = this.fileRegistry.getLocalPath(fileId);
+            if (thumbnailPath === null && !this.fileRegistry.isDownloaded(fileId)) {
+              this.requestMediaDownload(fileId, 2);
+            }
+          }
+          break;
+        }
+        case 'messageDocument': {
+          const docContent: MessageDocument = message.content as MessageDocument;
+          if (docContent.document !== null && docContent.document.file_name.length > 0) {
+            summary = docContent.document.file_name;
+          } else {
+            summary = 'Document';
+          }
+          if (docContent.document !== null && docContent.document.thumbnail !== null && docContent.document.thumbnail.file !== null) {
+            const fileId: number = docContent.document.thumbnail.file.id;
             thumbnailPath = this.fileRegistry.getLocalPath(fileId);
             if (thumbnailPath === null && !this.fileRegistry.isDownloaded(fileId)) {
               this.requestMediaDownload(fileId, 2);

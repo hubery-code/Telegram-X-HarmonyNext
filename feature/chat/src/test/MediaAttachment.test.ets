@@ -1,5 +1,5 @@
 import { describe, it, expect } from '@ohos/hypium';
-import { MediaAttachment, MediaKind, formatFileSize } from '../main/ets/model/MediaAttachment';
+import { MediaAttachment, MediaKind, formatFileSize, decodeWaveform, normalizeWaveform } from '../main/ets/model/MediaAttachment';
 import { MessageItem } from '../main/ets/model/MessageItem';
 import { MessageTextSpan } from '../main/ets/model/MessageTextSpan';
 
@@ -257,6 +257,126 @@ export default function mediaAttachmentTest() {
       expect(formatFileSize(1048576)).assertEqual('1.0 MB');
       expect(formatFileSize(15728640)).assertEqual('15.0 MB');
       expect(formatFileSize(1073741824)).assertEqual('1.0 GB');
+    });
+
+    it('creates voiceNote media attachment with waveform and isListened', 0, () => {
+      const voice = new MediaAttachment(
+        'voiceNote',
+        5001,
+        '/data/storage/el2/base/files/voice.ogg',
+        null,
+        0,
+        0,
+        15,
+        false,
+        true,
+        1.0,
+        'Voice caption',
+        [],
+        false,
+        false,
+        0,
+        '',
+        12345,
+        'audio/ogg',
+        [5, 10, 20, 15],
+        '',
+        '',
+        false
+      );
+
+      expect(voice.kind).assertEqual('voiceNote');
+      expect(voice.fileId).assertEqual(5001);
+      expect(voice.duration).assertEqual(15);
+      expect(voice.isDownloaded).assertTrue();
+      expect(voice.waveform.length).assertEqual(4);
+      expect(voice.waveform[1]).assertEqual(10);
+      expect(voice.isListened).assertFalse();
+      expect(voice.caption).assertEqual('Voice caption');
+    });
+
+    it('creates audio media attachment with title, performer and thumbnail', 0, () => {
+      const audio = new MediaAttachment(
+        'audio',
+        6001,
+        '/data/storage/el2/base/files/song.mp3',
+        '/data/storage/el2/base/files/cover.jpg',
+        0,
+        0,
+        210,
+        false,
+        true,
+        1.0,
+        '',
+        [],
+        false,
+        false,
+        0,
+        'song.mp3',
+        5000000,
+        'audio/mpeg',
+        [],
+        'Bohemian Rhapsody',
+        'Queen',
+        false
+      );
+
+      expect(audio.kind).assertEqual('audio');
+      expect(audio.audioTitle).assertEqual('Bohemian Rhapsody');
+      expect(audio.audioPerformer).assertEqual('Queen');
+      expect(audio.duration).assertEqual(210);
+      expect(audio.thumbnailPath).assertEqual('/data/storage/el2/base/files/cover.jpg');
+    });
+
+    it('creates videoNote media attachment with square dimensions', 0, () => {
+      const videoNote = new MediaAttachment(
+        'videoNote',
+        7001,
+        '/data/storage/el2/base/files/round.mp4',
+        '/data/storage/el2/base/files/round_thumb.jpg',
+        240,
+        240,
+        8,
+        false,
+        true,
+        1.0
+      );
+
+      expect(videoNote.kind).assertEqual('videoNote');
+      expect(videoNote.width).assertEqual(240);
+      expect(videoNote.height).assertEqual(240);
+      expect(videoNote.duration).assertEqual(8);
+      expect(videoNote.isDownloaded).assertTrue();
+    });
+
+    it('decodeWaveform decodes base64 5-bit waveform properly', 0, () => {
+      expect(decodeWaveform('').length).assertEqual(0);
+
+      // 5 bytes = 40 bits = 8 samples (each 5 bits)
+      // Base64 of 5 zero bytes: "AAAAAAA="
+      const zeros = decodeWaveform('AAAAAAA=');
+      expect(zeros.length).assertEqual(8);
+      expect(zeros[0]).assertEqual(0);
+
+      // Invalid base64 returns empty
+      expect(decodeWaveform('not-valid!!').length).assertEqual(0);
+    });
+
+    it('normalizeWaveform resamples samples to targetCount', 0, () => {
+      const emptyNorm = normalizeWaveform([], 32);
+      expect(emptyNorm.length).assertEqual(32);
+      // Default waveform has non-zero values
+      expect(emptyNorm[0] > 0).assertTrue();
+
+      const samples = [10, 20, 30, 40, 50, 60];
+      const downsampled = normalizeWaveform(samples, 3);
+      expect(downsampled.length).assertEqual(3);
+      // Chunk 0 is [10, 20], max is 20
+      expect(downsampled[0]).assertEqual(20);
+      // Chunk 1 is [30, 40], max is 40
+      expect(downsampled[1]).assertEqual(40);
+      // Chunk 2 is [50, 60], max is 60
+      expect(downsampled[2]).assertEqual(60);
     });
 
   });

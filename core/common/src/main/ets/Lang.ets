@@ -90,6 +90,10 @@ const EN_DICTIONARY: Record<string, string> = {
   'Send': 'Send',
   'Photos': 'Photos',
   'Files': 'Files',
+  'Voice message': 'Voice message',
+  'Audio': 'Audio',
+  'Video message': 'Video message',
+  'Unknown artist': 'Unknown artist',
 
   // Settings specific
   'NOTIFICATIONS': 'NOTIFICATIONS',
@@ -163,6 +167,10 @@ const ZH_DICTIONARY: Record<string, string> = {
   'Send': '发送',
   'Photos': '照片',
   'Files': '文件',
+  'Voice message': '语音消息',
+  'Audio': '音频',
+  'Video message': '视频消息',
+  'Unknown artist': '未知艺术家',
 
   // Settings specific
   'NOTIFICATIONS': '通知',

@@ -7,9 +7,10 @@
  * - 图文说明：caption 与富文本 captionSpans。
  */
 
+import { base64Decode } from '@tgx/core-common';
 import { MessageTextSpan } from './MessageTextSpan';
 
-export type MediaKind = 'none' | 'photo' | 'video' | 'animation' | 'document' | 'sticker';
+export type MediaKind = 'none' | 'photo' | 'video' | 'animation' | 'document' | 'sticker' | 'voiceNote' | 'audio' | 'videoNote';
 
 export class MediaAttachment {
   readonly kind: MediaKind;
@@ -30,6 +31,10 @@ export class MediaAttachment {
   readonly fileName: string;
   readonly fileSize: number;
   readonly mimeType: string;
+  readonly waveform: number[];
+  readonly audioTitle: string;
+  readonly audioPerformer: string;
+  readonly isListened: boolean;
 
   constructor(
     kind: MediaKind,
@@ -49,7 +54,11 @@ export class MediaAttachment {
     uploadProgress: number = 0,
     fileName: string = '',
     fileSize: number = 0,
-    mimeType: string = ''
+    mimeType: string = '',
+    waveform: number[] = [],
+    audioTitle: string = '',
+    audioPerformer: string = '',
+    isListened: boolean = false
   ) {
     this.kind = kind;
     this.fileId = fileId;
@@ -69,6 +78,10 @@ export class MediaAttachment {
     this.fileName = fileName;
     this.fileSize = fileSize;
     this.mimeType = mimeType;
+    this.waveform = waveform;
+    this.audioTitle = audioTitle;
+    this.audioPerformer = audioPerformer;
+    this.isListened = isListened;
   }
 
   copyWith(
@@ -81,7 +94,11 @@ export class MediaAttachment {
     uploadProgress?: number,
     fileName?: string,
     fileSize?: number,
-    mimeType?: string
+    mimeType?: string,
+    waveform?: number[],
+    audioTitle?: string,
+    audioPerformer?: string,
+    isListened?: boolean
   ): MediaAttachment {
     return new MediaAttachment(
       this.kind,
@@ -101,7 +118,11 @@ export class MediaAttachment {
       uploadProgress !== undefined ? uploadProgress : this.uploadProgress,
       fileName !== undefined ? fileName : this.fileName,
       fileSize !== undefined ? fileSize : this.fileSize,
-      mimeType !== undefined ? mimeType : this.mimeType
+      mimeType !== undefined ? mimeType : this.mimeType,
+      waveform !== undefined ? waveform : this.waveform,
+      audioTitle !== undefined ? audioTitle : this.audioTitle,
+      audioPerformer !== undefined ? audioPerformer : this.audioPerformer,
+      isListened !== undefined ? isListened : this.isListened
     );
   }
 }
@@ -124,4 +145,73 @@ export function formatFileSize(bytes: number): string {
     return `${(bytes / MB).toFixed(1)} MB`;
   }
   return `${(bytes / GB).toFixed(1)} GB`;
+}
+
+const DEFAULT_WAVEFORM: number[] = [
+  3, 6, 10, 16, 22, 28, 20, 14, 8, 12, 18, 24, 30, 25, 18, 12,
+  8, 15, 22, 26, 20, 14, 8, 5, 10, 16, 22, 18, 12, 8, 5, 3
+];
+
+/**
+ * 解码 TDLib 5-bit 格式的波形数据。
+ *
+ * TDLib VoiceNote.waveform 是经 Base64 编码的字节串，
+ * 内部按 5 bits 一个采样点连续打包：
+ * - 总采样数: floor((bytes.length * 8) / 5)
+ * - 每个采样值: 0..31
+ */
+export function decodeWaveform(waveformBase64: string): number[] {
+  if (!waveformBase64 || waveformBase64.length === 0) {
+    return [];
+  }
+  let bytes: Uint8Array;
+  try {
+    bytes = base64Decode(waveformBase64);
+  } catch (_e) {
+    return [];
+  }
+  if (bytes.length === 0) {
+    return [];
+  }
+  const totalBits: number = bytes.length * 8;
+  const sampleCount: number = Math.floor(totalBits / 5);
+  const samples: number[] = [];
+  for (let i = 0; i < sampleCount; i++) {
+    const bitIndex: number = i * 5;
+    const byteIndex: number = Math.floor(bitIndex / 8);
+    const bitOffset: number = bitIndex % 8;
+    let sample: number = (bytes[byteIndex] >> bitOffset) & 0x1F;
+    if (bitOffset > 3 && byteIndex + 1 < bytes.length) {
+      sample |= (bytes[byteIndex + 1] << (8 - bitOffset)) & 0x1F;
+    }
+    samples.push(sample);
+  }
+  return samples;
+}
+
+/**
+ * 将原始采样归一化并降采样到指定的条数（默认 32 条），
+ * 确保即使无波形数据或超长波形也能美观展示。
+ */
+export function normalizeWaveform(samples: number[], targetCount: number = 32): number[] {
+  if (samples.length === 0) {
+    const out: number[] = [];
+    for (let i = 0; i < targetCount; i++) {
+      out.push(DEFAULT_WAVEFORM[i % DEFAULT_WAVEFORM.length]);
+    }
+    return out;
+  }
+  const out: number[] = [];
+  for (let i = 0; i < targetCount; i++) {
+    const start: number = Math.floor((i * samples.length) / targetCount);
+    const end: number = Math.max(start + 1, Math.floor(((i + 1) * samples.length) / targetCount));
+    let maxVal: number = 0;
+    for (let k = start; k < end && k < samples.length; k++) {
+      if (samples[k] > maxVal) {
+        maxVal = samples[k];
+      }
+    }
+    out.push(maxVal);
+  }
+  return out;
 }

@@ -44,6 +44,7 @@
  */
 
 import { LightTheme } from '@tgx/core-design-system';
+import { Lang } from '@tgx/core-common';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { common } from '@kit.AbilityKit';
 import { BusinessError } from '@kit.BasicServicesKit';
@@ -51,7 +52,7 @@ import { fileUri } from '@kit.CoreFileKit';
 import { MessageItem } from '../model/MessageItem';
 import { ReactionChip } from '../model/ReactionChip';
 import { MessageTextSpan } from '../model/MessageTextSpan';
-import { MediaAttachment, formatFileSize } from '../model/MediaAttachment';
+import { MediaAttachment, formatFileSize, normalizeWaveform } from '../model/MediaAttachment';
 import { MediaViewerItem } from '../model/MediaViewerItem';
 import { LinkPreviewInfo } from '../model/LinkPreviewInfo';
 import {
@@ -529,6 +530,10 @@ export struct ChatPage {
     if (item.senderUserId > 0) {
       this.onDispatch(new OpenUserProfile(item.senderUserId));
     }
+  }
+
+  private t(key: string, ...args: (string | number)[]): string {
+    return Lang.getInstance().getString(key, ...args);
   }
 
   /**
@@ -1085,6 +1090,12 @@ export struct ChatPage {
             this.StickerBubble(item.media, item)
           } else if (item.media.kind === 'document') {
             this.DocumentBubble(item.media, item.messageId, item.sendState === 'failed')
+          } else if (item.media.kind === 'voiceNote') {
+            this.VoiceNoteBubble(item.media, item)
+          } else if (item.media.kind === 'audio') {
+            this.AudioBubble(item.media, item.messageId, item.sendState === 'failed')
+          } else if (item.media.kind === 'videoNote') {
+            this.VideoNoteBubble(item.media, item, item.sendState === 'failed')
           } else {
             this.MediaBubble(item.media, item.messageId, item.sendState === 'failed')
           }
@@ -1154,7 +1165,7 @@ export struct ChatPage {
           this.LinkPreviewBubble(item.linkPreview)
         }
 
-        if (!this.isSticker(item)) {
+        if (!this.isStandaloneBubble(item)) {
           this.MessageStatusBadge(item, false)
         }
 
@@ -1169,15 +1180,15 @@ export struct ChatPage {
         }
       }
       .alignItems(HorizontalAlign.End)
-      .backgroundColor(item.isChannelPost ? Color.Transparent : (this.isSticker(item) ? Color.Transparent : (item.isOutgoing ? T.colors.chatOutgoing : T.colors.chatIncoming)))
-      .borderRadius(item.isChannelPost ? 0 : (this.isSticker(item) ? 0 : T.radius.lg))
-      .clip(this.isSticker(item) ? false : true)
+      .backgroundColor(item.isChannelPost ? Color.Transparent : (this.isStandaloneBubble(item) ? Color.Transparent : (item.isOutgoing ? T.colors.chatOutgoing : T.colors.chatIncoming)))
+      .borderRadius(item.isChannelPost ? 0 : (this.isStandaloneBubble(item) ? 0 : T.radius.lg))
+      .clip(this.isStandaloneBubble(item) ? false : true)
       .padding(item.isChannelPost ? {
         left: T.spacing.xs,
         right: T.spacing.xs,
         top: T.spacing.xs,
         bottom: T.spacing.xs
-      } : (this.isSticker(item) ? 0 : {
+      } : (this.isStandaloneBubble(item) ? 0 : {
         left: T.spacing.md,
         right: T.spacing.md,
         top: T.spacing.sm,
@@ -1327,6 +1338,14 @@ export struct ChatPage {
 
   private isSticker(item: MessageItem): boolean {
     return item.media !== null && item.media.kind === 'sticker';
+  }
+
+  private isVideoNote(item: MessageItem): boolean {
+    return item.media !== null && item.media.kind === 'videoNote';
+  }
+
+  private isStandaloneBubble(item: MessageItem): boolean {
+    return this.isSticker(item) || this.isVideoNote(item);
   }
 
   private stickerWidth(media: MediaAttachment): number {
@@ -1559,6 +1578,273 @@ export struct ChatPage {
       return formatFileSize(media.fileSize);
     }
     return 'File';
+  }
+
+  /** 语音消息气泡渲染（VOICE-101）：播放控制、波形条可视化、时长与未收听标记。 */
+  @Builder
+  VoiceNoteBubble(media: MediaAttachment, item: MessageItem) {
+    Row() {
+      // 播放/下载控制按钮
+      Stack({ alignContent: Alignment.Center }) {
+        if (media.isDownloading) {
+          LoadingProgress()
+            .width(22)
+            .height(22)
+            .color(T.colors.textOnAccent)
+        } else {
+          Image($r('app.media.ic_play'))
+            .width(20)
+            .height(20)
+            .fillColor(T.colors.textOnAccent)
+        }
+      }
+      .width(40)
+      .height(40)
+      .borderRadius(T.radius.full)
+      .backgroundColor(T.colors.accent)
+      .margin({ right: T.spacing.sm })
+      .onClick(() => {
+        if (media.isDownloading) {
+          this.onDispatch(new CancelMediaDownload(media.fileId));
+        } else if (!media.isDownloaded) {
+          this.onDispatch(new RequestMediaDownload(media.fileId));
+        } else {
+          hilog.info(DOMAIN, TAG, `play voice note: fileId=${media.fileId}, path=${media.localPath}`);
+        }
+      })
+
+      // 右侧：波形栏与时长信息
+      Column() {
+        // 波形条
+        Row() {
+          ForEach(normalizeWaveform(media.waveform, 28), (sample: number) => {
+            Column()
+              .width(2)
+              .height(Math.max(3, Math.round((sample / 31) * 20)))
+              .borderRadius(1)
+              .backgroundColor(T.colors.accent)
+              .margin({ right: 2 })
+          })
+        }
+        .alignItems(VerticalAlign.Center)
+        .height(24)
+
+        // 时长与未收听蓝点
+        Row() {
+          Text(formatDuration(media.duration))
+            .fontSize(T.typography.caption.fontSize)
+            .fontColor(T.colors.textSecondary)
+
+          if (!media.isListened && !item.isOutgoing) {
+            Row()
+              .width(6)
+              .height(6)
+              .borderRadius(T.radius.full)
+              .backgroundColor(T.colors.accent)
+              .margin({ left: T.spacing.xs })
+          }
+        }
+        .alignItems(VerticalAlign.Center)
+        .margin({ top: T.spacing.hairline })
+      }
+      .alignItems(HorizontalAlign.Start)
+      .layoutWeight(1)
+    }
+    .alignItems(VerticalAlign.Center)
+    .constraintSize({ minWidth: 200, maxWidth: 260 })
+    .padding({
+      top: T.spacing.xs,
+      bottom: T.spacing.xs,
+      left: T.spacing.xs,
+      right: T.spacing.xs
+    })
+  }
+
+  /** 音乐/音频消息气泡渲染（AUDIO-101）：专辑封面/音乐图标、歌曲名、演奏者、时长。 */
+  @Builder
+  AudioBubble(media: MediaAttachment, messageId: number, isFailed: boolean = false) {
+    Row() {
+      // 左侧：封面/播放控制按钮
+      Stack({ alignContent: Alignment.Center }) {
+        if (isFailed) {
+          Image($r('app.media.ic_refresh'))
+            .width(22)
+            .height(22)
+            .fillColor(T.colors.textOnAccent)
+        } else if (media.isUploading || media.isDownloading) {
+          LoadingProgress()
+            .width(24)
+            .height(24)
+            .color(T.colors.textOnAccent)
+        } else if (media.isDownloaded) {
+          Image($r('app.media.ic_play'))
+            .width(22)
+            .height(22)
+            .fillColor(T.colors.textOnAccent)
+        } else {
+          Image($r('app.media.ic_download'))
+            .width(20)
+            .height(20)
+            .fillColor(T.colors.textOnAccent)
+        }
+      }
+      .width(44)
+      .height(44)
+      .borderRadius(T.radius.full)
+      .backgroundColor(isFailed ? T.colors.destructive : T.colors.accent)
+      .margin({ right: T.spacing.sm })
+      .onClick(() => {
+        if (isFailed) {
+          this.onDispatch(new TapFailedMessage(messageId));
+        } else if (media.isUploading) {
+          this.onDispatch(new CancelMediaUpload(messageId));
+        } else if (media.isDownloading) {
+          this.onDispatch(new CancelMediaDownload(media.fileId));
+        } else if (!media.isDownloaded) {
+          this.onDispatch(new RequestMediaDownload(media.fileId));
+        } else {
+          hilog.info(DOMAIN, TAG, `play audio: ${media.audioTitle}, path: ${media.localPath}`);
+        }
+      })
+
+      // 右侧：标题与演奏者/时长
+      Column() {
+        Text(media.audioTitle.length > 0 ? media.audioTitle : (media.fileName.length > 0 ? media.fileName : this.t('Audio')))
+          .fontSize(T.typography.body.fontSize)
+          .fontWeight(FontWeight.Medium)
+          .fontColor(T.colors.textPrimary)
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+
+        Text(this.audioSubtitle(media, isFailed))
+          .fontSize(T.typography.caption.fontSize)
+          .fontColor(isFailed ? T.colors.destructive : T.colors.textSecondary)
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .margin({ top: T.spacing.xs })
+      }
+      .alignItems(HorizontalAlign.Start)
+      .layoutWeight(1)
+    }
+    .width('100%')
+    .alignItems(VerticalAlign.Center)
+    .constraintSize({ minWidth: 200, maxWidth: 260 })
+    .padding({
+      top: T.spacing.xs,
+      bottom: T.spacing.xs,
+      left: T.spacing.xs,
+      right: T.spacing.xs
+    })
+  }
+
+  private audioSubtitle(media: MediaAttachment, isFailed: boolean = false): string {
+    if (isFailed) {
+      return 'Failed · Tap to retry';
+    }
+    if (media.isUploading) {
+      const pct: number = Math.round(media.uploadProgress * 100);
+      return `Uploading ${pct}%`;
+    }
+    if (media.isDownloading) {
+      return `${formatFileSize(media.fileSize * media.progress)} / ${formatFileSize(media.fileSize)}`;
+    }
+    const artist: string = media.audioPerformer.length > 0 ? media.audioPerformer : this.t('Unknown artist');
+    const dur: string = media.duration > 0 ? formatDuration(media.duration) : formatFileSize(media.fileSize);
+    return `${artist} · ${dur}`;
+  }
+
+  /** 圆形视频消息气泡渲染（VIDEONOTE-101）：对齐 Telegram X 标准，无外层矩形气泡框，独立圆形 220x220 裁切播放，右下角浮动半透明胶囊时间戳。 */
+  @Builder
+  VideoNoteBubble(media: MediaAttachment, item: MessageItem, isFailed: boolean = false) {
+    Stack({ alignContent: Alignment.BottomEnd }) {
+      // 220x220 圆形裁切容器
+      Stack({ alignContent: Alignment.Center }) {
+        if (media.localPath !== null && media.isDownloaded) {
+          Video({
+            src: toSandboxUri(media.localPath),
+            previewUri: toSandboxUri(media.thumbnailPath)
+          })
+            .autoPlay(true)
+            .loop(true)
+            .controls(false)
+            .muted(true)
+            .objectFit(ImageFit.Cover)
+            .width(220)
+            .height(220)
+        } else if (media.thumbnailPath !== null) {
+          Image(toSandboxUri(media.thumbnailPath))
+            .objectFit(ImageFit.Cover)
+            .width(220)
+            .height(220)
+
+          if (media.isDownloading) {
+            Column() {
+              LoadingProgress()
+                .width(28)
+                .height(28)
+                .color(T.colors.textOnAccent)
+            }
+            .width(44)
+            .height(44)
+            .borderRadius(T.radius.full)
+            .backgroundColor(T.colors.scrim)
+            .justifyContent(FlexAlign.Center)
+            .alignItems(HorizontalAlign.Center)
+          } else {
+            Column() {
+              Image($r('app.media.ic_download'))
+                .width(22)
+                .height(22)
+                .fillColor(T.colors.textOnAccent)
+            }
+            .width(44)
+            .height(44)
+            .borderRadius(T.radius.full)
+            .backgroundColor(T.colors.scrim)
+            .justifyContent(FlexAlign.Center)
+            .alignItems(HorizontalAlign.Center)
+          }
+        } else {
+          Column() {
+            Image($r('app.media.ic_camera'))
+              .width(36)
+              .height(36)
+              .fillColor(T.colors.textSecondary)
+          }
+          .width(220)
+          .height(220)
+          .backgroundColor(T.colors.surfaceVariant)
+          .justifyContent(FlexAlign.Center)
+          .alignItems(HorizontalAlign.Center)
+        }
+      }
+      .width(220)
+      .height(220)
+      .borderRadius(110)
+      .clip(true)
+      .onClick(() => {
+        if (isFailed) {
+          this.onDispatch(new TapFailedMessage(item.messageId));
+        } else if (media.isDownloading) {
+          this.onDispatch(new CancelMediaDownload(media.fileId));
+        } else if (!media.isDownloaded) {
+          this.onDispatch(new RequestMediaDownload(media.fileId));
+        } else {
+          this.onDispatch(new OpenMediaViewer(item.messageId));
+        }
+      })
+
+      // 右下角半透明胶囊时间戳与状态
+      Row() {
+        this.MessageStatusBadge(item, true)
+      }
+      .padding({ left: 6, right: 6, top: 2, bottom: 2 })
+      .backgroundColor(T.colors.scrim)
+      .borderRadius(T.radius.full)
+      .margin({ right: 6, bottom: 6 })
+    }
+    .width(220)
+    .height(220)
   }
 
   private getMosaicLayout(item: MessageItem): MosaicLayoutResult {
