@@ -35,6 +35,7 @@ export class MediaAttachment {
   readonly audioTitle: string;
   readonly audioPerformer: string;
   readonly isListened: boolean;
+  readonly stickerSetId: string;
 
   constructor(
     kind: MediaKind,
@@ -58,7 +59,8 @@ export class MediaAttachment {
     waveform: number[] = [],
     audioTitle: string = '',
     audioPerformer: string = '',
-    isListened: boolean = false
+    isListened: boolean = false,
+    stickerSetId: string = ''
   ) {
     this.kind = kind;
     this.fileId = fileId;
@@ -82,6 +84,7 @@ export class MediaAttachment {
     this.audioTitle = audioTitle;
     this.audioPerformer = audioPerformer;
     this.isListened = isListened;
+    this.stickerSetId = stickerSetId;
   }
 
   copyWith(
@@ -98,7 +101,8 @@ export class MediaAttachment {
     waveform?: number[],
     audioTitle?: string,
     audioPerformer?: string,
-    isListened?: boolean
+    isListened?: boolean,
+    stickerSetId?: string
   ): MediaAttachment {
     return new MediaAttachment(
       this.kind,
@@ -122,7 +126,8 @@ export class MediaAttachment {
       waveform !== undefined ? waveform : this.waveform,
       audioTitle !== undefined ? audioTitle : this.audioTitle,
       audioPerformer !== undefined ? audioPerformer : this.audioPerformer,
-      isListened !== undefined ? isListened : this.isListened
+      isListened !== undefined ? isListened : this.isListened,
+      stickerSetId !== undefined ? stickerSetId : this.stickerSetId
     );
   }
 }

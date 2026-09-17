@@ -90,7 +90,17 @@ import {
   OpenMessageComments,
   ToggleMessageReaction,
   InsertEmoji,
-  DeleteLastEmojiChar
+  DeleteLastEmojiChar,
+  OpenStickerSet,
+  OnStickerSetLoaded,
+  OnStickerSetLoadFailed,
+  CloseStickerSetPreview,
+  InstallStickerSet,
+  UninstallStickerSet,
+  OnStickerSetChanged,
+  OnStickerSetActionFailed,
+  SendStickerFromPreview,
+  OnStickerPreviewFileUpdated
 } from '../contract/ChatIntent';
 import {
   ChatEffect,
@@ -113,8 +123,12 @@ import {
   JumpToMessage,
   JoinChannelEffect,
   ToggleReactionEffect,
-  OpenCommentsEffect
+  OpenCommentsEffect,
+  FetchStickerSet,
+  ChangeStickerSetEffect,
+  SendStickerMessage
 } from '../contract/ChatEffect';
+import { StickerSetPreviewState, StickerSetItem } from '../model/StickerSetPreviewState';
 import { incomingIdUpTo } from '../model/ReadReceipt';
 import {
   clearSelection,
@@ -1083,6 +1097,189 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
         state.copyWith({ messages: newMessages }),
         [new ToggleReactionEffect(state.chatId, reactionIntent.messageId, reactionIntent.emoji, targetChosen)]
       );
+    }
+
+    case 'openStickerSet': {
+      const openIntent: OpenStickerSet = intent as OpenStickerSet;
+      const initialPreview: StickerSetPreviewState = new StickerSetPreviewState(
+        openIntent.setId,
+        '',
+        '',
+        false,
+        false,
+        false,
+        [],
+        true,
+        false,
+        null
+      );
+      return reduced(
+        state.copyWith({
+          stickerSetPreview: initialPreview,
+          showEmojiBoard: false,
+          showAttachmentMenu: false
+        }),
+        [new FetchStickerSet(openIntent.setId)]
+      );
+    }
+
+    case 'onStickerSetLoaded': {
+      const loadedIntent: OnStickerSetLoaded = intent as OnStickerSetLoaded;
+      return reduced(state.copyWith({ stickerSetPreview: loadedIntent.preview }));
+    }
+
+    case 'onStickerSetLoadFailed': {
+      const failedIntent: OnStickerSetLoadFailed = intent as OnStickerSetLoadFailed;
+      if (state.stickerSetPreview !== null && state.stickerSetPreview.setId === failedIntent.setId) {
+        return reduced(
+          state.copyWith({
+            stickerSetPreview: state.stickerSetPreview.copyWith(
+              undefined,
+              undefined,
+              undefined,
+              undefined,
+              undefined,
+              undefined,
+              false,
+              false,
+              failedIntent.error
+            )
+          })
+        );
+      }
+      return reduced(state);
+    }
+
+    case 'closeStickerSetPreview': {
+      return reduced(state.copyWith({ stickerSetPreview: null }));
+    }
+
+    case 'installStickerSet': {
+      const installIntent: InstallStickerSet = intent as InstallStickerSet;
+      if (state.stickerSetPreview !== null && state.stickerSetPreview.setId === installIntent.setId) {
+        const nextPreview: StickerSetPreviewState = state.stickerSetPreview.copyWith(
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          true,
+          null
+        );
+        return reduced(
+          state.copyWith({ stickerSetPreview: nextPreview }),
+          [new ChangeStickerSetEffect(installIntent.setId, true)]
+        );
+      }
+      return reduced(state, [new ChangeStickerSetEffect(installIntent.setId, true)]);
+    }
+
+    case 'uninstallStickerSet': {
+      const uninstallIntent: UninstallStickerSet = intent as UninstallStickerSet;
+      if (state.stickerSetPreview !== null && state.stickerSetPreview.setId === uninstallIntent.setId) {
+        const nextPreview: StickerSetPreviewState = state.stickerSetPreview.copyWith(
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          true,
+          null
+        );
+        return reduced(
+          state.copyWith({ stickerSetPreview: nextPreview }),
+          [new ChangeStickerSetEffect(uninstallIntent.setId, false)]
+        );
+      }
+      return reduced(state, [new ChangeStickerSetEffect(uninstallIntent.setId, false)]);
+    }
+
+    case 'onStickerSetChanged': {
+      const changedIntent: OnStickerSetChanged = intent as OnStickerSetChanged;
+      if (state.stickerSetPreview !== null && state.stickerSetPreview.setId === changedIntent.setId) {
+        const nextPreview: StickerSetPreviewState = state.stickerSetPreview.copyWith(
+          undefined,
+          undefined,
+          changedIntent.isInstalled,
+          undefined,
+          undefined,
+          undefined,
+          false,
+          false,
+          null
+        );
+        return reduced(state.copyWith({ stickerSetPreview: nextPreview }));
+      }
+      return reduced(state);
+    }
+
+    case 'onStickerSetActionFailed': {
+      const failedAction: OnStickerSetActionFailed = intent as OnStickerSetActionFailed;
+      if (state.stickerSetPreview !== null && state.stickerSetPreview.setId === failedAction.setId) {
+        const nextPreview: StickerSetPreviewState = state.stickerSetPreview.copyWith(
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          false,
+          false,
+          failedAction.error
+        );
+        return reduced(state.copyWith({ stickerSetPreview: nextPreview }));
+      }
+      return reduced(state);
+    }
+
+    case 'sendStickerFromPreview': {
+      const sendStickerIntent: SendStickerFromPreview = intent as SendStickerFromPreview;
+      const stickerItem: StickerSetItem = sendStickerIntent.item;
+      return reduced(
+        state.copyWith({ stickerSetPreview: null }),
+        [new SendStickerMessage(state.chatId, stickerItem.fileId, stickerItem.width, stickerItem.height, stickerItem.emoji)]
+      );
+    }
+
+    case 'onStickerPreviewFileUpdated': {
+      const updateIntent: OnStickerPreviewFileUpdated = intent as OnStickerPreviewFileUpdated;
+      if (state.stickerSetPreview === null) {
+        return reduced(state);
+      }
+      let changed: boolean = false;
+      const nextStickers: StickerSetItem[] = state.stickerSetPreview.stickers.map((s: StickerSetItem): StickerSetItem => {
+        if (s.fileId === updateIntent.fileId || s.id === updateIntent.fileId) {
+          changed = true;
+          return {
+            id: s.id,
+            fileId: s.fileId,
+            emoji: s.emoji,
+            width: s.width,
+            height: s.height,
+            localPath: updateIntent.localPath,
+            thumbnailPath: s.thumbnailPath,
+            isDownloaded: true,
+            isDownloading: false
+          };
+        }
+        return s;
+      });
+      if (!changed) {
+        return reduced(state);
+      }
+      const nextPreview: StickerSetPreviewState = state.stickerSetPreview.copyWith(
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        nextStickers
+      );
+      return reduced(state.copyWith({ stickerSetPreview: nextPreview }));
     }
 
     // openChatProfile / chatMenuAction：纯导航/占位意图，reducer 原样透传

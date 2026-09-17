@@ -1,0 +1,82 @@
+/**
+ * feature/chat — 贴纸包详情与预览状态（STICKER-PREVIEW-101）。
+ *
+ * 承载点击聊天内贴纸或表情板贴纸包时的详情预览弹窗数据：
+ * - 贴纸包元信息：setId, title, name, isInstalled, isArchived, isOfficial
+ * - 贴纸列表：stickers (StickerSetItem[])
+ * - 交互状态：isLoading (初始拉取中), isChanging (安装/移除进行中), errorMessage
+ */
+
+export interface StickerSetItem {
+  readonly id: number;
+  readonly fileId: number;
+  readonly emoji: string;
+  readonly width: number;
+  readonly height: number;
+  readonly localPath: string | null;
+  readonly thumbnailPath: string | null;
+  readonly isDownloaded: boolean;
+  readonly isDownloading: boolean;
+}
+
+export class StickerSetPreviewState {
+  readonly setId: string;
+  readonly title: string;
+  readonly name: string;
+  readonly isInstalled: boolean;
+  readonly isArchived: boolean;
+  readonly isOfficial: boolean;
+  readonly stickers: StickerSetItem[];
+  readonly isLoading: boolean;
+  readonly isChanging: boolean;
+  readonly errorMessage: string | null;
+
+  constructor(
+    setId: string = '',
+    title: string = '',
+    name: string = '',
+    isInstalled: boolean = false,
+    isArchived: boolean = false,
+    isOfficial: boolean = false,
+    stickers: StickerSetItem[] = [],
+    isLoading: boolean = false,
+    isChanging: boolean = false,
+    errorMessage: string | null = null
+  ) {
+    this.setId = setId;
+    this.title = title;
+    this.name = name;
+    this.isInstalled = isInstalled;
+    this.isArchived = isArchived;
+    this.isOfficial = isOfficial;
+    this.stickers = stickers;
+    this.isLoading = isLoading;
+    this.isChanging = isChanging;
+    this.errorMessage = errorMessage;
+  }
+
+  copyWith(
+    title?: string,
+    name?: string,
+    isInstalled?: boolean,
+    isArchived?: boolean,
+    isOfficial?: boolean,
+    stickers?: StickerSetItem[],
+    isLoading?: boolean,
+    isChanging?: boolean,
+    errorMessage?: string | null
+  ): StickerSetPreviewState {
+    return new StickerSetPreviewState(
+      this.setId,
+      title !== undefined ? title : this.title,
+      name !== undefined ? name : this.name,
+      isInstalled !== undefined ? isInstalled : this.isInstalled,
+      isArchived !== undefined ? isArchived : this.isArchived,
+      isOfficial !== undefined ? isOfficial : this.isOfficial,
+      stickers !== undefined ? stickers : this.stickers,
+      isLoading !== undefined ? isLoading : this.isLoading,
+      isChanging !== undefined ? isChanging : this.isChanging,
+      errorMessage !== undefined ? errorMessage : this.errorMessage
+    );
+  }
+}

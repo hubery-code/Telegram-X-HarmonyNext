@@ -64,10 +64,21 @@ import {
   JoinChannel,
   OnChannelMemberStatusChanged,
   OpenMessageComments,
-  ToggleMessageReaction
+  ToggleMessageReaction,
+  OpenStickerSet,
+  OnStickerSetLoaded,
+  OnStickerSetLoadFailed,
+  CloseStickerSetPreview,
+  InstallStickerSet,
+  UninstallStickerSet,
+  OnStickerSetChanged,
+  OnStickerSetActionFailed,
+  SendStickerFromPreview,
+  OnStickerPreviewFileUpdated
 } from '../main/ets/contract/ChatIntent';
 import { PinnedMessageInfo } from '../main/ets/model/PinnedMessageInfo';
 import { ReactionChip } from '../main/ets/model/ReactionChip';
+import { StickerSetPreviewState, StickerSetItem } from '../main/ets/model/StickerSetPreviewState';
 import {
   ChatEffect,
   SendTextMessage,
@@ -85,7 +96,10 @@ import {
   JumpToMessage,
   JoinChannelEffect,
   OpenCommentsEffect,
-  ToggleReactionEffect
+  ToggleReactionEffect,
+  FetchStickerSet,
+  ChangeStickerSetEffect,
+  SendStickerMessage
 } from '../main/ets/contract/ChatEffect';
 import { ChatSearchResultItem } from '../main/ets/model/ChatSearchResultItem';
 import { chatReducer, extractFirstLink } from '../main/ets/reducer/ChatReducer';
@@ -1573,6 +1587,200 @@ export default function chatReducerTest() {
 
       expect(result.state === state).assertTrue();
       expect(result.effects.length).assertEqual(0);
+    });
+
+    it('openStickerSet_setsLoadingStateAndEmitsFetchEffect', 0, () => {
+      const initial: ChatUiState = makeState('');
+      expect(initial.stickerSetPreview === null).assertTrue();
+
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        initial,
+        new OpenStickerSet('12345'),
+        makeEnv()
+      );
+
+      expect(result.state.stickerSetPreview !== null).assertTrue();
+      expect(result.state.stickerSetPreview?.setId).assertEqual('12345');
+      expect(result.state.stickerSetPreview?.isLoading).assertTrue();
+      expect(result.effects.length).assertEqual(1);
+      expect(result.effects[0].kind).assertEqual('fetchStickerSet');
+      const fetch: FetchStickerSet = result.effects[0] as FetchStickerSet;
+      expect(fetch.setId).assertEqual('12345');
+    });
+
+    it('onStickerSetLoaded_updatesPreviewState', 0, () => {
+      const initial: ChatUiState = makeState('');
+      const item: StickerSetItem = {
+        id: 100,
+        fileId: 100,
+        emoji: '🔥',
+        width: 512,
+        height: 512,
+        localPath: null,
+        thumbnailPath: null,
+        isDownloaded: false,
+        isDownloading: false
+      };
+      const preview: StickerSetPreviewState = new StickerSetPreviewState(
+        '12345',
+        'Hot Cherry',
+        'hot_cherry',
+        false,
+        false,
+        false,
+        [item],
+        false,
+        false,
+        null
+      );
+
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        initial,
+        new OnStickerSetLoaded(preview),
+        makeEnv()
+      );
+
+      expect(result.state.stickerSetPreview !== null).assertTrue();
+      expect(result.state.stickerSetPreview?.title).assertEqual('Hot Cherry');
+      expect(result.state.stickerSetPreview?.stickers.length).assertEqual(1);
+      expect(result.state.stickerSetPreview?.isLoading).assertFalse();
+    });
+
+    it('onStickerSetLoadFailed_setsErrorMessage', 0, () => {
+      const initial: ChatUiState = makeState('').copyWith({
+        stickerSetPreview: new StickerSetPreviewState('12345', '', '', false, false, false, [], true, false, null)
+      });
+
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        initial,
+        new OnStickerSetLoadFailed('12345', 'Network timeout'),
+        makeEnv()
+      );
+
+      expect(result.state.stickerSetPreview?.errorMessage).assertEqual('Network timeout');
+      expect(result.state.stickerSetPreview?.isLoading).assertFalse();
+    });
+
+    it('closeStickerSetPreview_clearsPreviewState', 0, () => {
+      const initial: ChatUiState = makeState('').copyWith({
+        stickerSetPreview: new StickerSetPreviewState('12345', 'Hot Cherry')
+      });
+
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        initial,
+        new CloseStickerSetPreview(),
+        makeEnv()
+      );
+
+      expect(result.state.stickerSetPreview === null).assertTrue();
+    });
+
+    it('installStickerSet_setsIsChangingTrue_andEmitsChangeEffect', 0, () => {
+      const initial: ChatUiState = makeState('').copyWith({
+        stickerSetPreview: new StickerSetPreviewState('12345', 'Hot Cherry', 'hot_cherry', false)
+      });
+
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        initial,
+        new InstallStickerSet('12345'),
+        makeEnv()
+      );
+
+      expect(result.state.stickerSetPreview?.isChanging).assertTrue();
+      expect(result.effects.length).assertEqual(1);
+      expect(result.effects[0].kind).assertEqual('changeStickerSetEffect');
+      const effect: ChangeStickerSetEffect = result.effects[0] as ChangeStickerSetEffect;
+      expect(effect.setId).assertEqual('12345');
+      expect(effect.isInstalled).assertTrue();
+    });
+
+    it('uninstallStickerSet_setsIsChangingTrue_andEmitsChangeEffectFalse', 0, () => {
+      const initial: ChatUiState = makeState('').copyWith({
+        stickerSetPreview: new StickerSetPreviewState('12345', 'Hot Cherry', 'hot_cherry', true)
+      });
+
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        initial,
+        new UninstallStickerSet('12345'),
+        makeEnv()
+      );
+
+      expect(result.state.stickerSetPreview?.isChanging).assertTrue();
+      expect(result.effects.length).assertEqual(1);
+      const effect: ChangeStickerSetEffect = result.effects[0] as ChangeStickerSetEffect;
+      expect(effect.setId).assertEqual('12345');
+      expect(effect.isInstalled).assertFalse();
+    });
+
+    it('onStickerSetChanged_updatesIsInstalledAndClearsIsChanging', 0, () => {
+      const initial: ChatUiState = makeState('').copyWith({
+        stickerSetPreview: new StickerSetPreviewState('12345', 'Hot Cherry', 'hot_cherry', false, false, false, [], false, true)
+      });
+
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        initial,
+        new OnStickerSetChanged('12345', true),
+        makeEnv()
+      );
+
+      expect(result.state.stickerSetPreview?.isInstalled).assertTrue();
+      expect(result.state.stickerSetPreview?.isChanging).assertFalse();
+    });
+
+    it('sendStickerFromPreview_closesPreviewAndEmitsSendStickerMessage', 0, () => {
+      const item: StickerSetItem = {
+        id: 999,
+        fileId: 999,
+        emoji: '😎',
+        width: 512,
+        height: 512,
+        localPath: '/path/sticker.webp',
+        thumbnailPath: null,
+        isDownloaded: true,
+        isDownloading: false
+      };
+      const initial: ChatUiState = makeState('').copyWith({
+        stickerSetPreview: new StickerSetPreviewState('12345', 'Hot Cherry')
+      });
+
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        initial,
+        new SendStickerFromPreview(item),
+        makeEnv()
+      );
+
+      expect(result.state.stickerSetPreview === null).assertTrue();
+      expect(result.effects.length).assertEqual(1);
+      expect(result.effects[0].kind).assertEqual('sendStickerMessage');
+      const effect: SendStickerMessage = result.effects[0] as SendStickerMessage;
+      expect(effect.fileId).assertEqual(999);
+      expect(effect.emoji).assertEqual('😎');
+    });
+
+    it('onStickerPreviewFileUpdated_updatesMatchingStickerPath', 0, () => {
+      const item1: StickerSetItem = {
+        id: 101,
+        fileId: 101,
+        emoji: '😎',
+        width: 512,
+        height: 512,
+        localPath: null,
+        thumbnailPath: null,
+        isDownloaded: false,
+        isDownloading: true
+      };
+      const initial: ChatUiState = makeState('').copyWith({
+        stickerSetPreview: new StickerSetPreviewState('12345', 'Hot Cherry', 'hot_cherry', false, false, false, [item1])
+      });
+
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        initial,
+        new OnStickerPreviewFileUpdated(101, '/downloaded/sticker101.webp'),
+        makeEnv()
+      );
+
+      expect(result.state.stickerSetPreview?.stickers[0].localPath).assertEqual('/downloaded/sticker101.webp');
+      expect(result.state.stickerSetPreview?.stickers[0].isDownloaded).assertTrue();
     });
   });
 }

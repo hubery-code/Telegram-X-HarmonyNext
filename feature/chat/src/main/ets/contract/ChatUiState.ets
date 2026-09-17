@@ -30,6 +30,7 @@ import { MediaViewerItem } from '../model/MediaViewerItem';
 import { ChatSearchResultItem } from '../model/ChatSearchResultItem';
 import { ChatKind } from '../model/SenderInfo';
 import { PinnedMessageInfo } from '../model/PinnedMessageInfo';
+import { StickerSetPreviewState } from '../model/StickerSetPreviewState';
 
 /** 输入栏模式：回复某条消息。 */
 export class ComposerReplyMode {
@@ -149,6 +150,8 @@ export interface ChatUiStateOptions {
   readonly isChannelMember?: boolean;
   /** EMOJI-101：表情/贴纸面板是否展开。 */
   readonly showEmojiBoard?: boolean;
+  /** STICKER-PREVIEW-101：贴纸包详情预览状态（null=不显示弹窗）。 */
+  readonly stickerSetPreview?: StickerSetPreviewState | null;
 }
 
 export class ChatUiState implements UiState {
@@ -193,6 +196,8 @@ export class ChatUiState implements UiState {
   readonly isChannelMember: boolean;
   /** EMOJI-101：表情/贴纸面板是否展开。 */
   readonly showEmojiBoard: boolean;
+  /** STICKER-PREVIEW-101：贴纸包详情预览状态（null=不显示弹窗）。 */
+  readonly stickerSetPreview: StickerSetPreviewState | null;
 
   constructor(
     chatId: number,
@@ -221,7 +226,8 @@ export class ChatUiState implements UiState {
     pinnedMessage: PinnedMessageInfo | null = null,
     showPinnedBar: boolean = false,
     isChannelMember: boolean = true,
-    showEmojiBoard: boolean = false
+    showEmojiBoard: boolean = false,
+    stickerSetPreview: StickerSetPreviewState | null = null
   ) {
     this.chatId = chatId;
     this.chatTitle = chatTitle;
@@ -250,10 +256,11 @@ export class ChatUiState implements UiState {
     this.showPinnedBar = showPinnedBar;
     this.isChannelMember = isChannelMember;
     this.showEmojiBoard = showEmojiBoard;
+    this.stickerSetPreview = stickerSetPreview;
   }
 
   static initial(): ChatUiState {
-    return new ChatUiState(0, '', [], false, true, null, '', null, null, -1, [], 0, 0, false, [], false, false, '', [], false, 0, '', 'unknown', null, false, true, false);
+    return new ChatUiState(0, '', [], false, true, null, '', null, null, -1, [], 0, 0, false, [], false, false, '', [], false, 0, '', 'unknown', null, false, true, false, null);
   }
 
   copyWith(options: ChatUiStateOptions): ChatUiState {
@@ -284,7 +291,8 @@ export class ChatUiState implements UiState {
       options.pinnedMessage !== undefined ? options.pinnedMessage : this.pinnedMessage,
       options.showPinnedBar !== undefined ? options.showPinnedBar : this.showPinnedBar,
       options.isChannelMember !== undefined ? options.isChannelMember : this.isChannelMember,
-      options.showEmojiBoard !== undefined ? options.showEmojiBoard : this.showEmojiBoard
+      options.showEmojiBoard !== undefined ? options.showEmojiBoard : this.showEmojiBoard,
+      options.stickerSetPreview !== undefined ? options.stickerSetPreview : this.stickerSetPreview
     );
   }
 }

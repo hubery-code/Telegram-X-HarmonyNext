@@ -33,6 +33,7 @@ import { AppError } from '@tgx/core-common';
 import { MessageItem } from '../model/MessageItem';
 import { ChatSearchResultItem } from '../model/ChatSearchResultItem';
 import { ChatKind } from '../model/SenderInfo';
+import { StickerSetPreviewState, StickerSetItem } from '../model/StickerSetPreviewState';
 
 export class LoadInitialMessages implements Intent {
   readonly kind: 'loadInitialMessages' = 'loadInitialMessages';
@@ -656,4 +657,118 @@ export type ChatIntent =
   | JoinChannel
   | OnChannelMemberStatusChanged
   | OpenMessageComments
-  | ToggleMessageReaction;
+  | ToggleMessageReaction
+  | OpenStickerSet
+  | OnStickerSetLoaded
+  | OnStickerSetLoadFailed
+  | CloseStickerSetPreview
+  | InstallStickerSet
+  | UninstallStickerSet
+  | OnStickerSetChanged
+  | OnStickerSetActionFailed
+  | SendStickerFromPreview
+  | OnStickerPreviewFileUpdated;
+
+/** STICKER-PREVIEW-101：打开贴纸包预览弹窗。 */
+export class OpenStickerSet implements Intent {
+  readonly kind: 'openStickerSet' = 'openStickerSet';
+  readonly setId: string;
+
+  constructor(setId: string) {
+    this.setId = setId;
+  }
+}
+
+/** STICKER-PREVIEW-101：贴纸包详情加载成功。 */
+export class OnStickerSetLoaded implements Intent {
+  readonly kind: 'onStickerSetLoaded' = 'onStickerSetLoaded';
+  readonly preview: StickerSetPreviewState;
+
+  constructor(preview: StickerSetPreviewState) {
+    this.preview = preview;
+  }
+}
+
+/** STICKER-PREVIEW-101：贴纸包详情加载失败。 */
+export class OnStickerSetLoadFailed implements Intent {
+  readonly kind: 'onStickerSetLoadFailed' = 'onStickerSetLoadFailed';
+  readonly setId: string;
+  readonly error: string;
+
+  constructor(setId: string, error: string) {
+    this.setId = setId;
+    this.error = error;
+  }
+}
+
+/** STICKER-PREVIEW-101：关闭贴纸包详情预览弹窗。 */
+export class CloseStickerSetPreview implements Intent {
+  readonly kind: 'closeStickerSetPreview' = 'closeStickerSetPreview';
+}
+
+/** STICKER-PREVIEW-101：安装贴纸包。 */
+export class InstallStickerSet implements Intent {
+  readonly kind: 'installStickerSet' = 'installStickerSet';
+  readonly setId: string;
+
+  constructor(setId: string) {
+    this.setId = setId;
+  }
+}
+
+/** STICKER-PREVIEW-101：移除贴纸包。 */
+export class UninstallStickerSet implements Intent {
+  readonly kind: 'uninstallStickerSet' = 'uninstallStickerSet';
+  readonly setId: string;
+
+  constructor(setId: string) {
+    this.setId = setId;
+  }
+}
+
+/** STICKER-PREVIEW-101：贴纸包安装状态变更成功回灌。 */
+export class OnStickerSetChanged implements Intent {
+  readonly kind: 'onStickerSetChanged' = 'onStickerSetChanged';
+  readonly setId: string;
+  readonly isInstalled: boolean;
+
+  constructor(setId: string, isInstalled: boolean) {
+    this.setId = setId;
+    this.isInstalled = isInstalled;
+  }
+}
+
+/** STICKER-PREVIEW-101：贴纸包操作失败回灌。 */
+export class OnStickerSetActionFailed implements Intent {
+  readonly kind: 'onStickerSetActionFailed' = 'onStickerSetActionFailed';
+  readonly setId: string;
+  readonly error: string;
+
+  constructor(setId: string, error: string) {
+    this.setId = setId;
+    this.error = error;
+  }
+}
+
+/** STICKER-PREVIEW-101：从预览弹窗中直接点选发送贴纸。 */
+export class SendStickerFromPreview implements Intent {
+  readonly kind: 'sendStickerFromPreview' = 'sendStickerFromPreview';
+  readonly item: StickerSetItem;
+
+  constructor(item: StickerSetItem) {
+    this.item = item;
+  }
+}
+
+/** STICKER-PREVIEW-101：贴纸预览文件/缩略图下载完成刷新。 */
+export class OnStickerPreviewFileUpdated implements Intent {
+  readonly kind: 'onStickerPreviewFileUpdated' = 'onStickerPreviewFileUpdated';
+  readonly fileId: number;
+  readonly localPath: string;
+
+  constructor(fileId: number, localPath: string) {
+    this.fileId = fileId;
+    this.localPath = localPath;
+  }
+}
+

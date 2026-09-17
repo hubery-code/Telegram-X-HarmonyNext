@@ -134,6 +134,7 @@ export struct EmojiBoard {
   onSelectEmoji: (emoji: string) => void = () => {};
   onDeleteChar: () => void = () => {};
   onSelectSticker: (emoji: string) => void = () => {};
+  onOpenStickerSet: (setId: string) => void = () => {};
 
   @State currentMainTab: string = 'emoji';
   @State currentEmojiCategory: number = 0;
@@ -301,6 +302,36 @@ export struct EmojiBoard {
   @Builder
   StickerView() {
     Column() {
+      // 贴纸包顶部快捷预览条
+      Row() {
+        Row() {
+          Text('🔥')
+            .fontSize(18)
+            .margin({ right: T.spacing.xs })
+          Text('热门贴纸包 · Hot Cherry')
+            .fontSize(T.typography.caption.fontSize)
+            .fontWeight(FontWeight.Medium)
+            .fontColor(T.colors.textPrimary)
+        }
+        .layoutWeight(1)
+
+        Row() {
+          Text('查看贴纸包')
+            .fontSize(T.typography.caption.fontSize)
+            .fontWeight(FontWeight.Medium)
+            .fontColor(T.colors.accent)
+        }
+        .padding({ left: T.spacing.sm, right: T.spacing.sm, top: 4, bottom: 4 })
+        .backgroundColor(T.colors.surfaceVariant)
+        .borderRadius(T.radius.full)
+        .onClick(() => {
+          this.onOpenStickerSet('1');
+        })
+      }
+      .width('100%')
+      .padding({ left: T.spacing.md, right: T.spacing.md, top: T.spacing.sm, bottom: 0 })
+      .alignItems(VerticalAlign.Center)
+
       Grid() {
         ForEach(SAMPLE_STICKERS, (item: StickerPreviewItem) => {
           GridItem() {

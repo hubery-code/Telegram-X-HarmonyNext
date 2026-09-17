@@ -268,6 +268,46 @@ export class OpenCommentsEffect implements Effect {
   }
 }
 
+/** STICKER-PREVIEW-101：向 TDLib 请求贴纸包详情。 */
+export class FetchStickerSet implements Effect {
+  readonly kind: 'fetchStickerSet' = 'fetchStickerSet';
+  readonly setId: string;
+
+  constructor(setId: string) {
+    this.setId = setId;
+  }
+}
+
+/** STICKER-PREVIEW-101：向 TDLib 请求安装/移除贴纸包。 */
+export class ChangeStickerSetEffect implements Effect {
+  readonly kind: 'changeStickerSetEffect' = 'changeStickerSetEffect';
+  readonly setId: string;
+  readonly isInstalled: boolean;
+
+  constructor(setId: string, isInstalled: boolean) {
+    this.setId = setId;
+    this.isInstalled = isInstalled;
+  }
+}
+
+/** STICKER-PREVIEW-101：向当前会话发送贴纸。 */
+export class SendStickerMessage implements Effect {
+  readonly kind: 'sendStickerMessage' = 'sendStickerMessage';
+  readonly chatId: number;
+  readonly fileId: number;
+  readonly width: number;
+  readonly height: number;
+  readonly emoji: string;
+
+  constructor(chatId: number, fileId: number, width: number, height: number, emoji: string) {
+    this.chatId = chatId;
+    this.fileId = fileId;
+    this.width = width;
+    this.height = height;
+    this.emoji = emoji;
+  }
+}
+
 export type ChatEffect =
   | FetchInitialMessages
   | FetchOlderMessages
@@ -288,4 +328,8 @@ export type ChatEffect =
   | JumpToMessage
   | JoinChannelEffect
   | ToggleReactionEffect
-  | OpenCommentsEffect;
+  | OpenCommentsEffect
+  | FetchStickerSet
+  | ChangeStickerSetEffect
+  | SendStickerMessage;
+

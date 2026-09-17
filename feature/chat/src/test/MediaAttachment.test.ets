@@ -152,7 +152,17 @@ export default function mediaAttachmentTest() {
         1.0,
         '👍',
         [],
-        false
+        false,
+        false,
+        0,
+        '',
+        0,
+        '',
+        [],
+        '',
+        '',
+        false,
+        '987654321'
       );
 
       expect(sticker.kind).assertEqual('sticker');
@@ -161,6 +171,10 @@ export default function mediaAttachmentTest() {
       expect(sticker.width).assertEqual(512);
       expect(sticker.height).assertEqual(512);
       expect(sticker.isDownloaded).assertTrue();
+      expect(sticker.stickerSetId).assertEqual('987654321');
+
+      const copied = sticker.copyWith(undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, '11223344');
+      expect(copied.stickerSetId).assertEqual('11223344');
     });
 
     it('creates photo media attachment with uploading state and progress', 0, () => {

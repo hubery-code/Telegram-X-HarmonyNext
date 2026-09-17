@@ -118,12 +118,19 @@ import {
   JumpToPinnedMessage,
   JoinChannel,
   OpenMessageComments,
-  ToggleMessageReaction
+  ToggleMessageReaction,
+  OpenStickerSet,
+  CloseStickerSetPreview,
+  InstallStickerSet,
+  UninstallStickerSet,
+  SendStickerFromPreview
 } from '../contract/ChatIntent';
 import { isMessageSelected } from '../model/ForwardSelection';
 import { ChatSearchResultItem } from '../model/ChatSearchResultItem';
 import { PinnedMessageInfo } from '../model/PinnedMessageInfo';
+import { StickerSetItem } from '../model/StickerSetPreviewState';
 import { EmojiBoard } from './EmojiBoard';
+import { StickerSetPreviewSheet } from './StickerSetPreviewSheet';
 
 const T = LightTheme;
 
@@ -675,6 +682,9 @@ export struct ChatPage {
             },
             onSelectSticker: (emoji: string) => {
               this.onDispatch(new InsertEmoji(emoji));
+            },
+            onOpenStickerSet: (setId: string) => {
+              this.onDispatch(new OpenStickerSet(setId));
             }
           })
         }
@@ -700,6 +710,28 @@ export struct ChatPage {
       // SEARCH-102：聊天内搜索面板（顶栏 🔍 展开的覆盖层：搜索栏 + 结果列表）。
       if (this.uiState.showSearch) {
         this.SearchPanel()
+      }
+
+      // STICKER-PREVIEW-101：贴纸包详情与添加弹窗（全屏遮罩 + 底部抽屉）。
+      if (this.uiState.stickerSetPreview !== null) {
+        StickerSetPreviewSheet({
+          preview: this.uiState.stickerSetPreview,
+          onClose: () => {
+            this.onDispatch(new CloseStickerSetPreview());
+          },
+          onInstall: (setId: string) => {
+            this.onDispatch(new InstallStickerSet(setId));
+          },
+          onUninstall: (setId: string) => {
+            this.onDispatch(new UninstallStickerSet(setId));
+          },
+          onSelectSticker: (stickerItem: StickerSetItem) => {
+            this.onDispatch(new SendStickerFromPreview(stickerItem));
+          },
+          onRetry: (setId: string) => {
+            this.onDispatch(new OpenStickerSet(setId));
+          }
+        })
       }
     }
     .width('100%')
@@ -1439,6 +1471,14 @@ export struct ChatPage {
     }
     .width(this.stickerWidth(media))
     .height(this.stickerHeight(media))
+    .onClick(() => {
+      if (this.uiState.selectionMode) {
+        return;
+      }
+      if (media.stickerSetId.length > 0 && media.stickerSetId !== '0') {
+        this.onDispatch(new OpenStickerSet(media.stickerSetId));
+      }
+    })
   }
 
   /** 文件消息气泡渲染（MEDIA-104 / FILE-103 / FEAT-MEDIA-003）：文件名、大小、下载/上传进度、失败重试、点击动作。 */

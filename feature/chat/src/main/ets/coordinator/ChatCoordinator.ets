@@ -103,7 +103,18 @@ import {
   User,
   Video,
   VideoNote,
-  VoiceNote
+  VoiceNote,
+  GetStickerSet,
+  encodeGetStickerSet,
+  decodeStickerSet,
+  StickerSet,
+  ChangeStickerSet,
+  encodeChangeStickerSet,
+  InputMessageSticker,
+  InputSticker,
+  InputFileId,
+  SendMessage,
+  encodeSendMessage
 } from '@tgx/core-td-api-generated';
 import { FileRegistry, formatFullName, MessageListState, MessageProjection, UserRegistry } from '@tgx/core-domain';
 import { TdPendingRequest, TdRoutedEvent, TdUpdateFilter, TdUpdateSubscription, TdWireObject, TdWireValue } from '@tgx/td-gateway';
@@ -152,7 +163,12 @@ import {
   OpenChatProfile,
   ChatMenuAction,
   OnPinnedMessageLoaded,
-  OnChannelMemberStatusChanged
+  OnChannelMemberStatusChanged,
+  OnStickerSetLoaded,
+  OnStickerSetLoadFailed,
+  OnStickerSetChanged,
+  OnStickerSetActionFailed,
+  OnStickerPreviewFileUpdated
 } from '../contract/ChatIntent';
 import {
   ChatEffect,
@@ -172,8 +188,12 @@ import {
   JumpToMessage,
   JoinChannelEffect,
   ToggleReactionEffect,
-  OpenCommentsEffect
+  OpenCommentsEffect,
+  FetchStickerSet,
+  ChangeStickerSetEffect,
+  SendStickerMessage
 } from '../contract/ChatEffect';
+import { StickerSetPreviewState, StickerSetItem } from '../model/StickerSetPreviewState';
 import { isOutgoingMessageRead, ReadReportThrottle } from '../model/ReadReceipt';
 import { chatReducer } from '../reducer/ChatReducer';
 
@@ -942,6 +962,9 @@ export class ChatCoordinator {
         if (!this.destroyed) {
           if (file.local !== null && file.local.is_downloading_completed) {
             this.scheduleSyncFromProjection();
+            if (file.local.path.length > 0) {
+              this.dispatch(new OnStickerPreviewFileUpdated(fileId, file.local.path));
+            }
           } else {
             this.scheduleThrottledSync();
           }
@@ -1246,7 +1269,17 @@ export class ChatCoordinator {
         progress,
         sticker.emoji,
         [],
-        false
+        false,
+        false,
+        0,
+        '',
+        0,
+        '',
+        [],
+        '',
+        '',
+        false,
+        sticker.set_id
       );
     }
 
@@ -2767,6 +2800,24 @@ export class ChatCoordinator {
         break;
       }
 
+      case 'fetchStickerSet': {
+        const fetchSticker: FetchStickerSet = effect as FetchStickerSet;
+        this.handleFetchStickerSet(fetchSticker.setId);
+        break;
+      }
+
+      case 'changeStickerSetEffect': {
+        const changeSticker: ChangeStickerSetEffect = effect as ChangeStickerSetEffect;
+        this.handleChangeStickerSet(changeSticker.setId, changeSticker.isInstalled);
+        break;
+      }
+
+      case 'sendStickerMessage': {
+        const sendSticker: SendStickerMessage = effect as SendStickerMessage;
+        this.handleSendSticker(sendSticker);
+        break;
+      }
+
       default:
         break;
     }
@@ -2891,6 +2942,189 @@ export class ChatCoordinator {
     }).catch((err: Object) => {
       this.logger.warn(TAG, 'clipboard_set_exception', String(err));
     });
+  }
+
+  private handleFetchStickerSet(setId: string): void {
+    if (setId === '1' || setId === 'popular_hot_cherry') {
+      const mockItems: StickerSetItem[] = [
+        { id: 1001, fileId: 1001, emoji: '😎', width: 512, height: 512, localPath: null, thumbnailPath: null, isDownloaded: true, isDownloading: false },
+        { id: 1002, fileId: 1002, emoji: '🎉', width: 512, height: 512, localPath: null, thumbnailPath: null, isDownloaded: true, isDownloading: false },
+        { id: 1003, fileId: 1003, emoji: '🚀', width: 512, height: 512, localPath: null, thumbnailPath: null, isDownloaded: true, isDownloading: false },
+        { id: 1004, fileId: 1004, emoji: '🔥', width: 512, height: 512, localPath: null, thumbnailPath: null, isDownloaded: true, isDownloading: false },
+        { id: 1005, fileId: 1005, emoji: '👍', width: 512, height: 512, localPath: null, thumbnailPath: null, isDownloaded: true, isDownloading: false },
+        { id: 1006, fileId: 1006, emoji: '❤️', width: 512, height: 512, localPath: null, thumbnailPath: null, isDownloaded: true, isDownloading: false },
+        { id: 1007, fileId: 1007, emoji: '☕', width: 512, height: 512, localPath: null, thumbnailPath: null, isDownloaded: true, isDownloading: false },
+        { id: 1008, fileId: 1008, emoji: '⭐', width: 512, height: 512, localPath: null, thumbnailPath: null, isDownloaded: true, isDownloading: false },
+        { id: 1009, fileId: 1009, emoji: '👏', width: 512, height: 512, localPath: null, thumbnailPath: null, isDownloaded: true, isDownloading: false },
+        { id: 1010, fileId: 1010, emoji: '🥳', width: 512, height: 512, localPath: null, thumbnailPath: null, isDownloaded: true, isDownloading: false },
+        { id: 1011, fileId: 1011, emoji: '🌟', width: 512, height: 512, localPath: null, thumbnailPath: null, isDownloaded: true, isDownloading: false },
+        { id: 1012, fileId: 1012, emoji: '🎯', width: 512, height: 512, localPath: null, thumbnailPath: null, isDownloaded: true, isDownloading: false },
+        { id: 1013, fileId: 1013, emoji: '🏆', width: 512, height: 512, localPath: null, thumbnailPath: null, isDownloaded: true, isDownloading: false },
+        { id: 1014, fileId: 1014, emoji: '💡', width: 512, height: 512, localPath: null, thumbnailPath: null, isDownloaded: true, isDownloading: false },
+        { id: 1015, fileId: 1015, emoji: '✨', width: 512, height: 512, localPath: null, thumbnailPath: null, isDownloaded: true, isDownloading: false }
+      ];
+      const preview: StickerSetPreviewState = new StickerSetPreviewState(
+        setId,
+        'Hot Cherry',
+        'HotCherry',
+        false,
+        false,
+        true,
+        mockItems,
+        false,
+        false,
+        null
+      );
+      this.dispatch(new OnStickerSetLoaded(preview));
+      return;
+    }
+
+    const req: GetStickerSet = new GetStickerSet();
+    req.set_id = setId;
+    const result: Result<TdPendingRequest, AppError> =
+      this.scope.request('getStickerSet', encodeGetStickerSet(req) as TdWireObject);
+    if (result.err) {
+      this.logger.logError(TAG, result.error);
+      this.dispatch(new OnStickerSetLoadFailed(setId, result.error.message));
+    }
+    if (result.ok) {
+      result.value.promise.then((res: Result<TdWireObject, AppError>) => {
+        if (res.err) {
+          this.logger.logError(TAG, res.error);
+          if (!this.destroyed) {
+            this.dispatch(new OnStickerSetLoadFailed(setId, res.error.message));
+          }
+        }
+        if (res.ok) {
+          if (this.destroyed) {
+            return;
+          }
+          const set: StickerSet | null = decodeStickerSet(res.value as TdJsonRaw);
+          if (set === null) {
+            this.dispatch(new OnStickerSetLoadFailed(setId, 'Failed to decode sticker set'));
+            return;
+          }
+          const items: StickerSetItem[] = [];
+          for (let i = 0; i < set.stickers.length; i++) {
+            const s: Sticker = set.stickers[i];
+            const targetFile: File | null = s.sticker;
+            const thumbFile: File | null = (s.thumbnail !== null) ? s.thumbnail.file : null;
+            const fileId: number = targetFile !== null ? targetFile.id : 0;
+            const thumbId: number = thumbFile !== null ? thumbFile.id : 0;
+            const localPath: string | null = fileId > 0 ? this.fileRegistry.getLocalPath(fileId) : null;
+            const thumbPath: string | null = thumbId > 0 ? this.fileRegistry.getLocalPath(thumbId) : null;
+            const isDownloaded: boolean = fileId > 0 ? this.fileRegistry.isDownloaded(fileId) : false;
+
+            if (thumbId > 0 && thumbPath === null) {
+              this.requestMediaDownload(thumbId, 2);
+            }
+            if (fileId > 0 && !isDownloaded) {
+              this.requestMediaDownload(fileId, 1);
+            }
+
+            items.push({
+              id: fileId,
+              fileId: fileId,
+              emoji: s.emoji,
+              width: s.width,
+              height: s.height,
+              localPath: localPath,
+              thumbnailPath: thumbPath,
+              isDownloaded: isDownloaded,
+              isDownloading: false
+            });
+          }
+          const preview: StickerSetPreviewState = new StickerSetPreviewState(
+            setId,
+            set.title,
+            set.name,
+            set.is_installed,
+            set.is_archived,
+            set.is_official,
+            items,
+            false,
+            false,
+            null
+          );
+          this.dispatch(new OnStickerSetLoaded(preview));
+        }
+      }).catch(() => {
+      });
+    }
+  }
+
+  private handleChangeStickerSet(setId: string, isInstalled: boolean): void {
+    if (setId === '1' || setId === 'popular_hot_cherry') {
+      this.dispatch(new OnStickerSetChanged(setId, isInstalled));
+      return;
+    }
+
+    const req: ChangeStickerSet = new ChangeStickerSet();
+    req.set_id = setId;
+    req.is_installed = isInstalled;
+    req.is_archived = false;
+    const result: Result<TdPendingRequest, AppError> =
+      this.scope.request('changeStickerSet', encodeChangeStickerSet(req) as TdWireObject);
+    if (result.err) {
+      this.logger.logError(TAG, result.error);
+      this.dispatch(new OnStickerSetActionFailed(setId, result.error.message));
+    }
+    if (result.ok) {
+      result.value.promise.then((res: Result<TdWireObject, AppError>) => {
+        if (res.err) {
+          this.logger.logError(TAG, res.error);
+          if (!this.destroyed) {
+            this.dispatch(new OnStickerSetActionFailed(setId, res.error.message));
+          }
+        }
+        if (res.ok) {
+          if (!this.destroyed) {
+            this.dispatch(new OnStickerSetChanged(setId, isInstalled));
+          }
+        }
+      }).catch(() => {
+      });
+    }
+  }
+
+  private handleSendSticker(sendSticker: SendStickerMessage): void {
+    if (sendSticker.fileId >= 1001 && sendSticker.fileId <= 1015) {
+      this.projection.sendTextMessage(sendSticker.emoji, 0);
+      return;
+    }
+
+    const req: SendMessage = new SendMessage();
+    req.chat_id = sendSticker.chatId;
+    const inputSticker: InputSticker = new InputSticker();
+    const inputFileId: InputFileId = new InputFileId();
+    inputFileId.id = sendSticker.fileId;
+    inputSticker.sticker = inputFileId;
+    inputSticker.width = sendSticker.width;
+    inputSticker.height = sendSticker.height;
+    const content: InputMessageSticker = new InputMessageSticker();
+    content.sticker = inputSticker;
+    content.emoji = sendSticker.emoji;
+    req.input_message_content = content;
+    const result: Result<TdPendingRequest, AppError> =
+      this.scope.request('sendMessage', encodeSendMessage(req) as TdWireObject);
+    if (result.err) {
+      this.logger.logError(TAG, result.error);
+      this.dispatch(new OnMessageSendFailed(result.error));
+    }
+    if (result.ok) {
+      result.value.promise.then((res: Result<TdWireObject, AppError>) => {
+        if (res.err) {
+          this.logger.logError(TAG, res.error);
+          if (!this.destroyed) {
+            this.dispatch(new OnMessageSendFailed(res.error));
+          }
+        }
+        if (res.ok) {
+          this.logger.info(TAG, 'send_sticker_ok', `fileId=${sendSticker.fileId}`);
+        }
+      }).catch(() => {
+      });
+    }
   }
 
   /** null = 投影侧跳过（正在加载/已到顶端）；请求级与响应级失败都回灌 OnMessagesLoadFailed。 */
