@@ -77,6 +77,26 @@ export class RequestAddAccountEffect implements Effect {
   readonly kind: 'requestAddAccount' = 'requestAddAccount';
 }
 
+/** FEAT-P2-008：拉取活跃设备/会话列表（getActiveSessions）。 */
+export class LoadActiveSessionsEffect implements Effect {
+  readonly kind: 'loadActiveSessions' = 'loadActiveSessions';
+}
+
+/** FEAT-P2-008：终止指定设备会话（terminateSession）。 */
+export class TerminateSessionEffect implements Effect {
+  readonly kind: 'terminateSession' = 'terminateSession';
+  readonly sessionId: string;
+
+  constructor(sessionId: string) {
+    this.sessionId = sessionId;
+  }
+}
+
+/** FEAT-P2-008：终止除当前设备外的所有会话（terminateAllOtherSessions）。 */
+export class TerminateAllOtherSessionsEffect implements Effect {
+  readonly kind: 'terminateAllOtherSessions' = 'terminateAllOtherSessions';
+}
+
 export type SettingsEffect =
   | LoadProfileEffect
   | LoadNotificationSettingsEffect
@@ -88,4 +108,7 @@ export type SettingsEffect =
   | ShowToastEffect
   | NavigateToAuthEffect
   | SwitchAccountEffect
-  | RequestAddAccountEffect;
+  | RequestAddAccountEffect
+  | LoadActiveSessionsEffect
+  | TerminateSessionEffect
+  | TerminateAllOtherSessionsEffect;

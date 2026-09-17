@@ -32,7 +32,14 @@ import {
   SettingsIntent,
   StorageStatsLoaded,
   SwitchAccount,
-  ToggleNotificationScope
+  ToggleNotificationScope,
+  OpenDevicesPage,
+  CloseDevicesPage,
+  LoadActiveSessions,
+  ActiveSessionsLoaded,
+  ActiveSessionsLoadFailed,
+  TerminateSessionIntent,
+  TerminateAllOtherSessionsIntent
 } from '../contract/SettingsIntent';
 import {
   ClearCacheEffect,
@@ -45,7 +52,10 @@ import {
   ShowToastEffect,
   SetNotificationScopeEnabledEffect,
   SetNotificationsEnabledEffect,
-  SwitchAccountEffect
+  SwitchAccountEffect,
+  LoadActiveSessionsEffect,
+  TerminateSessionEffect,
+  TerminateAllOtherSessionsEffect
 } from '../contract/SettingsEffect';
 import { NotificationScopeKey } from '../model/NotificationSettings';
 
@@ -377,6 +387,56 @@ export const settingsReducer: Reducer<SettingsUiState, SettingsIntent, SettingsE
           : state.currentAccountKey
       };
       return reduced(state.copyWith(options));
+    }
+
+    case 'openDevicesPage': {
+      const options: SettingsUiStateOptions = {
+        showDevicesPage: true,
+        isLoadingSessions: true,
+        errorMessage: null
+      };
+      return reduced(state.copyWith(options), [new LoadActiveSessionsEffect()]);
+    }
+
+    case 'closeDevicesPage': {
+      const options: SettingsUiStateOptions = {
+        showDevicesPage: false
+      };
+      return reduced(state.copyWith(options));
+    }
+
+    case 'loadActiveSessions': {
+      const options: SettingsUiStateOptions = {
+        isLoadingSessions: true
+      };
+      return reduced(state.copyWith(options), [new LoadActiveSessionsEffect()]);
+    }
+
+    case 'activeSessionsLoaded': {
+      const loadedIntent: ActiveSessionsLoaded = intent as ActiveSessionsLoaded;
+      const options: SettingsUiStateOptions = {
+        activeSessions: loadedIntent.sessions,
+        isLoadingSessions: false
+      };
+      return reduced(state.copyWith(options));
+    }
+
+    case 'activeSessionsLoadFailed': {
+      const failedIntent: ActiveSessionsLoadFailed = intent as ActiveSessionsLoadFailed;
+      const options: SettingsUiStateOptions = {
+        isLoadingSessions: false,
+        errorMessage: failedIntent.errorMessage
+      };
+      return reduced(state.copyWith(options));
+    }
+
+    case 'terminateSession': {
+      const termIntent: TerminateSessionIntent = intent as TerminateSessionIntent;
+      return reduced(state, [new TerminateSessionEffect(termIntent.sessionId)]);
+    }
+
+    case 'terminateAllOtherSessions': {
+      return reduced(state, [new TerminateAllOtherSessionsEffect()]);
     }
 
     default:

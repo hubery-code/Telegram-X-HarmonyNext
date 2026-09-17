@@ -50,7 +50,16 @@ import {
   encodeGetUserFullInfo,
   encodeLogOut,
   encodeOptimizeStorage,
-  encodeSetScopeNotificationSettings
+  encodeSetScopeNotificationSettings,
+  GetActiveSessions,
+  encodeGetActiveSessions,
+  Sessions,
+  decodeSessions,
+  Session,
+  TerminateSession,
+  encodeTerminateSession,
+  TerminateAllOtherSessions,
+  encodeTerminateAllOtherSessions
 } from '@tgx/core-td-api-generated';
 import { TdPendingRequest, TdWireObject } from '@tgx/td-gateway';
 import { ReducerEnv, ReducerResult } from '@tgx/feature-template';
@@ -62,8 +71,12 @@ import {
   isNotificationScopeEnabled,
   withNotificationsEnabled
 } from '../model/NotificationSettings';
+import { ActiveSessionItem } from '../model/ActiveSessionItem';
 import {
+  ActiveSessionsLoaded,
+  ActiveSessionsLoadFailed,
   CacheCleared,
+  LoadActiveSessions,
   LoadNotificationSettings,
   LoadStorageStats,
   LoadUserProfile,
@@ -81,6 +94,7 @@ import {
 } from '../contract/SettingsIntent';
 import {
   ClearCacheEffect,
+  LoadActiveSessionsEffect,
   LoadNotificationSettingsEffect,
   LoadProfileEffect,
   LoadStorageStatsEffect,
@@ -91,7 +105,9 @@ import {
   SetNotificationScopeEnabledEffect,
   SetNotificationsEnabledEffect,
   ShowToastEffect,
-  SwitchAccountEffect
+  SwitchAccountEffect,
+  TerminateAllOtherSessionsEffect,
+  TerminateSessionEffect
 } from '../contract/SettingsEffect';
 import { settingsReducer } from '../reducer/SettingsReducer';
 import { Theme, ThemeManager } from '@tgx/core-design-system';
@@ -309,6 +325,20 @@ export class SettingsCoordinator {
         this.onRequestAddAccount();
         break;
       }
+
+      case 'loadActiveSessions':
+        this.handleLoadActiveSessions();
+        break;
+
+      case 'terminateSession': {
+        const termEffect: TerminateSessionEffect = effect as TerminateSessionEffect;
+        this.handleTerminateSession(termEffect.sessionId);
+        break;
+      }
+
+      case 'terminateAllOtherSessions':
+        this.handleTerminateAllOtherSessions();
+        break;
 
       default:
         break;
@@ -834,6 +864,126 @@ export class SettingsCoordinator {
       });
     }
     if (result.err) {
+      this.dispatch(new SetErrorMessage(result.error.message));
+    }
+  }
+
+  /**
+   * FEAT-P2-008：拉取活跃设备与登录会话列表（getActiveSessions）。
+   */
+  private handleLoadActiveSessions(): void {
+    const req: GetActiveSessions = new GetActiveSessions();
+    const result: Result<TdPendingRequest, AppError> = this.scope.request(
+      'getActiveSessions',
+      encodeGetActiveSessions(req) as TdWireObject
+    );
+
+    if (result.ok) {
+      const self: SettingsCoordinator = this;
+      result.value.promise.then((res: Result<TdWireObject, AppError>): void => {
+        if (self.destroyed) {
+          return;
+        }
+        if (res.ok) {
+          const sessionsObj: Sessions | null = decodeSessions(res.value as TdJsonRaw);
+          if (sessionsObj !== null && sessionsObj.sessions !== undefined) {
+            const list: ActiveSessionItem[] = [];
+            for (let i = 0; i < sessionsObj.sessions.length; i++) {
+              const s: Session = sessionsObj.sessions[i];
+              list.push({
+                id: s.id,
+                isCurrent: s.is_current,
+                deviceModel: s.device_model,
+                platform: s.platform,
+                applicationName: s.application_name,
+                applicationVersion: s.application_version,
+                ipAddress: s.ip_address,
+                location: s.location,
+                lastActiveDate: s.last_active_date
+              });
+            }
+            self.dispatch(new ActiveSessionsLoaded(list));
+          } else {
+            self.dispatch(new ActiveSessionsLoaded([]));
+          }
+        }
+        if (res.err) {
+          self.logger.logError(TAG, res.error);
+          self.dispatch(new ActiveSessionsLoadFailed(res.error.message));
+        }
+      }).catch((e: Error): void => {
+        self.dispatch(new ActiveSessionsLoadFailed(e.message));
+      });
+    }
+    if (result.err) {
+      this.logger.logError(TAG, result.error);
+      this.dispatch(new ActiveSessionsLoadFailed(result.error.message));
+    }
+  }
+
+  /**
+   * FEAT-P2-008：终止指定设备会话（terminateSession）。
+   */
+  private handleTerminateSession(sessionId: string): void {
+    const req: TerminateSession = new TerminateSession();
+    req.session_id = sessionId;
+    const result: Result<TdPendingRequest, AppError> = this.scope.request(
+      'terminateSession',
+      encodeTerminateSession(req) as TdWireObject
+    );
+
+    if (result.ok) {
+      const self: SettingsCoordinator = this;
+      result.value.promise.then((res: Result<TdWireObject, AppError>): void => {
+        if (self.destroyed) {
+          return;
+        }
+        if (res.ok) {
+          self.dispatch(new LoadActiveSessions());
+        }
+        if (res.err) {
+          self.logger.logError(TAG, res.error);
+          self.dispatch(new SetErrorMessage(res.error.message));
+        }
+      }).catch((e: Error): void => {
+        self.dispatch(new SetErrorMessage(e.message));
+      });
+    }
+    if (result.err) {
+      this.logger.logError(TAG, result.error);
+      this.dispatch(new SetErrorMessage(result.error.message));
+    }
+  }
+
+  /**
+   * FEAT-P2-008：终止除当前设备外的所有会话（terminateAllOtherSessions）。
+   */
+  private handleTerminateAllOtherSessions(): void {
+    const req: TerminateAllOtherSessions = new TerminateAllOtherSessions();
+    const result: Result<TdPendingRequest, AppError> = this.scope.request(
+      'terminateAllOtherSessions',
+      encodeTerminateAllOtherSessions(req) as TdWireObject
+    );
+
+    if (result.ok) {
+      const self: SettingsCoordinator = this;
+      result.value.promise.then((res: Result<TdWireObject, AppError>): void => {
+        if (self.destroyed) {
+          return;
+        }
+        if (res.ok) {
+          self.dispatch(new LoadActiveSessions());
+        }
+        if (res.err) {
+          self.logger.logError(TAG, res.error);
+          self.dispatch(new SetErrorMessage(res.error.message));
+        }
+      }).catch((e: Error): void => {
+        self.dispatch(new SetErrorMessage(e.message));
+      });
+    }
+    if (result.err) {
+      this.logger.logError(TAG, result.error);
       this.dispatch(new SetErrorMessage(result.error.message));
     }
   }

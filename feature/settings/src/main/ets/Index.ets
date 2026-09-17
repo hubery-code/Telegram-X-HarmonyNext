@@ -36,6 +36,13 @@ export {
   OpenAccountSwitcher,
   CloseAccountSwitcher,
   SetAvailableAccounts,
+  OpenDevicesPage,
+  CloseDevicesPage,
+  LoadActiveSessions,
+  ActiveSessionsLoaded,
+  ActiveSessionsLoadFailed,
+  TerminateSessionIntent,
+  TerminateAllOtherSessionsIntent,
   SettingsIntent
 } from './contract/SettingsIntent';
 
@@ -52,10 +59,14 @@ export {
   NavigateToAuthEffect,
   SwitchAccountEffect,
   RequestAddAccountEffect,
+  LoadActiveSessionsEffect,
+  TerminateSessionEffect,
+  TerminateAllOtherSessionsEffect,
   SettingsEffect
 } from './contract/SettingsEffect';
 
 // Model
+export { ActiveSessionItem } from './model/ActiveSessionItem';
 export { formatBytes, formatStorageLabel } from './model/StorageSize';
 export {
   NotificationScopeKey,
@@ -76,3 +87,4 @@ export {
 
 // UI Pages
 export { SettingsPage, AVATAR_PALETTE } from './pages/SettingsPage';
+export { DevicesSubPage, formatSessionDate } from './pages/DevicesSubPage';

@@ -19,8 +19,10 @@ import {
   ChangeThemeMode,
   ClearCacheRequested,
   CloseAccountSwitcher,
+  CloseDevicesPage,
   ConfirmLogout,
   OpenAccountSwitcher,
+  OpenDevicesPage,
   RequestAddAccount,
   RequestLogout,
   SetErrorMessage,
@@ -30,6 +32,7 @@ import {
   ToggleNotifications
 } from '../contract/SettingsIntent';
 import { NotificationScopeKey } from '../model/NotificationSettings';
+import { DevicesSubPage } from './DevicesSubPage';
 
 const AVATAR_SIZE: number = 64;
 const BACK_ARROW_SIZE: number = 44;
@@ -139,6 +142,9 @@ export struct SettingsPage {
             this.SectionTitle(this.t('NOTIFICATIONS'))
             this.NotificationsCardView()
 
+            this.SectionTitle(this.t('DEVICES'))
+            this.DevicesCardView()
+
             this.SectionTitle(this.t('DATA AND STORAGE'))
             this.StorageCardView()
 
@@ -173,6 +179,16 @@ export struct SettingsPage {
 
       if (this.uiState.showLogoutConfirm) {
         this.LogoutConfirmDialog()
+      }
+
+      if (this.uiState.showDevicesPage) {
+        DevicesSubPage({
+          uiState: this.uiState,
+          onDispatch: this.onDispatch,
+          onBack: (): void => {
+            this.onDispatch(new CloseDevicesPage());
+          }
+        })
       }
 
       if (this.uiState.isLoading || this.uiState.isLoggingOut) {
@@ -404,6 +420,44 @@ export struct SettingsPage {
     .width('100%')
     .height(40)
     .alignItems(VerticalAlign.Center)
+  }
+
+  @Builder
+  DevicesCardView() {
+    Row() {
+      Image($r('app.media.ic_devices'))
+        .width(22)
+        .height(22)
+        .fillColor(this.getTheme().colors.accent)
+        .margin({ right: this.getTheme().spacing.sm })
+
+      Column() {
+        Text(this.t('Devices'))
+          .fontSize(this.getTheme().typography.body.fontSize)
+          .fontColor(this.getTheme().colors.textPrimary)
+
+        Text(this.uiState.activeSessions.length > 0
+          ? `${this.uiState.activeSessions.length} active sessions`
+          : this.t('Active Sessions'))
+          .fontSize(this.getTheme().typography.footnote.fontSize)
+          .fontColor(this.getTheme().colors.textSecondary)
+          .margin({ top: this.getTheme().spacing.xs })
+      }
+      .alignItems(HorizontalAlign.Start)
+      .layoutWeight(1)
+
+      Image($r('app.media.ic_chevron_right'))
+        .width(18)
+        .height(18)
+        .fillColor(this.getTheme().colors.textSecondary)
+    }
+    .width('100%')
+    .padding(this.getTheme().spacing.md)
+    .backgroundColor(this.getTheme().colors.surface)
+    .borderRadius(this.getTheme().radius.md)
+    .onClick((): void => {
+      this.onDispatch(new OpenDevicesPage());
+    })
   }
 
   @Builder

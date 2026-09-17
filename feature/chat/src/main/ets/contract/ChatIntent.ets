@@ -354,6 +354,36 @@ export class ToggleAttachmentMenu implements Intent {
   readonly kind: 'toggleAttachmentMenu' = 'toggleAttachmentMenu';
 }
 
+/** EMOJI-101：打开表情/贴纸面板。 */
+export class OpenEmojiBoard implements Intent {
+  readonly kind: 'openEmojiBoard' = 'openEmojiBoard';
+}
+
+/** EMOJI-101：关闭表情/贴纸面板。 */
+export class CloseEmojiBoard implements Intent {
+  readonly kind: 'closeEmojiBoard' = 'closeEmojiBoard';
+}
+
+/** EMOJI-101：切换表情/贴纸面板显隐。 */
+export class ToggleEmojiBoard implements Intent {
+  readonly kind: 'toggleEmojiBoard' = 'toggleEmojiBoard';
+}
+
+/** EMOJI-101：从表情面板插入单个 Emoji。 */
+export class InsertEmoji implements Intent {
+  readonly kind: 'insertEmoji' = 'insertEmoji';
+  readonly emoji: string;
+
+  constructor(emoji: string) {
+    this.emoji = emoji;
+  }
+}
+
+/** EMOJI-101：点击表情面板退格键删除末尾字符。 */
+export class DeleteLastEmojiChar implements Intent {
+  readonly kind: 'deleteLastEmojiChar' = 'deleteLastEmojiChar';
+}
+
 /** FILE-103：取消媒体/文件下载。 */
 export class CancelMediaDownload implements Intent {
   readonly kind: 'cancelMediaDownload' = 'cancelMediaDownload';
@@ -599,6 +629,11 @@ export type ChatIntent =
   | OpenAttachmentMenu
   | CloseAttachmentMenu
   | ToggleAttachmentMenu
+  | OpenEmojiBoard
+  | CloseEmojiBoard
+  | ToggleEmojiBoard
+  | InsertEmoji
+  | DeleteLastEmojiChar
   | CancelMediaDownload
   | ResendFailedMessage
   | OpenChatSearch

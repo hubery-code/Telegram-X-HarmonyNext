@@ -88,7 +88,9 @@ import {
   JoinChannel,
   OnChannelMemberStatusChanged,
   OpenMessageComments,
-  ToggleMessageReaction
+  ToggleMessageReaction,
+  InsertEmoji,
+  DeleteLastEmojiChar
 } from '../contract/ChatIntent';
 import {
   ChatEffect,
@@ -203,6 +205,31 @@ function replyAuthorLabel(state: ChatUiState, item: MessageItem): string {
     return item.senderName;
   }
   return state.chatTitle;
+}
+
+/**
+ * EMOJI-101: 安全移除末尾 Unicode 字符/Emoji（兼容代理对与变音符/选择符）。
+ */
+export function removeLastEmojiChar(text: string): string {
+  if (text.length === 0) {
+    return '';
+  }
+  let end: number = text.length;
+  if (end > 0 && text.charCodeAt(end - 1) === 0xFE0F) {
+    end--;
+  }
+  if (end >= 2) {
+    const lastCode: number = text.charCodeAt(end - 1);
+    const secondLastCode: number = text.charCodeAt(end - 2);
+    if (lastCode >= 0xDC00 && lastCode <= 0xDFFF &&
+        secondLastCode >= 0xD800 && secondLastCode <= 0xDBFF) {
+      return text.substring(0, end - 2);
+    }
+  }
+  if (end > 0) {
+    return text.substring(0, end - 1);
+  }
+  return '';
 }
 
 export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
@@ -347,7 +374,8 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
         const nextState: ChatUiState = state.copyWith({
           composerMode: null,
           composerText: editMode.draftBackup,
-          errorMessage: null
+          errorMessage: null,
+          showEmojiBoard: false
         });
         const effects: ChatEffect[] = [new EditMessageText(state.chatId, editMode.targetMessageId, text)];
         return reduced(nextState, effects);
@@ -358,7 +386,8 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
         const nextState: ChatUiState = state.copyWith({
           composerMode: null,
           composerText: '',
-          errorMessage: null
+          errorMessage: null,
+          showEmojiBoard: false
         });
         const effects: ChatEffect[] = [new SendTextMessage(state.chatId, text, replyMode.targetMessageId)];
         return reduced(nextState, effects);
@@ -367,7 +396,8 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
       // 失败由 OnMessageSendFailed 回灌 errorMessage 提示，不回填文本）。
       const nextState: ChatUiState = state.copyWith({
         composerText: '',
-        errorMessage: null
+        errorMessage: null,
+        showEmojiBoard: false
       });
       const effects: ChatEffect[] = [new SendTextMessage(state.chatId, text)];
       return reduced(nextState, effects);
@@ -408,7 +438,7 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
     }
 
     case 'openAttachmentMenu': {
-      return reduced(state.copyWith({ showAttachmentMenu: true }));
+      return reduced(state.copyWith({ showAttachmentMenu: true, showEmojiBoard: false }));
     }
 
     case 'closeAttachmentMenu': {
@@ -416,7 +446,40 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
     }
 
     case 'toggleAttachmentMenu': {
-      return reduced(state.copyWith({ showAttachmentMenu: !state.showAttachmentMenu }));
+      const nextAttachment: boolean = !state.showAttachmentMenu;
+      return reduced(state.copyWith({
+        showAttachmentMenu: nextAttachment,
+        showEmojiBoard: nextAttachment ? false : state.showEmojiBoard
+      }));
+    }
+
+    case 'openEmojiBoard': {
+      return reduced(state.copyWith({ showEmojiBoard: true, showAttachmentMenu: false }));
+    }
+
+    case 'closeEmojiBoard': {
+      return reduced(state.copyWith({ showEmojiBoard: false }));
+    }
+
+    case 'toggleEmojiBoard': {
+      const nextEmoji: boolean = !state.showEmojiBoard;
+      return reduced(state.copyWith({
+        showEmojiBoard: nextEmoji,
+        showAttachmentMenu: nextEmoji ? false : state.showAttachmentMenu
+      }));
+    }
+
+    case 'insertEmoji': {
+      const insertIntent: InsertEmoji = intent as InsertEmoji;
+      return reduced(state.copyWith({
+        composerText: state.composerText + insertIntent.emoji
+      }));
+    }
+
+    case 'deleteLastEmojiChar': {
+      return reduced(state.copyWith({
+        composerText: removeLastEmojiChar(state.composerText)
+      }));
     }
 
     case 'cancelMediaUpload': {

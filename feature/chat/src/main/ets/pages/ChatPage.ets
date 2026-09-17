@@ -97,6 +97,11 @@ import {
   OpenAttachmentMenu,
   CloseAttachmentMenu,
   ToggleAttachmentMenu,
+  OpenEmojiBoard,
+  CloseEmojiBoard,
+  ToggleEmojiBoard,
+  InsertEmoji,
+  DeleteLastEmojiChar,
   CancelMediaDownload,
   ResendFailedMessage,
   OpenChatSearch,
@@ -117,6 +122,7 @@ import {
 import { isMessageSelected } from '../model/ForwardSelection';
 import { ChatSearchResultItem } from '../model/ChatSearchResultItem';
 import { PinnedMessageInfo } from '../model/PinnedMessageInfo';
+import { EmojiBoard } from './EmojiBoard';
 
 const T = LightTheme;
 
@@ -604,6 +610,12 @@ export struct ChatPage {
               // SEARCH-102：用户接管视图，解除跳转锚定与高亮，恢复既有的自动跟随。
               this.jumpAnchorLock = false;
               this.clearJumpHighlight();
+              if (this.uiState.showEmojiBoard) {
+                this.onDispatch(new CloseEmojiBoard());
+              }
+              if (this.uiState.showAttachmentMenu) {
+                this.onDispatch(new CloseAttachmentMenu());
+              }
             }
           })
           .onScrollIndex((start: number, end: number) => {
@@ -640,9 +652,26 @@ export struct ChatPage {
         if (!this.uiState.selectionMode) {
           if (this.uiState.chatKind === 'channel' && !this.uiState.isChannelMember) {
             this.JoinChannelBar()
+          } else if (this.uiState.chatKind === 'channel' && this.uiState.isChannelMember) {
+            this.ChannelMuteBar()
           } else {
             this.ComposerBar()
           }
+        }
+
+        // EMOJI-101：表情与贴纸面板（非多选态且非未加频道态）
+        if (this.uiState.showEmojiBoard && !this.uiState.selectionMode && !(this.uiState.chatKind === 'channel' && !this.uiState.isChannelMember)) {
+          EmojiBoard({
+            onSelectEmoji: (emoji: string) => {
+              this.onDispatch(new InsertEmoji(emoji));
+            },
+            onDeleteChar: () => {
+              this.onDispatch(new DeleteLastEmojiChar());
+            },
+            onSelectSticker: (emoji: string) => {
+              this.onDispatch(new InsertEmoji(emoji));
+            }
+          })
         }
       }
       .width('100%')
@@ -2857,12 +2886,12 @@ export struct ChatPage {
   @Builder
   ComposerBar() {
     Row() {
-      // COMPOSER-102：统一附件入口按钮（展开/收起附件选择面板）
+      // EMOJI-101：表情/键盘切换按钮（对齐 Telegram X 输入栏左侧笑脸/键盘图标）
       Row() {
-        Image($r('app.media.ic_attach'))
+        Image(this.uiState.showEmojiBoard ? $r('app.media.ic_keyboard') : $r('app.media.ic_emoji'))
           .width(24)
           .height(24)
-          .fillColor(this.uiState.showAttachmentMenu ? T.colors.accent : T.colors.textSecondary)
+          .fillColor(this.uiState.showEmojiBoard ? T.colors.accent : T.colors.textSecondary)
       }
       .width(COMPOSER_INPUT_HEIGHT)
       .height(COMPOSER_INPUT_HEIGHT)
@@ -2870,7 +2899,7 @@ export struct ChatPage {
       .alignItems(VerticalAlign.Center)
       .margin({ right: T.spacing.xs })
       .onClick(() => {
-        this.onDispatch(new ToggleAttachmentMenu());
+        this.onDispatch(new ToggleEmojiBoard());
       })
 
       Row() {
@@ -2884,7 +2913,7 @@ export struct ChatPage {
           .backgroundColor(Color.Transparent)
           .width('100%')
           .height(COMPOSER_INPUT_HEIGHT)
-          .padding({ left: T.spacing.lg, right: T.spacing.lg })
+          .padding({ left: T.spacing.md, right: T.spacing.md })
           .onChange((value: string) => {
             this.onDispatch(new ComposerTextChanged(value));
           })
@@ -2896,6 +2925,22 @@ export struct ChatPage {
       .height(COMPOSER_INPUT_HEIGHT)
       .backgroundColor(T.colors.surfaceVariant)
       .borderRadius(T.radius.full)
+
+      // COMPOSER-102：统一附件入口按钮（展开/收起附件选择面板）
+      Row() {
+        Image($r('app.media.ic_attach'))
+          .width(24)
+          .height(24)
+          .fillColor(this.uiState.showAttachmentMenu ? T.colors.accent : T.colors.textSecondary)
+      }
+      .width(COMPOSER_INPUT_HEIGHT)
+      .height(COMPOSER_INPUT_HEIGHT)
+      .justifyContent(FlexAlign.Center)
+      .alignItems(VerticalAlign.Center)
+      .margin({ left: T.spacing.xs, right: T.spacing.xs })
+      .onClick(() => {
+        this.onDispatch(new ToggleAttachmentMenu());
+      })
 
       Row() {
         Image(this.canSend() ? $r('app.media.ic_send') : $r('app.media.ic_mic'))
@@ -2909,7 +2954,6 @@ export struct ChatPage {
       .borderRadius(T.radius.full)
       .justifyContent(FlexAlign.Center)
       .alignItems(VerticalAlign.Center)
-      .margin({ left: T.spacing.sm })
       .onClick(() => {
         if (this.canSend()) {
           this.dispatchSend();
@@ -2954,6 +2998,43 @@ export struct ChatPage {
     .borderWidth({ top: 1 })
     .borderColor(T.colors.divider)
     .backgroundColor(T.colors.surface)
+  }
+
+  /** CHANNEL-101：已加入频道底部"静音"快捷操作条（Telegram X 广播频道模式） */
+  @Builder
+  ChannelMuteBar() {
+    Row() {
+      Row() {
+        Image($r('app.media.ic_mute'))
+          .width(20)
+          .height(20)
+          .fillColor(T.colors.accent)
+          .margin({ right: T.spacing.sm })
+
+        Text('静音')
+          .fontSize(T.typography.headline.fontSize)
+          .fontWeight(FontWeight.Medium)
+          .fontColor(T.colors.accent)
+      }
+      .width('100%')
+      .height(40)
+      .justifyContent(FlexAlign.Center)
+      .alignItems(VerticalAlign.Center)
+      .backgroundColor(T.colors.surfaceVariant)
+      .borderRadius(T.radius.md)
+      .onClick(() => {
+        this.onDispatch(new ChatMenuAction('mute'));
+      })
+    }
+    .width('100%')
+    .padding({
+      left: T.spacing.screenInset,
+      right: T.spacing.screenInset,
+      top: T.spacing.xs,
+      bottom: T.spacing.sm
+    })
+    .borderWidth({ top: 1 })
+    .borderColor(T.colors.divider)
   }
 
   private canSend(): boolean {

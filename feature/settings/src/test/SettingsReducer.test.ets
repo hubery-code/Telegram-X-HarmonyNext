@@ -20,6 +20,13 @@ import {
   NotificationSettingsUpdated,
   NotificationSettingsUpdateFailed,
   OpenAccountSwitcher,
+  OpenDevicesPage,
+  CloseDevicesPage,
+  LoadActiveSessions,
+  ActiveSessionsLoaded,
+  ActiveSessionsLoadFailed,
+  TerminateSessionIntent,
+  TerminateAllOtherSessionsIntent,
   ProfileLoaded,
   RequestAddAccount,
   RequestLogout,
@@ -34,6 +41,7 @@ import {
 } from '../main/ets/contract/SettingsIntent';
 import {
   ClearCacheEffect,
+  LoadActiveSessionsEffect,
   LoadNotificationSettingsEffect,
   LoadProfileEffect,
   LoadStorageStatsEffect,
@@ -42,8 +50,11 @@ import {
   SetNotificationScopeEnabledEffect,
   SetNotificationsEnabledEffect,
   ShowToastEffect,
-  SwitchAccountEffect
+  SwitchAccountEffect,
+  TerminateAllOtherSessionsEffect,
+  TerminateSessionEffect
 } from '../main/ets/contract/SettingsEffect';
+import { ActiveSessionItem } from '../main/ets/model/ActiveSessionItem';
 import { settingsReducer } from '../main/ets/reducer/SettingsReducer';
 
 function makeEnv(nowMillis: number = 1000, monotonicMillis: number = 500): ReducerEnv {
@@ -544,6 +555,99 @@ export default function settingsReducerTest(): void {
 
       expect(result.state.availableAccounts.length).assertEqual(2);
       expect(result.state.currentAccountKey).assertEqual('primary_acc');
+    });
+
+    it('openDevicesPage_opensSubPage_startsLoading_andEmitsEffect', 0, () => {
+      const state = SettingsUiState.initial();
+      const result = settingsReducer(state, new OpenDevicesPage(), makeEnv());
+
+      expect(result.state.showDevicesPage).assertTrue();
+      expect(result.state.isLoadingSessions).assertTrue();
+      expect(result.state.errorMessage).assertNull();
+      expect(result.effects.length).assertEqual(1);
+      expect(result.effects[0].kind).assertEqual('loadActiveSessions');
+    });
+
+    it('closeDevicesPage_resetsShowDevicesPageFlag', 0, () => {
+      const state = SettingsUiState.initial().copyWith({ showDevicesPage: true });
+      const result = settingsReducer(state, new CloseDevicesPage(), makeEnv());
+
+      expect(result.state.showDevicesPage).assertFalse();
+      expect(result.effects.length).assertEqual(0);
+    });
+
+    it('loadActiveSessions_setsLoadingFlag_andEmitsEffect', 0, () => {
+      const state = SettingsUiState.initial();
+      const result = settingsReducer(state, new LoadActiveSessions(), makeEnv());
+
+      expect(result.state.isLoadingSessions).assertTrue();
+      expect(result.effects.length).assertEqual(1);
+      expect(result.effects[0].kind).assertEqual('loadActiveSessions');
+    });
+
+    it('activeSessionsLoaded_populatesSessions_andClearsLoading', 0, () => {
+      const state = SettingsUiState.initial().copyWith({ isLoadingSessions: true });
+      const mockSessions: ActiveSessionItem[] = [
+        {
+          id: 's1',
+          isCurrent: true,
+          deviceModel: 'HUAWEI Mate 60 Pro',
+          platform: 'HarmonyOS NEXT',
+          applicationName: 'Telegram X',
+          applicationVersion: '0.26.8',
+          ipAddress: '10.0.0.1',
+          location: 'Shenzhen, China',
+          lastActiveDate: 1726500000
+        },
+        {
+          id: 's2',
+          isCurrent: false,
+          deviceModel: 'MacBook Pro',
+          platform: 'macOS',
+          applicationName: 'Telegram Desktop',
+          applicationVersion: '4.14.0',
+          ipAddress: '10.0.0.2',
+          location: 'Shenzhen, China',
+          lastActiveDate: 1726490000
+        }
+      ];
+      const result = settingsReducer(state, new ActiveSessionsLoaded(mockSessions), makeEnv());
+
+      expect(result.state.isLoadingSessions).assertFalse();
+      expect(result.state.activeSessions.length).assertEqual(2);
+      expect(result.state.activeSessions[0].id).assertEqual('s1');
+      expect(result.state.activeSessions[0].isCurrent).assertTrue();
+      expect(result.state.activeSessions[1].id).assertEqual('s2');
+      expect(result.state.activeSessions[1].isCurrent).assertFalse();
+      expect(result.effects.length).assertEqual(0);
+    });
+
+    it('activeSessionsLoadFailed_clearsLoading_andSetsErrorMessage', 0, () => {
+      const state = SettingsUiState.initial().copyWith({ isLoadingSessions: true });
+      const result = settingsReducer(state, new ActiveSessionsLoadFailed('Network timeout'), makeEnv());
+
+      expect(result.state.isLoadingSessions).assertFalse();
+      expect(result.state.errorMessage).assertEqual('Network timeout');
+      expect(result.effects.length).assertEqual(0);
+    });
+
+    it('terminateSession_emitsTerminateSessionEffectWithId', 0, () => {
+      const state = SettingsUiState.initial();
+      const result = settingsReducer(state, new TerminateSessionIntent('session_12345'), makeEnv());
+
+      expect(result.state === state).assertTrue();
+      expect(result.effects.length).assertEqual(1);
+      expect(result.effects[0].kind).assertEqual('terminateSession');
+      expect((result.effects[0] as TerminateSessionEffect).sessionId).assertEqual('session_12345');
+    });
+
+    it('terminateAllOtherSessions_emitsTerminateAllOtherSessionsEffect', 0, () => {
+      const state = SettingsUiState.initial();
+      const result = settingsReducer(state, new TerminateAllOtherSessionsIntent(), makeEnv());
+
+      expect(result.state === state).assertTrue();
+      expect(result.effects.length).assertEqual(1);
+      expect(result.effects[0].kind).assertEqual('terminateAllOtherSessions');
     });
   });
 }

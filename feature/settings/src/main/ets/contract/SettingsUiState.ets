@@ -11,6 +11,7 @@ import { UiState } from '@tgx/feature-template';
 import { ThemePreference } from '@tgx/core-design-system';
 import { LanguagePreference } from '@tgx/core-common';
 import { NotificationScopeKey } from '../model/NotificationSettings';
+import { ActiveSessionItem } from '../model/ActiveSessionItem';
 
 export type SettingsThemeMode = ThemePreference;
 
@@ -39,6 +40,12 @@ export interface SettingsUiStateOptions {
   readonly availableAccounts?: readonly string[];
   readonly currentAccountKey?: string;
   readonly showAccountSwitcher?: boolean;
+  /** FEAT-P2-008：是否展示活跃设备页面。 */
+  readonly showDevicesPage?: boolean;
+  /** FEAT-P2-008：活跃设备/会话列表。 */
+  readonly activeSessions?: readonly ActiveSessionItem[];
+  /** FEAT-P2-008：是否正在加载会话列表。 */
+  readonly isLoadingSessions?: boolean;
 }
 
 export class SettingsUiState implements UiState {
@@ -69,6 +76,12 @@ export class SettingsUiState implements UiState {
   readonly availableAccounts: readonly string[];
   readonly currentAccountKey: string;
   readonly showAccountSwitcher: boolean;
+  /** FEAT-P2-008：是否展示活跃设备页面。 */
+  readonly showDevicesPage: boolean;
+  /** FEAT-P2-008：活跃设备/会话列表。 */
+  readonly activeSessions: readonly ActiveSessionItem[];
+  /** FEAT-P2-008：是否正在加载会话列表。 */
+  readonly isLoadingSessions: boolean;
 
   constructor(
     userId: number,
@@ -94,7 +107,10 @@ export class SettingsUiState implements UiState {
     showLogoutConfirm: boolean,
     availableAccounts: readonly string[] = [],
     currentAccountKey: string = '',
-    showAccountSwitcher: boolean = false
+    showAccountSwitcher: boolean = false,
+    showDevicesPage: boolean = false,
+    activeSessions: readonly ActiveSessionItem[] = [],
+    isLoadingSessions: boolean = false
   ) {
     this.userId = userId;
     this.displayName = displayName;
@@ -120,6 +136,9 @@ export class SettingsUiState implements UiState {
     this.availableAccounts = availableAccounts;
     this.currentAccountKey = currentAccountKey;
     this.showAccountSwitcher = showAccountSwitcher;
+    this.showDevicesPage = showDevicesPage;
+    this.activeSessions = activeSessions;
+    this.isLoadingSessions = isLoadingSessions;
   }
 
   static initial(
@@ -153,6 +172,9 @@ export class SettingsUiState implements UiState {
       false,
       availableAccounts,
       currentAccountKey,
+      false,
+      false,
+      [],
       false
     );
   }
@@ -192,7 +214,10 @@ export class SettingsUiState implements UiState {
       options.showLogoutConfirm !== undefined ? options.showLogoutConfirm : this.showLogoutConfirm,
       options.availableAccounts !== undefined ? options.availableAccounts : this.availableAccounts,
       options.currentAccountKey !== undefined ? options.currentAccountKey : this.currentAccountKey,
-      options.showAccountSwitcher !== undefined ? options.showAccountSwitcher : this.showAccountSwitcher
+      options.showAccountSwitcher !== undefined ? options.showAccountSwitcher : this.showAccountSwitcher,
+      options.showDevicesPage !== undefined ? options.showDevicesPage : this.showDevicesPage,
+      options.activeSessions !== undefined ? options.activeSessions : this.activeSessions,
+      options.isLoadingSessions !== undefined ? options.isLoadingSessions : this.isLoadingSessions
     );
   }
 }

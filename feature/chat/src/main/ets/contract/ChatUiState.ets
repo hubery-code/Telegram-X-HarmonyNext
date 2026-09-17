@@ -147,6 +147,8 @@ export interface ChatUiStateOptions {
   readonly showPinnedBar?: boolean;
   /** CHANNEL-101：是否已加入频道（未加入频道时底栏显示"加入频道"按钮）。 */
   readonly isChannelMember?: boolean;
+  /** EMOJI-101：表情/贴纸面板是否展开。 */
+  readonly showEmojiBoard?: boolean;
 }
 
 export class ChatUiState implements UiState {
@@ -189,6 +191,8 @@ export class ChatUiState implements UiState {
   readonly showPinnedBar: boolean;
   /** CHANNEL-101：是否已加入频道（未加入频道时底栏显示"加入频道"按钮）。 */
   readonly isChannelMember: boolean;
+  /** EMOJI-101：表情/贴纸面板是否展开。 */
+  readonly showEmojiBoard: boolean;
 
   constructor(
     chatId: number,
@@ -216,7 +220,8 @@ export class ChatUiState implements UiState {
     chatKind: ChatKind = 'unknown',
     pinnedMessage: PinnedMessageInfo | null = null,
     showPinnedBar: boolean = false,
-    isChannelMember: boolean = true
+    isChannelMember: boolean = true,
+    showEmojiBoard: boolean = false
   ) {
     this.chatId = chatId;
     this.chatTitle = chatTitle;
@@ -244,10 +249,11 @@ export class ChatUiState implements UiState {
     this.pinnedMessage = pinnedMessage;
     this.showPinnedBar = showPinnedBar;
     this.isChannelMember = isChannelMember;
+    this.showEmojiBoard = showEmojiBoard;
   }
 
   static initial(): ChatUiState {
-    return new ChatUiState(0, '', [], false, true, null, '', null, null, -1, [], 0, 0, false, [], false, false, '', [], false, 0, '', 'unknown', null, false, true);
+    return new ChatUiState(0, '', [], false, true, null, '', null, null, -1, [], 0, 0, false, [], false, false, '', [], false, 0, '', 'unknown', null, false, true, false);
   }
 
   copyWith(options: ChatUiStateOptions): ChatUiState {
@@ -277,7 +283,8 @@ export class ChatUiState implements UiState {
       options.chatKind !== undefined ? options.chatKind : this.chatKind,
       options.pinnedMessage !== undefined ? options.pinnedMessage : this.pinnedMessage,
       options.showPinnedBar !== undefined ? options.showPinnedBar : this.showPinnedBar,
-      options.isChannelMember !== undefined ? options.isChannelMember : this.isChannelMember
+      options.isChannelMember !== undefined ? options.isChannelMember : this.isChannelMember,
+      options.showEmojiBoard !== undefined ? options.showEmojiBoard : this.showEmojiBoard
     );
   }
 }

@@ -10,6 +10,7 @@ import { Intent } from '@tgx/feature-template';
 import { LanguagePreference } from '@tgx/core-common';
 import { SettingsThemeMode } from './SettingsUiState';
 import { NotificationScopeKey } from '../model/NotificationSettings';
+import { ActiveSessionItem } from '../model/ActiveSessionItem';
 
 export interface UserProfileData {
   readonly userId: number;
@@ -219,6 +220,56 @@ export class SetAvailableAccounts implements Intent {
   }
 }
 
+/** FEAT-P2-008：打开活跃设备页面。 */
+export class OpenDevicesPage implements Intent {
+  readonly kind: 'openDevicesPage' = 'openDevicesPage';
+}
+
+/** FEAT-P2-008：关闭活跃设备页面。 */
+export class CloseDevicesPage implements Intent {
+  readonly kind: 'closeDevicesPage' = 'closeDevicesPage';
+}
+
+/** FEAT-P2-008：拉取活跃设备/会话列表。 */
+export class LoadActiveSessions implements Intent {
+  readonly kind: 'loadActiveSessions' = 'loadActiveSessions';
+}
+
+/** FEAT-P2-008：活跃设备/会话列表加载完成。 */
+export class ActiveSessionsLoaded implements Intent {
+  readonly kind: 'activeSessionsLoaded' = 'activeSessionsLoaded';
+  readonly sessions: readonly ActiveSessionItem[];
+
+  constructor(sessions: readonly ActiveSessionItem[]) {
+    this.sessions = sessions;
+  }
+}
+
+/** FEAT-P2-008：活跃设备/会话列表加载失败。 */
+export class ActiveSessionsLoadFailed implements Intent {
+  readonly kind: 'activeSessionsLoadFailed' = 'activeSessionsLoadFailed';
+  readonly errorMessage: string;
+
+  constructor(errorMessage: string) {
+    this.errorMessage = errorMessage;
+  }
+}
+
+/** FEAT-P2-008：终止指定设备会话。 */
+export class TerminateSessionIntent implements Intent {
+  readonly kind: 'terminateSession' = 'terminateSession';
+  readonly sessionId: string;
+
+  constructor(sessionId: string) {
+    this.sessionId = sessionId;
+  }
+}
+
+/** FEAT-P2-008：终止除当前设备外的所有会话。 */
+export class TerminateAllOtherSessionsIntent implements Intent {
+  readonly kind: 'terminateAllOtherSessions' = 'terminateAllOtherSessions';
+}
+
 export type SettingsIntent =
   | LoadUserProfile
   | ToggleNotifications
@@ -245,4 +296,11 @@ export type SettingsIntent =
   | RequestAddAccount
   | OpenAccountSwitcher
   | CloseAccountSwitcher
-  | SetAvailableAccounts;
+  | SetAvailableAccounts
+  | OpenDevicesPage
+  | CloseDevicesPage
+  | LoadActiveSessions
+  | ActiveSessionsLoaded
+  | ActiveSessionsLoadFailed
+  | TerminateSessionIntent
+  | TerminateAllOtherSessionsIntent;
