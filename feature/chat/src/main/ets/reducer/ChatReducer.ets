@@ -592,6 +592,10 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
       const showForward: boolean = !isFailed && loaded.canBeForwarded;
       const showPin: boolean = !isFailed && loaded.canBePinned;
       const isPinned: boolean = loaded.isPinned || item.isPinned;
+      const chosenReactions: string[] = item.reactionChips
+        .filter((chip: ReactionChip): boolean => chip.isChosen)
+        .map((chip: ReactionChip): string => chip.emoji);
+      const availableReactions: string[] = ['👍', '❤️', '🔥', '🎉', '👏', '😂'];
       const menu: MessageActionMenuState = new MessageActionMenuState(
         loaded.messageId,
         showReply,
@@ -604,7 +608,9 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
         firstLink,
         showResend,
         showPin,
-        isPinned
+        isPinned,
+        availableReactions,
+        chosenReactions
       );
       const nextState: ChatUiState = state.copyWith({ actionMenu: menu });
       return reduced(nextState);
@@ -1100,7 +1106,7 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
           return item;
         }
         let chipUpdated: boolean = false;
-        const newChips: ReactionChip[] = item.reactionChips.map((chip: ReactionChip): ReactionChip => {
+        let newChips: ReactionChip[] = item.reactionChips.map((chip: ReactionChip): ReactionChip => {
           if (chip.emoji !== reactionIntent.emoji) {
             return chip;
           }
@@ -1109,11 +1115,11 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
           targetChosen = !chip.isChosen;
           const newCount: number = Math.max(0, chip.count + (targetChosen ? 1 : -1));
           return new ReactionChip(chip.emoji, newCount, targetChosen);
-        });
+        }).filter((chip: ReactionChip): boolean => chip.count > 0);
         if (!chipUpdated) {
           targetFound = true;
           targetChosen = true;
-          newChips.push(new ReactionChip(reactionIntent.emoji, 1, true));
+          newChips = [...newChips, new ReactionChip(reactionIntent.emoji, 1, true)];
         }
         return new MessageItem(
           item.messageId,
@@ -1150,8 +1156,32 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
       if (!targetFound) {
         return reduced(state);
       }
+      let nextActionMenu: MessageActionMenuState | null = state.actionMenu;
+      if (nextActionMenu !== null && nextActionMenu.messageId === reactionIntent.messageId) {
+        const nextChosen: string[] = targetChosen
+          ? (nextActionMenu.chosenReactions.indexOf(reactionIntent.emoji) === -1
+            ? [...nextActionMenu.chosenReactions, reactionIntent.emoji]
+            : [...nextActionMenu.chosenReactions])
+          : nextActionMenu.chosenReactions.filter((e: string): boolean => e !== reactionIntent.emoji);
+        nextActionMenu = new MessageActionMenuState(
+          nextActionMenu.messageId,
+          nextActionMenu.showReply,
+          nextActionMenu.showEdit,
+          nextActionMenu.showDelete,
+          nextActionMenu.deleteRevoke,
+          nextActionMenu.showForward,
+          nextActionMenu.showCopy,
+          nextActionMenu.showCopyLink,
+          nextActionMenu.linkUrlToCopy,
+          nextActionMenu.showResend,
+          nextActionMenu.showPin,
+          nextActionMenu.isPinned,
+          nextActionMenu.availableReactions,
+          nextChosen
+        );
+      }
       return reduced(
-        state.copyWith({ messages: newMessages }),
+        state.copyWith({ messages: newMessages, actionMenu: nextActionMenu }),
         [new ToggleReactionEffect(state.chatId, reactionIntent.messageId, reactionIntent.emoji, targetChosen)]
       );
     }

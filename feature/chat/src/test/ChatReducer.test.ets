@@ -1660,6 +1660,74 @@ export default function chatReducerTest() {
       expect(result.effects.length).assertEqual(0);
     });
 
+    it('toggleMessageReaction_countDropsToZero_removesChipFromList', 0, () => {
+      const initialChip: ReactionChip = new ReactionChip('🔥', 1, true);
+      const post: MessageItem = makeChannelPost(101, 'Hello Channel', [initialChip], 5);
+      const state: ChatUiState = makeStateWith([post]);
+
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        state,
+        new ToggleMessageReaction(101, '🔥'),
+        makeEnv()
+      );
+
+      expect(result.effects.length).assertEqual(1);
+      const effect: ToggleReactionEffect = result.effects[0] as ToggleReactionEffect;
+      expect(effect.isChosen).assertFalse();
+
+      const updatedPost: MessageItem = result.state.messages[0];
+      // REACTION-101: count dropped to 0, chip must be filtered out
+      expect(updatedPost.reactionChips.length).assertEqual(0);
+    });
+
+    it('toggleMessageReaction_syncsActionMenuChosenReactions', 0, () => {
+      const initialChip: ReactionChip = new ReactionChip('🔥', 2, true);
+      const post: MessageItem = makeChannelPost(101, 'Hello Channel', [initialChip], 5);
+      const menu: MessageActionMenuState = new MessageActionMenuState(
+        101, true, false, false, false, false, false, false, null, false, false, false,
+        ['👍', '❤️', '🔥', '🎉', '👏', '😂'],
+        ['🔥']
+      );
+      const state: ChatUiState = makeStateWith([post], '', null, menu);
+
+      // 1. Toggle 🔥 (unselect)
+      const unselectResult: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        state,
+        new ToggleMessageReaction(101, '🔥'),
+        makeEnv()
+      );
+      expect(unselectResult.state.actionMenu !== null).assertTrue();
+      expect((unselectResult.state.actionMenu as MessageActionMenuState).chosenReactions.indexOf('🔥')).assertEqual(-1);
+
+      // 2. Toggle 👍 (select new)
+      const selectResult: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        state,
+        new ToggleMessageReaction(101, '👍'),
+        makeEnv()
+      );
+      expect(selectResult.state.actionMenu !== null).assertTrue();
+      expect((selectResult.state.actionMenu as MessageActionMenuState).chosenReactions.indexOf('👍') !== -1).assertTrue();
+    });
+
+    it('onMessageActionMenuLoaded_populatesChosenReactionsFromMessage', 0, () => {
+      const chip1: ReactionChip = new ReactionChip('👍', 3, true);
+      const chip2: ReactionChip = new ReactionChip('🎉', 1, false);
+      const post: MessageItem = makeChannelPost(101, 'Hello Channel', [chip1, chip2], 0);
+      const state: ChatUiState = makeStateWith([post]);
+
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        state,
+        new OnMessageActionMenuLoaded(101, true, false, false),
+        makeEnv()
+      );
+
+      const menu: MessageActionMenuState = result.state.actionMenu as MessageActionMenuState;
+      expect(menu.messageId).assertEqual(101);
+      expect(menu.chosenReactions.length).assertEqual(1);
+      expect(menu.chosenReactions[0]).assertEqual('👍');
+      expect(menu.availableReactions.length).assertEqual(6);
+    });
+
     it('openStickerSet_setsLoadingStateAndEmitsFetchEffect', 0, () => {
       const initial: ChatUiState = makeState('');
       expect(initial.stickerSetPreview === null).assertTrue();

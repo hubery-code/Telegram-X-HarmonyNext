@@ -90,6 +90,10 @@ export class MessageActionMenuState {
   readonly showPin: boolean;
   /** MSG-108：消息当前是否已置顶（Message.is_pinned）。 */
   readonly isPinned: boolean;
+  /** REACTION-101：快捷表情候选列表（对齐 Telegram X: 👍 ❤️ 🔥 🎉 👏 😂）。 */
+  readonly availableReactions: string[];
+  /** REACTION-101：当前消息中被本端用户已点选的表情列表。 */
+  readonly chosenReactions: string[];
 
   constructor(
     messageId: number,
@@ -103,7 +107,9 @@ export class MessageActionMenuState {
     linkUrlToCopy: string | null = null,
     showResend: boolean = false,
     showPin: boolean = false,
-    isPinned: boolean = false
+    isPinned: boolean = false,
+    availableReactions: string[] = ['👍', '❤️', '🔥', '🎉', '👏', '😂'],
+    chosenReactions: string[] = []
   ) {
     this.messageId = messageId;
     this.showReply = showReply;
@@ -117,6 +123,8 @@ export class MessageActionMenuState {
     this.showResend = showResend;
     this.showPin = showPin;
     this.isPinned = isPinned;
+    this.availableReactions = availableReactions;
+    this.chosenReactions = chosenReactions;
   }
 }
 

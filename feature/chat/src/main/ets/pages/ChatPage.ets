@@ -2699,9 +2699,9 @@ export struct ChatPage {
         })
 
       Column() {
-        // REACT-101：快捷反应面板（对齐 Telegram X: 👍 ❤️ 🔥 🎉 👏 😂）
+        // REACTION-101：快捷反应面板（对齐 Telegram X: 👍 ❤️ 🔥 🎉 👏 😂，已选反应带 accent 高亮环）
         Row() {
-          ForEach(['👍', '❤️', '🔥', '🎉', '👏', '😂'], (emoji: string) => {
+          ForEach(menu.availableReactions, (emoji: string) => {
             Column() {
               Text(emoji)
                 .fontSize(22)
@@ -2711,12 +2711,16 @@ export struct ChatPage {
             .justifyContent(FlexAlign.Center)
             .alignItems(HorizontalAlign.Center)
             .borderRadius(T.radius.full)
-            .backgroundColor(T.colors.surfaceVariant)
+            .backgroundColor(menu.chosenReactions.indexOf(emoji) !== -1 ? T.colors.surface : T.colors.surfaceVariant)
+            .border({
+              width: menu.chosenReactions.indexOf(emoji) !== -1 ? 2 : 0,
+              color: T.colors.accent
+            })
             .onClick(() => {
               this.onDispatch(new ToggleMessageReaction(menu.messageId, emoji));
               this.onDispatch(new DismissMessageActionMenu());
             })
-          }, (emoji: string) => emoji)
+          }, (emoji: string) => `${emoji}:${menu.chosenReactions.indexOf(emoji) !== -1}`)
         }
         .width('100%')
         .justifyContent(FlexAlign.SpaceAround)

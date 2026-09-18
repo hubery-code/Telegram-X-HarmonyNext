@@ -1088,5 +1088,44 @@ export default function messageProjectionTest(): void {
       }
     });
 
+    it('updateMessageInteractionInfo_updatesInteractionInfoAndNotifiesState', 0, async (): Promise<void> => {
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const scope: AccountScope = createScope(bridge);
+      const projection: MessageProjection = new MessageProjection(42, scope);
+
+      let stateNotifyCount: number = 0;
+      projection.setOnStateChanged((): void => {
+        stateNotifyCount += 1;
+      });
+
+      projection.start();
+
+      const msg: Message = new Message();
+      msg.id = 5678;
+      msg.chat_id = 42;
+      msg.interaction_info = null;
+      projection.addCachedMessage(msg);
+
+      expect(projection.state.messages.length).assertEqual(1);
+      expect(projection.state.messages[0].interaction_info).assertNull();
+
+      const interactionUpdateFields: Record<string, TdWireValue> = {};
+      interactionUpdateFields['chat_id'] = 42;
+      interactionUpdateFields['message_id'] = 5678;
+      const reactionPayload: Record<string, TdWireValue> = {};
+      reactionPayload['@type'] = 'messageInteractionInfo';
+      reactionPayload['view_count'] = 10;
+      reactionPayload['forward_count'] = 2;
+      interactionUpdateFields['interaction_info'] = reactionPayload;
+
+      bridge.emitUpdate(scope.clientId, 'updateMessageInteractionInfo', interactionUpdateFields);
+      await flushAsync();
+
+      expect(projection.state.messages[0].interaction_info !== null).assertTrue();
+      expect(stateNotifyCount > 0).assertTrue();
+
+      projection.stop();
+    });
+
   });
 }

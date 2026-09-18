@@ -108,7 +108,8 @@ import {
   UpdateChatReadOutbox,
   UpdateChatReadInbox,
   UpdateChatDraftMessage,
-  UpdateMessageIsPinned
+  UpdateMessageIsPinned,
+  UpdateMessageInteractionInfo
 } from '@tgx/core-td-api-generated';
 import { AccountScope } from '@tgx/core-account';
 import { TdUpdateSubscription, TdPendingRequest, TdWireObject, TdWireValue } from '@tgx/td-gateway';
@@ -1001,6 +1002,15 @@ export class MessageProjection {
         }
         if (this.pinnedMessageListener !== null) {
           this.pinnedMessageListener(pinUpdate.message_id, pinUpdate.is_pinned);
+        }
+      }
+    } else if (update.type === 'updateMessageInteractionInfo') {
+      const interactionUpdate: UpdateMessageInteractionInfo = update as UpdateMessageInteractionInfo;
+      if (interactionUpdate.chat_id === this.chatId) {
+        const existing: Message | undefined = this.messagesById.get(interactionUpdate.message_id);
+        if (existing !== undefined) {
+          existing.interaction_info = interactionUpdate.interaction_info;
+          this.notifyStateChanged();
         }
       }
     }
