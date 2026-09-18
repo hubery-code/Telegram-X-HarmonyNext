@@ -1061,5 +1061,32 @@ export default function messageProjectionTest(): void {
       projection.stop();
     });
 
+    it('getMessageThreadAndHistory_sendsExpectedRequests', 0, async (): Promise<void> => {
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const scope: AccountScope = createScope(bridge);
+      const projection: MessageProjection = new MessageProjection(42, scope);
+
+      const threadResult: Result<TdPendingRequest, AppError> = projection.getMessageThread(100);
+      expect(threadResult.ok).assertTrue();
+      const threadReq: Record<string, TdWireValue> | null = findSentRequest(bridge, 'getMessageThread');
+      expect(threadReq !== null).assertTrue();
+      if (threadReq !== null) {
+        expect(threadReq['@type']).assertEqual('getMessageThread');
+        expect(threadReq['chat_id']).assertEqual(42);
+        expect(threadReq['message_id']).assertEqual(100);
+      }
+
+      const historyResult: Result<TdPendingRequest, AppError> = projection.getMessageThreadHistory(100, 0, 0, 25);
+      expect(historyResult.ok).assertTrue();
+      const historyReq: Record<string, TdWireValue> | null = findSentRequest(bridge, 'getMessageThreadHistory');
+      expect(historyReq !== null).assertTrue();
+      if (historyReq !== null) {
+        expect(historyReq['@type']).assertEqual('getMessageThreadHistory');
+        expect(historyReq['chat_id']).assertEqual(42);
+        expect(historyReq['message_id']).assertEqual(100);
+        expect(historyReq['limit']).assertEqual(25);
+      }
+    });
+
   });
 }

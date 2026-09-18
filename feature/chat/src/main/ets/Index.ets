@@ -193,3 +193,10 @@ export {
 export { MessageListDataSource, ChatPage } from './pages/ChatPage';
 export { ForwardPickerPage } from './pages/ForwardPickerPage';
 export { StickerSetPreviewSheet } from './pages/StickerSetPreviewSheet';
+export { CommentsPage } from './pages/CommentsPage';
+export {
+  CommentsCoordinator,
+  CommentsUiState,
+  CommentItem,
+  CommentsUiStateListener
+} from './coordinator/CommentsCoordinator';

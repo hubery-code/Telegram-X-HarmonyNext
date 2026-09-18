@@ -32,6 +32,7 @@ export default function routeCodecTest() {
       roundTrip({ name: 'search' });
       roundTrip({ name: 'search', query: 'hello world&=?' });
       roundTrip({ name: 'mediaViewer', chatId: 1, messageId: 999 });
+      roundTrip({ name: 'comments', chatId: -1001234567890, messageId: 888 });
     });
 
     it('encode_optionalParamsGoToQueryString', 0, () => {

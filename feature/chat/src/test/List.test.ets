@@ -12,6 +12,7 @@ import chatPhotoSendingTest from './ChatPhotoSending.test';
 import chatFileSendingTest from './ChatFileSending.test';
 import linkPreviewTest from './LinkPreview.test';
 import chatSearchJumpTest from './ChatSearchJump.test';
+import commentsCoordinatorTest from './CommentsCoordinator.test';
 
 export default function testsuite(): void {
   chatReducerTest();
@@ -28,4 +29,6 @@ export default function testsuite(): void {
   chatFileSendingTest();
   linkPreviewTest();
   chatSearchJumpTest();
+  commentsCoordinatorTest();
 }
+

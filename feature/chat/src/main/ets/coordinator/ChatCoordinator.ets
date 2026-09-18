@@ -394,6 +394,8 @@ export interface ChatCoordinatorOptions {
   readonly onOpenUserProfile?: (userId: number) => void;
   /** MSG-109：请求装配层打开会话资料页（缺省 no-op）。 */
   readonly onOpenChatProfile?: (chatId: number) => void;
+  /** CHANNEL-101：请求装配层打开帖子评论列表页（缺省 no-op）。 */
+  readonly onOpenComments?: (chatId: number, messageId: number) => void;
   /** VOICE-101：音频播放器抽象。 */
   readonly audioPlayerPort?: AudioPlayerPort;
   /** VOICE-101：音频录制器抽象。 */
@@ -434,6 +436,8 @@ export class ChatCoordinator {
   private readonly onOpenUserProfile: (userId: number) => void;
   /** MSG-109：请求装配层打开会话资料页（缺省 no-op）。 */
   private readonly onOpenChatProfile: (chatId: number) => void;
+  /** CHANNEL-101：请求装配层打开帖子评论列表页（缺省 no-op）。 */
+  private readonly onOpenComments: (chatId: number, messageId: number) => void;
   private currentState: ChatUiState;
   private readonly listeners: ChatUiStateListener[] = [];
   private syncScheduled: boolean = false;
@@ -510,6 +514,9 @@ export class ChatCoordinator {
     this.onOpenChatProfile = (options !== undefined && options.onOpenChatProfile !== undefined)
       ? options.onOpenChatProfile
       : (chatId: number): void => {};
+    this.onOpenComments = (options !== undefined && options.onOpenComments !== undefined)
+      ? options.onOpenComments
+      : (chatId: number, messageId: number): void => {};
     this.env = env !== undefined ? env : {
       clock: new ManualClock(1000, 500),
       ids: new SequentialIdGenerator('chat-')
@@ -2918,6 +2925,7 @@ export class ChatCoordinator {
       case 'openComments': {
         const oc: OpenCommentsEffect = effect as OpenCommentsEffect;
         this.logger.info(TAG, 'open_comments', `chatId=${oc.chatId},messageId=${oc.messageId}`);
+        this.onOpenComments(oc.chatId, oc.messageId);
         break;
       }
 

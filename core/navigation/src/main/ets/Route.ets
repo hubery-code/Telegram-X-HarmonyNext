@@ -61,7 +61,8 @@ export type RouteName =
   | 'settings'
   | 'settingsSection'
   | 'search'
-  | 'mediaViewer';
+  | 'mediaViewer'
+  | 'comments';
 
 export interface HomeRoute {
   readonly name: 'home';
@@ -131,6 +132,13 @@ export interface MediaViewerRoute {
   readonly messageId: number;
 }
 
+/** CHANNEL-101：频道帖子评论列表页路由。 */
+export interface CommentsRoute {
+  readonly name: 'comments';
+  readonly chatId: number;
+  readonly messageId: number;
+}
+
 /** 强类型路由：discriminated union，判别字段为 name。 */
 export type AppRoute =
   HomeRoute
@@ -143,7 +151,8 @@ export type AppRoute =
   | SettingsRoute
   | SettingsSectionRoute
   | SearchRoute
-  | MediaViewerRoute;
+  | MediaViewerRoute
+  | CommentsRoute;
 
 /** settingsSection 的 section 标识格式。 */
 export const SECTION_PATTERN: RegExp = /^[a-z][a-zA-Z0-9_]*$/;
@@ -223,6 +232,14 @@ export const ROUTE_DEFINITIONS: RouteDefinition[] = [
   {
     name: 'mediaViewer',
     pathTemplate: 'mediaViewer/{chatId}/{messageId}',
+    params: [
+      spec('chatId', 'int', true),
+      spec('messageId', 'int', true, 1)
+    ]
+  },
+  {
+    name: 'comments',
+    pathTemplate: 'comments/{chatId}/{messageId}',
     params: [
       spec('chatId', 'int', true),
       spec('messageId', 'int', true, 1)

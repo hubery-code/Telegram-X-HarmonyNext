@@ -56,6 +56,8 @@ import {
   encodeJoinChat,
   encodeAddMessageReaction,
   encodeRemoveMessageReaction,
+  encodeGetMessageThread,
+  encodeGetMessageThreadHistory,
   GetChatHistory,
   OpenChat,
   CloseChat,
@@ -63,6 +65,8 @@ import {
   EditMessageText,
   DeleteMessages,
   GetMessageProperties,
+  GetMessageThread,
+  GetMessageThreadHistory,
   ViewMessages,
   ResendMessages,
   GetChat,
@@ -714,6 +718,36 @@ export class MessageProjection {
     req.message_id = messageId;
 
     return this.scope.request('getMessageProperties', encodeGetMessageProperties(req) as TdWireObject);
+  }
+
+  /**
+   * CHANNEL-101：获取消息所属评论 thread 信息（getMessageThread）。
+   */
+  getMessageThread(messageId: number): Result<TdPendingRequest, AppError> {
+    const req: GetMessageThread = new GetMessageThread();
+    req.chat_id = this.chatId;
+    req.message_id = messageId;
+
+    return this.scope.request('getMessageThread', encodeGetMessageThread(req) as TdWireObject);
+  }
+
+  /**
+   * CHANNEL-101：获取消息评论 thread 历史（getMessageThreadHistory）。
+   */
+  getMessageThreadHistory(
+    messageId: number,
+    fromMessageId: number = 0,
+    offset: number = 0,
+    limit: number = 30
+  ): Result<TdPendingRequest, AppError> {
+    const req: GetMessageThreadHistory = new GetMessageThreadHistory();
+    req.chat_id = this.chatId;
+    req.message_id = messageId;
+    req.from_message_id = fromMessageId;
+    req.offset = offset;
+    req.limit = limit;
+
+    return this.scope.request('getMessageThreadHistory', encodeGetMessageThreadHistory(req) as TdWireObject);
   }
 
   /**

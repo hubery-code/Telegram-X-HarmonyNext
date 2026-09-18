@@ -326,6 +326,7 @@ export struct ChatPage {
   @State private viewerScale: number = 1.0;
   @State private pinchStartScale: number = 1.0;
   @State private viewerBarsVisible: boolean = true;
+  @State private activeVideoNoteId: number | null = null;
   private swiperController: SwiperController = new SwiperController();
   /** 标记用户是否已手动滑动过列表；为 false 时新拉取历史保持目标定位。 */
   private hasUserScrolled: boolean = false;
@@ -1761,10 +1762,17 @@ export struct ChatPage {
             .height(24)
             .color(T.colors.textOnAccent)
         } else if (media.isDownloaded) {
-          Image($r('app.media.ic_play'))
-            .width(22)
-            .height(22)
-            .fillColor(T.colors.textOnAccent)
+          if (this.uiState.playingVoiceMessageId === messageId) {
+            Image($r('app.media.ic_pause'))
+              .width(22)
+              .height(22)
+              .fillColor(T.colors.textOnAccent)
+          } else {
+            Image($r('app.media.ic_play'))
+              .width(22)
+              .height(22)
+              .fillColor(T.colors.textOnAccent)
+          }
         } else {
           Image($r('app.media.ic_download'))
             .width(20)
@@ -1787,7 +1795,14 @@ export struct ChatPage {
         } else if (!media.isDownloaded) {
           this.onDispatch(new RequestMediaDownload(media.fileId));
         } else {
-          hilog.info(DOMAIN, TAG, `play audio: ${media.audioTitle}, path: ${media.localPath}`);
+          if (this.uiState.playingVoiceMessageId === messageId) {
+            this.onDispatch(new PauseVoiceNote(messageId));
+          } else {
+            if (this.activeVideoNoteId !== null) {
+              this.activeVideoNoteId = null;
+            }
+            this.onDispatch(new PlayVoiceNote(messageId, media.fileId, media.localPath));
+          }
         }
       })
 
@@ -1800,12 +1815,28 @@ export struct ChatPage {
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
 
-        Text(this.audioSubtitle(media, isFailed))
+        if (this.uiState.playingVoiceMessageId === messageId) {
+          Row() {
+            Progress({
+              value: Math.min(100, Math.max(0, this.uiState.voicePlaybackProgress * 100)),
+              total: 100,
+              type: ProgressType.Linear
+            })
+              .color(T.colors.accent)
+              .backgroundColor(T.colors.divider)
+              .height(3)
+              .layoutWeight(1)
+          }
+          .width('100%')
+          .margin({ top: T.spacing.xs, bottom: 2 })
+        }
+
+        Text(this.audioSubtitle(media, isFailed, messageId))
           .fontSize(T.typography.caption.fontSize)
           .fontColor(isFailed ? T.colors.destructive : T.colors.textSecondary)
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
-          .margin({ top: T.spacing.xs })
+          .margin({ top: this.uiState.playingVoiceMessageId === messageId ? 0 : T.spacing.xs })
       }
       .alignItems(HorizontalAlign.Start)
       .layoutWeight(1)
@@ -1821,7 +1852,7 @@ export struct ChatPage {
     })
   }
 
-  private audioSubtitle(media: MediaAttachment, isFailed: boolean = false): string {
+  private audioSubtitle(media: MediaAttachment, isFailed: boolean = false, messageId?: number): string {
     if (isFailed) {
       return 'Failed · Tap to retry';
     }
@@ -1831,6 +1862,14 @@ export struct ChatPage {
     }
     if (media.isDownloading) {
       return `${formatFileSize(media.fileSize * media.progress)} / ${formatFileSize(media.fileSize)}`;
+    }
+    if (messageId !== undefined && this.uiState.playingVoiceMessageId === messageId) {
+      const curDur: string = formatDuration(this.uiState.voicePlaybackTimeSec);
+      const totalDur: string = media.duration > 0 ? formatDuration(media.duration) : '';
+      if (totalDur.length > 0) {
+        return `${curDur} / ${totalDur}`;
+      }
+      return curDur;
     }
     const artist: string = media.audioPerformer.length > 0 ? media.audioPerformer : this.t('Unknown artist');
     const dur: string = media.duration > 0 ? formatDuration(media.duration) : formatFileSize(media.fileSize);
@@ -1851,7 +1890,7 @@ export struct ChatPage {
             .autoPlay(true)
             .loop(true)
             .controls(false)
-            .muted(true)
+            .muted(this.activeVideoNoteId !== item.messageId)
             .objectFit(ImageFit.Cover)
             .width(220)
             .height(220)
@@ -1914,9 +1953,41 @@ export struct ChatPage {
         } else if (!media.isDownloaded) {
           this.onDispatch(new RequestMediaDownload(media.fileId));
         } else {
-          this.onDispatch(new OpenMediaViewer(item.messageId));
+          // 点击切换有声/静音播放
+          if (this.activeVideoNoteId === item.messageId) {
+            this.activeVideoNoteId = null;
+          } else {
+            if (this.uiState.playingVoiceMessageId !== null) {
+              this.onDispatch(new PauseVoiceNote(this.uiState.playingVoiceMessageId));
+            }
+            this.activeVideoNoteId = item.messageId;
+          }
         }
       })
+
+      // 左上角半透明扬声器状态角标
+      if (media.localPath !== null && media.isDownloaded) {
+        Row() {
+          Image(this.activeVideoNoteId === item.messageId ? $r('app.media.ic_volume_up') : $r('app.media.ic_mute'))
+            .width(14)
+            .height(14)
+            .fillColor(T.colors.textOnAccent)
+        }
+        .padding(5)
+        .backgroundColor(T.colors.scrim)
+        .borderRadius(T.radius.full)
+        .position({ x: 10, y: 10 })
+        .onClick(() => {
+          if (this.activeVideoNoteId === item.messageId) {
+            this.activeVideoNoteId = null;
+          } else {
+            if (this.uiState.playingVoiceMessageId !== null) {
+              this.onDispatch(new PauseVoiceNote(this.uiState.playingVoiceMessageId));
+            }
+            this.activeVideoNoteId = item.messageId;
+          }
+        })
+      }
 
       // 右下角半透明胶囊时间戳与状态
       Row() {
@@ -1926,6 +1997,9 @@ export struct ChatPage {
       .backgroundColor(T.colors.scrim)
       .borderRadius(T.radius.full)
       .margin({ right: 6, bottom: 6 })
+      .onClick(() => {
+        this.onDispatch(new OpenMediaViewer(item.messageId));
+      })
     }
     .width(220)
     .height(220)

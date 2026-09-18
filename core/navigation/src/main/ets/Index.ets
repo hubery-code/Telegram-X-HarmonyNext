@@ -12,6 +12,7 @@ export {
   SettingsSectionRoute,
   SearchRoute,
   MediaViewerRoute,
+  CommentsRoute,
   ParamValue,
   ParamType,
   ParamSpec,

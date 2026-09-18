@@ -30,7 +30,7 @@ import { hilog } from '@kit.PerformanceAnalysisKit';
 import { AccountDescriptor, AccountScope } from '@tgx/core-account';
 import { AppError, ManualClock, Result, SequentialIdGenerator } from '@tgx/core-common';
 import { ReducerEnv } from '@tgx/feature-template';
-import { AppRoute, ChatRoute, ChatInfoRoute, UserProfileRoute } from '@tgx/core-navigation';
+import { AppRoute, ChatRoute, ChatInfoRoute, UserProfileRoute, CommentsRoute } from '@tgx/core-navigation';
 import { EntryNavigationController } from '../navigation/EntryNavigationController';
 import {
   AuthRootPage,
@@ -58,7 +58,10 @@ import {
   MessageItem,
   ComposerReplyMode,
   ForwardPickerPage,
-  ForwardSelectedToChat
+  ForwardSelectedToChat,
+  CommentsPage,
+  CommentsUiState,
+  CommentsCoordinator
 } from '@tgx/feature-chat';
 import {
   SettingsPage,
@@ -176,6 +179,22 @@ struct Index {
   @State selfProfileUiState: SelfProfileUiState = SelfProfileUiState.initial();
   private selfProfileCoordinator: SelfProfileCoordinator | null = null;
   private unsubscribeSelfFn: (() => void) | null = null;
+  // CHANNEL-101：频道帖子评论页
+  @State commentsUiState: CommentsUiState = {
+    channelChatId: 0,
+    channelPostId: 0,
+    channelTitle: '评论',
+    postText: '',
+    postDate: '',
+    commentsCount: 0,
+    isLoading: true,
+    isSending: false,
+    comments: [],
+    inputText: '',
+    errorMessage: null
+  };
+  private commentsCoordinator: CommentsCoordinator | null = null;
+  private unsubscribeCommentsFn: (() => void) | null = null;
   @State drawerAccountName: string = '';
   @State drawerAccountPhone: string = '';
   @State drawerAccountLetters: string = '';
@@ -226,6 +245,7 @@ struct Index {
     this.closeChat();
     this.closeSettings();
     this.closeSearch();
+    this.closeComments();
     if (this.unsubscribeChatListFn !== null) {
       this.unsubscribeChatListFn();
       this.unsubscribeChatListFn = null;
@@ -298,6 +318,9 @@ struct Index {
     if (!this.navController.hasRoute('selfProfile') && this.selfProfileCoordinator !== null) {
       this.closeSelfProfile();
     }
+    if (!this.navController.hasRoute('comments') && this.commentsCoordinator !== null) {
+      this.closeComments();
+    }
 
     // 2. 根据当前栈顶路由，按需拉起对应协调器
     if (route.name === 'chat') {
@@ -308,6 +331,13 @@ struct Index {
         this.openChat(chatRoute.chatId, this.resolveChatTitle(chatRoute.chatId), jumpTo);
       } else {
         this.requestChatJump(chatRoute.chatId, jumpTo);
+      }
+    } else if (route.name === 'comments') {
+      const commentsRoute: CommentsRoute = route as CommentsRoute;
+      if (this.commentsCoordinator === null ||
+          this.commentsUiState.channelChatId !== commentsRoute.chatId ||
+          this.commentsUiState.channelPostId !== commentsRoute.messageId) {
+        this.openComments(commentsRoute.chatId, commentsRoute.messageId);
       }
     } else if (route.name === 'userProfile') {
       const profileRoute: UserProfileRoute = route as UserProfileRoute;
@@ -503,6 +533,39 @@ struct Index {
       this.chatProfileCoordinator = null;
     }
     this.activeChatProfileId = 0;
+  }
+
+  // CHANNEL-101：频道帖子评论页打开与关闭
+  private openComments(chatId: number, messageId: number): void {
+    if (this.accountScope === null) {
+      return;
+    }
+    this.closeComments();
+    const coordinator: CommentsCoordinator = new CommentsCoordinator(
+      this.accountScope,
+      chatId,
+      messageId,
+      () => {
+        this.navController.pop();
+      }
+    );
+    this.commentsCoordinator = coordinator;
+    this.unsubscribeCommentsFn = coordinator.subscribe((uiState: CommentsUiState) => {
+      this.commentsUiState = uiState;
+    });
+    coordinator.start();
+    hilog.info(DOMAIN, TAG, 'comments coordinator started for chatId=%{public}s postId=%{public}s', `${chatId}`, `${messageId}`);
+  }
+
+  private closeComments(): void {
+    if (this.unsubscribeCommentsFn !== null) {
+      this.unsubscribeCommentsFn();
+      this.unsubscribeCommentsFn = null;
+    }
+    if (this.commentsCoordinator !== null) {
+      this.commentsCoordinator.destroy();
+      this.commentsCoordinator = null;
+    }
   }
 
   /** CONTACT-101：联系人页。 */
@@ -960,6 +1023,10 @@ struct Index {
         // PROFILE-102：群聊/频道点击标题 → 压栈群组/频道资料页。
         onOpenChatProfile: (targetChatId: number): void => {
           this.navController.navigateTo({ name: 'chatInfo', chatId: targetChatId });
+        },
+        // CHANNEL-101：频道帖子底栏点击「评论」→ 压栈评论页。
+        onOpenComments: (targetChatId: number, targetMessageId: number): void => {
+          this.navController.navigateTo({ name: 'comments', chatId: targetChatId, messageId: targetMessageId });
         }
       }
     );
@@ -1074,6 +1141,14 @@ struct Index {
         }
         .width('100%')
         .height('100%')
+      } else if (this.currentRoute.name === 'comments') {
+        CommentsPage({
+          uiState: this.commentsUiState,
+          coordinator: this.commentsCoordinator !== null ? this.commentsCoordinator : undefined,
+          onBack: () => {
+            this.navController.pop();
+          }
+        })
       } else if (this.currentRoute.name === 'settings' || this.currentRoute.name === 'settingsSection') {
         SettingsPage({
           uiState: this.settingsUiState,

@@ -25,6 +25,7 @@ import {
   ChatRoute,
   HomeRoute,
   MediaViewerRoute,
+  CommentsRoute,
   ParamSpec,
   ParamValue,
   RouteDefinition,
@@ -340,6 +341,18 @@ function buildRoute(name: RouteName, params: Map<string, ParamValue>): Result<Ap
       const route: MediaViewerRoute = { name: 'mediaViewer', chatId: chatId, messageId: messageId };
       return ok(route);
     }
+    case 'comments': {
+      const chatId: ParamValue | undefined = params.get('chatId');
+      const messageId: ParamValue | undefined = params.get('messageId');
+      if (typeof chatId !== 'number') {
+        return err(AppErrors.parameter('invalid', 'chatId', 'chatId must be int'));
+      }
+      if (typeof messageId !== 'number') {
+        return err(AppErrors.parameter('invalid', 'messageId', 'messageId must be int'));
+      }
+      const route: CommentsRoute = { name: 'comments', chatId: chatId, messageId: messageId };
+      return ok(route);
+    }
     default:
       return err(AppErrors.internal('route.unknownName', `no builder for route: ${name}`));
   }
@@ -427,6 +440,10 @@ function collectRouteParams(route: AppRoute, out: Map<string, ParamValue>): Resu
       }
       return ok(undefined);
     case 'mediaViewer':
+      out.set('chatId', route.chatId);
+      out.set('messageId', route.messageId);
+      return ok(undefined);
+    case 'comments':
       out.set('chatId', route.chatId);
       out.set('messageId', route.messageId);
       return ok(undefined);
