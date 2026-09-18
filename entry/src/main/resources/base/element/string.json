@@ -11,6 +11,10 @@
     {
       "name": "EntryAbility_label",
       "value": "Telegram X"
+    },
+    {
+      "name": "permission_microphone_reason",
+      "value": "Record voice messages"
     }
   ]
 }

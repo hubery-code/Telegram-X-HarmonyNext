@@ -7,7 +7,7 @@
  * - 图文说明：caption 与富文本 captionSpans。
  */
 
-import { base64Decode } from '@tgx/core-common';
+import { base64Decode, base64Encode } from '@tgx/core-common';
 import { MessageTextSpan } from './MessageTextSpan';
 
 export type MediaKind = 'none' | 'photo' | 'video' | 'animation' | 'document' | 'sticker' | 'voiceNote' | 'audio' | 'videoNote';
@@ -219,4 +219,30 @@ export function normalizeWaveform(samples: number[], targetCount: number = 32): 
     out.push(maxVal);
   }
   return out;
+}
+
+/**
+ * 将 5-bit 波形采样数组（0..31）编码为 TDLib 要求的 Base64 字符串。
+ */
+export function encodeWaveform(samples: number[]): string {
+  if (!samples || samples.length === 0) {
+    return '';
+  }
+  const totalBits: number = samples.length * 5;
+  const byteLength: number = Math.ceil(totalBits / 8);
+  const bytes: Uint8Array = new Uint8Array(byteLength);
+
+  for (let i = 0; i < samples.length; i++) {
+    const bitIndex: number = i * 5;
+    const byteIndex: number = Math.floor(bitIndex / 8);
+    const bitOffset: number = bitIndex % 8;
+    const sample: number = Math.max(0, Math.min(31, Math.round(samples[i]))) & 0x1F;
+
+    bytes[byteIndex] |= (sample << bitOffset) & 0xFF;
+    if (bitOffset > 3 && byteIndex + 1 < bytes.length) {
+      bytes[byteIndex + 1] |= (sample >> (8 - bitOffset)) & 0xFF;
+    }
+  }
+
+  return base64Encode(bytes);
 }

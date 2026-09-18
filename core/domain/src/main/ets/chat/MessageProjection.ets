@@ -87,6 +87,8 @@ import {
   InputMessagePhoto,
   InputDocument,
   InputMessageDocument,
+  InputVoiceNote,
+  InputMessageVoiceNote,
   InputMessageReplyToMessage,
   InputMessageText,
   LinkPreviewOptions,
@@ -509,6 +511,52 @@ export class MessageProjection {
 
     const content: InputMessageDocument = new InputMessageDocument();
     content.document = doc;
+    if (caption !== undefined && caption.trim().length > 0) {
+      const formatted: FormattedText = new FormattedText();
+      formatted.text = caption.trim();
+      content.caption = formatted;
+    }
+
+    const req: SendMessage = new SendMessage();
+    req.chat_id = this.chatId;
+    if (replyToMessageId > 0) {
+      const replyTo: InputMessageReplyToMessage = new InputMessageReplyToMessage();
+      replyTo.message_id = replyToMessageId;
+      req.reply_to = replyTo;
+    }
+    req.input_message_content = content;
+
+    return this.scope.request('sendMessage', encodeSendMessage(req) as TdWireObject);
+  }
+
+  /**
+   * 发送语音消息（VOICE-101 / FEAT-P2-006）：组 InputMessageVoiceNote 调 sendMessage。
+   * localPath 为空直接判 parameter/missing；caption 可选。
+   * replyToMessageId > 0 时挂 reply_to。
+   */
+  sendVoiceNoteMessage(
+    localPath: string,
+    durationSec: number = 0,
+    waveform: string = '',
+    caption?: string,
+    replyToMessageId: number = 0
+  ): Result<TdPendingRequest, AppError> {
+    const trimmedPath: string = localPath.trim();
+    if (trimmedPath.length === 0) {
+      return err<TdPendingRequest, AppError>(
+        AppErrors.parameter('missing', 'localPath', 'voice note local path is empty')
+      );
+    }
+    const fileLocal: InputFileLocal = new InputFileLocal();
+    fileLocal.path = trimmedPath;
+
+    const voiceNote: InputVoiceNote = new InputVoiceNote();
+    voiceNote.voice_note = fileLocal;
+    voiceNote.duration = Math.max(0, Math.floor(durationSec));
+    voiceNote.waveform = waveform;
+
+    const content: InputMessageVoiceNote = new InputMessageVoiceNote();
+    content.voice_note = voiceNote;
     if (caption !== undefined && caption.trim().length > 0) {
       const formatted: FormattedText = new FormattedText();
       formatted.text = caption.trim();

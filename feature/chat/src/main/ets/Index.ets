@@ -4,7 +4,7 @@
 
 export { MessageItem, MessageSendState } from './model/MessageItem';
 export { ReactionChip } from './model/ReactionChip';
-export { MediaAttachment, MediaKind, formatFileSize, decodeWaveform, normalizeWaveform } from './model/MediaAttachment';
+export { MediaAttachment, MediaKind, formatFileSize, decodeWaveform, encodeWaveform, normalizeWaveform } from './model/MediaAttachment';
 export { MediaViewerItem } from './model/MediaViewerItem';
 export { LinkPreviewInfo } from './model/LinkPreviewInfo';
 export { ChatSearchResultItem } from './model/ChatSearchResultItem';
@@ -123,6 +123,15 @@ export {
   OnStickerSetActionFailed,
   SendStickerFromPreview,
   OnStickerPreviewFileUpdated,
+  StartVoiceRecord,
+  StopAndSendVoiceRecord,
+  CancelVoiceRecord,
+  VoiceRecordTick,
+  PlayVoiceNote,
+  PauseVoiceNote,
+  VoicePlaybackProgress,
+  VoicePlaybackCompleted,
+  VoicePlaybackFailed,
   ChatIntent
 } from './contract/ChatIntent';
 
@@ -154,6 +163,11 @@ export {
   FetchStickerSet,
   ChangeStickerSetEffect,
   SendStickerMessage,
+  StartVoiceRecordEffect,
+  StopAndSendVoiceRecordEffect,
+  CancelVoiceRecordEffect,
+  PlayVoiceNoteEffect,
+  PauseVoiceNoteEffect,
   ChatEffect
 } from './contract/ChatEffect';
 

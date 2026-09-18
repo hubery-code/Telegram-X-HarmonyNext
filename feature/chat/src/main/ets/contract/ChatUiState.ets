@@ -160,6 +160,16 @@ export interface ChatUiStateOptions {
   readonly showEmojiBoard?: boolean;
   /** STICKER-PREVIEW-101：贴纸包详情预览状态（null=不显示弹窗）。 */
   readonly stickerSetPreview?: StickerSetPreviewState | null;
+  /** VOICE-101：是否正在录制语音消息。 */
+  readonly isRecordingVoice?: boolean;
+  /** VOICE-101：录制时长（秒）。 */
+  readonly recordingDurationSec?: number;
+  /** VOICE-101：当前正在播放的语音消息 ID（null=未播放）。 */
+  readonly playingVoiceMessageId?: number | null;
+  /** VOICE-101：当前语音播放进度（0..1）。 */
+  readonly voicePlaybackProgress?: number;
+  /** VOICE-101：当前语音播放秒数。 */
+  readonly voicePlaybackTimeSec?: number;
 }
 
 export class ChatUiState implements UiState {
@@ -206,6 +216,16 @@ export class ChatUiState implements UiState {
   readonly showEmojiBoard: boolean;
   /** STICKER-PREVIEW-101：贴纸包详情预览状态（null=不显示弹窗）。 */
   readonly stickerSetPreview: StickerSetPreviewState | null;
+  /** VOICE-101：是否正在录制语音消息。 */
+  readonly isRecordingVoice: boolean;
+  /** VOICE-101：录制时长（秒）。 */
+  readonly recordingDurationSec: number;
+  /** VOICE-101：当前正在播放的语音消息 ID（null=未播放）。 */
+  readonly playingVoiceMessageId: number | null;
+  /** VOICE-101：当前语音播放进度（0..1）。 */
+  readonly voicePlaybackProgress: number;
+  /** VOICE-101：当前语音播放秒数。 */
+  readonly voicePlaybackTimeSec: number;
 
   constructor(
     chatId: number,
@@ -235,7 +255,12 @@ export class ChatUiState implements UiState {
     showPinnedBar: boolean = false,
     isChannelMember: boolean = true,
     showEmojiBoard: boolean = false,
-    stickerSetPreview: StickerSetPreviewState | null = null
+    stickerSetPreview: StickerSetPreviewState | null = null,
+    isRecordingVoice: boolean = false,
+    recordingDurationSec: number = 0,
+    playingVoiceMessageId: number | null = null,
+    voicePlaybackProgress: number = 0,
+    voicePlaybackTimeSec: number = 0
   ) {
     this.chatId = chatId;
     this.chatTitle = chatTitle;
@@ -265,10 +290,15 @@ export class ChatUiState implements UiState {
     this.isChannelMember = isChannelMember;
     this.showEmojiBoard = showEmojiBoard;
     this.stickerSetPreview = stickerSetPreview;
+    this.isRecordingVoice = isRecordingVoice;
+    this.recordingDurationSec = recordingDurationSec;
+    this.playingVoiceMessageId = playingVoiceMessageId;
+    this.voicePlaybackProgress = voicePlaybackProgress;
+    this.voicePlaybackTimeSec = voicePlaybackTimeSec;
   }
 
   static initial(): ChatUiState {
-    return new ChatUiState(0, '', [], false, true, null, '', null, null, -1, [], 0, 0, false, [], false, false, '', [], false, 0, '', 'unknown', null, false, true, false, null);
+    return new ChatUiState(0, '', [], false, true, null, '', null, null, -1, [], 0, 0, false, [], false, false, '', [], false, 0, '', 'unknown', null, false, true, false, null, false, 0, null, 0, 0);
   }
 
   copyWith(options: ChatUiStateOptions): ChatUiState {
@@ -300,7 +330,12 @@ export class ChatUiState implements UiState {
       options.showPinnedBar !== undefined ? options.showPinnedBar : this.showPinnedBar,
       options.isChannelMember !== undefined ? options.isChannelMember : this.isChannelMember,
       options.showEmojiBoard !== undefined ? options.showEmojiBoard : this.showEmojiBoard,
-      options.stickerSetPreview !== undefined ? options.stickerSetPreview : this.stickerSetPreview
+      options.stickerSetPreview !== undefined ? options.stickerSetPreview : this.stickerSetPreview,
+      options.isRecordingVoice !== undefined ? options.isRecordingVoice : this.isRecordingVoice,
+      options.recordingDurationSec !== undefined ? options.recordingDurationSec : this.recordingDurationSec,
+      options.playingVoiceMessageId !== undefined ? options.playingVoiceMessageId : this.playingVoiceMessageId,
+      options.voicePlaybackProgress !== undefined ? options.voicePlaybackProgress : this.voicePlaybackProgress,
+      options.voicePlaybackTimeSec !== undefined ? options.voicePlaybackTimeSec : this.voicePlaybackTimeSec
     );
   }
 }

@@ -607,6 +607,77 @@ export default function messageProjectionTest(): void {
       expect(file['path']).assertEqual('/data/file.zip');
     });
 
+    it('should construct sendVoiceNoteMessage with full arguments and reply_to', 0, (): void => {
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const scope: AccountScope = createScope(bridge);
+      const projection: MessageProjection = new MessageProjection(42, scope);
+
+      const res: Result<TdPendingRequest, AppError> = projection.sendVoiceNoteMessage(
+        '/data/storage/el2/base/cache/voice.m4a',
+        5,
+        'AQIDBA==',
+        'Voice memo',
+        200
+      );
+      expect(res.ok).assertTrue();
+
+      const sent: Record<string, TdWireValue> = bridge.lastSentJson();
+      expect(sent['@type']).assertEqual('sendMessage');
+      expect(sent['chat_id']).assertEqual(42);
+
+      const replyTo = sent['reply_to'] as Record<string, TdWireValue>;
+      expect(replyTo !== null && replyTo !== undefined).assertTrue();
+      expect(replyTo['@type']).assertEqual('inputMessageReplyToMessage');
+      expect(replyTo['message_id']).assertEqual(200);
+
+      const content = sent['input_message_content'] as Record<string, TdWireValue>;
+      expect(content['@type']).assertEqual('inputMessageVoiceNote');
+
+      const voice = content['voice_note'] as Record<string, TdWireValue>;
+      expect(voice['@type']).assertEqual('inputVoiceNote');
+      expect(voice['duration']).assertEqual(5);
+      expect(voice['waveform']).assertEqual('AQIDBA==');
+
+      const file = voice['voice_note'] as Record<string, TdWireValue>;
+      expect(file['@type']).assertEqual('inputFileLocal');
+      expect(file['path']).assertEqual('/data/storage/el2/base/cache/voice.m4a');
+
+      const caption = content['caption'] as Record<string, TdWireValue>;
+      expect(caption !== null && caption !== undefined).assertTrue();
+      expect(caption['text']).assertEqual('Voice memo');
+    });
+
+    it('should reject sendVoiceNoteMessage when localPath is empty', 0, (): void => {
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const scope: AccountScope = createScope(bridge);
+      const projection: MessageProjection = new MessageProjection(42, scope);
+
+      const res: Result<TdPendingRequest, AppError> = projection.sendVoiceNoteMessage('   ', 5);
+      expect(res.ok).assertFalse();
+      expect(bridge.sent.length).assertEqual(0);
+    });
+
+    it('should construct sendVoiceNoteMessage with minimal arguments', 0, (): void => {
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const scope: AccountScope = createScope(bridge);
+      const projection: MessageProjection = new MessageProjection(42, scope);
+
+      const res: Result<TdPendingRequest, AppError> = projection.sendVoiceNoteMessage('/data/voice.m4a');
+      expect(res.ok).assertTrue();
+
+      const sent: Record<string, TdWireValue> = bridge.lastSentJson();
+      expect(sent['@type']).assertEqual('sendMessage');
+      expect(sent['reply_to']).assertNull();
+
+      const content = sent['input_message_content'] as Record<string, TdWireValue>;
+      expect(content['@type']).assertEqual('inputMessageVoiceNote');
+      expect(content['caption']).assertNull();
+
+      const voice = content['voice_note'] as Record<string, TdWireValue>;
+      expect(voice['duration']).assertEqual(0);
+      expect(voice['waveform']).assertEqual('');
+    });
+
     it('should send setChatDraftMessage with formatted text and reply_to', 0, (): void => {
       const bridge: TestNativeBridge = new TestNativeBridge();
       const scope: AccountScope = createScope(bridge);

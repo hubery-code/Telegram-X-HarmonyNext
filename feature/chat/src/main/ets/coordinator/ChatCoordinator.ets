@@ -33,7 +33,19 @@
  */
 
 import { Logger } from '@tgx/observability';
-import { ClipboardPort, ToastPort, MediaPickerPort, PickedMedia, FakeClipboard, FakeToast, FakeMediaPicker } from '@tgx/platform-ports';
+import {
+  ClipboardPort,
+  ToastPort,
+  MediaPickerPort,
+  PickedMedia,
+  FakeClipboard,
+  FakeToast,
+  FakeMediaPicker,
+  AudioPlayerPort,
+  AudioRecorderPort,
+  FakeAudioPlayer,
+  FakeAudioRecorder
+} from '@tgx/platform-ports';
 import { ManualClock, SequentialIdGenerator, AppError, AppErrors } from '@tgx/core-common';
 import { AccountScope } from '@tgx/core-account';
 import {
@@ -124,7 +136,7 @@ import { ReducerEnv, ReducerResult } from '@tgx/feature-template';
 import { MessageItem, MessageSendState } from '../model/MessageItem';
 import { ReactionChip } from '../model/ReactionChip';
 import { MessageTextSpan } from '../model/MessageTextSpan';
-import { MediaAttachment, decodeWaveform } from '../model/MediaAttachment';
+import { MediaAttachment, decodeWaveform, encodeWaveform } from '../model/MediaAttachment';
 import { LinkPreviewInfo } from '../model/LinkPreviewInfo';
 import { ChatSearchResultItem } from '../model/ChatSearchResultItem';
 import { PinnedMessageInfo } from '../model/PinnedMessageInfo';
@@ -168,7 +180,16 @@ import {
   OnStickerSetLoadFailed,
   OnStickerSetChanged,
   OnStickerSetActionFailed,
-  OnStickerPreviewFileUpdated
+  OnStickerPreviewFileUpdated,
+  StartVoiceRecord,
+  StopAndSendVoiceRecord,
+  CancelVoiceRecord,
+  VoiceRecordTick,
+  PlayVoiceNote,
+  PauseVoiceNote,
+  VoicePlaybackProgress,
+  VoicePlaybackCompleted,
+  VoicePlaybackFailed
 } from '../contract/ChatIntent';
 import {
   ChatEffect,
@@ -176,6 +197,7 @@ import {
   FetchMessagePermissions,
   EditMessageText,
   DeleteMessages,
+  NavigateBack,
   OpenForwardPicker,
   ForwardMessages,
   ReportMessagesRead,
@@ -193,7 +215,12 @@ import {
   OpenCommentsEffect,
   FetchStickerSet,
   ChangeStickerSetEffect,
-  SendStickerMessage
+  SendStickerMessage,
+  StartVoiceRecordEffect,
+  StopAndSendVoiceRecordEffect,
+  CancelVoiceRecordEffect,
+  PlayVoiceNoteEffect,
+  PauseVoiceNoteEffect
 } from '../contract/ChatEffect';
 import { StickerSetPreviewState, StickerSetItem } from '../model/StickerSetPreviewState';
 import { isOutgoingMessageRead, ReadReportThrottle } from '../model/ReadReceipt';
@@ -367,6 +394,12 @@ export interface ChatCoordinatorOptions {
   readonly onOpenUserProfile?: (userId: number) => void;
   /** MSG-109：请求装配层打开会话资料页（缺省 no-op）。 */
   readonly onOpenChatProfile?: (chatId: number) => void;
+  /** VOICE-101：音频播放器抽象。 */
+  readonly audioPlayerPort?: AudioPlayerPort;
+  /** VOICE-101：音频录制器抽象。 */
+  readonly audioRecorderPort?: AudioRecorderPort;
+  /** VOICE-101：录音临时文件存放目录。 */
+  readonly cacheDir?: string;
 }
 
 class ParsedDraft {
@@ -388,6 +421,11 @@ export class ChatCoordinator {
   private readonly clipboardPort: ClipboardPort;
   private readonly toastPort: ToastPort;
   private readonly mediaPickerPort: MediaPickerPort;
+  private readonly audioPlayerPort: AudioPlayerPort;
+  private readonly audioRecorderPort: AudioRecorderPort;
+  private readonly cacheDir: string;
+  private recordTimerId: number = -1;
+  private recordingSeconds: number = 0;
   private readonly logger: Logger;
   private readonly onBack: () => void;
   /** MSG-106：请求装配层弹出转发目标会话选择器（缺省 no-op）。 */
@@ -485,6 +523,15 @@ export class ChatCoordinator {
     this.mediaPickerPort = (options !== undefined && options.mediaPickerPort !== undefined)
       ? options.mediaPickerPort
       : new FakeMediaPicker();
+    this.audioPlayerPort = (options !== undefined && options.audioPlayerPort !== undefined)
+      ? options.audioPlayerPort
+      : new FakeAudioPlayer();
+    this.audioRecorderPort = (options !== undefined && options.audioRecorderPort !== undefined)
+      ? options.audioRecorderPort
+      : new FakeAudioRecorder();
+    this.cacheDir = (options !== undefined && options.cacheDir !== undefined && options.cacheDir.length > 0)
+      ? options.cacheDir
+      : '/data/storage/el2/base/cache';
     this.logger = (options !== undefined && options.logger !== undefined)
       ? options.logger
       : new Logger();
@@ -657,6 +704,12 @@ export class ChatCoordinator {
       this.headerUserSubscription.unsubscribe();
       this.headerUserSubscription = null;
     }
+    if (this.recordTimerId !== -1) {
+      clearInterval(this.recordTimerId);
+      this.recordTimerId = -1;
+    }
+    this.audioRecorderPort.cancelRecord().catch(() => {});
+    this.audioPlayerPort.stop().catch(() => {});
     this.fileRegistry.stop();
     this.userRegistry.stop();
     this.listeners.length = 0;
@@ -2886,6 +2939,34 @@ export class ChatCoordinator {
         break;
       }
 
+      case 'startVoiceRecordEffect': {
+        this.handleStartVoiceRecord();
+        break;
+      }
+
+      case 'stopAndSendVoiceRecordEffect': {
+        const stopEffect: StopAndSendVoiceRecordEffect = effect as StopAndSendVoiceRecordEffect;
+        this.handleStopAndSendVoiceRecord(stopEffect.replyToMessageId);
+        break;
+      }
+
+      case 'cancelVoiceRecordEffect': {
+        this.handleCancelVoiceRecord();
+        break;
+      }
+
+      case 'playVoiceNoteEffect': {
+        const playEffect: PlayVoiceNoteEffect = effect as PlayVoiceNoteEffect;
+        this.handlePlayVoiceNote(playEffect);
+        break;
+      }
+
+      case 'pauseVoiceNoteEffect': {
+        const pauseEffect: PauseVoiceNoteEffect = effect as PauseVoiceNoteEffect;
+        this.handlePauseVoiceNote(pauseEffect);
+        break;
+      }
+
       default:
         break;
     }
@@ -3219,6 +3300,150 @@ export class ChatCoordinator {
         }
       }).catch(() => {
       });
+    }
+  }
+
+  /** VOICE-101：开始语音录制 */
+  public startVoiceRecord(): void {
+    this.dispatch(new StartVoiceRecord());
+  }
+
+  /** VOICE-101：停止语音录制并发送 */
+  public stopAndSendVoiceRecord(): void {
+    this.dispatch(new StopAndSendVoiceRecord());
+  }
+
+  /** VOICE-101：取消语音录制 */
+  public cancelVoiceRecord(): void {
+    this.dispatch(new CancelVoiceRecord());
+  }
+
+  /** VOICE-101：播放语音消息 */
+  public playVoiceNote(messageId: number, fileId: number, localPath: string | null = null): void {
+    this.dispatch(new PlayVoiceNote(messageId, fileId, localPath));
+  }
+
+  /** VOICE-101：暂停语音播放 */
+  public pauseVoiceNote(messageId: number): void {
+    this.dispatch(new PauseVoiceNote(messageId));
+  }
+
+  private async handleStartVoiceRecord(): Promise<void> {
+    try {
+      if (this.recordTimerId !== -1) {
+        clearInterval(this.recordTimerId);
+        this.recordTimerId = -1;
+      }
+      this.recordingSeconds = 0;
+      const outputPath: string = `${this.cacheDir}/voice_${Date.now()}.m4a`;
+      await this.audioRecorderPort.startRecord(outputPath);
+      this.recordTimerId = setInterval(() => {
+        if (this.destroyed || !this.currentState.isRecordingVoice) {
+          if (this.recordTimerId !== -1) {
+            clearInterval(this.recordTimerId);
+            this.recordTimerId = -1;
+          }
+          return;
+        }
+        this.recordingSeconds++;
+        this.dispatch(new VoiceRecordTick(this.recordingSeconds));
+      }, 1000);
+    } catch (e) {
+      this.logger.error(TAG, 'start_voice_record_failed', String(e));
+      this.dispatch(new CancelVoiceRecord());
+    }
+  }
+
+  private async handleStopAndSendVoiceRecord(replyToMessageId: number): Promise<void> {
+    try {
+      if (this.recordTimerId !== -1) {
+        clearInterval(this.recordTimerId);
+        this.recordTimerId = -1;
+      }
+      const result = await this.audioRecorderPort.stopRecord();
+      if (!result.filePath || result.filePath.length === 0) {
+        return;
+      }
+      const durationSec: number = Math.max(1, Math.round(result.durationMs / 1000));
+      const waveformStr: string = encodeWaveform(result.waveform);
+      const sendRes: Result<TdPendingRequest, AppError> = this.projection.sendVoiceNoteMessage(
+        result.filePath,
+        durationSec,
+        waveformStr,
+        undefined,
+        replyToMessageId
+      );
+      if (sendRes.err) {
+        this.logger.logError(TAG, sendRes.error);
+        this.dispatch(new OnMessageSendFailed(sendRes.error));
+      }
+    } catch (e) {
+      this.logger.error(TAG, 'stop_voice_record_failed', String(e));
+    }
+  }
+
+  private async handleCancelVoiceRecord(): Promise<void> {
+    try {
+      if (this.recordTimerId !== -1) {
+        clearInterval(this.recordTimerId);
+        this.recordTimerId = -1;
+      }
+      await this.audioRecorderPort.cancelRecord();
+    } catch (e) {
+      this.logger.error(TAG, 'cancel_voice_record_failed', String(e));
+    }
+  }
+
+  private async handlePlayVoiceNote(effect: PlayVoiceNoteEffect): Promise<void> {
+    try {
+      let localPath: string | null = effect.localPath;
+      if (!localPath || localPath.length === 0) {
+        if (effect.fileId > 0) {
+          const cachedFile = this.fileRegistry.getFile(effect.fileId);
+          if (cachedFile !== null && cachedFile.local !== null && cachedFile.local.is_downloading_completed && cachedFile.local.path.length > 0) {
+            localPath = cachedFile.local.path;
+          } else {
+            // 触发下载并提示
+            this.fileRegistry.downloadFile(effect.fileId, 32);
+            this.toastPort.showToast('正在下载语音消息...', 1000);
+            return;
+          }
+        }
+      }
+      if (!localPath || localPath.length === 0) {
+        this.dispatch(new VoicePlaybackFailed(effect.messageId, '语音文件不可用'));
+        return;
+      }
+
+      await this.audioPlayerPort.play(
+        localPath,
+        (currentMs: number, totalMs: number): void => {
+          if (!this.destroyed && this.currentState.playingVoiceMessageId === effect.messageId) {
+            this.dispatch(new VoicePlaybackProgress(effect.messageId, currentMs, totalMs));
+          }
+        },
+        (): void => {
+          if (!this.destroyed && this.currentState.playingVoiceMessageId === effect.messageId) {
+            this.dispatch(new VoicePlaybackCompleted(effect.messageId));
+          }
+        },
+        (errMsg: string): void => {
+          if (!this.destroyed && this.currentState.playingVoiceMessageId === effect.messageId) {
+            this.dispatch(new VoicePlaybackFailed(effect.messageId, errMsg));
+          }
+        }
+      );
+    } catch (e) {
+      this.logger.error(TAG, 'play_voice_note_failed', String(e));
+      this.dispatch(new VoicePlaybackFailed(effect.messageId, String(e)));
+    }
+  }
+
+  private async handlePauseVoiceNote(effect: PauseVoiceNoteEffect): Promise<void> {
+    try {
+      await this.audioPlayerPort.pause();
+    } catch (e) {
+      this.logger.error(TAG, 'pause_voice_note_failed', String(e));
     }
   }
 }

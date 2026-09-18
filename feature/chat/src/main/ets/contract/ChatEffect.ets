@@ -336,6 +336,66 @@ export class UnpinMessageEffect implements Effect {
   }
 }
 
+/** VOICE-101：开始录音副作用。 */
+export class StartVoiceRecordEffect implements Effect {
+  readonly kind: 'startVoiceRecordEffect' = 'startVoiceRecordEffect';
+  readonly chatId: number;
+
+  constructor(chatId: number) {
+    this.chatId = chatId;
+  }
+}
+
+/** VOICE-101：停止录音并发送副作用。 */
+export class StopAndSendVoiceRecordEffect implements Effect {
+  readonly kind: 'stopAndSendVoiceRecordEffect' = 'stopAndSendVoiceRecordEffect';
+  readonly chatId: number;
+  readonly replyToMessageId: number;
+
+  constructor(chatId: number, replyToMessageId: number = 0) {
+    this.chatId = chatId;
+    this.replyToMessageId = replyToMessageId;
+  }
+}
+
+/** VOICE-101：取消录音副作用。 */
+export class CancelVoiceRecordEffect implements Effect {
+  readonly kind: 'cancelVoiceRecordEffect' = 'cancelVoiceRecordEffect';
+  readonly chatId: number;
+
+  constructor(chatId: number) {
+    this.chatId = chatId;
+  }
+}
+
+/** VOICE-101：播放语音消息副作用。 */
+export class PlayVoiceNoteEffect implements Effect {
+  readonly kind: 'playVoiceNoteEffect' = 'playVoiceNoteEffect';
+  readonly chatId: number;
+  readonly messageId: number;
+  readonly fileId: number;
+  readonly localPath: string | null;
+
+  constructor(chatId: number, messageId: number, fileId: number, localPath: string | null = null) {
+    this.chatId = chatId;
+    this.messageId = messageId;
+    this.fileId = fileId;
+    this.localPath = localPath;
+  }
+}
+
+/** VOICE-101：暂停语音播放副作用。 */
+export class PauseVoiceNoteEffect implements Effect {
+  readonly kind: 'pauseVoiceNoteEffect' = 'pauseVoiceNoteEffect';
+  readonly chatId: number;
+  readonly messageId: number;
+
+  constructor(chatId: number, messageId: number) {
+    this.chatId = chatId;
+    this.messageId = messageId;
+  }
+}
+
 export type ChatEffect =
   | FetchInitialMessages
   | FetchOlderMessages
@@ -361,5 +421,10 @@ export type ChatEffect =
   | OpenCommentsEffect
   | FetchStickerSet
   | ChangeStickerSetEffect
-  | SendStickerMessage;
+  | SendStickerMessage
+  | StartVoiceRecordEffect
+  | StopAndSendVoiceRecordEffect
+  | CancelVoiceRecordEffect
+  | PlayVoiceNoteEffect
+  | PauseVoiceNoteEffect;
 

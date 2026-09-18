@@ -125,7 +125,12 @@ import {
   CloseStickerSetPreview,
   InstallStickerSet,
   UninstallStickerSet,
-  SendStickerFromPreview
+  SendStickerFromPreview,
+  StartVoiceRecord,
+  StopAndSendVoiceRecord,
+  CancelVoiceRecord,
+  PlayVoiceNote,
+  PauseVoiceNote
 } from '../contract/ChatIntent';
 import { isMessageSelected } from '../model/ForwardSelection';
 import { ChatSearchResultItem } from '../model/ChatSearchResultItem';
@@ -205,7 +210,12 @@ function formatDuration(seconds: number): string {
  * selected 必须参与签名（MSG-106）：多选勾选圈是"同一 messageId 的原地变更"，
  * key 不含它就永远不重渲——这正是 MSG-104 已读勾踩过的坑。
  */
-function messageRowKey(item: MessageItem, selected: boolean, highlighted: boolean = false): string {
+function messageRowKey(
+  item: MessageItem,
+  selected: boolean,
+  highlighted: boolean = false,
+  extraVoiceSig: string = ''
+): string {
   let mediaSig: string = '';
   if (item.albumItems.length > 0) {
     const parts: string[] = [];
@@ -242,7 +252,8 @@ function messageRowKey(item: MessageItem, selected: boolean, highlighted: boolea
     `${item.showDateHeader ? item.dateHeaderText : ''}|${item.showUnreadSeparator}|` +
     `${reactionSig}|${item.commentCount}|${item.isChannelPost}|${item.isPinned}|` +
     // SEARCH-102：高亮态参与 key，落位后该行才会局部重绘。
-    `${highlighted}`;
+    // VOICE-101：语音播放态参与 key，进度推进时局部重绘波形条。
+    `${highlighted}|${extraVoiceSig}`;
   return `${item.messageId}:${fnv1a32(signature)}`;
 }
 
@@ -328,6 +339,9 @@ export struct ChatPage {
   private highlightTimer: number | undefined = undefined;
   /** MSG-106：上次渲染的选择集签名，用于在多选态变化时触发列表重载。 */
   private shownSelectionSignature: string = '';
+  /** VOICE-101：上次渲染的正在播放语音消息 ID 与进度采样。 */
+  private shownPlayingVoiceMessageId: number | null = null;
+  private shownVoiceProgress: number = 0;
 
   /** MSG-106：当前选择集签名（含模式开关；未进入多选态恒为空串）。 */
   private selectionSignature(): string {
@@ -439,15 +453,22 @@ export struct ChatPage {
     // 避免输入栏每次击键都触发 LazyForEach 全量重载。
     // MSG-106 例外：多选态变化也是"原地变更"，必须重载列表让勾选圈上屏
     // （messages 数组引用不变，但 row key 含 selected，需重新求 key）。
-    if (!messagesChanged && !selectionChanged) {
+    // VOICE-101 例外：语音播放态与进度变化也是"原地变更"，必须重载列表让播放图标与波形更新。
+    const playingVoiceChanged: boolean = (this.uiState.playingVoiceMessageId !== this.shownPlayingVoiceMessageId) ||
+      (this.uiState.playingVoiceMessageId !== null && Math.floor(this.uiState.voicePlaybackProgress * 28) !== Math.floor(this.shownVoiceProgress * 28));
+
+    if (!messagesChanged && !selectionChanged && !playingVoiceChanged) {
       return;
     }
     if (selectionChanged) {
       this.shownSelectionSignature = selectionSignature;
     }
+    if (playingVoiceChanged) {
+      this.shownPlayingVoiceMessageId = this.uiState.playingVoiceMessageId;
+      this.shownVoiceProgress = this.uiState.voicePlaybackProgress;
+    }
     if (!messagesChanged) {
-      // 只变了选择态：重载数据源让 row key 重算，但不触碰滚动位置，
-      // 否则勾选时列表会跳到首条未读/末尾。
+      // 只变了选择态或语音播放态：重载数据源让 row key 重算，但不触碰滚动位置。
       this.dataSource.setItems(messages);
       return;
     }
@@ -611,7 +632,9 @@ export struct ChatPage {
             }, (item: MessageItem) => messageRowKey(
               item,
               this.isSelected(item.messageId),
-              this.highlightedMessageId === item.messageId
+              this.highlightedMessageId === item.messageId,
+              this.uiState.playingVoiceMessageId === item.messageId ?
+                `play:${Math.floor(this.uiState.voicePlaybackProgress * 28)}:${this.uiState.voicePlaybackTimeSec}` : ''
             ))
           }
           .width('100%')
@@ -668,6 +691,8 @@ export struct ChatPage {
             this.JoinChannelBar()
           } else if (this.uiState.chatKind === 'channel' && this.uiState.isChannelMember) {
             this.ChannelMuteBar()
+          } else if (this.uiState.isRecordingVoice) {
+            this.VoiceRecordingBar()
           } else {
             this.ComposerBar()
           }
@@ -1633,6 +1658,11 @@ export struct ChatPage {
             .width(22)
             .height(22)
             .color(T.colors.textOnAccent)
+        } else if (this.uiState.playingVoiceMessageId === item.messageId) {
+          Image($r('app.media.ic_pause'))
+            .width(20)
+            .height(20)
+            .fillColor(T.colors.textOnAccent)
         } else {
           Image($r('app.media.ic_play'))
             .width(20)
@@ -1648,32 +1678,44 @@ export struct ChatPage {
       .onClick(() => {
         if (media.isDownloading) {
           this.onDispatch(new CancelMediaDownload(media.fileId));
-        } else if (!media.isDownloaded) {
+        } else if (!media.isDownloaded && (media.localPath === null || media.localPath.length === 0)) {
           this.onDispatch(new RequestMediaDownload(media.fileId));
         } else {
-          hilog.info(DOMAIN, TAG, `play voice note: fileId=${media.fileId}, path=${media.localPath}`);
+          if (this.uiState.playingVoiceMessageId === item.messageId) {
+            this.onDispatch(new PauseVoiceNote(item.messageId));
+          } else {
+            this.onDispatch(new PlayVoiceNote(item.messageId, media.fileId, media.localPath));
+          }
         }
       })
 
       // 右侧：波形栏与时长信息
       Column() {
-        // 波形条
+        // 波形条（28 柱动态高亮）
         Row() {
-          ForEach(normalizeWaveform(media.waveform, 28), (sample: number) => {
+          ForEach(normalizeWaveform(media.waveform, 28), (sample: number, index: number) => {
             Column()
               .width(2)
               .height(Math.max(3, Math.round((sample / 31) * 20)))
               .borderRadius(1)
-              .backgroundColor(T.colors.accent)
+              .backgroundColor(
+                (this.uiState.playingVoiceMessageId === item.messageId)
+                  ? (index <= Math.floor(this.uiState.voicePlaybackProgress * 28) ? T.colors.accent : (item.isOutgoing ? '#802AABEE' : '#80999999'))
+                  : T.colors.accent
+              )
               .margin({ right: 2 })
-          })
+          }, (_sample: number, index: number) => `${index}`)
         }
         .alignItems(VerticalAlign.Center)
         .height(24)
 
         // 时长与未收听蓝点
         Row() {
-          Text(formatDuration(media.duration))
+          Text(
+            (this.uiState.playingVoiceMessageId === item.messageId && this.uiState.voicePlaybackTimeSec > 0)
+              ? formatDuration(this.uiState.voicePlaybackTimeSec)
+              : formatDuration(media.duration)
+          )
             .fontSize(T.typography.caption.fontSize)
             .fontColor(T.colors.textSecondary)
 
@@ -3315,6 +3357,8 @@ export struct ChatPage {
       .onClick(() => {
         if (this.canSend()) {
           this.dispatchSend();
+        } else {
+          this.onDispatch(new StartVoiceRecord());
         }
       })
     }
@@ -3326,6 +3370,77 @@ export struct ChatPage {
       top: T.spacing.xs,
       bottom: T.spacing.sm
     })
+    .borderWidth({ top: 1 })
+    .borderColor(T.colors.divider)
+  }
+
+  /** VOICE-101：录音控制条（全宽：红色录音指示点、秒级计时、放弃取消按钮、发送按钮） */
+  @Builder
+  VoiceRecordingBar() {
+    Row() {
+      // 动态红点指示器与录音中计时
+      Row() {
+        Row()
+          .width(10)
+          .height(10)
+          .borderRadius(T.radius.full)
+          .backgroundColor(T.colors.destructive)
+          .margin({ right: T.spacing.xs })
+
+        Text(formatDuration(this.uiState.recordingDurationSec))
+          .fontSize(T.typography.body.fontSize)
+          .fontColor(T.colors.textPrimary)
+          .fontWeight(FontWeight.Medium)
+      }
+      .alignItems(VerticalAlign.Center)
+      .margin({ left: T.spacing.sm })
+
+      Blank()
+
+      // 取消放弃按钮（✕）
+      Row() {
+        Image($r('app.media.ic_close'))
+          .width(20)
+          .height(20)
+          .fillColor(T.colors.textSecondary)
+      }
+      .width(SEND_BUTTON_SIZE)
+      .height(SEND_BUTTON_SIZE)
+      .borderRadius(T.radius.full)
+      .justifyContent(FlexAlign.Center)
+      .alignItems(VerticalAlign.Center)
+      .margin({ right: T.spacing.sm })
+      .onClick(() => {
+        this.onDispatch(new CancelVoiceRecord());
+      })
+
+      // 发送按钮（➤）
+      Row() {
+        Image($r('app.media.ic_send'))
+          .width(20)
+          .height(20)
+          .fillColor(T.colors.textOnAccent)
+      }
+      .width(SEND_BUTTON_SIZE)
+      .height(SEND_BUTTON_SIZE)
+      .backgroundColor(T.colors.accent)
+      .borderRadius(T.radius.full)
+      .justifyContent(FlexAlign.Center)
+      .alignItems(VerticalAlign.Center)
+      .onClick(() => {
+        this.onDispatch(new StopAndSendVoiceRecord());
+      })
+    }
+    .width('100%')
+    .height(COMPOSER_INPUT_HEIGHT + T.spacing.xs + T.spacing.sm)
+    .alignItems(VerticalAlign.Center)
+    .padding({
+      left: T.spacing.screenInset,
+      right: T.spacing.screenInset,
+      top: T.spacing.xs,
+      bottom: T.spacing.sm
+    })
+    .backgroundColor(T.colors.surface)
     .borderWidth({ top: 1 })
     .borderColor(T.colors.divider)
   }

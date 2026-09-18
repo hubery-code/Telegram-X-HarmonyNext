@@ -694,7 +694,16 @@ export type ChatIntent =
   | OnStickerSetChanged
   | OnStickerSetActionFailed
   | SendStickerFromPreview
-  | OnStickerPreviewFileUpdated;
+  | OnStickerPreviewFileUpdated
+  | StartVoiceRecord
+  | StopAndSendVoiceRecord
+  | CancelVoiceRecord
+  | VoiceRecordTick
+  | PlayVoiceNote
+  | PauseVoiceNote
+  | VoicePlaybackProgress
+  | VoicePlaybackCompleted
+  | VoicePlaybackFailed;
 
 /** STICKER-PREVIEW-101：打开贴纸包预览弹窗。 */
 export class OpenStickerSet implements Intent {
@@ -796,6 +805,91 @@ export class OnStickerPreviewFileUpdated implements Intent {
   constructor(fileId: number, localPath: string) {
     this.fileId = fileId;
     this.localPath = localPath;
+  }
+}
+
+/** VOICE-101：开始语音录制。 */
+export class StartVoiceRecord implements Intent {
+  readonly kind: 'startVoiceRecord' = 'startVoiceRecord';
+}
+
+/** VOICE-101：停止录音并发送语音消息。 */
+export class StopAndSendVoiceRecord implements Intent {
+  readonly kind: 'stopAndSendVoiceRecord' = 'stopAndSendVoiceRecord';
+}
+
+/** VOICE-101：取消录音并放弃。 */
+export class CancelVoiceRecord implements Intent {
+  readonly kind: 'cancelVoiceRecord' = 'cancelVoiceRecord';
+}
+
+/** VOICE-101：录制计时 Tick。 */
+export class VoiceRecordTick implements Intent {
+  readonly kind: 'voiceRecordTick' = 'voiceRecordTick';
+  readonly durationSec: number;
+
+  constructor(durationSec: number) {
+    this.durationSec = durationSec;
+  }
+}
+
+/** VOICE-101：播放语音消息。 */
+export class PlayVoiceNote implements Intent {
+  readonly kind: 'playVoiceNote' = 'playVoiceNote';
+  readonly messageId: number;
+  readonly fileId: number;
+  readonly localPath: string | null;
+
+  constructor(messageId: number, fileId: number, localPath: string | null = null) {
+    this.messageId = messageId;
+    this.fileId = fileId;
+    this.localPath = localPath;
+  }
+}
+
+/** VOICE-101：暂停语音播放。 */
+export class PauseVoiceNote implements Intent {
+  readonly kind: 'pauseVoiceNote' = 'pauseVoiceNote';
+  readonly messageId: number;
+
+  constructor(messageId: number) {
+    this.messageId = messageId;
+  }
+}
+
+/** VOICE-101：语音播放进度回灌。 */
+export class VoicePlaybackProgress implements Intent {
+  readonly kind: 'voicePlaybackProgress' = 'voicePlaybackProgress';
+  readonly messageId: number;
+  readonly currentMs: number;
+  readonly totalMs: number;
+
+  constructor(messageId: number, currentMs: number, totalMs: number) {
+    this.messageId = messageId;
+    this.currentMs = currentMs;
+    this.totalMs = totalMs;
+  }
+}
+
+/** VOICE-101：语音播放完成回灌。 */
+export class VoicePlaybackCompleted implements Intent {
+  readonly kind: 'voicePlaybackCompleted' = 'voicePlaybackCompleted';
+  readonly messageId: number;
+
+  constructor(messageId: number) {
+    this.messageId = messageId;
+  }
+}
+
+/** VOICE-101：语音播放失败回灌。 */
+export class VoicePlaybackFailed implements Intent {
+  readonly kind: 'voicePlaybackFailed' = 'voicePlaybackFailed';
+  readonly messageId: number;
+  readonly error: string;
+
+  constructor(messageId: number, error: string) {
+    this.messageId = messageId;
+    this.error = error;
   }
 }
 

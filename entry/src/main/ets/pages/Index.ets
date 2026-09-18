@@ -111,6 +111,8 @@ import { Logger } from '@tgx/observability';
 import { HarmonyClipboardAdapter } from '../platform/HarmonyClipboardAdapter';
 import { HarmonyToastAdapter } from '../platform/HarmonyToastAdapter';
 import { HarmonyMediaPickerAdapter } from '../platform/HarmonyMediaPickerAdapter';
+import { HarmonyAudioPlayerAdapter } from '../platform/HarmonyAudioPlayerAdapter';
+import { HarmonyAudioRecorderAdapter } from '../platform/HarmonyAudioRecorderAdapter';
 import { createHarmonyLogger } from '../platform/HarmonyLogSink';
 
 const T = LightTheme;
@@ -135,6 +137,9 @@ struct Index {
   private readonly clipboardAdapter: HarmonyClipboardAdapter = new HarmonyClipboardAdapter();
   private readonly toastAdapter: HarmonyToastAdapter = new HarmonyToastAdapter();
   private readonly mediaPickerAdapter: HarmonyMediaPickerAdapter = new HarmonyMediaPickerAdapter();
+  private readonly audioPlayerAdapter: HarmonyAudioPlayerAdapter = new HarmonyAudioPlayerAdapter();
+  private readonly audioRecorderAdapter: HarmonyAudioRecorderAdapter = new HarmonyAudioRecorderAdapter();
+  private cacheDir: string = '/data/storage/el2/base/cache';
   private readonly logger: Logger = createHarmonyLogger();
   private readonly navController: EntryNavigationController = new EntryNavigationController({ name: 'auth' });
   private unsubscribeNavFn: (() => void) | null = null;
@@ -194,6 +199,7 @@ struct Index {
     this.accountScope = result.scope;
     this.currentAccountKey = result.scope.accountKey;
     if (result.cacheDir !== undefined && result.cacheDir.length > 0) {
+      this.cacheDir = result.cacheDir;
       this.mediaPickerAdapter.setCacheDir(result.cacheDir);
     }
 
@@ -943,6 +949,9 @@ struct Index {
         clipboardPort: this.clipboardAdapter,
         toastPort: this.toastAdapter,
         mediaPickerPort: this.mediaPickerAdapter,
+        audioPlayerPort: this.audioPlayerAdapter,
+        audioRecorderPort: this.audioRecorderAdapter,
+        cacheDir: this.cacheDir,
         logger: this.logger,
         // PROFILE-101：群聊点头像 → 压栈用户资料页。
         onOpenUserProfile: (userId: number): void => {
@@ -978,6 +987,8 @@ struct Index {
       this.chatCoordinator.destroy();
       this.chatCoordinator = null;
     }
+    this.audioPlayerAdapter.stop();
+    this.audioRecorderAdapter.cancelRecord();
     this.activeChatId = null;
   }
 

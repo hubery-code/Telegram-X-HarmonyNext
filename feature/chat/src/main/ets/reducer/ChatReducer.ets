@@ -102,7 +102,16 @@ import {
   OnStickerSetChanged,
   OnStickerSetActionFailed,
   SendStickerFromPreview,
-  OnStickerPreviewFileUpdated
+  OnStickerPreviewFileUpdated,
+  StartVoiceRecord,
+  StopAndSendVoiceRecord,
+  CancelVoiceRecord,
+  VoiceRecordTick,
+  PlayVoiceNote,
+  PauseVoiceNote,
+  VoicePlaybackProgress,
+  VoicePlaybackCompleted,
+  VoicePlaybackFailed
 } from '../contract/ChatIntent';
 import {
   ChatEffect,
@@ -130,7 +139,12 @@ import {
   OpenCommentsEffect,
   FetchStickerSet,
   ChangeStickerSetEffect,
-  SendStickerMessage
+  SendStickerMessage,
+  StartVoiceRecordEffect,
+  StopAndSendVoiceRecordEffect,
+  CancelVoiceRecordEffect,
+  PlayVoiceNoteEffect,
+  PauseVoiceNoteEffect
 } from '../contract/ChatEffect';
 import { StickerSetPreviewState, StickerSetItem } from '../model/StickerSetPreviewState';
 import { incomingIdUpTo } from '../model/ReadReceipt';
@@ -514,6 +528,13 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
     }
 
     case 'backToChatList': {
+      // VOICE-101：录音态激活时，返回先取消录音。
+      if (state.isRecordingVoice) {
+        return reduced(
+          state.copyWith({ isRecordingVoice: false, recordingDurationSec: 0 }),
+          [new CancelVoiceRecordEffect(state.chatId)]
+        );
+      }
       // COMPOSER-102：附件面板打开时，返回先关闭面板不离开页面。
       if (state.showAttachmentMenu) {
         return reduced(state.copyWith({ showAttachmentMenu: false }));
@@ -1316,6 +1337,118 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
         nextStickers
       );
       return reduced(state.copyWith({ stickerSetPreview: nextPreview }));
+    }
+
+    case 'startVoiceRecord': {
+      return reduced(
+        state.copyWith({
+          isRecordingVoice: true,
+          recordingDurationSec: 0
+        }),
+        [new StartVoiceRecordEffect(state.chatId)]
+      );
+    }
+
+    case 'stopAndSendVoiceRecord': {
+      const replyToId: number = state.composerMode?.kind === 'reply' ? (state.composerMode as ComposerReplyMode).targetMessageId : 0;
+      return reduced(
+        state.copyWith({
+          isRecordingVoice: false,
+          recordingDurationSec: 0
+        }),
+        [new StopAndSendVoiceRecordEffect(state.chatId, replyToId)]
+      );
+    }
+
+    case 'cancelVoiceRecord': {
+      return reduced(
+        state.copyWith({
+          isRecordingVoice: false,
+          recordingDurationSec: 0
+        }),
+        [new CancelVoiceRecordEffect(state.chatId)]
+      );
+    }
+
+    case 'voiceRecordTick': {
+      const tickIntent: VoiceRecordTick = intent as VoiceRecordTick;
+      if (!state.isRecordingVoice) {
+        return reduced(state);
+      }
+      return reduced(
+        state.copyWith({
+          recordingDurationSec: tickIntent.durationSec
+        })
+      );
+    }
+
+    case 'playVoiceNote': {
+      const playIntent: PlayVoiceNote = intent as PlayVoiceNote;
+      return reduced(
+        state.copyWith({
+          playingVoiceMessageId: playIntent.messageId,
+          voicePlaybackProgress: 0,
+          voicePlaybackTimeSec: 0
+        }),
+        [new PlayVoiceNoteEffect(state.chatId, playIntent.messageId, playIntent.fileId, playIntent.localPath)]
+      );
+    }
+
+    case 'pauseVoiceNote': {
+      const pauseIntent: PauseVoiceNote = intent as PauseVoiceNote;
+      if (state.playingVoiceMessageId === pauseIntent.messageId) {
+        return reduced(
+          state.copyWith({
+            playingVoiceMessageId: null
+          }),
+          [new PauseVoiceNoteEffect(state.chatId, pauseIntent.messageId)]
+        );
+      }
+      return reduced(state);
+    }
+
+    case 'voicePlaybackProgress': {
+      const progIntent: VoicePlaybackProgress = intent as VoicePlaybackProgress;
+      if (state.playingVoiceMessageId !== progIntent.messageId) {
+        return reduced(state);
+      }
+      const progress: number = progIntent.totalMs > 0 ? Math.min(1, Math.max(0, progIntent.currentMs / progIntent.totalMs)) : 0;
+      const timeSec: number = Math.floor(progIntent.currentMs / 1000);
+      return reduced(
+        state.copyWith({
+          voicePlaybackProgress: progress,
+          voicePlaybackTimeSec: timeSec
+        })
+      );
+    }
+
+    case 'voicePlaybackCompleted': {
+      const compIntent: VoicePlaybackCompleted = intent as VoicePlaybackCompleted;
+      if (state.playingVoiceMessageId === compIntent.messageId) {
+        return reduced(
+          state.copyWith({
+            playingVoiceMessageId: null,
+            voicePlaybackProgress: 0,
+            voicePlaybackTimeSec: 0
+          })
+        );
+      }
+      return reduced(state);
+    }
+
+    case 'voicePlaybackFailed': {
+      const failIntent: VoicePlaybackFailed = intent as VoicePlaybackFailed;
+      if (state.playingVoiceMessageId === failIntent.messageId) {
+        return reduced(
+          state.copyWith({
+            playingVoiceMessageId: null,
+            voicePlaybackProgress: 0,
+            voicePlaybackTimeSec: 0,
+            errorMessage: failIntent.error
+          })
+        );
+      }
+      return reduced(state);
     }
 
     // openChatProfile / chatMenuAction：纯导航/占位意图，reducer 原样透传

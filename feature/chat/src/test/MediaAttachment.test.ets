@@ -1,5 +1,5 @@
 import { describe, it, expect } from '@ohos/hypium';
-import { MediaAttachment, MediaKind, formatFileSize, decodeWaveform, normalizeWaveform } from '../main/ets/model/MediaAttachment';
+import { MediaAttachment, MediaKind, formatFileSize, decodeWaveform, encodeWaveform, normalizeWaveform } from '../main/ets/model/MediaAttachment';
 import { MessageItem } from '../main/ets/model/MessageItem';
 import { MessageTextSpan } from '../main/ets/model/MessageTextSpan';
 
@@ -391,6 +391,20 @@ export default function mediaAttachmentTest() {
       expect(downsampled[1]).assertEqual(40);
       // Chunk 2 is [50, 60], max is 60
       expect(downsampled[2]).assertEqual(60);
+    });
+
+    it('encodeWaveform encodes 5-bit samples and decodes back reciprocally', 0, () => {
+      expect(encodeWaveform([])).assertEqual('');
+
+      const originalSamples: number[] = [0, 5, 12, 19, 27, 31, 14, 2];
+      const encoded: string = encodeWaveform(originalSamples);
+      expect(encoded.length > 0).assertTrue();
+
+      const decoded: number[] = decodeWaveform(encoded);
+      expect(decoded.length).assertEqual(originalSamples.length);
+      for (let i = 0; i < originalSamples.length; i++) {
+        expect(decoded[i]).assertEqual(originalSamples[i]);
+      }
     });
 
   });

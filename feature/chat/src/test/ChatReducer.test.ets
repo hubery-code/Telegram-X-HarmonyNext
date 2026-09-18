@@ -76,7 +76,16 @@ import {
   OnStickerSetChanged,
   OnStickerSetActionFailed,
   SendStickerFromPreview,
-  OnStickerPreviewFileUpdated
+  OnStickerPreviewFileUpdated,
+  StartVoiceRecord,
+  StopAndSendVoiceRecord,
+  CancelVoiceRecord,
+  VoiceRecordTick,
+  PlayVoiceNote,
+  PauseVoiceNote,
+  VoicePlaybackProgress,
+  VoicePlaybackCompleted,
+  VoicePlaybackFailed
 } from '../main/ets/contract/ChatIntent';
 import { PinnedMessageInfo } from '../main/ets/model/PinnedMessageInfo';
 import { ReactionChip } from '../main/ets/model/ReactionChip';
@@ -103,7 +112,12 @@ import {
   ToggleReactionEffect,
   FetchStickerSet,
   ChangeStickerSetEffect,
-  SendStickerMessage
+  SendStickerMessage,
+  StartVoiceRecordEffect,
+  StopAndSendVoiceRecordEffect,
+  CancelVoiceRecordEffect,
+  PlayVoiceNoteEffect,
+  PauseVoiceNoteEffect
 } from '../main/ets/contract/ChatEffect';
 import { ChatSearchResultItem } from '../main/ets/model/ChatSearchResultItem';
 import { chatReducer, extractFirstLink } from '../main/ets/reducer/ChatReducer';
@@ -1838,6 +1852,132 @@ export default function chatReducerTest() {
 
       expect(result.state.stickerSetPreview?.stickers[0].localPath).assertEqual('/downloaded/sticker101.webp');
       expect(result.state.stickerSetPreview?.stickers[0].isDownloaded).assertTrue();
+    });
+
+    it('startVoiceRecord_transitionsToRecordingStateAndEmitsEffect', 0, () => {
+      const initial: ChatUiState = makeState('');
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        initial,
+        new StartVoiceRecord(),
+        makeEnv()
+      );
+
+      expect(result.state.isRecordingVoice).assertTrue();
+      expect(result.state.recordingDurationSec).assertEqual(0);
+      expect(result.effects.length).assertEqual(1);
+      expect(result.effects[0].kind).assertEqual('startVoiceRecordEffect');
+    });
+
+    it('stopAndSendVoiceRecord_resetsRecordingStateAndEmitsEffect', 0, () => {
+      const initial: ChatUiState = makeState('').copyWith({
+        isRecordingVoice: true,
+        recordingDurationSec: 5
+      });
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        initial,
+        new StopAndSendVoiceRecord(),
+        makeEnv()
+      );
+
+      expect(result.state.isRecordingVoice).assertFalse();
+      expect(result.state.recordingDurationSec).assertEqual(0);
+      expect(result.effects.length).assertEqual(1);
+      expect(result.effects[0].kind).assertEqual('stopAndSendVoiceRecordEffect');
+    });
+
+    it('cancelVoiceRecord_resetsRecordingStateAndEmitsEffect', 0, () => {
+      const initial: ChatUiState = makeState('').copyWith({
+        isRecordingVoice: true,
+        recordingDurationSec: 3
+      });
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        initial,
+        new CancelVoiceRecord(),
+        makeEnv()
+      );
+
+      expect(result.state.isRecordingVoice).assertFalse();
+      expect(result.state.recordingDurationSec).assertEqual(0);
+      expect(result.effects.length).assertEqual(1);
+      expect(result.effects[0].kind).assertEqual('cancelVoiceRecordEffect');
+    });
+
+    it('voiceRecordTick_updatesRecordingDuration', 0, () => {
+      const initial: ChatUiState = makeState('').copyWith({
+        isRecordingVoice: true,
+        recordingDurationSec: 2
+      });
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        initial,
+        new VoiceRecordTick(3),
+        makeEnv()
+      );
+
+      expect(result.state.recordingDurationSec).assertEqual(3);
+    });
+
+    it('backToChatList_cancelsVoiceRecordingWhenActive', 0, () => {
+      const initial: ChatUiState = makeState('').copyWith({
+        isRecordingVoice: true,
+        recordingDurationSec: 4
+      });
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        initial,
+        new BackToChatList(),
+        makeEnv()
+      );
+
+      expect(result.state.isRecordingVoice).assertFalse();
+      expect(result.effects.length).assertEqual(1);
+      expect(result.effects[0].kind).assertEqual('cancelVoiceRecordEffect');
+    });
+
+    it('playAndPauseVoiceNote_transitionsStateAndEmitsEffects', 0, () => {
+      const initial: ChatUiState = makeState('');
+      const playRes: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        initial,
+        new PlayVoiceNote(100, 200, '/data/voice.m4a'),
+        makeEnv()
+      );
+
+      expect(playRes.state.playingVoiceMessageId).assertEqual(100);
+      expect(playRes.state.voicePlaybackProgress).assertEqual(0);
+      expect(playRes.effects.length).assertEqual(1);
+      expect(playRes.effects[0].kind).assertEqual('playVoiceNoteEffect');
+
+      const progRes: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        playRes.state,
+        new VoicePlaybackProgress(100, 2000, 4000),
+        makeEnv()
+      );
+      expect(progRes.state.voicePlaybackProgress).assertEqual(0.5);
+      expect(progRes.state.voicePlaybackTimeSec).assertEqual(2);
+
+      const pauseRes: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        progRes.state,
+        new PauseVoiceNote(100),
+        makeEnv()
+      );
+      expect(pauseRes.state.playingVoiceMessageId).assertNull();
+      expect(pauseRes.effects.length).assertEqual(1);
+      expect(pauseRes.effects[0].kind).assertEqual('pauseVoiceNoteEffect');
+    });
+
+    it('voicePlaybackCompleted_resetsPlayingState', 0, () => {
+      const initial: ChatUiState = makeState('').copyWith({
+        playingVoiceMessageId: 100,
+        voicePlaybackProgress: 0.8,
+        voicePlaybackTimeSec: 4
+      });
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        initial,
+        new VoicePlaybackCompleted(100),
+        makeEnv()
+      );
+
+      expect(result.state.playingVoiceMessageId).assertNull();
+      expect(result.state.voicePlaybackProgress).assertEqual(0);
+      expect(result.state.voicePlaybackTimeSec).assertEqual(0);
     });
   });
 }
