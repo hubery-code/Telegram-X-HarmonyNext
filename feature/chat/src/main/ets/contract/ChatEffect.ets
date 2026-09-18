@@ -308,6 +308,34 @@ export class SendStickerMessage implements Effect {
   }
 }
 
+/** MSG-108：置顶消息（pinChatMessage）。 */
+export class PinMessageEffect implements Effect {
+  readonly kind: 'pinMessageEffect' = 'pinMessageEffect';
+  readonly chatId: number;
+  readonly messageId: number;
+  readonly disableNotification: boolean;
+  readonly onlyForSelf: boolean;
+
+  constructor(chatId: number, messageId: number, disableNotification: boolean = false, onlyForSelf: boolean = false) {
+    this.chatId = chatId;
+    this.messageId = messageId;
+    this.disableNotification = disableNotification;
+    this.onlyForSelf = onlyForSelf;
+  }
+}
+
+/** MSG-108：取消置顶消息（unpinChatMessage）。 */
+export class UnpinMessageEffect implements Effect {
+  readonly kind: 'unpinMessageEffect' = 'unpinMessageEffect';
+  readonly chatId: number;
+  readonly messageId: number;
+
+  constructor(chatId: number, messageId: number) {
+    this.chatId = chatId;
+    this.messageId = messageId;
+  }
+}
+
 export type ChatEffect =
   | FetchInitialMessages
   | FetchOlderMessages
@@ -326,6 +354,8 @@ export type ChatEffect =
   | CancelMediaDownloadEffect
   | FetchChatSearch
   | JumpToMessage
+  | PinMessageEffect
+  | UnpinMessageEffect
   | JoinChannelEffect
   | ToggleReactionEffect
   | OpenCommentsEffect

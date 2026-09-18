@@ -119,6 +119,10 @@ export class OnMessageActionMenuLoaded implements Intent {
   readonly canBeForwarded: boolean;
   /** MSG-105：can_be_saved，决定消息内容是否允许在本地保存/复制。 */
   readonly canBeSaved: boolean;
+  /** MSG-108：can_be_pinned，决定菜单是否出现 Pin/Unpin。 */
+  readonly canBePinned: boolean;
+  /** MSG-108：is_pinned，消息当前是否已置顶。 */
+  readonly isPinned: boolean;
 
   constructor(
     messageId: number,
@@ -126,7 +130,9 @@ export class OnMessageActionMenuLoaded implements Intent {
     canBeDeletedOnlyForSelf: boolean,
     canBeDeletedForAllUsers: boolean,
     canBeForwarded: boolean = false,
-    canBeSaved: boolean = true
+    canBeSaved: boolean = true,
+    canBePinned: boolean = false,
+    isPinned: boolean = false
   ) {
     this.messageId = messageId;
     this.canBeEdited = canBeEdited;
@@ -134,6 +140,8 @@ export class OnMessageActionMenuLoaded implements Intent {
     this.canBeDeletedForAllUsers = canBeDeletedForAllUsers;
     this.canBeForwarded = canBeForwarded;
     this.canBeSaved = canBeSaved;
+    this.canBePinned = canBePinned;
+    this.isPinned = isPinned;
   }
 }
 
@@ -160,6 +168,23 @@ export class EditMessage implements Intent {
 /** 菜单点选：删除 actionMenu.messageId 指定的消息（revoke 取菜单状态）。 */
 export class DeleteMessage implements Intent {
   readonly kind: 'deleteMessage' = 'deleteMessage';
+}
+
+/** MSG-108：菜单点选：置顶 actionMenu.messageId 指定的消息。 */
+export class PinMessage implements Intent {
+  readonly kind: 'pinMessage' = 'pinMessage';
+  readonly disableNotification: boolean;
+  readonly onlyForSelf: boolean;
+
+  constructor(disableNotification: boolean = false, onlyForSelf: boolean = false) {
+    this.disableNotification = disableNotification;
+    this.onlyForSelf = onlyForSelf;
+  }
+}
+
+/** MSG-108：菜单点选：取消置顶 actionMenu.messageId 指定的消息。 */
+export class UnpinMessage implements Intent {
+  readonly kind: 'unpinMessage' = 'unpinMessage';
 }
 
 /** 撤销输入栏的回复/编辑模式（编辑模式恢复进入前的草稿）。 */
@@ -654,6 +679,8 @@ export type ChatIntent =
   | OnPinnedMessageLoaded
   | DismissPinnedBar
   | JumpToPinnedMessage
+  | PinMessage
+  | UnpinMessage
   | JoinChannel
   | OnChannelMemberStatusChanged
   | OpenMessageComments

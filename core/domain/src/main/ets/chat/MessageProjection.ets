@@ -50,6 +50,9 @@ import {
   encodeSetChatDraftMessage,
   encodeSearchChatMessages,
   encodeGetChatPinnedMessage,
+  encodePinChatMessage,
+  encodeUnpinChatMessage,
+  encodeUnpinAllChatMessages,
   encodeJoinChat,
   encodeAddMessageReaction,
   encodeRemoveMessageReaction,
@@ -64,6 +67,9 @@ import {
   ResendMessages,
   GetChat,
   GetChatPinnedMessage,
+  PinChatMessage,
+  UnpinChatMessage,
+  UnpinAllChatMessages,
   JoinChat,
   AddMessageReaction,
   RemoveMessageReaction,
@@ -95,7 +101,8 @@ import {
   UpdateDeleteMessages,
   UpdateChatReadOutbox,
   UpdateChatReadInbox,
-  UpdateChatDraftMessage
+  UpdateChatDraftMessage,
+  UpdateMessageIsPinned
 } from '@tgx/core-td-api-generated';
 import { AccountScope } from '@tgx/core-account';
 import { TdUpdateSubscription, TdPendingRequest, TdWireObject, TdWireValue } from '@tgx/td-gateway';
@@ -152,6 +159,8 @@ export class MessageProjection {
   private stateListener: (() => void) | null = null;
   private initialDraft: DraftMessage | null = null;
   private draftListener: ((draft: DraftMessage | null) => void) | null = null;
+  /** MSG-108：置顶消息动态变更监听器（updateMessageIsPinned）。 */
+  private pinnedMessageListener: ((messageId: number, isPinned: boolean) => void) | null = null;
 
   constructor(chatId: number, scope: AccountScope) {
     this.chatId = chatId;
@@ -165,6 +174,11 @@ export class MessageProjection {
 
   setOnDraftLoaded(listener: ((draft: DraftMessage | null) => void) | null): void {
     this.draftListener = listener;
+  }
+
+  /** MSG-108：设置置顶消息变化监听器。 */
+  setOnPinnedMessageChanged(listener: ((messageId: number, isPinned: boolean) => void) | null): void {
+    this.pinnedMessageListener = listener;
   }
 
   getInitialDraft(): DraftMessage | null {
@@ -308,6 +322,42 @@ export class MessageProjection {
     const req: GetChatPinnedMessage = new GetChatPinnedMessage();
     req.chat_id = this.chatId;
     return this.scope.request('getChatPinnedMessage', encodeGetChatPinnedMessage(req) as TdWireObject);
+  }
+
+  /**
+   * MSG-108 置顶单条消息（PinChatMessage）。
+   * A message can be pinned only if messageProperties.can_be_pinned.
+   */
+  pinChatMessage(
+    messageId: number,
+    disableNotification: boolean = false,
+    onlyForSelf: boolean = false
+  ): Result<TdPendingRequest, AppError> {
+    const req: PinChatMessage = new PinChatMessage();
+    req.chat_id = this.chatId;
+    req.message_id = messageId;
+    req.disable_notification = disableNotification;
+    req.only_for_self = onlyForSelf;
+    return this.scope.request('pinChatMessage', encodePinChatMessage(req) as TdWireObject);
+  }
+
+  /**
+   * MSG-108 取消置顶单条消息（UnpinChatMessage）。
+   */
+  unpinChatMessage(messageId: number): Result<TdPendingRequest, AppError> {
+    const req: UnpinChatMessage = new UnpinChatMessage();
+    req.chat_id = this.chatId;
+    req.message_id = messageId;
+    return this.scope.request('unpinChatMessage', encodeUnpinChatMessage(req) as TdWireObject);
+  }
+
+  /**
+   * MSG-108 取消会话内所有置顶消息（UnpinAllChatMessages）。
+   */
+  unpinAllChatMessages(): Result<TdPendingRequest, AppError> {
+    const req: UnpinAllChatMessages = new UnpinAllChatMessages();
+    req.chat_id = this.chatId;
+    return this.scope.request('unpinAllChatMessages', encodeUnpinAllChatMessages(req) as TdWireObject);
   }
 
   /**
@@ -857,6 +907,18 @@ export class MessageProjection {
         this.initialDraft = draftUpdate.draft_message;
         if (this.draftListener !== null) {
           this.draftListener(draftUpdate.draft_message);
+        }
+      }
+    } else if (update.type === 'updateMessageIsPinned') {
+      const pinUpdate: UpdateMessageIsPinned = update as UpdateMessageIsPinned;
+      if (pinUpdate.chat_id === this.chatId) {
+        const existing: Message | undefined = this.messagesById.get(pinUpdate.message_id);
+        if (existing !== undefined) {
+          existing.is_pinned = pinUpdate.is_pinned;
+          this.notifyStateChanged();
+        }
+        if (this.pinnedMessageListener !== null) {
+          this.pinnedMessageListener(pinUpdate.message_id, pinUpdate.is_pinned);
         }
       }
     }

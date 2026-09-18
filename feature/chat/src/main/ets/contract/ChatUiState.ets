@@ -86,6 +86,10 @@ export class MessageActionMenuState {
   readonly showCopyLink: boolean;
   readonly linkUrlToCopy: string | null;
   readonly showResend: boolean;
+  /** MSG-108：是否允许置顶/取消置顶（messageProperties.can_be_pinned）。 */
+  readonly showPin: boolean;
+  /** MSG-108：消息当前是否已置顶（Message.is_pinned）。 */
+  readonly isPinned: boolean;
 
   constructor(
     messageId: number,
@@ -97,7 +101,9 @@ export class MessageActionMenuState {
     showCopy: boolean = false,
     showCopyLink: boolean = false,
     linkUrlToCopy: string | null = null,
-    showResend: boolean = false
+    showResend: boolean = false,
+    showPin: boolean = false,
+    isPinned: boolean = false
   ) {
     this.messageId = messageId;
     this.showReply = showReply;
@@ -109,6 +115,8 @@ export class MessageActionMenuState {
     this.showCopyLink = showCopyLink;
     this.linkUrlToCopy = linkUrlToCopy;
     this.showResend = showResend;
+    this.showPin = showPin;
+    this.isPinned = isPinned;
   }
 }
 

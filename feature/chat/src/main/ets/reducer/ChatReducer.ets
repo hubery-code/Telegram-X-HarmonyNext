@@ -85,6 +85,8 @@ import {
   OnPinnedMessageLoaded,
   DismissPinnedBar,
   JumpToPinnedMessage,
+  PinMessage,
+  UnpinMessage,
   JoinChannel,
   OnChannelMemberStatusChanged,
   OpenMessageComments,
@@ -121,6 +123,8 @@ import {
   CancelMediaDownloadEffect,
   FetchChatSearch,
   JumpToMessage,
+  PinMessageEffect,
+  UnpinMessageEffect,
   JoinChannelEffect,
   ToggleReactionEffect,
   OpenCommentsEffect,
@@ -565,6 +569,8 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
       const firstLink: string | null = extractFirstLink(item);
       const showCopyLink: boolean = !isFailed && loaded.canBeSaved && firstLink !== null;
       const showForward: boolean = !isFailed && loaded.canBeForwarded;
+      const showPin: boolean = !isFailed && loaded.canBePinned;
+      const isPinned: boolean = loaded.isPinned || item.isPinned;
       const menu: MessageActionMenuState = new MessageActionMenuState(
         loaded.messageId,
         showReply,
@@ -575,7 +581,9 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
         showCopy,
         showCopyLink,
         firstLink,
-        showResend
+        showResend,
+        showPin,
+        isPinned
       );
       const nextState: ChatUiState = state.copyWith({ actionMenu: menu });
       return reduced(nextState);
@@ -673,6 +681,34 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
         : [menu.messageId];
       const effects: ChatEffect[] = [new DeleteMessages(state.chatId, idsToDelete, menu.deleteRevoke)];
       return reduced(nextState, effects);
+    }
+
+    case 'pinMessage': {
+      const menu: MessageActionMenuState | null = state.actionMenu;
+      if (menu === null || !menu.showPin) {
+        return reduced(state);
+      }
+      const pinIntent: PinMessage = intent as PinMessage;
+      const nextState: ChatUiState = state.copyWith({ actionMenu: null });
+      return reduced(nextState, [
+        new PinMessageEffect(
+          state.chatId,
+          menu.messageId,
+          pinIntent.disableNotification,
+          pinIntent.onlyForSelf
+        )
+      ]);
+    }
+
+    case 'unpinMessage': {
+      const menu: MessageActionMenuState | null = state.actionMenu;
+      if (menu === null || !menu.showPin) {
+        return reduced(state);
+      }
+      const nextState: ChatUiState = state.copyWith({ actionMenu: null });
+      return reduced(nextState, [
+        new UnpinMessageEffect(state.chatId, menu.messageId)
+      ]);
     }
 
     case 'cancelComposerMode': {

@@ -116,6 +116,8 @@ import {
   ChatMenuAction,
   DismissPinnedBar,
   JumpToPinnedMessage,
+  PinMessage,
+  UnpinMessage,
   JoinChannel,
   OpenMessageComments,
   ToggleMessageReaction,
@@ -238,7 +240,7 @@ function messageRowKey(item: MessageItem, selected: boolean, highlighted: boolea
     `${item.text}|${item.senderName}|${item.senderAvatarPath !== null ? item.senderAvatarPath : ''}|` +
     `${item.replyToSummary}|${mediaSig}|${replySig}|${linkPreviewSig}|${selected}|` +
     `${item.showDateHeader ? item.dateHeaderText : ''}|${item.showUnreadSeparator}|` +
-    `${reactionSig}|${item.commentCount}|${item.isChannelPost}|` +
+    `${reactionSig}|${item.commentCount}|${item.isChannelPost}|${item.isPinned}|` +
     // SEARCH-102：高亮态参与 key，落位后该行才会局部重绘。
     `${highlighted}`;
   return `${item.messageId}:${fnv1a32(signature)}`;
@@ -2766,6 +2768,36 @@ export struct ChatPage {
           })
           .onClick(() => {
             this.onDispatch(new EditMessage());
+          })
+        }
+
+        // MSG-108：Pin / Unpin 置顶与取消置顶操作
+        if (menu.showPin) {
+          Row() {
+            Image($r('app.media.ic_pin'))
+              .width(22)
+              .height(22)
+              .fillColor(T.colors.textPrimary)
+              .margin({ right: T.spacing.md })
+            Text(menu.isPinned ? 'Unpin' : 'Pin')
+              .fontSize(T.typography.body.fontSize)
+              .fontColor(T.colors.textPrimary)
+              .layoutWeight(1)
+          }
+          .width('100%')
+          .alignItems(VerticalAlign.Center)
+          .padding({
+            left: T.spacing.screenInset,
+            right: T.spacing.screenInset,
+            top: T.spacing.md,
+            bottom: T.spacing.md
+          })
+          .onClick(() => {
+            if (menu.isPinned) {
+              this.onDispatch(new UnpinMessage());
+            } else {
+              this.onDispatch(new PinMessage());
+            }
           })
         }
 

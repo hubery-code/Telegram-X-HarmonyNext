@@ -14,6 +14,7 @@ import { describe, it, expect } from '@ohos/hypium';
 import {
   Chat,
   encodeChat,
+  Message,
   DraftMessage,
   DraftMessageContentText,
   FormattedText,
@@ -898,6 +899,95 @@ export default function messageProjectionTest(): void {
         expect(rType['@type']).assertEqual('reactionTypeEmoji');
         expect(rType['emoji']).assertEqual('🔥');
       }
+    });
+
+    // ---- MSG-108 置顶消息操作与监听 ----
+
+    it('pinChatMessageSendsPinChatMessageRequest', 0, async (): Promise<void> => {
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const scope: AccountScope = createScope(bridge);
+      const projection: MessageProjection = new MessageProjection(42, scope);
+
+      const result: Result<TdPendingRequest, AppError> = projection.pinChatMessage(1234, true, false);
+      expect(result.ok).assertTrue();
+
+      const req: Record<string, TdWireValue> | null = findSentRequest(bridge, 'pinChatMessage');
+      expect(req !== null).assertTrue();
+      if (req !== null) {
+        expect(req['chat_id']).assertEqual(42);
+        expect(req['message_id']).assertEqual(1234);
+        expect(req['disable_notification']).assertEqual(true);
+        expect(req['only_for_self']).assertEqual(false);
+      }
+    });
+
+    it('unpinChatMessageSendsUnpinChatMessageRequest', 0, async (): Promise<void> => {
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const scope: AccountScope = createScope(bridge);
+      const projection: MessageProjection = new MessageProjection(42, scope);
+
+      const result: Result<TdPendingRequest, AppError> = projection.unpinChatMessage(1234);
+      expect(result.ok).assertTrue();
+
+      const req: Record<string, TdWireValue> | null = findSentRequest(bridge, 'unpinChatMessage');
+      expect(req !== null).assertTrue();
+      if (req !== null) {
+        expect(req['chat_id']).assertEqual(42);
+        expect(req['message_id']).assertEqual(1234);
+      }
+    });
+
+    it('unpinAllChatMessagesSendsUnpinAllChatMessagesRequest', 0, async (): Promise<void> => {
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const scope: AccountScope = createScope(bridge);
+      const projection: MessageProjection = new MessageProjection(42, scope);
+
+      const result: Result<TdPendingRequest, AppError> = projection.unpinAllChatMessages();
+      expect(result.ok).assertTrue();
+
+      const req: Record<string, TdWireValue> | null = findSentRequest(bridge, 'unpinAllChatMessages');
+      expect(req !== null).assertTrue();
+      if (req !== null) {
+        expect(req['chat_id']).assertEqual(42);
+      }
+    });
+
+    it('updateMessageIsPinnedUpdatesMessageAndNotifiesListener', 0, async (): Promise<void> => {
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const scope: AccountScope = createScope(bridge);
+      const projection: MessageProjection = new MessageProjection(42, scope);
+
+      projection.start();
+
+      const msg: Message = new Message();
+      msg.id = 1234;
+      msg.chat_id = 42;
+      msg.is_pinned = false;
+      projection.addCachedMessage(msg);
+
+      expect(projection.state.messages.length).assertEqual(1);
+      expect(projection.state.messages[0].is_pinned).assertEqual(false);
+
+      let notifiedMsgId: number = 0;
+      let notifiedIsPinned: boolean = false;
+      projection.setOnPinnedMessageChanged((msgId: number, isPinned: boolean): void => {
+        notifiedMsgId = msgId;
+        notifiedIsPinned = isPinned;
+      });
+
+      const pinUpdateFields: Record<string, TdWireValue> = {};
+      pinUpdateFields['chat_id'] = 42;
+      pinUpdateFields['message_id'] = 1234;
+      pinUpdateFields['is_pinned'] = true;
+
+      bridge.emitUpdate(scope.clientId, 'updateMessageIsPinned', pinUpdateFields);
+      await flushAsync();
+
+      expect(projection.state.messages[0].is_pinned).assertEqual(true);
+      expect(notifiedMsgId).assertEqual(1234);
+      expect(notifiedIsPinned).assertEqual(true);
+
+      projection.stop();
     });
 
   });

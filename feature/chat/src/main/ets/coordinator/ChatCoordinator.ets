@@ -186,6 +186,8 @@ import {
   CancelMediaDownloadEffect,
   FetchChatSearch,
   JumpToMessage,
+  PinMessageEffect,
+  UnpinMessageEffect,
   JoinChannelEffect,
   ToggleReactionEffect,
   OpenCommentsEffect,
@@ -535,7 +537,10 @@ export class ChatCoordinator {
     // MSG-109：先按已知信息补一次副标题（chatKind 未回前为 no-op），
     // getChat 回包 / 用户状态订阅 / 在线人数订阅到达后各自重算。
     this.buildHeaderSubtitle();
-    // MSG-108：加载会话置顶消息
+    // MSG-108：加载会话置顶消息与监听动态变更
+    this.projection.setOnPinnedMessageChanged((_messageId: number, _isPinned: boolean) => {
+      this.fetchPinnedMessage();
+    });
     this.fetchPinnedMessage();
     this.dispatch(new LoadInitialMessages());
   }
@@ -1904,7 +1909,8 @@ export class ChatCoordinator {
       senderInfo.userId,
       isChannelPost,
       reactionChips,
-      commentCount
+      commentCount,
+      message.is_pinned ?? false
     );
   }
 
@@ -2036,7 +2042,8 @@ export class ChatCoordinator {
       senderInfo.userId,
       isChannelPost,
       albumReactionChips,
-      albumCommentCount
+      albumCommentCount,
+      lastMsg.is_pinned ?? false
     );
   }
 
@@ -2510,13 +2517,17 @@ export class ChatCoordinator {
                 ));
                 return;
               }
+              const cachedMsg: Message | undefined = this.projection.getMessageById(fetch.messageId);
+              const isPinned: boolean = cachedMsg !== undefined && (cachedMsg.is_pinned ?? false);
               this.dispatch(new OnMessageActionMenuLoaded(
                 fetch.messageId,
                 props.can_be_edited,
                 props.can_be_deleted_only_for_self,
                 props.can_be_deleted_for_all_users,
                 props.can_be_forwarded,
-                props.can_be_saved
+                props.can_be_saved,
+                props.can_be_pinned,
+                isPinned
               ));
             }
           }).catch(() => {
@@ -2574,6 +2585,63 @@ export class ChatCoordinator {
             if (res.ok) {
               // 成功路径无动作：气泡由 updateDeleteMessages 移出列表。
               this.logger.info(TAG, 'delete_messages_ok', `chatId=${del.chatId}`);
+            }
+          }).catch(() => {
+          });
+        }
+        break;
+      }
+
+      case 'pinMessageEffect': {
+        const pin: PinMessageEffect = effect as PinMessageEffect;
+        this.logger.info(TAG, 'pin_message',
+          `chatId=${pin.chatId},messageId=${pin.messageId},disableNotification=${pin.disableNotification}`);
+        const result: Result<TdPendingRequest, AppError> =
+          this.projection.pinChatMessage(pin.messageId, pin.disableNotification, pin.onlyForSelf);
+        if (result.err) {
+          this.logger.logError(TAG, result.error);
+          this.dispatch(new OnMessageActionFailed(result.error));
+        }
+        if (result.ok) {
+          result.value.promise.then((res: Result<TdWireObject, AppError>) => {
+            if (this.destroyed) {
+              return;
+            }
+            if (res.err) {
+              this.logger.logError(TAG, res.error);
+              this.dispatch(new OnMessageActionFailed(res.error));
+            }
+            if (res.ok) {
+              this.logger.info(TAG, 'pin_message_ok', `messageId=${pin.messageId}`);
+              this.fetchPinnedMessage();
+            }
+          }).catch(() => {
+          });
+        }
+        break;
+      }
+
+      case 'unpinMessageEffect': {
+        const unpin: UnpinMessageEffect = effect as UnpinMessageEffect;
+        this.logger.info(TAG, 'unpin_message', `chatId=${unpin.chatId},messageId=${unpin.messageId}`);
+        const result: Result<TdPendingRequest, AppError> =
+          this.projection.unpinChatMessage(unpin.messageId);
+        if (result.err) {
+          this.logger.logError(TAG, result.error);
+          this.dispatch(new OnMessageActionFailed(result.error));
+        }
+        if (result.ok) {
+          result.value.promise.then((res: Result<TdWireObject, AppError>) => {
+            if (this.destroyed) {
+              return;
+            }
+            if (res.err) {
+              this.logger.logError(TAG, res.error);
+              this.dispatch(new OnMessageActionFailed(res.error));
+            }
+            if (res.ok) {
+              this.logger.info(TAG, 'unpin_message_ok', `messageId=${unpin.messageId}`);
+              this.fetchPinnedMessage();
             }
           }).catch(() => {
           });

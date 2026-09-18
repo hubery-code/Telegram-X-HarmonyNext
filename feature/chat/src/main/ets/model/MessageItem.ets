@@ -68,6 +68,8 @@ export class MessageItem {
   readonly reactionChips: ReactionChip[];
   /** CHANNEL-101：消息评论数（0=无评论）。 */
   readonly commentCount: number;
+  /** MSG-108：是否置顶消息。 */
+  readonly isPinned: boolean;
 
   constructor(
     messageId: number,
@@ -98,7 +100,8 @@ export class MessageItem {
     senderUserId: number = 0,
     isChannelPost: boolean = false,
     reactionChips: ReactionChip[] = [],
-    commentCount: number = 0
+    commentCount: number = 0,
+    isPinned: boolean = false
   ) {
     this.messageId = messageId;
     this.text = text;
@@ -129,6 +132,7 @@ export class MessageItem {
     this.isChannelPost = isChannelPost;
     this.reactionChips = reactionChips;
     this.commentCount = commentCount;
+    this.isPinned = isPinned;
   }
 }
 

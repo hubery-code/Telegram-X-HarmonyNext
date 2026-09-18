@@ -61,6 +61,8 @@ import {
   OnPinnedMessageLoaded,
   DismissPinnedBar,
   JumpToPinnedMessage,
+  PinMessage,
+  UnpinMessage,
   JoinChannel,
   OnChannelMemberStatusChanged,
   OpenMessageComments,
@@ -94,6 +96,8 @@ import {
   ResendMessage,
   FetchChatSearch,
   JumpToMessage,
+  PinMessageEffect,
+  UnpinMessageEffect,
   JoinChannelEffect,
   OpenCommentsEffect,
   ToggleReactionEffect,
@@ -1454,6 +1458,59 @@ export default function chatReducerTest() {
       );
       expect(result.state === state).assertTrue();
       expect(result.effects.length).assertEqual(0);
+    });
+
+    it('onMessageActionMenuLoaded_withCanBePinned_setsShowPinAndIsPinned', 0, () => {
+      const msg: MessageItem = makeTextMessage(10, false, 'Hello pin');
+      const state: ChatUiState = makeStateWith([msg]);
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        state,
+        new OnMessageActionMenuLoaded(10, false, true, true, true, true, true, false),
+        makeEnv()
+      );
+      expect(result.state.actionMenu !== null).assertTrue();
+      expect(result.state.actionMenu!.showPin).assertTrue();
+      expect(result.state.actionMenu!.isPinned).assertFalse();
+    });
+
+    it('pinMessage_emitsPinMessageEffectAndDismissesMenu', 0, () => {
+      const msg: MessageItem = makeTextMessage(10, false, 'Hello pin');
+      const menu: MessageActionMenuState = new MessageActionMenuState(
+        10, true, false, true, true, false, false, false, null, false, true, false
+      );
+      const state: ChatUiState = makeStateWith([msg], '', null, menu);
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        state,
+        new PinMessage(true, false),
+        makeEnv()
+      );
+      expect(result.state.actionMenu === null).assertTrue();
+      expect(result.effects.length).assertEqual(1);
+      expect(result.effects[0].kind).assertEqual('pinMessageEffect');
+      const effect: PinMessageEffect = result.effects[0] as PinMessageEffect;
+      expect(effect.chatId).assertEqual(42);
+      expect(effect.messageId).assertEqual(10);
+      expect(effect.disableNotification).assertTrue();
+      expect(effect.onlyForSelf).assertFalse();
+    });
+
+    it('unpinMessage_emitsUnpinMessageEffectAndDismissesMenu', 0, () => {
+      const msg: MessageItem = makeTextMessage(10, false, 'Hello unpin');
+      const menu: MessageActionMenuState = new MessageActionMenuState(
+        10, true, false, true, true, false, false, false, null, false, true, true
+      );
+      const state: ChatUiState = makeStateWith([msg], '', null, menu);
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        state,
+        new UnpinMessage(),
+        makeEnv()
+      );
+      expect(result.state.actionMenu === null).assertTrue();
+      expect(result.effects.length).assertEqual(1);
+      expect(result.effects[0].kind).assertEqual('unpinMessageEffect');
+      const effect: UnpinMessageEffect = result.effects[0] as UnpinMessageEffect;
+      expect(effect.chatId).assertEqual(42);
+      expect(effect.messageId).assertEqual(10);
     });
 
     // ---- CHANNEL-101 频道模式测试 ----
