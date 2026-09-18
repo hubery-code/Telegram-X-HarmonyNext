@@ -66,7 +66,10 @@ import {
   SettingsIntent,
   SettingsCoordinator,
   SwitchAccount,
-  RequestAddAccount
+  RequestAddAccount,
+  CloseDevicesPage,
+  CloseAccountSwitcher,
+  CancelLogout
 } from '@tgx/feature-settings';
 import {
   SearchPage,
@@ -244,6 +247,21 @@ struct Index {
       }
       if (this.chatCoordinator !== null) {
         this.chatDispatch(new BackToChatList());
+        return true;
+      }
+      return this.navController.pop();
+    }
+    if (this.currentRoute.name === 'settings' || this.currentRoute.name === 'settingsSection') {
+      if (this.settingsUiState.showDevicesPage) {
+        this.settingsDispatch(new CloseDevicesPage());
+        return true;
+      }
+      if (this.settingsUiState.showAccountSwitcher) {
+        this.settingsDispatch(new CloseAccountSwitcher());
+        return true;
+      }
+      if (this.settingsUiState.showLogoutConfirm) {
+        this.settingsDispatch(new CancelLogout());
         return true;
       }
       return this.navController.pop();
