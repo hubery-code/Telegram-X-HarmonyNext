@@ -27,7 +27,8 @@ import {
   MessageSticker,
   MessageText,
   DraftMessageContentText,
-  TdMessageContent
+  TdMessageContent,
+  ChatTypeSupergroup
 } from '@tgx/core-td-api-generated';
 import {
   ChatListProjection,
@@ -40,8 +41,8 @@ import {
 import { TdPendingRequest, TdWireObject } from '@tgx/td-gateway';
 import { Result } from '@tgx/core-common';
 import { ReducerEnv, ReducerResult } from '@tgx/feature-template';
-import { ChatListItem, avatarColorForChatId, avatarLetterForTitle } from '../model/ChatListItem';
-import { ChatListUiState } from '../contract/ChatListUiState';
+import { ChatListItem, ChatCategory, avatarColorForChatId, avatarLetterForTitle } from '../model/ChatListItem';
+import { ChatListUiState, ChatFolderTab } from '../contract/ChatListUiState';
 import {
   ChatListIntent,
   LoadChats,
@@ -269,7 +270,38 @@ export class ChatListCoordinator {
       }
     }
     const archiveChatCount: number = archiveChatIds.length;
-    this.dispatch(new OnChatsLoaded(items, archiveUnreadCount, archiveChatCount));
+
+    let allUnread: number = 0;
+    let personalUnread: number = 0;
+    let groupsUnread: number = 0;
+    let channelsUnread: number = 0;
+    let unreadTotal: number = 0;
+
+    for (let i = 0; i < items.length; i++) {
+      const item: ChatListItem = items[i];
+      const isUnread: boolean = item.unreadCount > 0 || item.isMarkedAsUnread;
+      if (isUnread) {
+        allUnread++;
+        unreadTotal++;
+        if (item.category === 'private') {
+          personalUnread++;
+        } else if (item.category === 'group') {
+          groupsUnread++;
+        } else if (item.category === 'channel') {
+          channelsUnread++;
+        }
+      }
+    }
+
+    const folders: readonly ChatFolderTab[] = [
+      { id: 'all', title: 'All', unreadCount: allUnread },
+      { id: 'personal', title: 'Personal', unreadCount: personalUnread },
+      { id: 'groups', title: 'Groups', unreadCount: groupsUnread },
+      { id: 'channels', title: 'Channels', unreadCount: channelsUnread },
+      { id: 'unread', title: 'Unread', unreadCount: unreadTotal }
+    ];
+
+    this.dispatch(new OnChatsLoaded(items, archiveUnreadCount, archiveChatCount, folders));
   }
 
   private requestAvatarDownload(fileId: number): void {
@@ -329,6 +361,17 @@ export class ChatListCoordinator {
       if (chat.notification_settings !== null && chat.notification_settings !== undefined) {
         isMuted = chat.notification_settings.mute_for > 0;
       }
+      let category: ChatCategory = 'private';
+      if (chat.type_ !== null && chat.type_ !== undefined) {
+        if (chat.type_.type === 'chatTypePrivate' || chat.type_.type === 'chatTypeSecret') {
+          category = 'private';
+        } else if (chat.type_.type === 'chatTypeBasicGroup') {
+          category = 'group';
+        } else if (chat.type_.type === 'chatTypeSupergroup') {
+          const supergroup: ChatTypeSupergroup = chat.type_ as ChatTypeSupergroup;
+          category = supergroup.is_channel ? 'channel' : 'group';
+        }
+      }
       items.push(new ChatListItem(
         chat.id,
         chat.title,
@@ -342,7 +385,8 @@ export class ChatListCoordinator {
         chat.is_marked_as_unread,
         avatarPath,
         draftText,
-        isMuted
+        isMuted,
+        category
       ));
     }
     return items;

@@ -17,7 +17,7 @@
 
 import { LightTheme } from '@tgx/core-design-system';
 import { ChatListItem } from '../model/ChatListItem';
-import { ChatListUiState, ChatActionMenuState } from '../contract/ChatListUiState';
+import { ChatListUiState, ChatActionMenuState, ChatFolderTab, filterChatsByFolder } from '../contract/ChatListUiState';
 import { DrawerState } from '../contract/DrawerState';
 import { DrawerMenu } from './DrawerMenu';
 import {
@@ -30,7 +30,8 @@ import {
   ToggleChatArchived,
   OpenArchivedChats,
   CloseArchivedChats,
-  DismissChatActionMenu
+  DismissChatActionMenu,
+  SelectChatFolder
 } from '../contract/ChatListIntent';
 
 const T = LightTheme;
@@ -40,6 +41,8 @@ const BADGE_HEIGHT: number = 20;
 const SETTINGS_BUTTON_SIZE: number = 44;
 /** INTEG-002：搜索入口行高（vp）。 */
 const SEARCH_BAR_HEIGHT: number = 40;
+/** FOLDERS-101：Folder 标签栏高（vp）。 */
+const FOLDER_TAB_HEIGHT: number = 40;
 const FAB_SIZE: number = 56;
 const ONE_DAY_MS: number = 24 * 60 * 60 * 1000;
 const WEEKDAY_NAMES: string[] = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -90,16 +93,12 @@ function toSandboxUri(path: string | null): string {
 
 /**
  * 会话行的 LazyForEach key：chatId + 展示相关内容散列
- * （标题/预览/未读数/时间戳/置顶态/手动未读标记/头像路径）。
- *
- * MSG-108：置顶标与未读圆点都是"同一 chatId 的原地变更"（置顶时 chatId 不变），
- * 必须进 key 才会重渲——与 MSG-104 已读勾/ MSG-106 勾选圈同源的坑。
- * 注意置顶导致的**重排序**由 items 顺序变化驱动，不依赖 key。
+ * （标题/预览/未读数/时间戳/置顶态/手动未读标记/头像路径/类别）。
  */
 function chatRowKey(item: ChatListItem): string {
   const signature: string =
     `${item.title}|${item.lastMessagePreview}|${item.unreadCount}|${item.timestampMs}|` +
-    `${item.isPinned}|${item.isMuted}|${item.isMarkedAsUnread}|${item.avatarPath !== null ? item.avatarPath : ''}|${item.draftText !== null ? item.draftText : ''}`;
+    `${item.isPinned}|${item.isMuted}|${item.isMarkedAsUnread}|${item.category}|${item.avatarPath !== null ? item.avatarPath : ''}|${item.draftText !== null ? item.draftText : ''}`;
   return `${item.chatId}:${fnv1a32(signature)}`;
 }
 
@@ -170,17 +169,49 @@ export struct ChatListPage {
   @State private showDrawer: boolean = false;
   private dataSource: ChatListDataSource = new ChatListDataSource();
 
+  private getFilteredItems(): readonly ChatListItem[] {
+    if (this.uiState.listKind === 'archive') {
+      return this.uiState.items;
+    }
+    return filterChatsByFolder(this.uiState.items, this.uiState.selectedFolderId);
+  }
+
   aboutToAppear(): void {
-    this.dataSource.setItems(this.uiState.items);
+    this.dataSource.setItems(this.getFilteredItems());
     if (this.uiState.items.length === 0 && !this.uiState.isLoading && this.uiState.errorMessage === null) {
       this.onDispatch(new LoadChats());
     }
   }
 
   onUiStateChanged(): void {
-    this.dataSource.setItems(this.uiState.items);
+    this.dataSource.setItems(this.getFilteredItems());
     if (!this.uiState.isLoading) {
       this.isRefreshing = false;
+    }
+  }
+
+  private handleSwipeFolder(deltaX: number): void {
+    if (this.uiState.listKind !== 'main') {
+      return;
+    }
+    const folders: readonly ChatFolderTab[] = this.uiState.folders;
+    if (folders === undefined || folders.length <= 1) {
+      return;
+    }
+    let currentIndex: number = -1;
+    for (let i = 0; i < folders.length; i++) {
+      if (folders[i].id === this.uiState.selectedFolderId) {
+        currentIndex = i;
+        break;
+      }
+    }
+    if (currentIndex < 0) {
+      return;
+    }
+    if (deltaX < -30 && currentIndex < folders.length - 1) {
+      this.onDispatch(new SelectChatFolder(folders[currentIndex + 1].id));
+    } else if (deltaX > 30 && currentIndex > 0) {
+      this.onDispatch(new SelectChatFolder(folders[currentIndex - 1].id));
     }
   }
 
@@ -296,6 +327,11 @@ export struct ChatListPage {
           })
         }
 
+        // FOLDERS-101：主列表展示 Folder 标签栏
+        if (this.uiState.listKind === 'main') {
+          this.FolderTabBar()
+        }
+
         // MSG-108：置顶/标未读失败的错误细条（不挡列表）。
         if (this.uiState.errorMessage !== null && this.uiState.items.length > 0) {
           Text(this.uiState.errorMessage)
@@ -315,13 +351,13 @@ export struct ChatListPage {
           this.ErrorView(this.uiState.errorMessage)
         } else if (this.uiState.isLoading && this.uiState.items.length === 0) {
           this.LoadingView()
-        } else if (this.uiState.items.length === 0) {
-          this.EmptyView()
+        } else if (this.getFilteredItems().length === 0) {
+          this.FolderEmptyView()
         } else {
           Refresh({ refreshing: $$this.isRefreshing }) {
             List() {
-              // CHAT-003：主列表中且存在归档会话时，顶部展示归档区入口行
-              if (this.uiState.listKind === 'main' && (this.uiState.archiveChatCount > 0 || this.uiState.archiveUnreadCount > 0)) {
+              // CHAT-003 / FOLDERS-101：仅在 All 分类下且存在归档会话时，顶部展示归档区入口行
+              if (this.uiState.listKind === 'main' && this.uiState.selectedFolderId === 'all' && (this.uiState.archiveChatCount > 0 || this.uiState.archiveUnreadCount > 0)) {
                 ListItem() {
                   this.ArchivedChatsRow()
                 }
@@ -357,6 +393,12 @@ export struct ChatListPage {
       .width('100%')
       .height('100%')
       .backgroundColor(T.colors.background)
+      .parallelGesture(
+        PanGesture({ direction: PanDirection.Horizontal, distance: 30 })
+          .onActionEnd((event: GestureEvent) => {
+            this.handleSwipeFolder(event.offsetX);
+          })
+      )
 
       // TGX 标志性悬浮按钮 (Floating Action Button FAB)：圆形 56x56，背景 T.colors.accent，内嵌 24x24 白色 ic_compose 图标，带阴影
       Column() {
@@ -721,17 +763,153 @@ export struct ChatListPage {
     .alignItems(HorizontalAlign.Center)
   }
 
+  private getFoldersList(): ChatFolderTab[] {
+    return this.uiState.folders.slice(0);
+  }
+
   @Builder
-  EmptyView() {
+  FolderTabBar() {
+    Scroll() {
+      Row() {
+        ForEach(this.getFoldersList(), (folder: ChatFolderTab) => {
+          Column() {
+            Row() {
+              Text(folder.title)
+                .fontSize(T.typography.subheadline.fontSize)
+                .fontWeight(this.uiState.selectedFolderId === folder.id ? FontWeight.Bold : FontWeight.Medium)
+                .fontColor(this.uiState.selectedFolderId === folder.id ? T.colors.accent : T.colors.textSecondary)
+
+              if (folder.unreadCount > 0) {
+                Text(folder.unreadCount > 99 ? '99+' : `${folder.unreadCount}`)
+                  .fontSize(T.typography.caption.fontSize)
+                  .fontWeight(FontWeight.Bold)
+                  .fontColor(this.uiState.selectedFolderId === folder.id ? T.colors.textOnAccent : T.colors.textSecondary)
+                  .backgroundColor(this.uiState.selectedFolderId === folder.id ? T.colors.accent : T.colors.surfaceVariant)
+                  .borderRadius(T.radius.full)
+                  .height(18)
+                  .constraintSize({ minWidth: 18 })
+                  .padding({ left: 5, right: 5 })
+                  .textAlign(TextAlign.Center)
+                  .margin({ left: T.spacing.xs })
+              }
+            }
+            .alignItems(VerticalAlign.Center)
+            .padding({
+              left: T.spacing.md,
+              right: T.spacing.md,
+              top: T.spacing.sm,
+              bottom: T.spacing.sm
+            })
+          }
+          .border({
+            width: { bottom: 3 },
+            color: { bottom: this.uiState.selectedFolderId === folder.id ? T.colors.accent : Color.Transparent }
+          })
+          .alignItems(HorizontalAlign.Center)
+          .onClick(() => {
+            this.onDispatch(new SelectChatFolder(folder.id));
+          })
+        }, (folder: ChatFolderTab) => `${folder.id}:${folder.unreadCount}:${this.uiState.selectedFolderId === folder.id}`)
+      }
+      .padding({
+        left: T.spacing.sm,
+        right: T.spacing.sm
+      })
+    }
+    .scrollable(ScrollDirection.Horizontal)
+    .scrollBar(BarState.Off)
+    .width('100%')
+    .height(FOLDER_TAB_HEIGHT)
+  }
+
+  @Builder
+  FolderEmptyView() {
     Column() {
-      Text(this.uiState.listKind === 'archive' ? 'No archived chats' : 'No chats yet')
+      Image(this.getEmptyIcon())
+        .width(56)
+        .height(56)
+        .fillColor(T.colors.textSecondary)
+        .opacity(0.5)
+        .margin({ bottom: T.spacing.md })
+
+      Text(this.getEmptyTitle())
+        .fontSize(T.typography.title.fontSize)
+        .fontWeight(T.typography.title.fontWeight)
+        .fontColor(T.colors.textPrimary)
+        .margin({ bottom: T.spacing.xs })
+
+      Text(this.getEmptySubtitle())
         .fontSize(T.typography.body.fontSize)
         .fontColor(T.colors.textSecondary)
+        .textAlign(TextAlign.Center)
+        .padding({ left: T.spacing.xxl, right: T.spacing.xxl })
     }
     .width('100%')
     .layoutWeight(1)
     .justifyContent(FlexAlign.Center)
     .alignItems(HorizontalAlign.Center)
+  }
+
+  private getEmptyIcon(): Resource {
+    if (this.uiState.listKind === 'archive') {
+      return $r('app.media.ic_archive');
+    }
+    switch (this.uiState.selectedFolderId) {
+      case 'personal':
+        return $r('app.media.ic_contacts');
+      case 'groups':
+        return $r('app.media.ic_group');
+      case 'channels':
+        return $r('app.media.ic_comments');
+      case 'unread':
+        return $r('app.media.ic_check_double');
+      case 'all':
+      default:
+        return $r('app.media.ic_folder');
+    }
+  }
+
+  private getEmptyTitle(): string {
+    if (this.uiState.listKind === 'archive') {
+      return 'No archived chats';
+    }
+    switch (this.uiState.selectedFolderId) {
+      case 'personal':
+        return 'No personal chats';
+      case 'groups':
+        return 'No groups yet';
+      case 'channels':
+        return 'No channels yet';
+      case 'unread':
+        return 'All caught up';
+      case 'all':
+      default:
+        return 'No chats yet';
+    }
+  }
+
+  private getEmptySubtitle(): string {
+    if (this.uiState.listKind === 'archive') {
+      return 'Chats you archive will appear here.';
+    }
+    switch (this.uiState.selectedFolderId) {
+      case 'personal':
+        return 'Your direct messages with people will appear here.';
+      case 'groups':
+        return 'Group conversations will appear here.';
+      case 'channels':
+        return 'Channels you subscribe to will appear here.';
+      case 'unread':
+        return 'You have read all incoming messages.';
+      case 'all':
+      default:
+        return 'Start a conversation using the button below.';
+    }
+  }
+
+  @Builder
+  EmptyView() {
+    this.FolderEmptyView()
   }
 
   @Builder

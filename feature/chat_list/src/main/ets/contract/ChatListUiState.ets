@@ -42,6 +42,40 @@ export class ChatActionMenuState {
   }
 }
 
+export interface ChatFolderTab {
+  readonly id: string;
+  readonly title: string;
+  readonly unreadCount: number;
+}
+
+export const DEFAULT_CHAT_FOLDERS: readonly ChatFolderTab[] = [
+  { id: 'all', title: 'All', unreadCount: 0 },
+  { id: 'personal', title: 'Personal', unreadCount: 0 },
+  { id: 'groups', title: 'Groups', unreadCount: 0 },
+  { id: 'channels', title: 'Channels', unreadCount: 0 },
+  { id: 'unread', title: 'Unread', unreadCount: 0 }
+];
+
+/** FOLDERS-101：按 selectedFolderId 过滤会话列表。 */
+export function filterChatsByFolder(items: readonly ChatListItem[], folderId: string): readonly ChatListItem[] {
+  if (folderId === 'all') {
+    return items;
+  }
+  if (folderId === 'personal') {
+    return items.filter((item: ChatListItem) => item.category === 'private');
+  }
+  if (folderId === 'groups') {
+    return items.filter((item: ChatListItem) => item.category === 'group');
+  }
+  if (folderId === 'channels') {
+    return items.filter((item: ChatListItem) => item.category === 'channel');
+  }
+  if (folderId === 'unread') {
+    return items.filter((item: ChatListItem) => item.unreadCount > 0 || item.isMarkedAsUnread);
+  }
+  return items;
+}
+
 export interface ChatListUiStateOptions {
   readonly items?: readonly ChatListItem[];
   readonly isLoading?: boolean;
@@ -50,6 +84,8 @@ export interface ChatListUiStateOptions {
   readonly listKind?: ChatListKind;
   readonly archiveUnreadCount?: number;
   readonly archiveChatCount?: number;
+  readonly selectedFolderId?: string;
+  readonly folders?: readonly ChatFolderTab[];
 }
 
 export class ChatListUiState implements UiState {
@@ -60,6 +96,8 @@ export class ChatListUiState implements UiState {
   readonly listKind: ChatListKind;
   readonly archiveUnreadCount: number;
   readonly archiveChatCount: number;
+  readonly selectedFolderId: string;
+  readonly folders: readonly ChatFolderTab[];
 
   constructor(
     items: readonly ChatListItem[],
@@ -68,7 +106,9 @@ export class ChatListUiState implements UiState {
     actionMenu: ChatActionMenuState | null = null,
     listKind: ChatListKind = 'main',
     archiveUnreadCount: number = 0,
-    archiveChatCount: number = 0
+    archiveChatCount: number = 0,
+    selectedFolderId: string = 'all',
+    folders: readonly ChatFolderTab[] = DEFAULT_CHAT_FOLDERS
   ) {
     this.items = items;
     this.isLoading = isLoading;
@@ -77,10 +117,12 @@ export class ChatListUiState implements UiState {
     this.listKind = listKind;
     this.archiveUnreadCount = archiveUnreadCount;
     this.archiveChatCount = archiveChatCount;
+    this.selectedFolderId = selectedFolderId;
+    this.folders = folders;
   }
 
   static initial(): ChatListUiState {
-    return new ChatListUiState([], false, null, null, 'main', 0, 0);
+    return new ChatListUiState([], false, null, null, 'main', 0, 0, 'all', DEFAULT_CHAT_FOLDERS);
   }
 
   copyWith(options: ChatListUiStateOptions): ChatListUiState {
@@ -91,7 +133,9 @@ export class ChatListUiState implements UiState {
       options.actionMenu !== undefined ? options.actionMenu : this.actionMenu,
       options.listKind !== undefined ? options.listKind : this.listKind,
       options.archiveUnreadCount !== undefined ? options.archiveUnreadCount : this.archiveUnreadCount,
-      options.archiveChatCount !== undefined ? options.archiveChatCount : this.archiveChatCount
+      options.archiveChatCount !== undefined ? options.archiveChatCount : this.archiveChatCount,
+      options.selectedFolderId !== undefined ? options.selectedFolderId : this.selectedFolderId,
+      options.folders !== undefined ? options.folders : this.folders
     );
   }
 }

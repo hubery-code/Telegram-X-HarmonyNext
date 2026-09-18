@@ -25,7 +25,8 @@ import {
   OnChatsLoaded,
   OnChatsLoadFailed,
   ChatActionRequested,
-  OnChatActionFailed
+  OnChatActionFailed,
+  SelectChatFolder
 } from '../contract/ChatListIntent';
 import {
   ChatListEffect,
@@ -83,6 +84,14 @@ export const chatListReducer: Reducer<ChatListUiState, ChatListIntent, ChatListE
       return reduced(state, effects);
     }
 
+    case 'selectChatFolder': {
+      const selectFolder: SelectChatFolder = intent as SelectChatFolder;
+      if (state.selectedFolderId === selectFolder.folderId) {
+        return reduced(state);
+      }
+      return reduced(state.copyWith({ selectedFolderId: selectFolder.folderId }));
+    }
+
     case 'onChatsLoaded': {
       const loadedIntent: OnChatsLoaded = intent as OnChatsLoaded;
       const nextState: ChatListUiState = state.copyWith({
@@ -90,7 +99,8 @@ export const chatListReducer: Reducer<ChatListUiState, ChatListIntent, ChatListE
         isLoading: false,
         errorMessage: null,
         archiveUnreadCount: loadedIntent.archiveUnreadCount,
-        archiveChatCount: loadedIntent.archiveChatCount
+        archiveChatCount: loadedIntent.archiveChatCount,
+        folders: loadedIntent.folders
       });
       return reduced(nextState);
     }

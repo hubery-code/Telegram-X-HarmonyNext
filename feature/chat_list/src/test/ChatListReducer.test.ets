@@ -12,7 +12,7 @@
 import { describe, it, expect } from '@ohos/hypium';
 import { ManualClock, SequentialIdGenerator, AppErrors } from '@tgx/core-common';
 import { ReducerEnv, ReducerResult } from '@tgx/feature-template';
-import { ChatListUiState, ChatActionMenuState } from '../main/ets/contract/ChatListUiState';
+import { ChatListUiState, ChatActionMenuState, ChatFolderTab, filterChatsByFolder } from '../main/ets/contract/ChatListUiState';
 import { ChatListItem } from '../main/ets/model/ChatListItem';
 import {
   ChatListIntent,
@@ -24,7 +24,8 @@ import {
   CloseArchivedChats,
   DismissChatActionMenu,
   OnChatActionFailed,
-  OnChatsLoaded
+  OnChatsLoaded,
+  SelectChatFolder
 } from '../main/ets/contract/ChatListIntent';
 import {
   ChatListEffect,
@@ -47,7 +48,8 @@ function makeItem(
   chatId: number,
   unreadCount: number = 0,
   isPinned: boolean = false,
-  isMarkedAsUnread: boolean = false
+  isMarkedAsUnread: boolean = false,
+  category: 'private' | 'group' | 'channel' = 'private'
 ): ChatListItem {
   return new ChatListItem(
     chatId,
@@ -58,7 +60,11 @@ function makeItem(
     '#FF000000',
     'C',
     isPinned,
-    isMarkedAsUnread
+    isMarkedAsUnread,
+    null,
+    null,
+    false,
+    category
   );
 }
 
@@ -360,6 +366,93 @@ export default function chatListReducerTest() {
 
       expect(loaded.state.archiveUnreadCount).assertEqual(12);
       expect(loaded.state.archiveChatCount).assertEqual(3);
+    });
+
+    // ---- FOLDERS-101 会话分组标签栏与过滤 ----
+
+    it('selectChatFolder_switchesSelectedFolderId', 0, () => {
+      const state: ChatListUiState = makeState([]);
+      expect(state.selectedFolderId).assertEqual('all');
+
+      const result: ReducerResult<ChatListUiState, ChatListEffect> = chatListReducer(
+        state,
+        new SelectChatFolder('personal'),
+        makeEnv()
+      );
+
+      expect(result.state.selectedFolderId).assertEqual('personal');
+      expect(result.effects.length).assertEqual(0);
+    });
+
+    it('selectChatFolder_sameId_returnsSameReference', 0, () => {
+      const state: ChatListUiState = makeState([]);
+      const result: ReducerResult<ChatListUiState, ChatListEffect> = chatListReducer(
+        state,
+        new SelectChatFolder('all'),
+        makeEnv()
+      );
+
+      expect(result.state === state).assertTrue();
+    });
+
+    it('onChatsLoaded_carriesCustomFolders', 0, () => {
+      const state: ChatListUiState = makeState([]);
+      const customFolders: ChatFolderTab[] = [
+        { id: 'all', title: 'All', unreadCount: 5 },
+        { id: 'personal', title: 'Personal', unreadCount: 2 },
+        { id: 'groups', title: 'Groups', unreadCount: 3 },
+        { id: 'channels', title: 'Channels', unreadCount: 0 },
+        { id: 'unread', title: 'Unread', unreadCount: 5 }
+      ];
+
+      const loaded: ReducerResult<ChatListUiState, ChatListEffect> = chatListReducer(
+        state,
+        new OnChatsLoaded([makeItem(1)], 0, 0, customFolders),
+        makeEnv()
+      );
+
+      expect(loaded.state.folders.length).assertEqual(5);
+      expect(loaded.state.folders[0].unreadCount).assertEqual(5);
+      expect(loaded.state.folders[1].unreadCount).assertEqual(2);
+      expect(loaded.state.folders[2].unreadCount).assertEqual(3);
+    });
+
+    it('filterChatsByFolder_filtersCorrectly', 0, () => {
+      const items: ChatListItem[] = [
+        makeItem(1, 0, false, false, 'private'),
+        makeItem(2, 3, false, false, 'group'),
+        makeItem(3, 0, false, true, 'channel'),
+        makeItem(4, 0, false, false, 'group'),
+        makeItem(5, 5, false, false, 'private')
+      ];
+
+      // All: 5 items
+      const all = filterChatsByFolder(items, 'all');
+      expect(all.length).assertEqual(5);
+
+      // Personal: items 1 and 5
+      const personal = filterChatsByFolder(items, 'personal');
+      expect(personal.length).assertEqual(2);
+      expect(personal[0].chatId).assertEqual(1);
+      expect(personal[1].chatId).assertEqual(5);
+
+      // Groups: items 2 and 4
+      const groups = filterChatsByFolder(items, 'groups');
+      expect(groups.length).assertEqual(2);
+      expect(groups[0].chatId).assertEqual(2);
+      expect(groups[1].chatId).assertEqual(4);
+
+      // Channels: item 3
+      const channels = filterChatsByFolder(items, 'channels');
+      expect(channels.length).assertEqual(1);
+      expect(channels[0].chatId).assertEqual(3);
+
+      // Unread: items 2 (unreadCount=3), 3 (isMarkedAsUnread=true), 5 (unreadCount=5)
+      const unread = filterChatsByFolder(items, 'unread');
+      expect(unread.length).assertEqual(3);
+      expect(unread[0].chatId).assertEqual(2);
+      expect(unread[1].chatId).assertEqual(3);
+      expect(unread[2].chatId).assertEqual(5);
     });
   });
 }

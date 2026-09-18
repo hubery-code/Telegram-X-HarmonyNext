@@ -15,6 +15,7 @@
 import { Intent } from '@tgx/feature-template';
 import { AppError } from '@tgx/core-common';
 import { ChatListItem } from '../model/ChatListItem';
+import { ChatFolderTab, DEFAULT_CHAT_FOLDERS } from './ChatListUiState';
 
 export class LoadChats implements Intent {
   readonly kind: 'loadChats' = 'loadChats';
@@ -38,15 +39,27 @@ export class OnChatsLoaded implements Intent {
   readonly items: readonly ChatListItem[];
   readonly archiveUnreadCount: number;
   readonly archiveChatCount: number;
+  readonly folders: readonly ChatFolderTab[];
 
   constructor(
     items: readonly ChatListItem[],
     archiveUnreadCount: number = 0,
-    archiveChatCount: number = 0
+    archiveChatCount: number = 0,
+    folders: readonly ChatFolderTab[] = DEFAULT_CHAT_FOLDERS
   ) {
     this.items = items;
     this.archiveUnreadCount = archiveUnreadCount;
     this.archiveChatCount = archiveChatCount;
+    this.folders = folders;
+  }
+}
+
+export class SelectChatFolder implements Intent {
+  readonly kind: 'selectChatFolder' = 'selectChatFolder';
+  readonly folderId: string;
+
+  constructor(folderId: string) {
+    this.folderId = folderId;
   }
 }
 
@@ -114,6 +127,7 @@ export type ChatListIntent =
   | OnChatsLoadFailed
   | OpenArchivedChats
   | CloseArchivedChats
+  | SelectChatFolder
   | ChatActionRequested
   | ToggleChatPinned
   | ToggleChatMarkedUnread

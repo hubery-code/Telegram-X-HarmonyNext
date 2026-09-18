@@ -14,6 +14,8 @@
  * 两个字段都带默认值 false，保持既有调用点向后兼容。
  */
 
+export type ChatCategory = 'private' | 'group' | 'channel';
+
 export class ChatListItem {
   readonly chatId: number;
   readonly title: string;
@@ -27,6 +29,7 @@ export class ChatListItem {
   readonly avatarPath: string | null;
   readonly draftText: string | null;
   readonly isMuted: boolean;
+  readonly category: ChatCategory;
 
   constructor(
     chatId: number,
@@ -40,7 +43,8 @@ export class ChatListItem {
     isMarkedAsUnread: boolean = false,
     avatarPath: string | null = null,
     draftText: string | null = null,
-    isMuted: boolean = false
+    isMuted: boolean = false,
+    category: ChatCategory = 'private'
   ) {
     this.chatId = chatId;
     this.title = title;
@@ -54,6 +58,7 @@ export class ChatListItem {
     this.avatarPath = avatarPath;
     this.draftText = draftText;
     this.isMuted = isMuted;
+    this.category = category;
   }
 }
 

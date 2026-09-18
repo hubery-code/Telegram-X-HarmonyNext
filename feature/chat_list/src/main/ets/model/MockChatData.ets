@@ -7,7 +7,7 @@
  * 本文件不是 reducer，允许 Date.now()；UI 联调接真实投影后整体替换。
  */
 
-import { ChatListItem, avatarColorForChatId, avatarLetterForTitle } from './ChatListItem';
+import { ChatListItem, ChatCategory, avatarColorForChatId, avatarLetterForTitle } from './ChatListItem';
 
 const MINUTE_MS: number = 60 * 1000;
 
@@ -86,18 +86,22 @@ export function generateMockChats(count: number = 50, baseTimeMs: number = Date.
 
     let title: string;
     let preview: string;
+    let category: ChatCategory = 'private';
     if (i % 10 === 4) {
       title = CHANNEL_NAMES[Math.floor(i / 10) % CHANNEL_NAMES.length];
       preview = snippet;
+      category = 'channel';
     } else if (i % 10 === 9) {
       title = GROUP_NAMES[Math.floor(i / 10) % GROUP_NAMES.length];
       const speaker: string = PERSON_FIRST_NAMES[(i * 3 + 1) % PERSON_FIRST_NAMES.length];
       preview = `${speaker}: ${snippet}`;
+      category = 'group';
     } else {
       const firstName: string = PERSON_FIRST_NAMES[i % PERSON_FIRST_NAMES.length];
       const lastName: string = PERSON_LAST_NAMES[(i * 7 + 3) % PERSON_LAST_NAMES.length];
       title = `${firstName} ${lastName}`;
       preview = snippet;
+      category = 'private';
     }
 
     let unreadCount: number = 0;
@@ -114,7 +118,13 @@ export function generateMockChats(count: number = 50, baseTimeMs: number = Date.
       cursor,
       unreadCount,
       avatarColorForChatId(chatId),
-      avatarLetterForTitle(title)
+      avatarLetterForTitle(title),
+      false,
+      false,
+      null,
+      null,
+      false,
+      category
     ));
 
     // 相邻会话间隔 3..139 分钟，50 条约覆盖 3 天

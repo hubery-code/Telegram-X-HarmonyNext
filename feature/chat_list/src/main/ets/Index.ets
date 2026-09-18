@@ -15,7 +15,10 @@ export {
   ChatListKind,
   ChatListUiStateOptions,
   ChatListUiState,
-  ChatActionMenuState
+  ChatActionMenuState,
+  ChatFolderTab,
+  DEFAULT_CHAT_FOLDERS,
+  filterChatsByFolder
 } from './contract/ChatListUiState';
 
 export {
@@ -26,6 +29,7 @@ export {
   OnChatsLoadFailed,
   OpenArchivedChats,
   CloseArchivedChats,
+  SelectChatFolder,
   ChatActionRequested,
   ToggleChatPinned,
   ToggleChatMarkedUnread,
