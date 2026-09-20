@@ -178,7 +178,14 @@ export interface ChatUiStateOptions {
   readonly voicePlaybackProgress?: number;
   /** VOICE-101：当前语音播放秒数。 */
   readonly voicePlaybackTimeSec?: number;
+  /** EMOJI-101：最近使用的表情符号列表（最新在先）。 */
+  readonly recentEmojis?: readonly string[];
 }
+
+export const DEFAULT_RECENT_EMOJIS: readonly string[] = [
+  '👍', '❤️', '🔥', '🎉', '👏', '😂', '😍', '🤔',
+  '🙏', '😊', '🥰', '😎', '🥳', '😭', '✨', '💯'
+];
 
 export class ChatUiState implements UiState {
   readonly chatId: number;
@@ -234,6 +241,8 @@ export class ChatUiState implements UiState {
   readonly voicePlaybackProgress: number;
   /** VOICE-101：当前语音播放秒数。 */
   readonly voicePlaybackTimeSec: number;
+  /** EMOJI-101：最近使用的表情符号列表（最新在先）。 */
+  readonly recentEmojis: readonly string[];
 
   constructor(
     chatId: number,
@@ -268,7 +277,8 @@ export class ChatUiState implements UiState {
     recordingDurationSec: number = 0,
     playingVoiceMessageId: number | null = null,
     voicePlaybackProgress: number = 0,
-    voicePlaybackTimeSec: number = 0
+    voicePlaybackTimeSec: number = 0,
+    recentEmojis: readonly string[] = DEFAULT_RECENT_EMOJIS
   ) {
     this.chatId = chatId;
     this.chatTitle = chatTitle;
@@ -303,10 +313,11 @@ export class ChatUiState implements UiState {
     this.playingVoiceMessageId = playingVoiceMessageId;
     this.voicePlaybackProgress = voicePlaybackProgress;
     this.voicePlaybackTimeSec = voicePlaybackTimeSec;
+    this.recentEmojis = recentEmojis;
   }
 
   static initial(): ChatUiState {
-    return new ChatUiState(0, '', [], false, true, null, '', null, null, -1, [], 0, 0, false, [], false, false, '', [], false, 0, '', 'unknown', null, false, true, false, null, false, 0, null, 0, 0);
+    return new ChatUiState(0, '', [], false, true, null, '', null, null, -1, [], 0, 0, false, [], false, false, '', [], false, 0, '', 'unknown', null, false, true, false, null, false, 0, null, 0, 0, DEFAULT_RECENT_EMOJIS);
   }
 
   copyWith(options: ChatUiStateOptions): ChatUiState {
@@ -343,7 +354,8 @@ export class ChatUiState implements UiState {
       options.recordingDurationSec !== undefined ? options.recordingDurationSec : this.recordingDurationSec,
       options.playingVoiceMessageId !== undefined ? options.playingVoiceMessageId : this.playingVoiceMessageId,
       options.voicePlaybackProgress !== undefined ? options.voicePlaybackProgress : this.voicePlaybackProgress,
-      options.voicePlaybackTimeSec !== undefined ? options.voicePlaybackTimeSec : this.voicePlaybackTimeSec
+      options.voicePlaybackTimeSec !== undefined ? options.voicePlaybackTimeSec : this.voicePlaybackTimeSec,
+      options.recentEmojis !== undefined ? options.recentEmojis : this.recentEmojis
     );
   }
 }

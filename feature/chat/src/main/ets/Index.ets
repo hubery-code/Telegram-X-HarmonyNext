@@ -38,6 +38,7 @@ export {
 export {
   ChatUiStateOptions,
   ChatUiState,
+  DEFAULT_RECENT_EMOJIS,
   ComposerMode,
   ComposerReplyMode,
   ComposerEditMode,
@@ -88,6 +89,7 @@ export {
   ToggleEmojiBoard,
   InsertEmoji,
   DeleteLastEmojiChar,
+  ClearRecentEmojis,
   CancelMediaDownload,
   ResendFailedMessage,
   OpenChatSearch,

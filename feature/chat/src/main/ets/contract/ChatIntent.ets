@@ -410,6 +410,11 @@ export class DeleteLastEmojiChar implements Intent {
   readonly kind: 'deleteLastEmojiChar' = 'deleteLastEmojiChar';
 }
 
+/** EMOJI-101：清空最近使用的表情列表。 */
+export class ClearRecentEmojis implements Intent {
+  readonly kind: 'clearRecentEmojis' = 'clearRecentEmojis';
+}
+
 /** FILE-103：取消媒体/文件下载。 */
 export class CancelMediaDownload implements Intent {
   readonly kind: 'cancelMediaDownload' = 'cancelMediaDownload';
@@ -660,6 +665,7 @@ export type ChatIntent =
   | ToggleEmojiBoard
   | InsertEmoji
   | DeleteLastEmojiChar
+  | ClearRecentEmojis
   | CancelMediaDownload
   | ResendFailedMessage
   | OpenChatSearch

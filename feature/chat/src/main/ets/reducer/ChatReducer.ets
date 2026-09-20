@@ -93,6 +93,7 @@ import {
   ToggleMessageReaction,
   InsertEmoji,
   DeleteLastEmojiChar,
+  ClearRecentEmojis,
   OpenStickerSet,
   OnStickerSetLoaded,
   OnStickerSetLoadFailed,
@@ -503,14 +504,24 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
 
     case 'insertEmoji': {
       const insertIntent: InsertEmoji = intent as InsertEmoji;
+      const emoji: string = insertIntent.emoji;
+      const filtered: string[] = state.recentEmojis.filter((e: string): boolean => e !== emoji);
+      const nextRecents: string[] = [emoji, ...filtered].slice(0, 32);
       return reduced(state.copyWith({
-        composerText: state.composerText + insertIntent.emoji
+        composerText: state.composerText + emoji,
+        recentEmojis: nextRecents
       }));
     }
 
     case 'deleteLastEmojiChar': {
       return reduced(state.copyWith({
         composerText: removeLastEmojiChar(state.composerText)
+      }));
+    }
+
+    case 'clearRecentEmojis': {
+      return reduced(state.copyWith({
+        recentEmojis: []
       }));
     }
 
@@ -528,6 +539,10 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
     }
 
     case 'backToChatList': {
+      // EMOJI-101：表情面板打开时，返回先关闭面板不离开页面。
+      if (state.showEmojiBoard) {
+        return reduced(state.copyWith({ showEmojiBoard: false }));
+      }
       // VOICE-101：录音态激活时，返回先取消录音。
       if (state.isRecordingVoice) {
         return reduced(

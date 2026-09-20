@@ -43,6 +43,7 @@ import {
   ToggleEmojiBoard,
   InsertEmoji,
   DeleteLastEmojiChar,
+  ClearRecentEmojis,
   CancelMediaDownload,
   ResendFailedMessage,
   OpenChatSearch,
@@ -988,6 +989,66 @@ export default function chatReducerTest() {
       );
 
       expect(result.state.composerText).assertEqual('Hello ');
+    });
+
+    it('insertEmoji_updatesRecentEmojis_prependsAndDedupes', 0, () => {
+      const initial: ChatUiState = makeState('').copyWith({
+        recentEmojis: ['👍', '❤️', '🔥']
+      });
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        initial,
+        new InsertEmoji('🔥'),
+        makeEnv()
+      );
+
+      expect(result.state.composerText).assertEqual('🔥');
+      expect(result.state.recentEmojis.length).assertEqual(3);
+      expect(result.state.recentEmojis[0]).assertEqual('🔥');
+      expect(result.state.recentEmojis[1]).assertEqual('👍');
+      expect(result.state.recentEmojis[2]).assertEqual('❤️');
+    });
+
+    it('insertEmoji_capsRecentEmojisAt32', 0, () => {
+      const recents: string[] = [];
+      for (let i = 0; i < 35; i++) {
+        recents.push(`e${i}`);
+      }
+      const initial: ChatUiState = makeState('').copyWith({ recentEmojis: recents });
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        initial,
+        new InsertEmoji('🎉'),
+        makeEnv()
+      );
+
+      expect(result.state.recentEmojis.length).assertEqual(32);
+      expect(result.state.recentEmojis[0]).assertEqual('🎉');
+    });
+
+    it('clearRecentEmojis_clearsRecentList', 0, () => {
+      const initial: ChatUiState = makeState('').copyWith({
+        recentEmojis: ['👍', '❤️', '🔥']
+      });
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        initial,
+        new ClearRecentEmojis(),
+        makeEnv()
+      );
+
+      expect(result.state.recentEmojis.length).assertEqual(0);
+    });
+
+    it('backToChatList_closesEmojiBoard_whenOpen', 0, () => {
+      const initial: ChatUiState = makeState('').copyWith({
+        showEmojiBoard: true
+      });
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        initial,
+        new BackToChatList(),
+        makeEnv()
+      );
+
+      expect(result.state.showEmojiBoard).assertFalse();
+      expect(result.effects.length).assertEqual(0);
     });
 
     it('pickAndSendPhoto_closesAttachmentMenu', 0, () => {

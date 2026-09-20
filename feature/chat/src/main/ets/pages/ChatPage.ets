@@ -103,6 +103,7 @@ import {
   ToggleEmojiBoard,
   InsertEmoji,
   DeleteLastEmojiChar,
+  ClearRecentEmojis,
   CancelMediaDownload,
   ResendFailedMessage,
   OpenChatSearch,
@@ -702,11 +703,15 @@ export struct ChatPage {
         // EMOJI-101：表情与贴纸面板（非多选态且非未加频道态）
         if (this.uiState.showEmojiBoard && !this.uiState.selectionMode && !(this.uiState.chatKind === 'channel' && !this.uiState.isChannelMember)) {
           EmojiBoard({
+            recentEmojis: this.uiState.recentEmojis.slice(),
             onSelectEmoji: (emoji: string) => {
               this.onDispatch(new InsertEmoji(emoji));
             },
             onDeleteChar: () => {
               this.onDispatch(new DeleteLastEmojiChar());
+            },
+            onClearRecent: () => {
+              this.onDispatch(new ClearRecentEmojis());
             },
             onSelectSticker: (emoji: string) => {
               this.onDispatch(new InsertEmoji(emoji));
@@ -3394,6 +3399,11 @@ export struct ChatPage {
           .padding({ left: T.spacing.md, right: T.spacing.md })
           .onChange((value: string) => {
             this.onDispatch(new ComposerTextChanged(value));
+          })
+          .onFocus(() => {
+            if (this.uiState.showEmojiBoard) {
+              this.onDispatch(new CloseEmojiBoard());
+            }
           })
           .onSubmit(() => {
             this.dispatchSend();

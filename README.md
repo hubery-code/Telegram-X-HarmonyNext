@@ -56,7 +56,7 @@
 | Push 通知 (Blocked) | Telegram 后端暂无华为 Push Kit 原生支持（见 ADR-003），MVP-Core 采用受控前台长连接通信 |
 | 通话 (Deferred) | 语音/视频通话（见 ADR-004，Post-MVP / G4 独立攻关） |
 
-开发 AI 应先阅读 **[计划与架构审计入口](docs/plans/README.md)**。详细工作分配与验收状态见 **[PROGRESS.md](PROGRESS.md)**；功能范围与对齐矩阵见 [docs/product/](docs/product/)。
+开发应先阅读 **[计划与架构审计入口](docs/plans/README.md)**。详细工作分配与验收状态见 **[PROGRESS.md](PROGRESS.md)**；功能范围与对齐矩阵见 [docs/product/](docs/product/)。
 
 ## 架构速览
 

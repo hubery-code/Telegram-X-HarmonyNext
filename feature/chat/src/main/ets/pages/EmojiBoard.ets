@@ -29,7 +29,8 @@ export interface GifPreviewItem {
   readonly tag: string;
 }
 
-const EMOJI_CATEGORIES: string[][] = [
+/** EMOJI-101：静态内置表情分类（对标 Telegram X EmojiSection 体系） */
+const STATIC_EMOJI_CATEGORIES: string[][] = [
   // 0: Smileys & Emotions
   [
     '😀', '😃', '😄', '😁', '😆', '😅', '🤣', '😂', '🙂', '🙃',
@@ -57,7 +58,7 @@ const EMOJI_CATEGORIES: string[][] = [
     '🦁', '🐮', '🐷', '🐸', '🐵', '🐔', '🐧', '🐦', '🦆', '🦅',
     '🦉', '🦇', '🐺', '🐗', '🐴', '🦄', '🐝', '🐛', '🦋', '🐌',
     '🐞', '🐜', '🦟', '🐢', '🐍', '🦎', '🐙', '🦑', '🦐', '🦞',
-    '🦀', '🐡', '🐠', '🐟', '🐬', '🐳', '鲨', '🐊', '🐅', '🐆',
+    '🦀', '🐡', '🐠', '🐟', '🐬', '🐳', '🦈', '🐊', '🐅', '🐆',
     '🦓', '🦍', '🦧', '🐘', '🦛', '🦏', '🐪', '🐫', '🦒', '🦘',
     '🌸', '🌺', '🌻', '🌹', '🌷', '🌼', '🌲', '🌳', '🌴', '🌵',
     '🍀', '🍁', '🍂', '🍃'
@@ -100,10 +101,19 @@ const EMOJI_CATEGORIES: string[][] = [
     '❔', '‼', '⁉', '🔅', '🔆', '〽', '⚠', '🚸', '🔱', '⚜',
     '🔰', '♻', '✅', '🈯', '💹', '❇', '✳', '❎', '🌐', '💠',
     'Ⓜ', '🌀', '💤'
+  ],
+  // 6: Flags
+  [
+    '🏳', '🏴', '🏁', '🚩', '🎌', '🏴‍☠️', '🇨🇳', '🇺🇸', '🇬🇧', '🇯🇵',
+    '🇩🇪', '🇫🇷', '🇷🇺', '🇮🇹', '🇪🇸', '🇰🇷', '🇮🇳', '🇨🇦', '🇧🇷', '🇦🇺',
+    '🇲🇽', '🇳🇱', '🇹🇷', '🇸🇦', '🇦🇪', '🇿🇦', '🇪🇬', '🇸🇬', '🇲🇾', '🇹🇭',
+    '🇻🇳', '🇮🇩', '🇵🇭', '🇳🇿', '🇨🇭', '🇸🇪', '🇳🇴', '🇩🇰', '🇫🇮', '🇵🇱',
+    '🇺🇦', '🇬🇷', '🇵🇹', '🇮🇪', '🇦🇹', '🇧🇪'
   ]
 ];
 
-const CATEGORY_ICONS: string[] = ['😀', '👋', '🐶', '🍔', '⚽', '❤'];
+/** EMOJI-101：8 大分类图标（索引 0 为 Recent 最近使用） */
+const CATEGORY_ICONS: string[] = ['🕒', '😀', '🖐', '🐶', '🍔', '🚗', '💡', '🏁'];
 
 const SAMPLE_STICKERS: StickerPreviewItem[] = [
   { id: '1', emoji: '😎', title: 'Cool' },
@@ -135,6 +145,10 @@ export struct EmojiBoard {
   onDeleteChar: () => void = () => {};
   onSelectSticker: (emoji: string) => void = () => {};
   onOpenStickerSet: (setId: string) => void = () => {};
+  onClearRecent?: () => void;
+
+  /** EMOJI-101：由父层回灌的最近使用表情列表 */
+  @Prop recentEmojis: string[] = [];
 
   @State currentMainTab: string = 'emoji';
   @State currentEmojiCategory: number = 0;
@@ -214,7 +228,7 @@ export struct EmojiBoard {
             .height(22)
             .fillColor(T.colors.textSecondary)
         }
-        .width(44)
+        .width(48)
         .height('100%')
         .justifyContent(FlexAlign.Center)
         .alignItems(VerticalAlign.Center)
@@ -233,66 +247,162 @@ export struct EmojiBoard {
     .backgroundColor(T.colors.surface)
   }
 
-  /** 表情视图：分类横向条 + 8列 Emoji 网格 */
+  /** 表情视图：分类横向滚动条 + 8列 Emoji 网格 / 最近表情空态 */
   @Builder
   EmojiView() {
     Column() {
-      // 表情子分类选择条
-      Row() {
-        ForEach(CATEGORY_ICONS, (icon: string, index: number) => {
-          Row() {
-            Text(icon)
-              .fontSize(18)
-              .opacity(this.currentEmojiCategory === index ? 1.0 : 0.45)
-          }
-          .layoutWeight(1)
-          .height(36)
-          .justifyContent(FlexAlign.Center)
-          .alignItems(VerticalAlign.Center)
-          .borderWidth({
-            bottom: this.currentEmojiCategory === index ? 2 : 0
+      // 表情子分类选择条：横向平滑滚动 Scroll 容器包裹 8 大分类
+      Scroll() {
+        Row() {
+          ForEach(CATEGORY_ICONS, (icon: string, index: number) => {
+            Column() {
+              Row() {
+                Text(icon)
+                  .fontSize(18)
+                  .opacity(this.currentEmojiCategory === index ? 1.0 : 0.45)
+              }
+              .height(34)
+              .justifyContent(FlexAlign.Center)
+              .alignItems(VerticalAlign.Center)
+
+              // 选中高亮指示条
+              Row()
+                .width(28)
+                .height(2)
+                .backgroundColor(this.currentEmojiCategory === index ? T.colors.accent : Color.Transparent)
+                .borderRadius(1)
+            }
+            .padding({ left: T.spacing.sm, right: T.spacing.sm })
+            .height(36)
+            .justifyContent(FlexAlign.Center)
+            .alignItems(HorizontalAlign.Center)
+            .onClick(() => {
+              this.currentEmojiCategory = index;
+            })
           })
-          .borderColor(T.colors.accent)
-          .onClick(() => {
-            this.currentEmojiCategory = index;
-          })
-        })
+        }
+        .alignItems(VerticalAlign.Center)
       }
       .width('100%')
       .height(36)
+      .scrollable(ScrollDirection.Horizontal)
+      .scrollBar(BarState.Off)
       .borderWidth({ bottom: 1 })
       .borderColor(T.colors.divider)
 
-      // 表情 8 列 Grid
-      Grid() {
-        ForEach(EMOJI_CATEGORIES[this.currentEmojiCategory], (emoji: string) => {
-          GridItem() {
+      // 表情主体展示区（分类 0 为 Recent，分类 1..7 为内置各组）
+      if (this.currentEmojiCategory === 0) {
+        if (this.recentEmojis.length > 0) {
+          Column() {
+            // Recent 顶栏（展示标题与清空入口）
             Row() {
-              Text(emoji)
-                .fontSize(26)
+              Text('Recent')
+                .fontSize(T.typography.caption.fontSize)
+                .fontWeight(FontWeight.Medium)
+                .fontColor(T.colors.textSecondary)
+
+              Blank()
+
+              Text('Clear')
+                .fontSize(T.typography.caption.fontSize)
+                .fontWeight(FontWeight.Medium)
+                .fontColor(T.colors.accent)
+                .padding({ left: T.spacing.sm, right: T.spacing.sm, top: 4, bottom: 4 })
+                .borderRadius(T.radius.sm)
+                .onClick(() => {
+                  if (this.onClearRecent) {
+                    this.onClearRecent();
+                  }
+                })
             }
             .width('100%')
-            .height(42)
-            .justifyContent(FlexAlign.Center)
-            .alignItems(VerticalAlign.Center)
-            .borderRadius(T.radius.sm)
-            .onClick(() => {
-              this.onSelectEmoji(emoji);
+            .padding({ left: T.spacing.md, right: T.spacing.md, top: T.spacing.xs, bottom: T.spacing.xs })
+
+            // 最近使用表情网格
+            Grid() {
+              ForEach(this.recentEmojis, (emoji: string) => {
+                GridItem() {
+                  Row() {
+                    Text(emoji)
+                      .fontSize(26)
+                  }
+                  .width('100%')
+                  .height(42)
+                  .justifyContent(FlexAlign.Center)
+                  .alignItems(VerticalAlign.Center)
+                  .borderRadius(T.radius.sm)
+                  .onClick(() => {
+                    this.onSelectEmoji(emoji);
+                  })
+                }
+              })
+            }
+            .columnsTemplate('1fr 1fr 1fr 1fr 1fr 1fr 1fr 1fr')
+            .rowsGap(2)
+            .columnsGap(2)
+            .padding({
+              left: T.spacing.xs,
+              right: T.spacing.xs,
+              bottom: T.spacing.xs
             })
+            .layoutWeight(1)
+            .scrollBar(BarState.Off)
           }
+          .width('100%')
+          .height('100%')
+        } else {
+          // 最近使用为空时的提示
+          Column() {
+            Text('🕒')
+              .fontSize(38)
+              .opacity(0.4)
+              .margin({ bottom: T.spacing.sm })
+            Text('No Recent Emojis')
+              .fontSize(T.typography.body.fontSize)
+              .fontWeight(FontWeight.Medium)
+              .fontColor(T.colors.textPrimary)
+            Text('Emojis you send will appear here')
+              .fontSize(T.typography.caption.fontSize)
+              .fontColor(T.colors.textSecondary)
+              .margin({ top: T.spacing.xs })
+          }
+          .width('100%')
+          .height('100%')
+          .justifyContent(FlexAlign.Center)
+          .alignItems(HorizontalAlign.Center)
+        }
+      } else {
+        // 内置静态分类网格（索引偏移 1）
+        Grid() {
+          ForEach(STATIC_EMOJI_CATEGORIES[this.currentEmojiCategory - 1], (emoji: string) => {
+            GridItem() {
+              Row() {
+                Text(emoji)
+                  .fontSize(26)
+              }
+              .width('100%')
+              .height(42)
+              .justifyContent(FlexAlign.Center)
+              .alignItems(VerticalAlign.Center)
+              .borderRadius(T.radius.sm)
+              .onClick(() => {
+                this.onSelectEmoji(emoji);
+              })
+            }
+          })
+        }
+        .columnsTemplate('1fr 1fr 1fr 1fr 1fr 1fr 1fr 1fr')
+        .rowsGap(2)
+        .columnsGap(2)
+        .padding({
+          left: T.spacing.xs,
+          right: T.spacing.xs,
+          top: T.spacing.xs,
+          bottom: T.spacing.xs
         })
+        .layoutWeight(1)
+        .scrollBar(BarState.Off)
       }
-      .columnsTemplate('1fr 1fr 1fr 1fr 1fr 1fr 1fr 1fr')
-      .rowsGap(2)
-      .columnsGap(2)
-      .padding({
-        left: T.spacing.xs,
-        right: T.spacing.xs,
-        top: T.spacing.xs,
-        bottom: T.spacing.xs
-      })
-      .layoutWeight(1)
-      .scrollBar(BarState.Off)
     }
     .width('100%')
     .height('100%')
