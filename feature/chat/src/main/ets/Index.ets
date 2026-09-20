@@ -126,6 +126,9 @@ export {
   SendStickerFromPreview,
   SendSticker,
   ClearRecentStickers,
+  SendGif,
+  ClearRecentGifs,
+  SearchGifs,
   OnStickerPreviewFileUpdated,
   StartVoiceRecord,
   StopAndSendVoiceRecord,
@@ -146,6 +149,13 @@ export {
   DEFAULT_STICKER_PACKS,
   DEFAULT_RECENT_STICKERS
 } from './model/StickerSetPreviewState';
+
+export {
+  GifItem,
+  GIF_CATEGORIES,
+  DEFAULT_RECENT_GIFS,
+  DEFAULT_GIF_PACKS
+} from './model/GifItem';
 
 export {
   FetchInitialMessages,
@@ -173,6 +183,7 @@ export {
   FetchStickerSet,
   ChangeStickerSetEffect,
   SendStickerMessage,
+  SendAnimationMessage,
   StartVoiceRecordEffect,
   StopAndSendVoiceRecordEffect,
   CancelVoiceRecordEffect,

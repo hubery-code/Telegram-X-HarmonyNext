@@ -79,6 +79,9 @@ import {
   SendStickerFromPreview,
   SendSticker,
   ClearRecentStickers,
+  SendGif,
+  ClearRecentGifs,
+  SearchGifs,
   OnStickerPreviewFileUpdated,
   StartVoiceRecord,
   StopAndSendVoiceRecord,
@@ -93,6 +96,7 @@ import {
 import { PinnedMessageInfo } from '../main/ets/model/PinnedMessageInfo';
 import { ReactionChip } from '../main/ets/model/ReactionChip';
 import { StickerSetPreviewState, StickerSetItem } from '../main/ets/model/StickerSetPreviewState';
+import { GifItem } from '../main/ets/model/GifItem';
 import {
   ChatEffect,
   SendTextMessage,
@@ -116,6 +120,7 @@ import {
   FetchStickerSet,
   ChangeStickerSetEffect,
   SendStickerMessage,
+  SendAnimationMessage,
   StartVoiceRecordEffect,
   StopAndSendVoiceRecordEffect,
   CancelVoiceRecordEffect,
@@ -1983,6 +1988,92 @@ export default function chatReducerTest() {
 
       expect(result.state.stickerSetPreview?.stickers[0].localPath).assertEqual('/downloaded/sticker101.webp');
       expect(result.state.stickerSetPreview?.stickers[0].isDownloaded).assertTrue();
+    });
+
+    it('sendGif_addsToRecentGifsAndEmitsSendAnimationMessage', 0, () => {
+      const gif: GifItem = {
+        id: 'test_gif',
+        title: 'Dancing Dog',
+        tag: '#party',
+        category: '🎉 Party',
+        fileId: 2050,
+        width: 320,
+        height: 240,
+        duration: 3,
+        previewEmoji: '🐶'
+      };
+      const initial: ChatUiState = makeState('');
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        initial,
+        new SendGif(gif),
+        makeEnv()
+      );
+
+      expect(result.state.recentGifs.length > 0).assertTrue();
+      expect(result.state.recentGifs[0].id).assertEqual('test_gif');
+      expect(result.effects.length).assertEqual(1);
+      expect(result.effects[0].kind).assertEqual('sendAnimationMessage');
+      const effect: SendAnimationMessage = result.effects[0] as SendAnimationMessage;
+      expect(effect.fileId).assertEqual(2050);
+      expect(effect.caption).assertEqual('Dancing Dog');
+    });
+
+    it('sendGif_capsRecentGifsAt32', 0, () => {
+      const existing: GifItem[] = [];
+      for (let i = 0; i < 40; i++) {
+        existing.push({
+          id: `g_${i}`,
+          title: `Gif ${i}`,
+          tag: '#tag',
+          category: 'cat',
+          fileId: 3000 + i,
+          width: 320,
+          height: 240,
+          duration: 2,
+          previewEmoji: '✨'
+        });
+      }
+      const initial: ChatUiState = makeState('').copyWith({ recentGifs: existing });
+      const newGif: GifItem = {
+        id: 'new_g',
+        title: 'New G',
+        tag: '#new',
+        category: 'cat',
+        fileId: 9999,
+        width: 320,
+        height: 240,
+        duration: 2,
+        previewEmoji: '🔥'
+      };
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        initial,
+        new SendGif(newGif),
+        makeEnv()
+      );
+
+      expect(result.state.recentGifs.length).assertEqual(32);
+      expect(result.state.recentGifs[0].id).assertEqual('new_g');
+    });
+
+    it('clearRecentGifs_emptiesRecentGifsList', 0, () => {
+      const initial: ChatUiState = makeState('');
+      expect(initial.recentGifs.length > 0).assertTrue();
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        initial,
+        new ClearRecentGifs(),
+        makeEnv()
+      );
+      expect(result.state.recentGifs.length).assertEqual(0);
+    });
+
+    it('searchGifs_updatesGifSearchQuery', 0, () => {
+      const initial: ChatUiState = makeState('');
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        initial,
+        new SearchGifs('party dance'),
+        makeEnv()
+      );
+      expect(result.state.gifSearchQuery).assertEqual('party dance');
     });
 
     it('startVoiceRecord_transitionsToRecordingStateAndEmitsEffect', 0, () => {

@@ -216,6 +216,7 @@ import {
   FetchStickerSet,
   ChangeStickerSetEffect,
   SendStickerMessage,
+  SendAnimationMessage,
   StartVoiceRecordEffect,
   StopAndSendVoiceRecordEffect,
   CancelVoiceRecordEffect,
@@ -2947,6 +2948,12 @@ export class ChatCoordinator {
         break;
       }
 
+      case 'sendAnimationMessage': {
+        const sendAnimation: SendAnimationMessage = effect as SendAnimationMessage;
+        this.handleSendAnimation(sendAnimation);
+        break;
+      }
+
       case 'startVoiceRecordEffect': {
         this.handleStartVoiceRecord();
         break;
@@ -3282,6 +3289,15 @@ export class ChatCoordinator {
       }).catch(() => {
       });
     }
+  }
+
+  private handleSendAnimation(sendAnimation: SendAnimationMessage): void {
+    if (sendAnimation.fileId >= 2001 && sendAnimation.fileId <= 2040) {
+      this.projection.sendTextMessage(`🎬 ${sendAnimation.caption || 'GIF'}`, 0);
+      return;
+    }
+
+    this.logger.info(TAG, 'send_animation', `fileId=${sendAnimation.fileId}`);
   }
 
   /** null = 投影侧跳过（正在加载/已到顶端）；请求级与响应级失败都回灌 OnMessagesLoadFailed。 */

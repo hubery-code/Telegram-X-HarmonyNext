@@ -15,6 +15,7 @@
 
 import { LightTheme } from '@tgx/core-design-system';
 import { StickerSetItem, StickerPack, DEFAULT_STICKER_PACKS } from '../model/StickerSetPreviewState';
+import { GifItem, GIF_CATEGORIES, DEFAULT_RECENT_GIFS, DEFAULT_GIF_PACKS } from '../model/GifItem';
 
 const T = LightTheme;
 
@@ -150,6 +151,8 @@ export struct EmojiBoard {
   onSelectSticker: (emoji: string) => void = () => {};
   onSendSticker?: (item: StickerSetItem) => void;
   onClearRecentStickers?: () => void;
+  onSendGif?: (item: GifItem) => void;
+  onClearRecentGifs?: () => void;
   onOpenStickerSet: (setId: string) => void = () => {};
   onClearRecent?: () => void;
 
@@ -157,10 +160,14 @@ export struct EmojiBoard {
   @Prop recentEmojis: string[] = [];
   /** STICKER-101：由父层回灌的最近使用贴纸列表 */
   @Prop recentStickers: StickerSetItem[] = [];
+  /** GIF-101：由父层回灌的最近使用动图列表 */
+  @Prop recentGifs: GifItem[] = [];
 
   @State currentMainTab: string = 'emoji';
   @State currentEmojiCategory: number = 0;
   @State currentStickerPackIndex: number = 0;
+  @State currentGifCategoryIndex: number = 0;
+  @State gifSearchQuery: string = '';
 
   build() {
     Column() {
@@ -618,40 +625,207 @@ export struct EmojiBoard {
     .height('100%')
   }
 
-  /** GIF 动图视图：动图预览卡片 */
+  private getActiveGifs(): GifItem[] {
+    const query: string = this.gifSearchQuery.trim().toLowerCase();
+    if (query.length > 0) {
+      const allGifs: GifItem[] = [];
+      const categories: string[] = Object.keys(DEFAULT_GIF_PACKS);
+      for (let i = 0; i < categories.length; i++) {
+        const items: GifItem[] = DEFAULT_GIF_PACKS[categories[i]];
+        for (let j = 0; j < items.length; j++) {
+          const it: GifItem = items[j];
+          if (it.title.toLowerCase().includes(query) || it.tag.toLowerCase().includes(query)) {
+            allGifs.push(it);
+          }
+        }
+      }
+      return allGifs;
+    }
+
+    if (this.currentGifCategoryIndex === 0) {
+      return this.recentGifs.slice();
+    }
+    const catName: string = GIF_CATEGORIES[this.currentGifCategoryIndex];
+    return DEFAULT_GIF_PACKS[catName] !== undefined ? DEFAULT_GIF_PACKS[catName].slice() : [];
+  }
+
+  /** GIF-101：GIF 动图搜索面板与动图发送 */
   @Builder
   GifView() {
     Column() {
-      Grid() {
-        ForEach(SAMPLE_GIFS, (gif: GifPreviewItem) => {
-          GridItem() {
-            Column() {
-              Text(gif.tag)
-                .fontSize(36)
-                .margin({ bottom: T.spacing.xs })
-              Text(gif.title)
-                .fontSize(T.typography.caption.fontSize)
-                .fontColor(T.colors.textPrimary)
-                .fontWeight(FontWeight.Medium)
-            }
-            .width('100%')
-            .height(88)
-            .justifyContent(FlexAlign.Center)
-            .alignItems(HorizontalAlign.Center)
-            .backgroundColor(T.colors.surfaceVariant)
-            .borderRadius(T.radius.md)
+      // 1. 顶部动图搜索栏
+      Row() {
+        Text('🔍')
+          .fontSize(14)
+          .margin({ left: 10, right: 6 })
+
+        TextInput({ placeholder: 'Search GIFs', text: this.gifSearchQuery })
+          .layoutWeight(1)
+          .height('100%')
+          .fontSize(T.typography.caption.fontSize)
+          .backgroundColor(Color.Transparent)
+          .onChange((value: string) => {
+            this.gifSearchQuery = value;
+          })
+
+        if (this.gifSearchQuery.length > 0) {
+          Text('✕')
+            .fontSize(14)
+            .fontColor(T.colors.textSecondary)
+            .margin({ right: 10 })
             .onClick(() => {
-              this.onSelectEmoji(gif.tag);
+              this.gifSearchQuery = '';
             })
-          }
-        })
+        }
       }
-      .columnsTemplate('1fr 1fr 1fr')
-      .rowsGap(T.spacing.sm)
-      .columnsGap(T.spacing.sm)
-      .padding(T.spacing.md)
-      .layoutWeight(1)
-      .scrollBar(BarState.Off)
+      .width('100%')
+      .height(36)
+      .margin({ left: T.spacing.md, right: T.spacing.md, top: T.spacing.xs, bottom: 4 })
+      .backgroundColor(T.colors.surfaceVariant)
+      .borderRadius(T.radius.full)
+      .alignItems(VerticalAlign.Center)
+
+      // 2. 动图热门分类胶囊滚动条（搜索态隐藏）
+      if (this.gifSearchQuery.trim().length === 0) {
+        List({ space: 8 }) {
+          ForEach(GIF_CATEGORIES, (cat: string, index: number) => {
+            ListItem() {
+              Row() {
+                Text(cat)
+                  .fontSize(13)
+                  .fontWeight(this.currentGifCategoryIndex === index ? FontWeight.Bold : FontWeight.Normal)
+                  .fontColor(this.currentGifCategoryIndex === index ? '#FFFFFF' : T.colors.textSecondary)
+              }
+              .height(28)
+              .padding({ left: 12, right: 12 })
+              .backgroundColor(this.currentGifCategoryIndex === index ? T.colors.accent : T.colors.surfaceVariant)
+              .borderRadius(T.radius.full)
+              .alignItems(VerticalAlign.Center)
+              .onClick(() => {
+                this.currentGifCategoryIndex = index;
+              })
+            }
+          })
+        }
+        .listDirection(Axis.Horizontal)
+        .height(36)
+        .width('100%')
+        .padding({ left: T.spacing.md, right: T.spacing.md })
+        .scrollBar(BarState.Off)
+      }
+
+      // 3. 标题与清空栏
+      Row() {
+        if (this.gifSearchQuery.trim().length > 0) {
+          Text(`Search results (${this.getActiveGifs().length})`)
+            .fontSize(T.typography.caption.fontSize)
+            .fontWeight(FontWeight.Medium)
+            .fontColor(T.colors.textSecondary)
+        } else if (this.currentGifCategoryIndex === 0) {
+          Text('Recent GIFs')
+            .fontSize(T.typography.caption.fontSize)
+            .fontWeight(FontWeight.Medium)
+            .fontColor(T.colors.textSecondary)
+        } else {
+          Text(`${GIF_CATEGORIES[this.currentGifCategoryIndex]} · ${this.getActiveGifs().length} GIFs`)
+            .fontSize(T.typography.caption.fontSize)
+            .fontWeight(FontWeight.Medium)
+            .fontColor(T.colors.textSecondary)
+        }
+
+        Blank()
+
+        if (this.currentGifCategoryIndex === 0 && this.recentGifs.length > 0 && this.gifSearchQuery.trim().length === 0) {
+          Text('Clear')
+            .fontSize(T.typography.caption.fontSize)
+            .fontWeight(FontWeight.Medium)
+            .fontColor(T.colors.accent)
+            .onClick(() => {
+              if (this.onClearRecentGifs) {
+                this.onClearRecentGifs();
+              }
+            })
+        }
+      }
+      .width('100%')
+      .height(28)
+      .padding({ left: T.spacing.md, right: T.spacing.md })
+      .alignItems(VerticalAlign.Center)
+
+      // 4. 网格区或空态
+      if (this.currentGifCategoryIndex === 0 && this.recentGifs.length === 0 && this.gifSearchQuery.trim().length === 0) {
+        Column() {
+          Text('🕒')
+            .fontSize(44)
+            .margin({ bottom: T.spacing.sm })
+          Text('No Recent GIFs')
+            .fontSize(T.typography.body.fontSize)
+            .fontWeight(FontWeight.Bold)
+            .fontColor(T.colors.textPrimary)
+            .margin({ bottom: 4 })
+          Text('GIFs you send will appear here')
+            .fontSize(T.typography.caption.fontSize)
+            .fontColor(T.colors.textSecondary)
+        }
+        .width('100%')
+        .layoutWeight(1)
+        .justifyContent(FlexAlign.Center)
+        .alignItems(HorizontalAlign.Center)
+      } else {
+        Grid() {
+          ForEach(this.getActiveGifs(), (gif: GifItem) => {
+            GridItem() {
+              Stack({ alignContent: Alignment.BottomStart }) {
+                Column() {
+                  Text(gif.previewEmoji)
+                    .fontSize(38)
+                    .margin({ bottom: 4 })
+                  Text(gif.title)
+                    .fontSize(12)
+                    .fontWeight(FontWeight.Medium)
+                    .fontColor(T.colors.textPrimary)
+                    .maxLines(1)
+                    .textOverflow({ overflow: TextOverflow.Ellipsis })
+                }
+                .width('100%')
+                .height('100%')
+                .justifyContent(FlexAlign.Center)
+                .alignItems(HorizontalAlign.Center)
+
+                Row() {
+                  Text('GIF')
+                    .fontSize(10)
+                    .fontWeight(FontWeight.Bold)
+                    .fontColor('#FFFFFF')
+                }
+                .padding({ left: 5, right: 5, top: 1, bottom: 1 })
+                .backgroundColor('#66000000')
+                .borderRadius(4)
+                .margin({ left: 6, bottom: 6 })
+              }
+              .width('100%')
+              .height(100)
+              .backgroundColor(T.colors.surfaceVariant)
+              .borderRadius(T.radius.md)
+              .onClick(() => {
+                if (this.onSendGif) {
+                  this.onSendGif(gif);
+                }
+              })
+            }
+          })
+        }
+        .columnsTemplate('1fr 1fr')
+        .rowsGap(8)
+        .columnsGap(8)
+        .padding({
+          left: T.spacing.md,
+          right: T.spacing.md,
+          bottom: T.spacing.md
+        })
+        .layoutWeight(1)
+        .scrollBar(BarState.Off)
+      }
     }
     .width('100%')
     .height('100%')

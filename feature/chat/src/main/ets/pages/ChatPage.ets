@@ -129,6 +129,8 @@ import {
   SendStickerFromPreview,
   SendSticker,
   ClearRecentStickers,
+  SendGif,
+  ClearRecentGifs,
   StartVoiceRecord,
   StopAndSendVoiceRecord,
   CancelVoiceRecord,
@@ -139,6 +141,7 @@ import { isMessageSelected } from '../model/ForwardSelection';
 import { ChatSearchResultItem } from '../model/ChatSearchResultItem';
 import { PinnedMessageInfo } from '../model/PinnedMessageInfo';
 import { StickerSetItem } from '../model/StickerSetPreviewState';
+import { GifItem } from '../model/GifItem';
 import { EmojiBoard } from './EmojiBoard';
 import { StickerSetPreviewSheet } from './StickerSetPreviewSheet';
 
@@ -707,6 +710,7 @@ export struct ChatPage {
           EmojiBoard({
             recentEmojis: this.uiState.recentEmojis.slice(),
             recentStickers: this.uiState.recentStickers.slice(),
+            recentGifs: this.uiState.recentGifs.slice(),
             onSelectEmoji: (emoji: string) => {
               this.onDispatch(new InsertEmoji(emoji));
             },
@@ -724,6 +728,12 @@ export struct ChatPage {
             },
             onClearRecentStickers: () => {
               this.onDispatch(new ClearRecentStickers());
+            },
+            onSendGif: (item: GifItem) => {
+              this.onDispatch(new SendGif(item));
+            },
+            onClearRecentGifs: () => {
+              this.onDispatch(new ClearRecentGifs());
             },
             onOpenStickerSet: (setId: string) => {
               this.onDispatch(new OpenStickerSet(setId));

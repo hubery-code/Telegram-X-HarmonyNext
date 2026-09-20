@@ -31,6 +31,7 @@ import { ChatSearchResultItem } from '../model/ChatSearchResultItem';
 import { ChatKind } from '../model/SenderInfo';
 import { PinnedMessageInfo } from '../model/PinnedMessageInfo';
 import { StickerSetPreviewState, StickerSetItem, DEFAULT_RECENT_STICKERS } from '../model/StickerSetPreviewState';
+import { GifItem, DEFAULT_RECENT_GIFS } from '../model/GifItem';
 
 /** 输入栏模式：回复某条消息。 */
 export class ComposerReplyMode {
@@ -182,6 +183,10 @@ export interface ChatUiStateOptions {
   readonly recentEmojis?: readonly string[];
   /** STICKER-101：最近使用的贴纸列表（最新在先）。 */
   readonly recentStickers?: readonly StickerSetItem[];
+  /** GIF-101：最近使用的动图列表（最新在先）。 */
+  readonly recentGifs?: readonly GifItem[];
+  /** GIF-101：动图搜索关键词。 */
+  readonly gifSearchQuery?: string;
 }
 
 export const DEFAULT_RECENT_EMOJIS: readonly string[] = [
@@ -247,6 +252,10 @@ export class ChatUiState implements UiState {
   readonly recentEmojis: readonly string[];
   /** STICKER-101：最近使用的贴纸列表（最新在先）。 */
   readonly recentStickers: readonly StickerSetItem[];
+  /** GIF-101：最近使用的动图列表（最新在先）。 */
+  readonly recentGifs: readonly GifItem[];
+  /** GIF-101：动图搜索关键词。 */
+  readonly gifSearchQuery: string;
 
   constructor(
     chatId: number,
@@ -283,7 +292,9 @@ export class ChatUiState implements UiState {
     voicePlaybackProgress: number = 0,
     voicePlaybackTimeSec: number = 0,
     recentEmojis: readonly string[] = DEFAULT_RECENT_EMOJIS,
-    recentStickers: readonly StickerSetItem[] = DEFAULT_RECENT_STICKERS
+    recentStickers: readonly StickerSetItem[] = DEFAULT_RECENT_STICKERS,
+    recentGifs: readonly GifItem[] = DEFAULT_RECENT_GIFS,
+    gifSearchQuery: string = ''
   ) {
     this.chatId = chatId;
     this.chatTitle = chatTitle;
@@ -320,10 +331,12 @@ export class ChatUiState implements UiState {
     this.voicePlaybackTimeSec = voicePlaybackTimeSec;
     this.recentEmojis = recentEmojis;
     this.recentStickers = recentStickers;
+    this.recentGifs = recentGifs;
+    this.gifSearchQuery = gifSearchQuery;
   }
 
   static initial(): ChatUiState {
-    return new ChatUiState(0, '', [], false, true, null, '', null, null, -1, [], 0, 0, false, [], false, false, '', [], false, 0, '', 'unknown', null, false, true, false, null, false, 0, null, 0, 0, DEFAULT_RECENT_EMOJIS, DEFAULT_RECENT_STICKERS);
+    return new ChatUiState(0, '', [], false, true, null, '', null, null, -1, [], 0, 0, false, [], false, false, '', [], false, 0, '', 'unknown', null, false, true, false, null, false, 0, null, 0, 0, DEFAULT_RECENT_EMOJIS, DEFAULT_RECENT_STICKERS, DEFAULT_RECENT_GIFS, '');
   }
 
   copyWith(options: ChatUiStateOptions): ChatUiState {
@@ -362,7 +375,9 @@ export class ChatUiState implements UiState {
       options.voicePlaybackProgress !== undefined ? options.voicePlaybackProgress : this.voicePlaybackProgress,
       options.voicePlaybackTimeSec !== undefined ? options.voicePlaybackTimeSec : this.voicePlaybackTimeSec,
       options.recentEmojis !== undefined ? options.recentEmojis : this.recentEmojis,
-      options.recentStickers !== undefined ? options.recentStickers : this.recentStickers
+      options.recentStickers !== undefined ? options.recentStickers : this.recentStickers,
+      options.recentGifs !== undefined ? options.recentGifs : this.recentGifs,
+      options.gifSearchQuery !== undefined ? options.gifSearchQuery : this.gifSearchQuery
     );
   }
 }

@@ -308,6 +308,24 @@ export class SendStickerMessage implements Effect {
   }
 }
 
+/** GIF-101：向当前会话发送动图/Animation。 */
+export class SendAnimationMessage implements Effect {
+  readonly kind: 'sendAnimationMessage' = 'sendAnimationMessage';
+  readonly chatId: number;
+  readonly fileId: number;
+  readonly width: number;
+  readonly height: number;
+  readonly caption: string;
+
+  constructor(chatId: number, fileId: number, width: number, height: number, caption: string = '') {
+    this.chatId = chatId;
+    this.fileId = fileId;
+    this.width = width;
+    this.height = height;
+    this.caption = caption;
+  }
+}
+
 /** MSG-108：置顶消息（pinChatMessage）。 */
 export class PinMessageEffect implements Effect {
   readonly kind: 'pinMessageEffect' = 'pinMessageEffect';
@@ -422,6 +440,7 @@ export type ChatEffect =
   | FetchStickerSet
   | ChangeStickerSetEffect
   | SendStickerMessage
+  | SendAnimationMessage
   | StartVoiceRecordEffect
   | StopAndSendVoiceRecordEffect
   | CancelVoiceRecordEffect

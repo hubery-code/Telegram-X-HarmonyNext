@@ -105,6 +105,9 @@ import {
   SendStickerFromPreview,
   SendSticker,
   ClearRecentStickers,
+  SendGif,
+  ClearRecentGifs,
+  SearchGifs,
   OnStickerPreviewFileUpdated,
   StartVoiceRecord,
   StopAndSendVoiceRecord,
@@ -143,6 +146,7 @@ import {
   FetchStickerSet,
   ChangeStickerSetEffect,
   SendStickerMessage,
+  SendAnimationMessage,
   StartVoiceRecordEffect,
   StopAndSendVoiceRecordEffect,
   CancelVoiceRecordEffect,
@@ -150,6 +154,7 @@ import {
   PauseVoiceNoteEffect
 } from '../contract/ChatEffect';
 import { StickerSetPreviewState, StickerSetItem } from '../model/StickerSetPreviewState';
+import { GifItem } from '../model/GifItem';
 import { incomingIdUpTo } from '../model/ReadReceipt';
 import {
   clearSelection,
@@ -1372,6 +1377,32 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
     case 'clearRecentStickers': {
       return reduced(state.copyWith({
         recentStickers: []
+      }));
+    }
+
+    case 'sendGif': {
+      const sendGifIntent: SendGif = intent as SendGif;
+      const gifItem: GifItem = sendGifIntent.item;
+      const filtered: GifItem[] = state.recentGifs.filter(
+        (g: GifItem): boolean => g.id !== gifItem.id && g.fileId !== gifItem.fileId
+      );
+      const nextRecents: GifItem[] = [gifItem, ...filtered].slice(0, 32);
+      return reduced(
+        state.copyWith({ recentGifs: nextRecents }),
+        [new SendAnimationMessage(state.chatId, gifItem.fileId, gifItem.width, gifItem.height, gifItem.title)]
+      );
+    }
+
+    case 'clearRecentGifs': {
+      return reduced(state.copyWith({
+        recentGifs: []
+      }));
+    }
+
+    case 'searchGifs': {
+      const searchGifsIntent: SearchGifs = intent as SearchGifs;
+      return reduced(state.copyWith({
+        gifSearchQuery: searchGifsIntent.query
       }));
     }
 

@@ -34,6 +34,7 @@ import { MessageItem } from '../model/MessageItem';
 import { ChatSearchResultItem } from '../model/ChatSearchResultItem';
 import { ChatKind } from '../model/SenderInfo';
 import { StickerSetPreviewState, StickerSetItem } from '../model/StickerSetPreviewState';
+import { GifItem } from '../model/GifItem';
 
 export class LoadInitialMessages implements Intent {
   readonly kind: 'loadInitialMessages' = 'loadInitialMessages';
@@ -702,6 +703,9 @@ export type ChatIntent =
   | SendStickerFromPreview
   | SendSticker
   | ClearRecentStickers
+  | SendGif
+  | ClearRecentGifs
+  | SearchGifs
   | OnStickerPreviewFileUpdated
   | StartVoiceRecord
   | StopAndSendVoiceRecord
@@ -817,6 +821,31 @@ export class SendSticker implements Intent {
 /** STICKER-101：清空最近使用的贴纸列表。 */
 export class ClearRecentStickers implements Intent {
   readonly kind: 'clearRecentStickers' = 'clearRecentStickers';
+}
+
+/** GIF-101：从动图面板中点选发送动图。 */
+export class SendGif implements Intent {
+  readonly kind: 'sendGif' = 'sendGif';
+  readonly item: GifItem;
+
+  constructor(item: GifItem) {
+    this.item = item;
+  }
+}
+
+/** GIF-101：清空最近使用的动图列表。 */
+export class ClearRecentGifs implements Intent {
+  readonly kind: 'clearRecentGifs' = 'clearRecentGifs';
+}
+
+/** GIF-101：搜索动图关键词。 */
+export class SearchGifs implements Intent {
+  readonly kind: 'searchGifs' = 'searchGifs';
+  readonly query: string;
+
+  constructor(query: string) {
+    this.query = query;
+  }
 }
 
 /** STICKER-PREVIEW-101：贴纸预览文件/缩略图下载完成刷新。 */
