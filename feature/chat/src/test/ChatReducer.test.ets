@@ -77,6 +77,8 @@ import {
   OnStickerSetChanged,
   OnStickerSetActionFailed,
   SendStickerFromPreview,
+  SendSticker,
+  ClearRecentStickers,
   OnStickerPreviewFileUpdated,
   StartVoiceRecord,
   StopAndSendVoiceRecord,
@@ -2108,5 +2110,145 @@ export default function chatReducerTest() {
       expect(result.state.voicePlaybackProgress).assertEqual(0);
       expect(result.state.voicePlaybackTimeSec).assertEqual(0);
     });
+
+    it('sendSticker_prependsAndDedupesRecentStickers', 0, () => {
+      const sticker1: StickerSetItem = {
+        id: 1001,
+        fileId: 1001,
+        emoji: '🔥',
+        width: 512,
+        height: 512,
+        localPath: null,
+        thumbnailPath: null,
+        isDownloaded: true,
+        isDownloading: false
+      };
+      const sticker2: StickerSetItem = {
+        id: 1018,
+        fileId: 1018,
+        emoji: '🐼',
+        width: 512,
+        height: 512,
+        localPath: null,
+        thumbnailPath: null,
+        isDownloaded: true,
+        isDownloading: false
+      };
+      const initial: ChatUiState = makeState('').copyWith({
+        recentStickers: [sticker1]
+      });
+
+      const res: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        initial,
+        new SendSticker(sticker2),
+        makeEnv()
+      );
+
+      expect(res.state.recentStickers.length).assertEqual(2);
+      expect(res.state.recentStickers[0].id).assertEqual(1018);
+      expect(res.state.recentStickers[1].id).assertEqual(1001);
+      expect(res.effects.length).assertEqual(1);
+      expect(res.effects[0].kind).assertEqual('sendStickerMessage');
+
+      // Duplicate send sticker1 should move it to index 0
+      const res2: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        res.state,
+        new SendSticker(sticker1),
+        makeEnv()
+      );
+      expect(res2.state.recentStickers.length).assertEqual(2);
+      expect(res2.state.recentStickers[0].id).assertEqual(1001);
+      expect(res2.state.recentStickers[1].id).assertEqual(1018);
+    });
+
+    it('sendSticker_capsRecentStickersAt32', 0, () => {
+      const items: StickerSetItem[] = [];
+      for (let i = 0; i < 35; i++) {
+        items.push({
+          id: 2000 + i,
+          fileId: 2000 + i,
+          emoji: '⭐️',
+          width: 512,
+          height: 512,
+          localPath: null,
+          thumbnailPath: null,
+          isDownloaded: true,
+          isDownloading: false
+        });
+      }
+      const initial: ChatUiState = makeState('').copyWith({
+        recentStickers: items.slice(0, 32)
+      });
+      const newItem: StickerSetItem = {
+        id: 9999,
+        fileId: 9999,
+        emoji: '🎉',
+        width: 512,
+        height: 512,
+        localPath: null,
+        thumbnailPath: null,
+        isDownloaded: true,
+        isDownloading: false
+      };
+
+      const res: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        initial,
+        new SendSticker(newItem),
+        makeEnv()
+      );
+      expect(res.state.recentStickers.length).assertEqual(32);
+      expect(res.state.recentStickers[0].id).assertEqual(9999);
+    });
+
+    it('clearRecentStickers_clearsList', 0, () => {
+      const sticker1: StickerSetItem = {
+        id: 1001,
+        fileId: 1001,
+        emoji: '🔥',
+        width: 512,
+        height: 512,
+        localPath: null,
+        thumbnailPath: null,
+        isDownloaded: true,
+        isDownloading: false
+      };
+      const initial: ChatUiState = makeState('').copyWith({
+        recentStickers: [sticker1]
+      });
+      const res: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        initial,
+        new ClearRecentStickers(),
+        makeEnv()
+      );
+      expect(res.state.recentStickers.length).assertEqual(0);
+    });
+
+    it('sendStickerFromPreview_updatesRecentStickers', 0, () => {
+      const sticker: StickerSetItem = {
+        id: 1003,
+        fileId: 1003,
+        emoji: '🚀',
+        width: 512,
+        height: 512,
+        localPath: null,
+        thumbnailPath: null,
+        isDownloaded: true,
+        isDownloading: false
+      };
+      const initial: ChatUiState = makeState('').copyWith({
+        recentStickers: []
+      });
+      const res: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        initial,
+        new SendStickerFromPreview(sticker),
+        makeEnv()
+      );
+      expect(res.state.recentStickers.length).assertEqual(1);
+      expect(res.state.recentStickers[0].id).assertEqual(1003);
+      expect(res.state.stickerSetPreview).assertNull();
+      expect(res.effects.length).assertEqual(1);
+      expect(res.effects[0].kind).assertEqual('sendStickerMessage');
+    });
   });
 }
+

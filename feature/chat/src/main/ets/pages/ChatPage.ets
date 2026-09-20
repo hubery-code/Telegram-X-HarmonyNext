@@ -127,6 +127,8 @@ import {
   InstallStickerSet,
   UninstallStickerSet,
   SendStickerFromPreview,
+  SendSticker,
+  ClearRecentStickers,
   StartVoiceRecord,
   StopAndSendVoiceRecord,
   CancelVoiceRecord,
@@ -700,10 +702,11 @@ export struct ChatPage {
           }
         }
 
-        // EMOJI-101：表情与贴纸面板（非多选态且非未加频道态）
+        // EMOJI-101 & STICKER-101：表情与贴纸面板（非多选态且非未加频道态）
         if (this.uiState.showEmojiBoard && !this.uiState.selectionMode && !(this.uiState.chatKind === 'channel' && !this.uiState.isChannelMember)) {
           EmojiBoard({
             recentEmojis: this.uiState.recentEmojis.slice(),
+            recentStickers: this.uiState.recentStickers.slice(),
             onSelectEmoji: (emoji: string) => {
               this.onDispatch(new InsertEmoji(emoji));
             },
@@ -714,7 +717,13 @@ export struct ChatPage {
               this.onDispatch(new ClearRecentEmojis());
             },
             onSelectSticker: (emoji: string) => {
-              this.onDispatch(new InsertEmoji(emoji));
+              // 兼容老调用
+            },
+            onSendSticker: (item: StickerSetItem) => {
+              this.onDispatch(new SendSticker(item));
+            },
+            onClearRecentStickers: () => {
+              this.onDispatch(new ClearRecentStickers());
             },
             onOpenStickerSet: (setId: string) => {
               this.onDispatch(new OpenStickerSet(setId));
@@ -1479,7 +1488,7 @@ export struct ChatPage {
         Column() {
           if (media.caption.length > 0) {
             Text(media.caption)
-              .fontSize(36)
+              .fontSize(72)
           } else {
             Image($r('app.media.ic_photo'))
               .width(36)

@@ -103,6 +103,8 @@ import {
   OnStickerSetChanged,
   OnStickerSetActionFailed,
   SendStickerFromPreview,
+  SendSticker,
+  ClearRecentStickers,
   OnStickerPreviewFileUpdated,
   StartVoiceRecord,
   StopAndSendVoiceRecord,
@@ -1341,10 +1343,36 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
     case 'sendStickerFromPreview': {
       const sendStickerIntent: SendStickerFromPreview = intent as SendStickerFromPreview;
       const stickerItem: StickerSetItem = sendStickerIntent.item;
+      const filtered: StickerSetItem[] = state.recentStickers.filter(
+        (s: StickerSetItem): boolean => s.id !== stickerItem.id && s.fileId !== stickerItem.fileId
+      );
+      const nextRecents: StickerSetItem[] = [stickerItem, ...filtered].slice(0, 32);
       return reduced(
-        state.copyWith({ stickerSetPreview: null }),
+        state.copyWith({
+          stickerSetPreview: null,
+          recentStickers: nextRecents
+        }),
         [new SendStickerMessage(state.chatId, stickerItem.fileId, stickerItem.width, stickerItem.height, stickerItem.emoji)]
       );
+    }
+
+    case 'sendSticker': {
+      const sendStickerIntent: SendSticker = intent as SendSticker;
+      const stickerItem: StickerSetItem = sendStickerIntent.item;
+      const filtered: StickerSetItem[] = state.recentStickers.filter(
+        (s: StickerSetItem): boolean => s.id !== stickerItem.id && s.fileId !== stickerItem.fileId
+      );
+      const nextRecents: StickerSetItem[] = [stickerItem, ...filtered].slice(0, 32);
+      return reduced(
+        state.copyWith({ recentStickers: nextRecents }),
+        [new SendStickerMessage(state.chatId, stickerItem.fileId, stickerItem.width, stickerItem.height, stickerItem.emoji)]
+      );
+    }
+
+    case 'clearRecentStickers': {
+      return reduced(state.copyWith({
+        recentStickers: []
+      }));
     }
 
     case 'onStickerPreviewFileUpdated': {

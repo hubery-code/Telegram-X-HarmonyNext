@@ -124,6 +124,8 @@ export {
   OnStickerSetChanged,
   OnStickerSetActionFailed,
   SendStickerFromPreview,
+  SendSticker,
+  ClearRecentStickers,
   OnStickerPreviewFileUpdated,
   StartVoiceRecord,
   StopAndSendVoiceRecord,
@@ -137,7 +139,13 @@ export {
   ChatIntent
 } from './contract/ChatIntent';
 
-export { StickerSetPreviewState, StickerSetItem } from './model/StickerSetPreviewState';
+export {
+  StickerSetPreviewState,
+  StickerSetItem,
+  StickerPack,
+  DEFAULT_STICKER_PACKS,
+  DEFAULT_RECENT_STICKERS
+} from './model/StickerSetPreviewState';
 
 export {
   FetchInitialMessages,

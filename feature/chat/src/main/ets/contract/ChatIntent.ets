@@ -700,6 +700,8 @@ export type ChatIntent =
   | OnStickerSetChanged
   | OnStickerSetActionFailed
   | SendStickerFromPreview
+  | SendSticker
+  | ClearRecentStickers
   | OnStickerPreviewFileUpdated
   | StartVoiceRecord
   | StopAndSendVoiceRecord
@@ -800,6 +802,21 @@ export class SendStickerFromPreview implements Intent {
   constructor(item: StickerSetItem) {
     this.item = item;
   }
+}
+
+/** STICKER-101：从贴纸面板中点选发送贴纸。 */
+export class SendSticker implements Intent {
+  readonly kind: 'sendSticker' = 'sendSticker';
+  readonly item: StickerSetItem;
+
+  constructor(item: StickerSetItem) {
+    this.item = item;
+  }
+}
+
+/** STICKER-101：清空最近使用的贴纸列表。 */
+export class ClearRecentStickers implements Intent {
+  readonly kind: 'clearRecentStickers' = 'clearRecentStickers';
 }
 
 /** STICKER-PREVIEW-101：贴纸预览文件/缩略图下载完成刷新。 */

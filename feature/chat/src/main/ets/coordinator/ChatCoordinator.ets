@@ -3245,7 +3245,7 @@ export class ChatCoordinator {
   }
 
   private handleSendSticker(sendSticker: SendStickerMessage): void {
-    if (sendSticker.fileId >= 1001 && sendSticker.fileId <= 1015) {
+    if (sendSticker.fileId >= 1001 && sendSticker.fileId <= 1045) {
       this.projection.sendTextMessage(sendSticker.emoji, 0);
       return;
     }
