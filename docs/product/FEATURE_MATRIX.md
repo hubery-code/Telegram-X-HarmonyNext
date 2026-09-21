@@ -15,8 +15,8 @@
 | TDLib 方法 | 主要 request / update；多个用 `,` 分隔 |
 | Harmony 目标行为 | 一句话验收目标 |
 | 平台能力/权限 | HarmonyOS Kit / 权限（计划 §20 要求项） |
-| 状态 | 当前全部为 `Backlog` |
-| 负责人 | 待分配（Phase 1 工作包下发时填写） |
+| 状态 | 逐行登记实际状态（`Backlog` / `Contract Ready` / `Implementing` / `Verifying` / `Accepted` / `Blocked` / `Deferred`）。**2026-09-21 校准**：此前本列长期停滞、大批已交付项仍标 `Backlog`，已按 `work-items/accepted/` 逐项回填。 |
+| 负责人 | 交付该行的**工作包编号**（如 `MSG-107` / `SET-105`），非人名——便于从矩阵反查证据报告 |
 
 ---
 
@@ -77,7 +77,7 @@
 | 功能 ID | 功能 | 优先级 | Android 参考位置 | TDLib 方法 | Harmony 目标行为 | 平台能力/权限 | 状态 | 负责人 |
 |---|---|---|---|---|---|---|---|---|
 | FEAT-COMP-001 | 发送文本消息 | P1 | `data/TD.java:3031`（SendMessage）, `component/chat/InputView.java`, `component/chat/ChatBottomBarView.java` | SendMessage, updateMessageSendSucceeded, updateMessageSendFailed | 发送后气泡立即上屏（pending），成功转 sent，失败可重试 | — | Accepted | 迁移组 |
-| FEAT-COMP-002 | 链接识别与预览 | P1 | `data/TD.java`（InputMessageText + linkPreviewOptions）, `ui/MessagesController.java` | InputMessageText, GetWebPagePreview | 消息内 URL 可点击，发送时按设置生成链接预览 | 网络 | Backlog | |
+| FEAT-COMP-002 | 链接识别与预览 | P1 | `data/TD.java`（InputMessageText + linkPreviewOptions）, `ui/MessagesController.java` | InputMessageText, GetWebPagePreview | 消息内 URL 可点击，发送时按设置生成链接预览 | 网络 | Accepted | MSG-107 |
 | FEAT-COMP-003 | 回复消息 | P1 | `component/chat/ReplyComponent.java`, `ui/MessagesController.java` | SendMessage(replyTo), InputTextQuote | 引用条展示原文摘要，发出后气泡内嵌回复块 | — | Accepted | 迁移组 |
 | FEAT-COMP-004 | 转发消息 | P1 | `data/TD.java:1788`（ForwardMessages）, `ui/ShareController.java:1900` | ForwardMessages, SendMessage(InputMessageForwarded) | 可多选消息转发到目标会话，支持隐藏来源选项 | — | Accepted | 迁移组 |
 | FEAT-COMP-005 | 编辑消息 | P1 | `telegram/Tdlib.java:4843`（EditMessageText）, `telegram/MessageEditListener.java` | EditMessageText, updateMessageEdited | 自己的文本消息可编辑，气泡标注「已编辑」 | — | Accepted | 迁移组 |
@@ -89,10 +89,10 @@
 | 功能 ID | 功能 | 优先级 | Android 参考位置 | TDLib 方法 | Harmony 目标行为 | 平台能力/权限 | 状态 | 负责人 |
 |---|---|---|---|---|---|---|---|---|
 | FEAT-MEDIA-001 | 图片消息上传/下载/进度 | P1 | `telegram/TdlibFilesManager.java:598`（DownloadFile）, `data/TD.java`（InputMessagePhoto）, `widget/FileProgressComponent.java` | SendMessage(InputMessagePhoto), DownloadFile, updateFile | 选图发送带进度圈，接收图片点击下载并可暂停 | 相册/图片权限 | Accepted | 迁移组 |
-| FEAT-MEDIA-002 | 视频消息上传/下载 | P1 | `data/TD.java`（InputMessageVideo）, `telegram/TdlibFilesManager.java` | SendMessage(InputMessageVideo), DownloadFile, updateFile | 视频缩略图先展示，进度与失败重试可用 | 相册/视频权限 | Verifying | 迁移组 |
+| FEAT-MEDIA-002 | 视频消息上传/下载 | P1 | `data/TD.java`（InputMessageVideo）, `telegram/TdlibFilesManager.java` | SendMessage(InputMessageVideo), DownloadFile, updateFile | 视频缩略图先展示，进度与失败重试可用 | 相册/视频权限 | Verifying | MEDIA-106（接收）+MEDIA-105（发送） |
 | FEAT-MEDIA-003 | 文件消息上传/下载 | P1 | `data/TD.java`（InputMessageDocument）, `ui/ShareController.java` | SendMessage(InputMessageDocument), DownloadFile, updateFile | 文件气泡显示名称/大小/下载态，完成可打开 | 文件读写 | Accepted | 迁移组 |
-| FEAT-MEDIA-004 | 语音消息录制/发送/播放 | P1 | `component/chat/VoiceVideoButtonView.java:227`, `player/RecordAudioVideoController.java`, `data/TD.java`（InputMessageVoiceNote） | SendMessage(InputMessageVoiceNote), DownloadFile | 按住录音松开发送，波形展示，可播放 | 麦克风权限、音频焦点 | Backlog | |
-| FEAT-MEDIA-005 | 传输失败重试/取消 | P1 | `telegram/TdlibFilesManager.java:817`（cancelDownloadOrUploadFile）, `ui/MessagesController.java` | CancelUploadFile, CancelDownloadFile, updateMessageSendFailed | 失败项一键重发/重新下载，取消后不留半成品 | — | Backlog | |
+| FEAT-MEDIA-004 | 语音消息录制/发送/播放 | P1 | `component/chat/VoiceVideoButtonView.java:227`, `player/RecordAudioVideoController.java`, `data/TD.java`（InputMessageVoiceNote） | SendMessage(InputMessageVoiceNote), DownloadFile | 按住录音松开发送，波形展示，可播放 | 麦克风权限、音频焦点 | Accepted | VOICE-101 |
+| FEAT-MEDIA-005 | 传输失败重试/取消 | P1 | `telegram/TdlibFilesManager.java:817`（cancelDownloadOrUploadFile）, `ui/MessagesController.java` | CancelUploadFile, CancelDownloadFile, updateMessageSendFailed | 失败项一键重发/重新下载，取消后不留半成品 | — | Accepted | FILE-103 |
 | FEAT-MEDIA-006 | 基础媒体查看/播放 | P1 | `mediaview/MediaViewController.java`, `mediaview/MediaView.java` | DownloadFile（原图） | 点击图片全屏查看，支持缩放与左右翻页；视频可播放 | — | Accepted | 迁移组 |
 
 ### 搜索
@@ -100,7 +100,9 @@
 | 功能 ID | 功能 | 优先级 | Android 参考位置 | TDLib 方法 | Harmony 目标行为 | 平台能力/权限 | 状态 | 负责人 |
 |---|---|---|---|---|---|---|---|---|
 | FEAT-SEARCH-001 | 全局搜索（联系人/群组/频道/消息） | P1 | `component/dialogs/SearchManager.java:570`（SearchChats）, `:993`（SearchMessages） | SearchChats, SearchPublicChats, SearchMessages | 搜索页分组展示本地与云端结果，防抖加载 | — | Accepted | 迁移组 |
-| FEAT-SEARCH-002 | 聊天内搜索 | P1 | `component/chat/MessagesSearchManager.java`, `component/chat/MessagesSearchManagerMiddleware.java`, `ui/MessagesController.java:112` | SearchMessages(chatId), SearchMessagesFilterText 等 | 聊天内关键字搜索，结果跳转定位到原消息 | — | Backlog | |
+| FEAT-SEARCH-002 | 聊天内搜索 | P1 | `component/chat/MessagesSearchManager.java`, `component/chat/MessagesSearchManagerMiddleware.java`, `ui/MessagesController.java:112` | SearchMessages(chatId), SearchMessagesFilterText 等 | 聊天内关键字搜索，结果跳转定位到原消息 | — | Accepted | SEARCH-102 |
+
+> 搜索域健壮性（失败/限流不再静默成「无结果」+ 查询节流）由 **SEARCH-103** 交付（commit `1fd1ada3`，`feature/search/SearchCoordinator` 引入 `SearchFailed` 意图与 750ms 节流、重试 UI），不单列功能 ID——属 FEAT-SEARCH-001/002 的质量补强。
 
 ### Push 与通知
 
@@ -124,9 +126,9 @@
 | 功能 ID | 功能 | 优先级 | Android 参考位置 | TDLib 方法 | Harmony 目标行为 | 平台能力/权限 | 状态 | 负责人 |
 |---|---|---|---|---|---|---|---|---|
 | FEAT-UI-001 | 深色/浅色主题 | P1 | `theme/ThemeManager.java:48`（DEFAULT_DARK_THEME = NIGHT_BLUE）, `theme/Theme.java` | —（平台侧） | 跟随系统/手动切换，关键页面（列表/聊天/设置）色值正确 | — | Accepted | 迁移组 |
-| FEAT-UI-002 | 大字体（聊天字号调节） | P1 | `unsorted/Settings.java:791`（CHAT_FONT_SIZES）, `ui/SettingsController.java:218`（getChatFontSize） | —（平台侧） | 大字号模式下气泡/列表不截断不重叠 | 字体缩放 | Backlog | |
+| FEAT-UI-002 | 大字体（聊天字号调节） | P1 | `unsorted/Settings.java:791`（CHAT_FONT_SIZES）, `ui/SettingsController.java:218`（getChatFontSize） | —（平台侧） | 大字号模式下气泡/列表不截断不重叠 | 字体缩放 | Accepted | SET-105 |
 | FEAT-UI-003 | 中/英文案资源 | P1 | `core/Lang.java`, `ui/SettingsLanguageController.java` | — | 关键路径文案中英齐全，无硬编码遗漏 | — | Accepted | 迁移组 |
-| FEAT-UI-004 | 抽屉主导航（≡ 账号头 + 联系人/通话/我的收藏/设置/邀请朋友/帮助 + 夜间模式开关） | P1 | `navigation/DrawerController.java`, `MainActivity.java` | —（平台侧） | 会话列表抽屉导航，账号头展示在线状态，入口路由正确 | — | Backlog | |
+| FEAT-UI-004 | 抽屉主导航（≡ 账号头 + 联系人/通话/我的收藏/设置/邀请朋友/帮助 + 夜间模式开关） | P1 | `navigation/DrawerController.java`, `MainActivity.java` | —（平台侧） | 会话列表抽屉导航，账号头展示在线状态，入口路由正确 | — | Accepted | DRAWER-101 |
 
 ---
 
