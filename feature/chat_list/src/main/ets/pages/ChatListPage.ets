@@ -433,32 +433,37 @@ export struct ChatListPage {
       }
 
       // DRAWER-101：TGX 抽屉导航（≡ 滑出 72% 面板 + 半透明 scrim）。
+      // 注意：根 Stack 的 alignContent 为 BottomEnd（供右下角 FAB 使用），抽屉若直接作为其子节点
+      // 会被一并推到右下角。故抽屉层用独立 Stack 显式声明 TopStart，与 FAB 的对齐互不干扰。
       if (this.showDrawer) {
-        // 半透明遮罩：点击关闭抽屉。
-        Column()
-          .width('100%')
-          .height('100%')
-          .backgroundColor(T.colors.scrim)
-          .onClick(() => {
-            this.showDrawer = false;
-          })
+        Stack({ alignContent: Alignment.TopStart }) {
+          // 半透明遮罩：点击关闭抽屉。
+          Column()
+            .width('100%')
+            .height('100%')
+            .backgroundColor(T.colors.scrim)
+            .onClick(() => {
+              this.showDrawer = false;
+            })
 
-        DrawerMenu({
-          state: this.drawerState,
-          onItem: (item: string): void => {
-            this.handleDrawerItem(item);
-          },
-          onNightModeChanged: (on: boolean): void => {
-            this.onDrawerNightModeChanged(on);
-          },
-          onClose: (): void => {
-            this.showDrawer = false;
-          },
-          onSwitchAccount: (): void => {
-            this.onDrawerSwitchAccount();
-          }
-        })
-          .align(Alignment.TopStart)
+          DrawerMenu({
+            state: this.drawerState,
+            onItem: (item: string): void => {
+              this.handleDrawerItem(item);
+            },
+            onNightModeChanged: (on: boolean): void => {
+              this.onDrawerNightModeChanged(on);
+            },
+            onClose: (): void => {
+              this.showDrawer = false;
+            },
+            onSwitchAccount: (): void => {
+              this.onDrawerSwitchAccount();
+            }
+          })
+        }
+        .width('100%')
+        .height('100%')
       }
     }
     .width('100%')
