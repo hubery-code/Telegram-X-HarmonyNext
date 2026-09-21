@@ -15,7 +15,7 @@
  * 回调交给装配层切到 SearchPage——本页不做内联搜索。
  */
 
-import { LightTheme } from '@tgx/core-design-system';
+import { LightTheme, Theme } from '@tgx/core-design-system';
 import { ChatListItem } from '../model/ChatListItem';
 import { ChatListUiState, ChatActionMenuState, ChatFolderTab, filterChatsByFolder } from '../contract/ChatListUiState';
 import { DrawerState } from '../contract/DrawerState';
@@ -34,7 +34,6 @@ import {
   SelectChatFolder
 } from '../contract/ChatListIntent';
 
-const T = LightTheme;
 
 const AVATAR_SIZE: number = 52;
 const BADGE_HEIGHT: number = 20;
@@ -138,6 +137,14 @@ export class ChatListDataSource implements IDataSource {
 
 @Component
 export struct ChatListPage {
+  /**
+   * FEAT-UI-001 全局深色主题：entry 装配层把 ThemeManager 的当前主题写入
+   * AppStorage('activeTheme')，本页以 @StorageProp 订阅。该值变化会触发本页
+   * 重渲染。此前写死 `const T = LightTheme`，主题切换后引用不变，深色不生效。
+   * 短名 T 直接落在装饰器成员上——ArkUI 的 build 转换不接管 struct 内自定义
+   * getter，写成 getter 会在渲染闭包里取到 undefined 并抛 TypeError。
+   */
+  @StorageProp('activeTheme') T: Theme = LightTheme;
   @Prop @Watch('onUiStateChanged') uiState: ChatListUiState = ChatListUiState.initial();
 
   onDispatch: (intent: Object) => void = () => {};
@@ -234,22 +241,22 @@ export struct ChatListPage {
             Image($r('app.media.ic_back'))
               .width(SETTINGS_BUTTON_SIZE * 0.6)
               .height(SETTINGS_BUTTON_SIZE * 0.6)
-              .fillColor(T.colors.accent)
-              .margin({ right: T.spacing.sm })
+              .fillColor(this.T.colors.accent)
+              .margin({ right: this.T.spacing.sm })
               .onClick(() => {
                 this.onDispatch(new CloseArchivedChats());
               })
 
             Text('Archived Chats')
-              .fontSize(T.typography.largeTitle.fontSize)
-              .fontWeight(T.typography.largeTitle.fontWeight)
-              .fontColor(T.colors.textPrimary)
+              .fontSize(this.T.typography.largeTitle.fontSize)
+              .fontWeight(this.T.typography.largeTitle.fontWeight)
+              .fontColor(this.T.colors.textPrimary)
               .layoutWeight(1)
 
             Image($r('app.media.ic_settings'))
               .width(22)
               .height(22)
-              .fillColor(T.colors.accent)
+              .fillColor(this.T.colors.accent)
               .onClick(() => {
                 this.onOpenSettings();
               })
@@ -257,10 +264,10 @@ export struct ChatListPage {
           .width('100%')
           .alignItems(VerticalAlign.Center)
           .padding({
-            left: T.spacing.screenInset,
-            right: T.spacing.screenInset,
-            top: T.spacing.lg,
-            bottom: T.spacing.md
+            left: this.T.spacing.screenInset,
+            right: this.T.spacing.screenInset,
+            top: this.T.spacing.lg,
+            bottom: this.T.spacing.md
           })
         } else {
           Row() {
@@ -268,23 +275,23 @@ export struct ChatListPage {
             Image($r('app.media.ic_menu'))
               .width(22)
               .height(22)
-              .fillColor(T.colors.accent)
-              .margin({ right: T.spacing.sm })
+              .fillColor(this.T.colors.accent)
+              .margin({ right: this.T.spacing.sm })
               .onClick(() => {
                 this.showDrawer = true;
               })
 
             Text('Chats')
-              .fontSize(T.typography.largeTitle.fontSize)
-              .fontWeight(T.typography.largeTitle.fontWeight)
-              .fontColor(T.colors.textPrimary)
+              .fontSize(this.T.typography.largeTitle.fontSize)
+              .fontWeight(this.T.typography.largeTitle.fontWeight)
+              .fontColor(this.T.colors.textPrimary)
               .layoutWeight(1)
 
             // TGX 对齐：顶栏右侧为搜索入口（与 ChatsController.fillMenuItems 对齐），设置收敛至抽屉导航。
             Image($r('app.media.ic_search'))
               .width(22)
               .height(22)
-              .fillColor(T.colors.accent)
+              .fillColor(this.T.colors.accent)
               .onClick(() => {
                 this.onOpenSearch();
               })
@@ -292,10 +299,10 @@ export struct ChatListPage {
           .width('100%')
           .alignItems(VerticalAlign.Center)
           .padding({
-            left: T.spacing.screenInset,
-            right: T.spacing.screenInset,
-            top: T.spacing.lg,
-            bottom: T.spacing.md
+            left: this.T.spacing.screenInset,
+            right: this.T.spacing.screenInset,
+            top: this.T.spacing.lg,
+            bottom: this.T.spacing.md
           })
 
           // INTEG-002：搜索入口。
@@ -303,24 +310,24 @@ export struct ChatListPage {
             Image($r('app.media.ic_search'))
               .width(18)
               .height(18)
-              .fillColor(T.colors.textSecondary)
-              .margin({ right: T.spacing.xs })
+              .fillColor(this.T.colors.textSecondary)
+              .margin({ right: this.T.spacing.xs })
 
             Text('Search')
-              .fontSize(T.typography.body.fontSize)
-              .fontColor(T.colors.textSecondary)
+              .fontSize(this.T.typography.body.fontSize)
+              .fontColor(this.T.colors.textSecondary)
               .layoutWeight(1)
           }
           .width('100%')
           .height(SEARCH_BAR_HEIGHT)
           .alignItems(VerticalAlign.Center)
-          .padding({ left: T.spacing.md, right: T.spacing.md })
-          .backgroundColor(T.colors.surfaceVariant)
-          .borderRadius(T.radius.md)
+          .padding({ left: this.T.spacing.md, right: this.T.spacing.md })
+          .backgroundColor(this.T.colors.surfaceVariant)
+          .borderRadius(this.T.radius.md)
           .margin({
-            left: T.spacing.screenInset,
-            right: T.spacing.screenInset,
-            bottom: T.spacing.sm
+            left: this.T.spacing.screenInset,
+            right: this.T.spacing.screenInset,
+            bottom: this.T.spacing.sm
           })
           .onClick(() => {
             this.onOpenSearch();
@@ -335,15 +342,15 @@ export struct ChatListPage {
         // MSG-108：置顶/标未读失败的错误细条（不挡列表）。
         if (this.uiState.errorMessage !== null && this.uiState.items.length > 0) {
           Text(this.uiState.errorMessage)
-            .fontSize(T.typography.footnote.fontSize)
-            .fontColor(T.colors.destructive)
+            .fontSize(this.T.typography.footnote.fontSize)
+            .fontColor(this.T.colors.destructive)
             .maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
             .width('100%')
             .padding({
-              left: T.spacing.screenInset,
-              right: T.spacing.screenInset,
-              bottom: T.spacing.xs
+              left: this.T.spacing.screenInset,
+              right: this.T.spacing.screenInset,
+              bottom: this.T.spacing.xs
             })
         }
 
@@ -375,9 +382,9 @@ export struct ChatListPage {
             .scrollBar(BarState.Off)
             .divider({
               strokeWidth: 1,
-              color: T.colors.divider,
-              startMargin: T.spacing.screenInset + AVATAR_SIZE + T.spacing.md,
-              endMargin: T.spacing.none
+              color: this.T.colors.divider,
+              startMargin: this.T.spacing.screenInset + AVATAR_SIZE + this.T.spacing.md,
+              endMargin: this.T.spacing.none
             })
           }
           .layoutWeight(1)
@@ -392,7 +399,7 @@ export struct ChatListPage {
       }
       .width('100%')
       .height('100%')
-      .backgroundColor(T.colors.background)
+      .backgroundColor(this.T.colors.background)
       .parallelGesture(
         PanGesture({ direction: PanDirection.Horizontal, distance: 30 })
           .onActionEnd((event: GestureEvent) => {
@@ -400,28 +407,28 @@ export struct ChatListPage {
           })
       )
 
-      // TGX 标志性悬浮按钮 (Floating Action Button FAB)：圆形 56x56，背景 T.colors.accent，内嵌 24x24 白色 ic_compose 图标，带阴影
+      // TGX 标志性悬浮按钮 (Floating Action Button FAB)：圆形 56x56，背景 this.T.colors.accent，内嵌 24x24 白色 ic_compose 图标，带阴影
       Column() {
         Image($r('app.media.ic_compose'))
           .width(24)
           .height(24)
-          .fillColor(T.colors.textOnAccent)
+          .fillColor(this.T.colors.textOnAccent)
       }
       .width(FAB_SIZE)
       .height(FAB_SIZE)
-      .borderRadius(T.radius.full)
-      .backgroundColor(T.colors.accent)
+      .borderRadius(this.T.radius.full)
+      .backgroundColor(this.T.colors.accent)
       .justifyContent(FlexAlign.Center)
       .alignItems(HorizontalAlign.Center)
       .shadow({
         radius: 8,
-        color: T.colors.scrim,
+        color: this.T.colors.scrim,
         offsetX: 0,
         offsetY: 4
       })
       .margin({
-        right: T.spacing.screenInset,
-        bottom: T.spacing.xxl
+        right: this.T.spacing.screenInset,
+        bottom: this.T.spacing.xxl
       })
       .onClick(() => {
         this.onCompose();
@@ -441,7 +448,7 @@ export struct ChatListPage {
           Column()
             .width('100%')
             .height('100%')
-            .backgroundColor(T.colors.scrim)
+            .backgroundColor(this.T.colors.scrim)
             .onClick(() => {
               this.showDrawer = false;
             })
@@ -468,7 +475,7 @@ export struct ChatListPage {
     }
     .width('100%')
     .height('100%')
-    .backgroundColor(T.colors.background)
+    .backgroundColor(this.T.colors.background)
   }
 
   /**
@@ -481,45 +488,45 @@ export struct ChatListPage {
         Image($r('app.media.ic_archive'))
           .width(26)
           .height(26)
-          .fillColor(T.colors.textSecondary)
+          .fillColor(this.T.colors.textSecondary)
       }
       .width(AVATAR_SIZE)
       .height(AVATAR_SIZE)
-      .borderRadius(T.radius.full)
-      .backgroundColor(T.colors.surfaceVariant)
+      .borderRadius(this.T.radius.full)
+      .backgroundColor(this.T.colors.surfaceVariant)
       .justifyContent(FlexAlign.Center)
       .alignItems(HorizontalAlign.Center)
-      .margin({ right: T.spacing.md })
+      .margin({ right: this.T.spacing.md })
 
       Column() {
         Row() {
           Text('Archived Chats')
-            .fontSize(T.typography.headline.fontSize)
-            .fontWeight(T.typography.headline.fontWeight)
-            .fontColor(T.colors.textPrimary)
+            .fontSize(this.T.typography.headline.fontSize)
+            .fontWeight(this.T.typography.headline.fontWeight)
+            .fontColor(this.T.colors.textPrimary)
             .layoutWeight(1)
 
           if (this.uiState.archiveUnreadCount > 0) {
             Text(this.uiState.archiveUnreadCount > 99 ? '99+' : `${this.uiState.archiveUnreadCount}`)
-              .fontSize(T.typography.caption.fontSize)
-              .fontWeight(T.typography.headline.fontWeight)
-              .fontColor(T.colors.textOnAccent)
-              .backgroundColor(T.colors.accent)
-              .borderRadius(T.radius.full)
+              .fontSize(this.T.typography.caption.fontSize)
+              .fontWeight(this.T.typography.headline.fontWeight)
+              .fontColor(this.T.colors.textOnAccent)
+              .backgroundColor(this.T.colors.accent)
+              .borderRadius(this.T.radius.full)
               .height(BADGE_HEIGHT)
               .constraintSize({ minWidth: BADGE_HEIGHT })
-              .padding({ left: T.spacing.xs + T.spacing.hairline, right: T.spacing.xs + T.spacing.hairline })
+              .padding({ left: this.T.spacing.xs + this.T.spacing.hairline, right: this.T.spacing.xs + this.T.spacing.hairline })
               .textAlign(TextAlign.Center)
-              .margin({ left: T.spacing.sm })
+              .margin({ left: this.T.spacing.sm })
           }
         }
         .width('100%')
-        .margin({ bottom: T.spacing.xs })
+        .margin({ bottom: this.T.spacing.xs })
 
         Row() {
           Text(this.uiState.archiveChatCount > 0 ? `${this.uiState.archiveChatCount} chats` : 'Archived chats')
-            .fontSize(T.typography.subheadline.fontSize)
-            .fontColor(T.colors.textSecondary)
+            .fontSize(this.T.typography.subheadline.fontSize)
+            .fontColor(this.T.colors.textSecondary)
             .maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
             .layoutWeight(1)
@@ -531,10 +538,10 @@ export struct ChatListPage {
     }
     .width('100%')
     .padding({
-      left: T.spacing.screenInset,
-      right: T.spacing.screenInset,
-      top: T.spacing.md,
-      bottom: T.spacing.md
+      left: this.T.spacing.screenInset,
+      right: this.T.spacing.screenInset,
+      top: this.T.spacing.md,
+      bottom: this.T.spacing.md
     })
     .onClick(() => {
       this.onDispatch(new OpenArchivedChats());
@@ -552,71 +559,71 @@ export struct ChatListPage {
       Column()
         .width('100%')
         .height('100%')
-        .backgroundColor(T.colors.scrim)
+        .backgroundColor(this.T.colors.scrim)
         .onClick(() => {
           this.onDispatch(new DismissChatActionMenu());
         })
 
       Column() {
         Text(menu.title)
-          .fontSize(T.typography.footnote.fontSize)
-          .fontColor(T.colors.textSecondary)
+          .fontSize(this.T.typography.footnote.fontSize)
+          .fontColor(this.T.colors.textSecondary)
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
           .width('100%')
           .padding({
-            left: T.spacing.screenInset,
-            right: T.spacing.screenInset,
-            top: T.spacing.md,
-            bottom: T.spacing.xs
+            left: this.T.spacing.screenInset,
+            right: this.T.spacing.screenInset,
+            top: this.T.spacing.md,
+            bottom: this.T.spacing.xs
           })
 
         Text(menu.isPinned ? 'Unpin' : 'Pin')
-          .fontSize(T.typography.body.fontSize)
-          .fontColor(T.colors.textPrimary)
+          .fontSize(this.T.typography.body.fontSize)
+          .fontColor(this.T.colors.textPrimary)
           .width('100%')
           .padding({
-            left: T.spacing.screenInset,
-            right: T.spacing.screenInset,
-            top: T.spacing.md,
-            bottom: T.spacing.md
+            left: this.T.spacing.screenInset,
+            right: this.T.spacing.screenInset,
+            top: this.T.spacing.md,
+            bottom: this.T.spacing.md
           })
           .onClick(() => {
             this.onDispatch(new ToggleChatPinned());
           })
 
         Text(menu.canMarkAsRead ? 'Mark as read' : 'Mark as unread')
-          .fontSize(T.typography.body.fontSize)
-          .fontColor(T.colors.textPrimary)
+          .fontSize(this.T.typography.body.fontSize)
+          .fontColor(this.T.colors.textPrimary)
           .width('100%')
           .padding({
-            left: T.spacing.screenInset,
-            right: T.spacing.screenInset,
-            top: T.spacing.md,
-            bottom: T.spacing.md
+            left: this.T.spacing.screenInset,
+            right: this.T.spacing.screenInset,
+            top: this.T.spacing.md,
+            bottom: this.T.spacing.md
           })
           .onClick(() => {
             this.onDispatch(new ToggleChatMarkedUnread());
           })
 
         Text(menu.isArchived ? 'Unarchive' : 'Archive')
-          .fontSize(T.typography.body.fontSize)
-          .fontColor(T.colors.textPrimary)
+          .fontSize(this.T.typography.body.fontSize)
+          .fontColor(this.T.colors.textPrimary)
           .width('100%')
           .padding({
-            left: T.spacing.screenInset,
-            right: T.spacing.screenInset,
-            top: T.spacing.md,
-            bottom: T.spacing.md
+            left: this.T.spacing.screenInset,
+            right: this.T.spacing.screenInset,
+            top: this.T.spacing.md,
+            bottom: this.T.spacing.md
           })
           .onClick(() => {
             this.onDispatch(new ToggleChatArchived());
           })
       }
       .width('100%')
-      .backgroundColor(T.colors.surface)
-      .borderRadius({ topLeft: T.radius.xl, topRight: T.radius.xl })
-      .padding({ top: T.spacing.sm, bottom: T.spacing.lg })
+      .backgroundColor(this.T.colors.surface)
+      .borderRadius({ topLeft: this.T.radius.xl, topRight: this.T.radius.xl })
+      .padding({ top: this.T.spacing.sm, bottom: this.T.spacing.lg })
     }
     .width('100%')
     .height('100%')
@@ -630,28 +637,28 @@ export struct ChatListPage {
         Image(toSandboxUri(item.avatarPath))
           .width(AVATAR_SIZE)
           .height(AVATAR_SIZE)
-          .borderRadius(T.radius.full)
+          .borderRadius(this.T.radius.full)
           .objectFit(ImageFit.Cover)
-          .margin({ right: T.spacing.md })
+          .margin({ right: this.T.spacing.md })
       } else {
         Text(item.avatarLetter)
           .width(AVATAR_SIZE)
           .height(AVATAR_SIZE)
-          .borderRadius(T.radius.full)
+          .borderRadius(this.T.radius.full)
           .backgroundColor(item.avatarColor)
-          .fontColor(T.colors.textOnAccent)
-          .fontSize(T.typography.title.fontSize)
-          .fontWeight(T.typography.title.fontWeight)
+          .fontColor(this.T.colors.textOnAccent)
+          .fontSize(this.T.typography.title.fontSize)
+          .fontWeight(this.T.typography.title.fontWeight)
           .textAlign(TextAlign.Center)
-          .margin({ right: T.spacing.md })
+          .margin({ right: this.T.spacing.md })
       }
 
       Column() {
         Row() {
           Text(item.title)
-            .fontSize(T.typography.headline.fontSize)
-            .fontWeight(T.typography.headline.fontWeight)
-            .fontColor(T.colors.textPrimary)
+            .fontSize(this.T.typography.headline.fontSize)
+            .fontWeight(this.T.typography.headline.fontWeight)
+            .fontColor(this.T.colors.textPrimary)
             .maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
             .layoutWeight(1)
@@ -661,43 +668,43 @@ export struct ChatListPage {
             Image($r('app.media.ic_pin'))
               .width(14)
               .height(14)
-              .fillColor(T.colors.textSecondary)
-              .margin({ left: T.spacing.sm })
+              .fillColor(this.T.colors.textSecondary)
+              .margin({ left: this.T.spacing.sm })
           }
 
           if (item.isMuted) {
             Image($r('app.media.ic_mute'))
               .width(14)
               .height(14)
-              .fillColor(T.colors.textSecondary)
-              .margin({ left: T.spacing.sm })
+              .fillColor(this.T.colors.textSecondary)
+              .margin({ left: this.T.spacing.sm })
           }
 
           Text(formatChatTimestamp(item.timestampMs))
-            .fontSize(T.typography.footnote.fontSize)
-            .fontColor(T.colors.textSecondary)
-            .margin({ left: T.spacing.sm })
+            .fontSize(this.T.typography.footnote.fontSize)
+            .fontColor(this.T.colors.textSecondary)
+            .margin({ left: this.T.spacing.sm })
         }
         .width('100%')
-        .margin({ bottom: T.spacing.xs })
+        .margin({ bottom: this.T.spacing.xs })
 
         Row() {
           if (item.draftText !== null && item.draftText.length > 0) {
             Text('Draft: ')
-              .fontSize(T.typography.subheadline.fontSize)
-              .fontWeight(T.typography.headline.fontWeight)
-              .fontColor(T.colors.destructive)
+              .fontSize(this.T.typography.subheadline.fontSize)
+              .fontWeight(this.T.typography.headline.fontWeight)
+              .fontColor(this.T.colors.destructive)
 
             Text(item.draftText)
-              .fontSize(T.typography.subheadline.fontSize)
-              .fontColor(T.colors.textSecondary)
+              .fontSize(this.T.typography.subheadline.fontSize)
+              .fontColor(this.T.colors.textSecondary)
               .maxLines(1)
               .textOverflow({ overflow: TextOverflow.Ellipsis })
               .layoutWeight(1)
           } else {
             Text(item.lastMessagePreview)
-              .fontSize(T.typography.subheadline.fontSize)
-              .fontColor(T.colors.textSecondary)
+              .fontSize(this.T.typography.subheadline.fontSize)
+              .fontColor(this.T.colors.textSecondary)
               .maxLines(1)
               .textOverflow({ overflow: TextOverflow.Ellipsis })
               .layoutWeight(1)
@@ -705,24 +712,24 @@ export struct ChatListPage {
 
           if (item.unreadCount > 0) {
             Text(item.unreadCount > 99 ? '99+' : `${item.unreadCount}`)
-              .fontSize(T.typography.caption.fontSize)
-              .fontWeight(T.typography.headline.fontWeight)
-              .fontColor(T.colors.textOnAccent)
-              .backgroundColor(T.colors.accent)
-              .borderRadius(T.radius.full)
+              .fontSize(this.T.typography.caption.fontSize)
+              .fontWeight(this.T.typography.headline.fontWeight)
+              .fontColor(this.T.colors.textOnAccent)
+              .backgroundColor(this.T.colors.accent)
+              .borderRadius(this.T.radius.full)
               .height(BADGE_HEIGHT)
               .constraintSize({ minWidth: BADGE_HEIGHT })
-              .padding({ left: T.spacing.xs + T.spacing.hairline, right: T.spacing.xs + T.spacing.hairline })
+              .padding({ left: this.T.spacing.xs + this.T.spacing.hairline, right: this.T.spacing.xs + this.T.spacing.hairline })
               .textAlign(TextAlign.Center)
-              .margin({ left: T.spacing.sm })
+              .margin({ left: this.T.spacing.sm })
           } else if (item.isMarkedAsUnread) {
             // MSG-108：手动标未读但不含未读消息 → 实心圆点（标未读不产生未读数）。
             Text('')
               .width(BADGE_HEIGHT - 8)
               .height(BADGE_HEIGHT - 8)
-              .borderRadius(T.radius.full)
-              .backgroundColor(T.colors.accent)
-              .margin({ left: T.spacing.sm })
+              .borderRadius(this.T.radius.full)
+              .backgroundColor(this.T.colors.accent)
+              .margin({ left: this.T.spacing.sm })
           }
         }
         .width('100%')
@@ -732,10 +739,10 @@ export struct ChatListPage {
     }
     .width('100%')
     .padding({
-      left: T.spacing.screenInset,
-      right: T.spacing.screenInset,
-      top: T.spacing.md,
-      bottom: T.spacing.md
+      left: this.T.spacing.screenInset,
+      right: this.T.spacing.screenInset,
+      top: this.T.spacing.md,
+      bottom: this.T.spacing.md
     })
     .onClick(() => {
       this.onDispatch(new ChatSelected(item.chatId));
@@ -755,12 +762,12 @@ export struct ChatListPage {
       LoadingProgress()
         .width(48)
         .height(48)
-        .color(T.colors.accent)
-        .margin({ bottom: T.spacing.lg })
+        .color(this.T.colors.accent)
+        .margin({ bottom: this.T.spacing.lg })
 
       Text('Loading chats...')
-        .fontSize(T.typography.body.fontSize)
-        .fontColor(T.colors.textSecondary)
+        .fontSize(this.T.typography.body.fontSize)
+        .fontColor(this.T.colors.textSecondary)
     }
     .width('100%')
     .layoutWeight(1)
@@ -780,35 +787,35 @@ export struct ChatListPage {
           Column() {
             Row() {
               Text(folder.title)
-                .fontSize(T.typography.subheadline.fontSize)
+                .fontSize(this.T.typography.subheadline.fontSize)
                 .fontWeight(this.uiState.selectedFolderId === folder.id ? FontWeight.Bold : FontWeight.Medium)
-                .fontColor(this.uiState.selectedFolderId === folder.id ? T.colors.accent : T.colors.textSecondary)
+                .fontColor(this.uiState.selectedFolderId === folder.id ? this.T.colors.accent : this.T.colors.textSecondary)
 
               if (folder.unreadCount > 0) {
                 Text(folder.unreadCount > 99 ? '99+' : `${folder.unreadCount}`)
-                  .fontSize(T.typography.caption.fontSize)
+                  .fontSize(this.T.typography.caption.fontSize)
                   .fontWeight(FontWeight.Bold)
-                  .fontColor(this.uiState.selectedFolderId === folder.id ? T.colors.textOnAccent : T.colors.textSecondary)
-                  .backgroundColor(this.uiState.selectedFolderId === folder.id ? T.colors.accent : T.colors.surfaceVariant)
-                  .borderRadius(T.radius.full)
+                  .fontColor(this.uiState.selectedFolderId === folder.id ? this.T.colors.textOnAccent : this.T.colors.textSecondary)
+                  .backgroundColor(this.uiState.selectedFolderId === folder.id ? this.T.colors.accent : this.T.colors.surfaceVariant)
+                  .borderRadius(this.T.radius.full)
                   .height(18)
                   .constraintSize({ minWidth: 18 })
                   .padding({ left: 5, right: 5 })
                   .textAlign(TextAlign.Center)
-                  .margin({ left: T.spacing.xs })
+                  .margin({ left: this.T.spacing.xs })
               }
             }
             .alignItems(VerticalAlign.Center)
             .padding({
-              left: T.spacing.md,
-              right: T.spacing.md,
-              top: T.spacing.sm,
-              bottom: T.spacing.sm
+              left: this.T.spacing.md,
+              right: this.T.spacing.md,
+              top: this.T.spacing.sm,
+              bottom: this.T.spacing.sm
             })
           }
           .border({
             width: { bottom: 3 },
-            color: { bottom: this.uiState.selectedFolderId === folder.id ? T.colors.accent : Color.Transparent }
+            color: { bottom: this.uiState.selectedFolderId === folder.id ? this.T.colors.accent : Color.Transparent }
           })
           .alignItems(HorizontalAlign.Center)
           .onClick(() => {
@@ -817,8 +824,8 @@ export struct ChatListPage {
         }, (folder: ChatFolderTab) => `${folder.id}:${folder.unreadCount}:${this.uiState.selectedFolderId === folder.id}`)
       }
       .padding({
-        left: T.spacing.sm,
-        right: T.spacing.sm
+        left: this.T.spacing.sm,
+        right: this.T.spacing.sm
       })
     }
     .scrollable(ScrollDirection.Horizontal)
@@ -833,21 +840,21 @@ export struct ChatListPage {
       Image(this.getEmptyIcon())
         .width(56)
         .height(56)
-        .fillColor(T.colors.textSecondary)
+        .fillColor(this.T.colors.textSecondary)
         .opacity(0.5)
-        .margin({ bottom: T.spacing.md })
+        .margin({ bottom: this.T.spacing.md })
 
       Text(this.getEmptyTitle())
-        .fontSize(T.typography.title.fontSize)
-        .fontWeight(T.typography.title.fontWeight)
-        .fontColor(T.colors.textPrimary)
-        .margin({ bottom: T.spacing.xs })
+        .fontSize(this.T.typography.title.fontSize)
+        .fontWeight(this.T.typography.title.fontWeight)
+        .fontColor(this.T.colors.textPrimary)
+        .margin({ bottom: this.T.spacing.xs })
 
       Text(this.getEmptySubtitle())
-        .fontSize(T.typography.body.fontSize)
-        .fontColor(T.colors.textSecondary)
+        .fontSize(this.T.typography.body.fontSize)
+        .fontColor(this.T.colors.textSecondary)
         .textAlign(TextAlign.Center)
-        .padding({ left: T.spacing.xxl, right: T.spacing.xxl })
+        .padding({ left: this.T.spacing.xxl, right: this.T.spacing.xxl })
     }
     .width('100%')
     .layoutWeight(1)
@@ -921,26 +928,26 @@ export struct ChatListPage {
   ErrorView(errorMessage: string) {
     Column() {
       Text('Failed to load chats')
-        .fontSize(T.typography.title.fontSize)
-        .fontWeight(T.typography.title.fontWeight)
-        .fontColor(T.colors.destructive)
-        .margin({ bottom: T.spacing.md })
+        .fontSize(this.T.typography.title.fontSize)
+        .fontWeight(this.T.typography.title.fontWeight)
+        .fontColor(this.T.colors.destructive)
+        .margin({ bottom: this.T.spacing.md })
 
       Text(errorMessage)
-        .fontSize(T.typography.footnote.fontSize)
-        .fontColor(T.colors.textSecondary)
+        .fontSize(this.T.typography.footnote.fontSize)
+        .fontColor(this.T.colors.textSecondary)
         .textAlign(TextAlign.Center)
         .margin({
-          bottom: T.spacing.xxl,
-          left: T.spacing.xxl,
-          right: T.spacing.xxl
+          bottom: this.T.spacing.xxl,
+          left: this.T.spacing.xxl,
+          right: this.T.spacing.xxl
         })
 
       Button('Try Again')
         .width('60%')
         .height(44)
-        .backgroundColor(T.colors.accent)
-        .borderRadius(T.radius.full)
+        .backgroundColor(this.T.colors.accent)
+        .borderRadius(this.T.radius.full)
         .onClick(() => {
           this.onDispatch(new LoadChats());
         })

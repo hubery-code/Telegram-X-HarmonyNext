@@ -5,13 +5,20 @@
  * 全部色彩/字号/间距用 design_system token，不硬编码。
  */
 
-import { LightTheme } from '@tgx/core-design-system';
+import { LightTheme, Theme } from '@tgx/core-design-system';
 import { CountryInfo, DEFAULT_COUNTRY, SUPPORTED_COUNTRIES } from '../model/CountryCode';
 
-const T = LightTheme;
 
 @Component
 export struct PhonePage {
+  /**
+   * FEAT-UI-001 全局深色主题：entry 装配层把 ThemeManager 的当前主题写入
+   * AppStorage('activeTheme')，本页以 @StorageProp 订阅。该值变化会触发本页
+   * 重渲染。此前写死 `const T = LightTheme`，主题切换后引用不变，深色不生效。
+   * 短名 T 直接落在装饰器成员上——ArkUI 的 build 转换不接管 struct 内自定义
+   * getter，写成 getter 会在渲染闭包里取到 undefined 并抛 TypeError。
+   */
+  @StorageProp('activeTheme') T: Theme = LightTheme;
   @Prop countryCode: string = DEFAULT_COUNTRY.dialCode;
   @Prop countryName: string = DEFAULT_COUNTRY.name;
   @Prop rawPhone: string = '';
@@ -28,38 +35,38 @@ export struct PhonePage {
   build() {
     Column() {
       Text('Your Phone')
-        .fontSize(T.typography.largeTitle.fontSize)
-        .fontWeight(T.typography.largeTitle.fontWeight)
-        .fontColor(T.colors.textPrimary)
-        .margin({ top: T.spacing.huge, bottom: T.spacing.sm })
+        .fontSize(this.T.typography.largeTitle.fontSize)
+        .fontWeight(this.T.typography.largeTitle.fontWeight)
+        .fontColor(this.T.colors.textPrimary)
+        .margin({ top: this.T.spacing.huge, bottom: this.T.spacing.sm })
 
       Text('Please confirm your country code and enter your phone number.')
-        .fontSize(T.typography.subheadline.fontSize)
-        .fontColor(T.colors.textSecondary)
+        .fontSize(this.T.typography.subheadline.fontSize)
+        .fontColor(this.T.colors.textSecondary)
         .textAlign(TextAlign.Center)
-        .margin({ bottom: T.spacing.xxl, left: T.spacing.lg, right: T.spacing.lg })
+        .margin({ bottom: this.T.spacing.xxl, left: this.T.spacing.lg, right: this.T.spacing.lg })
 
       Row() {
         Text(this.countryName)
-          .fontSize(T.typography.headline.fontSize)
-          .fontColor(T.colors.textPrimary)
+          .fontSize(this.T.typography.headline.fontSize)
+          .fontColor(this.T.colors.textPrimary)
           .layoutWeight(1)
 
         Text(this.countryCode)
-          .fontSize(T.typography.headline.fontSize)
-          .fontColor(T.colors.accent)
-          .fontWeight(T.typography.headline.fontWeight)
+          .fontSize(this.T.typography.headline.fontSize)
+          .fontColor(this.T.colors.accent)
+          .fontWeight(this.T.typography.headline.fontWeight)
 
         Image($r('app.media.ic_chevron_down'))
           .width(20)
           .height(20)
-          .fillColor(T.colors.textSecondary)
-          .margin({ left: T.spacing.xs })
+          .fillColor(this.T.colors.textSecondary)
+          .margin({ left: this.T.spacing.xs })
       }
       .width('90%')
-      .padding({ left: T.spacing.lg, right: T.spacing.lg, top: T.spacing.md, bottom: T.spacing.md })
-      .backgroundColor(T.colors.backgroundSecondary)
-      .borderRadius(T.radius.md)
+      .padding({ left: this.T.spacing.lg, right: this.T.spacing.lg, top: this.T.spacing.md, bottom: this.T.spacing.md })
+      .backgroundColor(this.T.colors.backgroundSecondary)
+      .borderRadius(this.T.radius.md)
       .onClick(() => {
         this.showCountryPicker = !this.showCountryPicker;
       })
@@ -70,15 +77,15 @@ export struct PhonePage {
             ListItem() {
               Row() {
                 Text(item.name)
-                  .fontSize(T.typography.subheadline.fontSize)
-                  .fontColor(T.colors.textPrimary)
+                  .fontSize(this.T.typography.subheadline.fontSize)
+                  .fontColor(this.T.colors.textPrimary)
                   .layoutWeight(1)
                 Text(item.dialCode)
-                  .fontSize(T.typography.subheadline.fontSize)
-                  .fontColor(T.colors.textSecondary)
+                  .fontSize(this.T.typography.subheadline.fontSize)
+                  .fontColor(this.T.colors.textSecondary)
               }
               .width('100%')
-              .padding({ top: T.spacing.sm + T.spacing.xs, bottom: T.spacing.sm + T.spacing.xs, left: T.spacing.lg, right: T.spacing.lg })
+              .padding({ top: this.T.spacing.sm + this.T.spacing.xs, bottom: this.T.spacing.sm + this.T.spacing.xs, left: this.T.spacing.lg, right: this.T.spacing.lg })
               .onClick(() => {
                 this.onCountrySelected(item);
                 this.showCountryPicker = false;
@@ -88,21 +95,21 @@ export struct PhonePage {
         }
         .width('90%')
         .height(180)
-        .backgroundColor(T.colors.surface)
-        .border({ width: 1, color: T.colors.divider, radius: T.radius.md })
-        .margin({ top: T.spacing.xs })
+        .backgroundColor(this.T.colors.surface)
+        .border({ width: 1, color: this.T.colors.divider, radius: this.T.radius.md })
+        .margin({ top: this.T.spacing.xs })
       }
 
       Row() {
         Text(this.countryCode)
-          .fontSize(T.typography.body.fontSize)
-          .fontWeight(T.typography.headline.fontWeight)
-          .fontColor(T.colors.textPrimary)
-          .margin({ right: T.spacing.sm })
+          .fontSize(this.T.typography.body.fontSize)
+          .fontWeight(this.T.typography.headline.fontWeight)
+          .fontColor(this.T.colors.textPrimary)
+          .margin({ right: this.T.spacing.sm })
 
         TextInput({ text: this.rawPhone, placeholder: 'Phone number' })
           .type(InputType.PhoneNumber)
-          .fontSize(T.typography.body.fontSize)
+          .fontSize(this.T.typography.body.fontSize)
           .layoutWeight(1)
           .backgroundColor(Color.Transparent)
           .onChange((value: string) => {
@@ -110,20 +117,20 @@ export struct PhonePage {
           })
       }
       .width('90%')
-      .padding({ left: T.spacing.lg, right: T.spacing.lg, top: T.spacing.sm + T.spacing.xs, bottom: T.spacing.sm + T.spacing.xs })
-      .margin({ top: T.spacing.lg })
-      .backgroundColor(T.colors.surfaceVariant)
+      .padding({ left: this.T.spacing.lg, right: this.T.spacing.lg, top: this.T.spacing.sm + this.T.spacing.xs, bottom: this.T.spacing.sm + this.T.spacing.xs })
+      .margin({ top: this.T.spacing.lg })
+      .backgroundColor(this.T.colors.surfaceVariant)
       .border({
         width: 1,
-        color: this.errorMessage !== null ? T.colors.destructive : T.colors.border,
-        radius: T.radius.md
+        color: this.errorMessage !== null ? this.T.colors.destructive : this.T.colors.border,
+        radius: this.T.radius.md
       })
 
       if (this.errorMessage !== null) {
         Text(this.errorMessage)
-          .fontSize(T.typography.footnote.fontSize)
-          .fontColor(T.colors.destructive)
-          .margin({ top: T.spacing.sm, left: T.spacing.xxl, right: T.spacing.xxl })
+          .fontSize(this.T.typography.footnote.fontSize)
+          .fontColor(this.T.colors.destructive)
+          .margin({ top: this.T.spacing.sm, left: this.T.spacing.xxl, right: this.T.spacing.xxl })
           .textAlign(TextAlign.Start)
       }
 
@@ -132,10 +139,10 @@ export struct PhonePage {
       Button('Log in with QR code')
         .width('90%')
         .height(44)
-        .fontColor(T.colors.accent)
+        .fontColor(this.T.colors.accent)
         .backgroundColor(Color.Transparent)
         .enabled(!this.isSubmitting)
-        .margin({ bottom: T.spacing.sm })
+        .margin({ bottom: this.T.spacing.sm })
         .onClick(() => {
           this.onUseQrCode();
         })
@@ -146,27 +153,27 @@ export struct PhonePage {
             LoadingProgress()
               .width(20)
               .height(20)
-              .color(T.colors.textOnAccent)
-              .margin({ right: T.spacing.sm })
+              .color(this.T.colors.textOnAccent)
+              .margin({ right: this.T.spacing.sm })
           }
           Text(this.isSubmitting ? 'Connecting...' : 'Continue')
-            .fontSize(T.typography.callout.fontSize)
-            .fontWeight(T.typography.largeTitle.fontWeight)
-            .fontColor(T.colors.textOnAccent)
+            .fontSize(this.T.typography.callout.fontSize)
+            .fontWeight(this.T.typography.largeTitle.fontWeight)
+            .fontColor(this.T.colors.textOnAccent)
         }
       }
       .width('90%')
       .height(48)
-      .backgroundColor(this.isSubmitting ? T.colors.disabled : T.colors.accent)
-      .borderRadius(T.radius.full)
+      .backgroundColor(this.isSubmitting ? this.T.colors.disabled : this.T.colors.accent)
+      .borderRadius(this.T.radius.full)
       .enabled(!this.isSubmitting)
-      .margin({ bottom: T.spacing.huge })
+      .margin({ bottom: this.T.spacing.huge })
       .onClick(() => {
         this.onSubmit();
       })
     }
     .width('100%')
     .height('100%')
-    .backgroundColor(T.colors.background)
+    .backgroundColor(this.T.colors.background)
   }
 }

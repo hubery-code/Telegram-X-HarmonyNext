@@ -18,10 +18,9 @@
  * 内容由 TDLib 拒绝并经 OnForwardFailed 回灌错误提示。
  */
 
-import { LightTheme } from '@tgx/core-design-system';
+import { LightTheme, Theme } from '@tgx/core-design-system';
 import { ForwardTarget, matchesForwardQuery } from '../model/ForwardTarget';
 
-const T = LightTheme;
 
 const AVATAR_SIZE: number = 44;
 const CHECKBOX_SIZE: number = 22;
@@ -39,6 +38,14 @@ function toSandboxUri(path: string | null): string {
 
 @Component
 export struct ForwardPickerPage {
+  /**
+   * FEAT-UI-001 全局深色主题：entry 装配层把 ThemeManager 的当前主题写入
+   * AppStorage('activeTheme')，本页以 @StorageProp 订阅。该值变化会触发本页
+   * 重渲染。此前写死 `const T = LightTheme`，主题切换后引用不变，深色不生效。
+   * 短名 T 直接落在装饰器成员上——ArkUI 的 build 转换不接管 struct 内自定义
+   * getter，写成 getter 会在渲染闭包里取到 undefined 并抛 TypeError。
+   */
+  @StorageProp('activeTheme') T: Theme = LightTheme;
   @Prop targets: ForwardTarget[] = [];
 
   /** 选中目标会话：sendCopy=true 即以副本发送（隐藏原发送者）。 */
@@ -68,7 +75,7 @@ export struct ForwardPickerPage {
           Image($r('app.media.ic_close'))
             .width(24)
             .height(24)
-            .fillColor(T.colors.textPrimary)
+            .fillColor(this.T.colors.textPrimary)
         }
         .width(HEADER_BUTTON_WIDTH)
         .height(40)
@@ -78,9 +85,9 @@ export struct ForwardPickerPage {
         })
 
         Text('Forward to…')
-          .fontSize(T.typography.title.fontSize)
-          .fontWeight(T.typography.title.fontWeight)
-          .fontColor(T.colors.textPrimary)
+          .fontSize(this.T.typography.title.fontSize)
+          .fontWeight(this.T.typography.title.fontWeight)
+          .fontColor(this.T.colors.textPrimary)
           .textAlign(TextAlign.Center)
           .layoutWeight(1)
 
@@ -91,26 +98,26 @@ export struct ForwardPickerPage {
       .width('100%')
       .alignItems(VerticalAlign.Center)
       .padding({
-        left: T.spacing.sm,
-        right: T.spacing.sm,
-        top: T.spacing.sm,
-        bottom: T.spacing.sm
+        left: this.T.spacing.sm,
+        right: this.T.spacing.sm,
+        top: this.T.spacing.sm,
+        bottom: this.T.spacing.sm
       })
       .borderWidth({ bottom: 1 })
-      .borderColor(T.colors.divider)
+      .borderColor(this.T.colors.divider)
 
       // 搜索框：按标题过滤目标会话
       TextInput({ text: this.query, placeholder: 'Search' })
         .width('100%')
         .height(40)
-        .fontSize(T.typography.body.fontSize)
-        .backgroundColor(T.colors.surface)
-        .borderRadius(T.radius.md)
+        .fontSize(this.T.typography.body.fontSize)
+        .backgroundColor(this.T.colors.surface)
+        .borderRadius(this.T.radius.md)
         .margin({
-          left: T.spacing.screenInset,
-          right: T.spacing.screenInset,
-          top: T.spacing.sm,
-          bottom: T.spacing.sm
+          left: this.T.spacing.screenInset,
+          right: this.T.spacing.screenInset,
+          top: this.T.spacing.sm,
+          bottom: this.T.spacing.sm
         })
         .onChange((value: string) => {
           this.query = value;
@@ -123,45 +130,45 @@ export struct ForwardPickerPage {
             Image($r('app.media.ic_check_single'))
               .width(14)
               .height(14)
-              .fillColor(T.colors.textOnAccent)
+              .fillColor(this.T.colors.textOnAccent)
           }
         }
         .width(CHECKBOX_SIZE)
         .height(CHECKBOX_SIZE)
-        .borderRadius(T.radius.sm)
+        .borderRadius(this.T.radius.sm)
         .borderWidth(1)
-        .borderColor(this.sendCopy ? T.colors.accent : T.colors.divider)
-        .backgroundColor(this.sendCopy ? T.colors.accent : Color.Transparent)
+        .borderColor(this.sendCopy ? this.T.colors.accent : this.T.colors.divider)
+        .backgroundColor(this.sendCopy ? this.T.colors.accent : Color.Transparent)
         .justifyContent(FlexAlign.Center)
         .alignItems(VerticalAlign.Center)
-        .margin({ right: T.spacing.sm })
+        .margin({ right: this.T.spacing.sm })
 
         Text('Send as copy')
-          .fontSize(T.typography.body.fontSize)
-          .fontColor(T.colors.textPrimary)
+          .fontSize(this.T.typography.body.fontSize)
+          .fontColor(this.T.colors.textPrimary)
           .layoutWeight(1)
       }
       .width('100%')
       .alignItems(VerticalAlign.Center)
       .padding({
-        left: T.spacing.screenInset,
-        right: T.spacing.screenInset,
-        top: T.spacing.sm,
-        bottom: T.spacing.sm
+        left: this.T.spacing.screenInset,
+        right: this.T.spacing.screenInset,
+        top: this.T.spacing.sm,
+        bottom: this.T.spacing.sm
       })
       .onClick(() => {
         this.sendCopy = !this.sendCopy;
       })
 
       Divider()
-        .color(T.colors.divider)
+        .color(this.T.colors.divider)
 
       // 目标会话列表
       if (this.filteredTargets().length === 0) {
         Column() {
           Text('No chats found')
-            .fontSize(T.typography.body.fontSize)
-            .fontColor(T.colors.textSecondary)
+            .fontSize(this.T.typography.body.fontSize)
+            .fontColor(this.T.colors.textSecondary)
         }
         .width('100%')
         .layoutWeight(1)
@@ -176,24 +183,24 @@ export struct ForwardPickerPage {
                   Image(toSandboxUri(target.avatarPath))
                     .width(AVATAR_SIZE)
                     .height(AVATAR_SIZE)
-                    .borderRadius(T.radius.full)
+                    .borderRadius(this.T.radius.full)
                     .objectFit(ImageFit.Cover)
-                    .margin({ right: T.spacing.sm })
+                    .margin({ right: this.T.spacing.sm })
                 } else {
                   Text(target.avatarLetter)
                     .width(AVATAR_SIZE)
                     .height(AVATAR_SIZE)
-                    .borderRadius(T.radius.full)
+                    .borderRadius(this.T.radius.full)
                     .backgroundColor(target.avatarColor)
-                    .fontColor(T.colors.textOnAccent)
-                    .fontSize(T.typography.subheadline.fontSize)
+                    .fontColor(this.T.colors.textOnAccent)
+                    .fontSize(this.T.typography.subheadline.fontSize)
                     .textAlign(TextAlign.Center)
-                    .margin({ right: T.spacing.sm })
+                    .margin({ right: this.T.spacing.sm })
                 }
 
                 Text(target.title)
-                  .fontSize(T.typography.body.fontSize)
-                  .fontColor(T.colors.textPrimary)
+                  .fontSize(this.T.typography.body.fontSize)
+                  .fontColor(this.T.colors.textPrimary)
                   .maxLines(1)
                   .textOverflow({ overflow: TextOverflow.Ellipsis })
                   .layoutWeight(1)
@@ -201,10 +208,10 @@ export struct ForwardPickerPage {
               .width('100%')
               .alignItems(VerticalAlign.Center)
               .padding({
-                left: T.spacing.screenInset,
-                right: T.spacing.screenInset,
-                top: T.spacing.sm,
-                bottom: T.spacing.sm
+                left: this.T.spacing.screenInset,
+                right: this.T.spacing.screenInset,
+                top: this.T.spacing.sm,
+                bottom: this.T.spacing.sm
               })
               .onClick(() => {
                 this.onPick(target.chatId, this.sendCopy);
@@ -219,6 +226,6 @@ export struct ForwardPickerPage {
     }
     .width('100%')
     .height('100%')
-    .backgroundColor(T.colors.background)
+    .backgroundColor(this.T.colors.background)
   }
 }

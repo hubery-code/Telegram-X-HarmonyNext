@@ -14,10 +14,9 @@
  * onSwitchAccount），不经 reducer；状态只读 @Prop state。
  */
 
-import { LightTheme } from '@tgx/core-design-system';
+import { LightTheme, Theme } from '@tgx/core-design-system';
 import { DrawerState, DrawerItemKey } from '../contract/DrawerState';
 
-const T = LightTheme;
 
 /** 头部大头像尺寸（vp）。 */
 const DRAWER_AVATAR_SIZE: number = 64;
@@ -53,6 +52,14 @@ function toSandboxUri(path: string | null): string {
 
 @Component
 export struct DrawerMenu {
+  /**
+   * FEAT-UI-001 全局深色主题：entry 装配层把 ThemeManager 的当前主题写入
+   * AppStorage('activeTheme')，本页以 @StorageProp 订阅。该值变化会触发本页
+   * 重渲染。此前写死 `const T = LightTheme`，主题切换后引用不变，深色不生效。
+   * 短名 T 直接落在装饰器成员上——ArkUI 的 build 转换不接管 struct 内自定义
+   * getter，写成 getter 会在渲染闭包里取到 undefined 并抛 TypeError。
+   */
+  @StorageProp('activeTheme') T: Theme = LightTheme;
   @Prop state: DrawerState = DrawerState.empty();
 
   onItem: (item: string) => void = () => {};
@@ -80,40 +87,40 @@ export struct DrawerMenu {
             Image(toSandboxUri(this.state.accountAvatarPath))
               .width(DRAWER_AVATAR_SIZE)
               .height(DRAWER_AVATAR_SIZE)
-              .borderRadius(T.radius.full)
+              .borderRadius(this.T.radius.full)
               .objectFit(ImageFit.Cover)
           } else {
             Text(this.state.accountAvatarLetters)
               .width(DRAWER_AVATAR_SIZE)
               .height(DRAWER_AVATAR_SIZE)
-              .borderRadius(T.radius.full)
-              .backgroundColor(T.colors.accentPressed)
-              .fontColor(T.colors.textOnAccent)
-              .fontSize(T.typography.title.fontSize)
-              .fontWeight(T.typography.title.fontWeight)
+              .borderRadius(this.T.radius.full)
+              .backgroundColor(this.T.colors.accentPressed)
+              .fontColor(this.T.colors.textOnAccent)
+              .fontSize(this.T.typography.title.fontSize)
+              .fontWeight(this.T.typography.title.fontWeight)
               .textAlign(TextAlign.Center)
           }
 
           Column() {
             Text(this.state.accountName)
-              .fontSize(T.typography.title.fontSize)
-              .fontWeight(T.typography.title.fontWeight)
-              .fontColor(T.colors.textOnAccent)
+              .fontSize(this.T.typography.title.fontSize)
+              .fontWeight(this.T.typography.title.fontWeight)
+              .fontColor(this.T.colors.textOnAccent)
               .maxLines(1)
               .textOverflow({ overflow: TextOverflow.Ellipsis })
               .width('100%')
 
             Text(this.state.accountPhone)
-              .fontSize(T.typography.body.fontSize)
-              .fontColor(T.colors.textOnAccent)
+              .fontSize(this.T.typography.body.fontSize)
+              .fontColor(this.T.colors.textOnAccent)
               .maxLines(1)
               .textOverflow({ overflow: TextOverflow.Ellipsis })
               .width('100%')
-              .margin({ top: T.spacing.xs })
+              .margin({ top: this.T.spacing.xs })
           }
           .layoutWeight(1)
           .alignItems(HorizontalAlign.Start)
-          .margin({ left: T.spacing.md })
+          .margin({ left: this.T.spacing.md })
         }
         .width('100%')
         .alignItems(VerticalAlign.Center)
@@ -123,22 +130,22 @@ export struct DrawerMenu {
           Image($r('app.media.ic_chevron_down'))
             .width(DRAWER_CHEVRON_SIZE * 0.8)
             .height(DRAWER_CHEVRON_SIZE * 0.8)
-            .fillColor(T.colors.textOnAccent)
+            .fillColor(this.T.colors.textOnAccent)
             .onClick(() => {
               this.onSwitchAccount();
             })
         }
         .width('100%')
         .justifyContent(FlexAlign.End)
-        .margin({ top: T.spacing.xs })
+        .margin({ top: this.T.spacing.xs })
       }
       .width('100%')
-      .backgroundColor(T.colors.accent)
+      .backgroundColor(this.T.colors.accent)
       .padding({
-        left: T.spacing.screenInset,
-        right: T.spacing.screenInset,
-        top: T.spacing.lg,
-        bottom: T.spacing.md
+        left: this.T.spacing.screenInset,
+        right: this.T.spacing.screenInset,
+        top: this.T.spacing.lg,
+        bottom: this.T.spacing.md
       })
 
       // ===== 菜单区 =====
@@ -149,14 +156,14 @@ export struct DrawerMenu {
               Image(row.icon)
                 .width(22)
                 .height(22)
-                .fillColor(row.enabled ? T.colors.textSecondary : T.colors.disabled)
+                .fillColor(row.enabled ? this.T.colors.textSecondary : this.T.colors.disabled)
             }
             .width(DRAWER_ICON_WIDTH)
             .justifyContent(FlexAlign.Start)
 
             Text(row.label)
-              .fontSize(T.typography.body.fontSize)
-              .fontColor(row.enabled ? T.colors.textPrimary : T.colors.disabled)
+              .fontSize(this.T.typography.body.fontSize)
+              .fontColor(row.enabled ? this.T.colors.textPrimary : this.T.colors.disabled)
               .maxLines(1)
               .textOverflow({ overflow: TextOverflow.Ellipsis })
               .layoutWeight(1)
@@ -164,10 +171,10 @@ export struct DrawerMenu {
           .width('100%')
           .alignItems(VerticalAlign.Center)
           .padding({
-            left: T.spacing.screenInset,
-            right: T.spacing.screenInset,
-            top: T.spacing.md,
-            bottom: T.spacing.md
+            left: this.T.spacing.screenInset,
+            right: this.T.spacing.screenInset,
+            top: this.T.spacing.md,
+            bottom: this.T.spacing.md
           })
           .onClick(() => {
             this.onItem(row.key);
@@ -180,7 +187,7 @@ export struct DrawerMenu {
 
       Divider()
         .strokeWidth(1)
-        .color(T.colors.divider)
+        .color(this.T.colors.divider)
 
       // ===== 底部：夜间模式开关 =====
       Row() {
@@ -188,29 +195,30 @@ export struct DrawerMenu {
           Image($r('app.media.ic_night'))
             .width(22)
             .height(22)
-            .fillColor(T.colors.textSecondary)
+            .fillColor(this.T.colors.textSecondary)
         }
         .width(DRAWER_ICON_WIDTH)
         .justifyContent(FlexAlign.Start)
 
         Text('Night Mode')
-          .fontSize(T.typography.body.fontSize)
-          .fontColor(T.colors.textPrimary)
+          .fontSize(this.T.typography.body.fontSize)
+          .fontColor(this.T.colors.textPrimary)
           .layoutWeight(1)
 
+        // 开关只做展示：点击命中交给下方整行 Row 统一处理。
+        // 若此处同时绑 onChange，会与 Row 的 onClick 各切一次并互相抵消——
+        // 日志表现为 "night mode changed: true" 紧跟 "false"，开关看起来没反应。
         Toggle({ type: ToggleType.Switch, isOn: this.state.nightMode })
-          .selectedColor(T.colors.accent)
-          .onChange((isOn: boolean) => {
-            this.onNightModeChanged(isOn);
-          })
+          .selectedColor(this.T.colors.accent)
+          .hitTestBehavior(HitTestMode.None)
       }
       .width('100%')
       .alignItems(VerticalAlign.Center)
       .padding({
-        left: T.spacing.screenInset,
-        right: T.spacing.screenInset,
-        top: T.spacing.md,
-        bottom: T.spacing.lg
+        left: this.T.spacing.screenInset,
+        right: this.T.spacing.screenInset,
+        top: this.T.spacing.md,
+        bottom: this.T.spacing.lg
       })
       .onClick(() => {
         this.onNightModeChanged(!this.state.nightMode);
@@ -218,7 +226,7 @@ export struct DrawerMenu {
     }
     .width('72%')
     .height('100%')
-    .backgroundColor(T.colors.background)
+    .backgroundColor(this.T.colors.background)
     .alignItems(HorizontalAlign.Start)
     // DRAWER-101：挂载/卸载（父级 if showDrawer）时从左侧滑入/滑出。
     .transition(

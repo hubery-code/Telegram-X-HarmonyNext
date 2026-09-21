@@ -9,7 +9,7 @@
  * - 100% 遵从 Design Tokens。
  */
 
-import { LightTheme } from '@tgx/core-design-system';
+import { LightTheme, Theme } from '@tgx/core-design-system';
 import { fileUri } from '@kit.CoreFileKit';
 import { ChatProfileUiState, ChatMemberUiItem } from '../contract/ChatProfileUiState';
 import {
@@ -19,7 +19,6 @@ import {
   BackRequested
 } from '../contract/ChatProfileIntent';
 
-const T = LightTheme;
 
 function toSandboxUri(path: string | null): string {
   if (path === null || path.length === 0) {
@@ -47,6 +46,14 @@ const MEMBER_AVATAR_SIZE: number = 44;
 
 @Component
 export struct ChatProfilePage {
+  /**
+   * FEAT-UI-001 全局深色主题：entry 装配层把 ThemeManager 的当前主题写入
+   * AppStorage('activeTheme')，本页以 @StorageProp 订阅。该值变化会触发本页
+   * 重渲染。此前写死 `const T = LightTheme`，主题切换后引用不变，深色不生效。
+   * 短名 T 直接落在装饰器成员上——ArkUI 的 build 转换不接管 struct 内自定义
+   * getter，写成 getter 会在渲染闭包里取到 undefined 并抛 TypeError。
+   */
+  @StorageProp('activeTheme') T: Theme = LightTheme;
   @Prop uiState: ChatProfileUiState = ChatProfileUiState.initial();
   onDispatch: (intent: ChatProfileIntent) => void = (): void => {};
   onBack: () => void = (): void => {};
@@ -64,16 +71,16 @@ export struct ChatProfilePage {
       Image($r('app.media.ic_back'))
         .width(24)
         .height(24)
-        .fillColor(T.colors.accent)
-        .margin({ left: T.spacing.xs, right: T.spacing.md })
+        .fillColor(this.T.colors.accent)
+        .margin({ left: this.T.spacing.xs, right: this.T.spacing.md })
         .onClick(() => {
           this.onBack();
         })
 
       Text(this.uiState.isChannel ? 'Channel Info' : 'Group Info')
-        .fontSize(T.typography.title.fontSize)
-        .fontWeight(T.typography.title.fontWeight)
-        .fontColor(T.colors.textPrimary)
+        .fontSize(this.T.typography.title.fontSize)
+        .fontWeight(this.T.typography.title.fontWeight)
+        .fontColor(this.T.colors.textPrimary)
         .layoutWeight(1)
 
       Blank()
@@ -82,8 +89,8 @@ export struct ChatProfilePage {
     .width('100%')
     .height(56)
     .alignItems(VerticalAlign.Center)
-    .padding({ left: T.spacing.sm, right: T.spacing.sm })
-    .backgroundColor(T.colors.background)
+    .padding({ left: this.T.spacing.sm, right: this.T.spacing.sm })
+    .backgroundColor(this.T.colors.background)
   }
 
   @Builder
@@ -93,13 +100,13 @@ export struct ChatProfilePage {
         Image(toSandboxUri(this.uiState.photoPath))
           .width(AVATAR_SIZE)
           .height(AVATAR_SIZE)
-          .borderRadius(T.radius.full)
+          .borderRadius(this.T.radius.full)
           .objectFit(ImageFit.Cover)
       } else {
         Text(this.uiState.avatarLetters.length > 0 ? this.uiState.avatarLetters : 'G')
           .width(AVATAR_SIZE)
           .height(AVATAR_SIZE)
-          .borderRadius(T.radius.full)
+          .borderRadius(this.T.radius.full)
           .backgroundColor(this.avatarColor(this.uiState.avatarColorIndex))
           .fontSize(36)
           .fontWeight(FontWeight.Bold)
@@ -108,24 +115,24 @@ export struct ChatProfilePage {
       }
 
       Text(this.uiState.title.length > 0 ? this.uiState.title : 'Loading...')
-        .fontSize(T.typography.headline.fontSize)
+        .fontSize(this.T.typography.headline.fontSize)
         .fontWeight(FontWeight.Bold)
-        .fontColor(T.colors.textPrimary)
-        .margin({ top: T.spacing.md })
+        .fontColor(this.T.colors.textPrimary)
+        .margin({ top: this.T.spacing.md })
         .maxLines(1)
         .textOverflow({ overflow: TextOverflow.Ellipsis })
 
       if (this.uiState.memberCountText.length > 0) {
         Text(this.uiState.memberCountText)
-          .fontSize(T.typography.body.fontSize)
-          .fontColor(T.colors.textSecondary)
-          .margin({ top: T.spacing.xs })
+          .fontSize(this.T.typography.body.fontSize)
+          .fontColor(this.T.colors.textSecondary)
+          .margin({ top: this.T.spacing.xs })
       }
     }
     .width('100%')
     .alignItems(HorizontalAlign.Center)
-    .padding({ top: T.spacing.lg, bottom: T.spacing.lg })
-    .backgroundColor(T.colors.background)
+    .padding({ top: this.T.spacing.lg, bottom: this.T.spacing.lg })
+    .backgroundColor(this.T.colors.background)
   }
 
   @Builder
@@ -134,61 +141,61 @@ export struct ChatProfilePage {
       if (this.uiState.description.length > 0) {
         Column() {
           Text('Description')
-            .fontSize(T.typography.caption.fontSize)
-            .fontColor(T.colors.accent)
+            .fontSize(this.T.typography.caption.fontSize)
+            .fontColor(this.T.colors.accent)
             .fontWeight(FontWeight.Medium)
           Text(this.uiState.description)
-            .fontSize(T.typography.body.fontSize)
-            .fontColor(T.colors.textPrimary)
-            .margin({ top: T.spacing.xs })
+            .fontSize(this.T.typography.body.fontSize)
+            .fontColor(this.T.colors.textPrimary)
+            .margin({ top: this.T.spacing.xs })
         }
         .width('100%')
         .alignItems(HorizontalAlign.Start)
         .padding({
-          left: T.spacing.md,
-          right: T.spacing.md,
-          top: T.spacing.sm,
-          bottom: T.spacing.sm
+          left: this.T.spacing.md,
+          right: this.T.spacing.md,
+          top: this.T.spacing.sm,
+          bottom: this.T.spacing.sm
         })
       }
 
       if (this.uiState.inviteLink.length > 0) {
-        Divider().color(T.colors.divider).strokeWidth(0.5)
+        Divider().color(this.T.colors.divider).strokeWidth(0.5)
         Row() {
           Column() {
             Text('Invite Link')
-              .fontSize(T.typography.caption.fontSize)
-              .fontColor(T.colors.accent)
+              .fontSize(this.T.typography.caption.fontSize)
+              .fontColor(this.T.colors.accent)
               .fontWeight(FontWeight.Medium)
             Text(this.uiState.inviteLink)
-              .fontSize(T.typography.body.fontSize)
-              .fontColor(T.colors.textPrimary)
-              .margin({ top: T.spacing.xs })
+              .fontSize(this.T.typography.body.fontSize)
+              .fontColor(this.T.colors.textPrimary)
+              .margin({ top: this.T.spacing.xs })
               .maxLines(1)
               .textOverflow({ overflow: TextOverflow.Ellipsis })
           }
           .layoutWeight(1)
           .alignItems(HorizontalAlign.Start)
 
-          Row({ space: T.spacing.xs }) {
+          Row({ space: this.T.spacing.xs }) {
             Image($r('app.media.ic_copy'))
               .width(16)
               .height(16)
-              .fillColor(T.colors.accent)
+              .fillColor(this.T.colors.accent)
             Text('Copy')
-              .fontSize(T.typography.caption.fontSize)
-              .fontColor(T.colors.accent)
+              .fontSize(this.T.typography.caption.fontSize)
+              .fontColor(this.T.colors.accent)
               .fontWeight(FontWeight.Bold)
           }
-          .padding({ left: T.spacing.sm, right: T.spacing.sm, top: T.spacing.xs, bottom: T.spacing.xs })
+          .padding({ left: this.T.spacing.sm, right: this.T.spacing.sm, top: this.T.spacing.xs, bottom: this.T.spacing.xs })
         }
         .width('100%')
         .alignItems(VerticalAlign.Center)
         .padding({
-          left: T.spacing.md,
-          right: T.spacing.md,
-          top: T.spacing.sm,
-          bottom: T.spacing.sm
+          left: this.T.spacing.md,
+          right: this.T.spacing.md,
+          top: this.T.spacing.sm,
+          bottom: this.T.spacing.sm
         })
         .onClick(() => {
           this.onDispatch(new CopyInviteLinkRequested());
@@ -196,8 +203,8 @@ export struct ChatProfilePage {
       }
     }
     .width('100%')
-    .backgroundColor(T.colors.background)
-    .margin({ top: T.spacing.xs })
+    .backgroundColor(this.T.colors.background)
+    .margin({ top: this.T.spacing.xs })
   }
 
   @Builder
@@ -207,13 +214,13 @@ export struct ChatProfilePage {
         Image(toSandboxUri(member.avatarPath))
           .width(MEMBER_AVATAR_SIZE)
           .height(MEMBER_AVATAR_SIZE)
-          .borderRadius(T.radius.full)
+          .borderRadius(this.T.radius.full)
           .objectFit(ImageFit.Cover)
       } else {
         Text(member.avatarLetters.length > 0 ? member.avatarLetters : '?')
           .width(MEMBER_AVATAR_SIZE)
           .height(MEMBER_AVATAR_SIZE)
-          .borderRadius(T.radius.full)
+          .borderRadius(this.T.radius.full)
           .backgroundColor(this.avatarColor(member.avatarColorIndex))
           .fontSize(16)
           .fontWeight(FontWeight.Medium)
@@ -224,9 +231,9 @@ export struct ChatProfilePage {
       Column() {
         Row() {
           Text(member.fullName.length > 0 ? member.fullName : 'User')
-            .fontSize(T.typography.body.fontSize)
+            .fontSize(this.T.typography.body.fontSize)
             .fontWeight(FontWeight.Medium)
-            .fontColor(T.colors.textPrimary)
+            .fontColor(this.T.colors.textPrimary)
             .layoutWeight(1)
             .maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -235,29 +242,29 @@ export struct ChatProfilePage {
             Text(member.role)
               .fontSize(11)
               .fontWeight(FontWeight.Medium)
-              .fontColor(T.colors.accent)
+              .fontColor(this.T.colors.accent)
               .padding({ left: 6, right: 6, top: 2, bottom: 2 })
               .backgroundColor('#1A0088CC')
               .borderRadius(4)
-              .margin({ left: T.spacing.xs })
+              .margin({ left: this.T.spacing.xs })
           }
         }
         .width('100%')
         .alignItems(VerticalAlign.Center)
 
         Text(member.statusText.length > 0 ? member.statusText : (member.username ? `@${member.username}` : ''))
-          .fontSize(T.typography.caption.fontSize)
-          .fontColor(member.isOnline ? T.colors.accent : T.colors.textSecondary)
+          .fontSize(this.T.typography.caption.fontSize)
+          .fontColor(member.isOnline ? this.T.colors.accent : this.T.colors.textSecondary)
           .margin({ top: 2 })
       }
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)
-      .margin({ left: T.spacing.md })
+      .margin({ left: this.T.spacing.md })
     }
     .width('100%')
     .height(60)
     .alignItems(VerticalAlign.Center)
-    .padding({ left: T.spacing.md, right: T.spacing.md })
+    .padding({ left: this.T.spacing.md, right: this.T.spacing.md })
     .onClick(() => {
       this.onDispatch(new SelectChatMember(member.userId));
     })
@@ -268,12 +275,12 @@ export struct ChatProfilePage {
     Column() {
       Row() {
         Text(`Members (${this.uiState.members.length})`)
-          .fontSize(T.typography.caption.fontSize)
+          .fontSize(this.T.typography.caption.fontSize)
           .fontWeight(FontWeight.Medium)
-          .fontColor(T.colors.textSecondary)
+          .fontColor(this.T.colors.textSecondary)
       }
       .width('100%')
-      .padding({ left: T.spacing.md, right: T.spacing.md, top: T.spacing.md, bottom: T.spacing.xs })
+      .padding({ left: this.T.spacing.md, right: this.T.spacing.md, top: this.T.spacing.md, bottom: this.T.spacing.xs })
 
       List() {
         ForEach(this.uiState.members, (member: ChatMemberUiItem) => {
@@ -285,14 +292,14 @@ export struct ChatProfilePage {
       .width('100%')
       .divider({
         strokeWidth: 0.5,
-        color: T.colors.divider,
+        color: this.T.colors.divider,
         startMargin: 72,
-        endMargin: T.spacing.md
+        endMargin: this.T.spacing.md
       })
     }
     .width('100%')
-    .backgroundColor(T.colors.background)
-    .margin({ top: T.spacing.xs })
+    .backgroundColor(this.T.colors.background)
+    .margin({ top: this.T.spacing.xs })
   }
 
   build() {
@@ -315,6 +322,6 @@ export struct ChatProfilePage {
     }
     .width('100%')
     .height('100%')
-    .backgroundColor(T.colors.backgroundSecondary)
+    .backgroundColor(this.T.colors.backgroundSecondary)
   }
 }

@@ -43,7 +43,7 @@
  * （删除聊天 destructive 色），菜单动作统一走 ChatMenuAction 占位入口。
  */
 
-import { LightTheme } from '@tgx/core-design-system';
+import { LightTheme, Theme } from '@tgx/core-design-system';
 import { Lang } from '@tgx/core-common';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { common } from '@kit.AbilityKit';
@@ -145,7 +145,6 @@ import { GifItem } from '../model/GifItem';
 import { EmojiBoard } from './EmojiBoard';
 import { StickerSetPreviewSheet } from './StickerSetPreviewSheet';
 
-const T = LightTheme;
 
 const DOMAIN: number = 0x0000;
 const TAG: string = 'ChatPage';
@@ -154,10 +153,6 @@ const BUBBLE_MAX_WIDTH: string = '78%';
 const BACK_ARROW_SIZE: number = 44;
 const COMPOSER_INPUT_HEIGHT: number = 40;
 const SEND_BUTTON_SIZE: number = 40;
-/** 等宽（code/pre）span 字号：比正文小 2vp。 */
-const CODE_FONT_SIZE: number = T.typography.body.fontSize - 2;
-/** spoiler 遮罩色（token）：遮罩态文字同色不可读。 */
-const SPOILER_MASK_COLOR: string = T.colors.textPrimary;
 /** 群聊署名小圆头像直径（vp）。 */
 const SENDER_AVATAR_SIZE: number = 28;
 /** MSG-106：多选勾选圈直径（vp）。 */
@@ -167,7 +162,7 @@ const SEARCH_BUTTON_SIZE: number = 44;
 /**
  * SEARCH-102：搜索结果跳转后目标消息的高亮时长（ms）。会话内短会话（几十条）里
  * 跳转前后画面差别很小，没有高亮用户根本看不出落点，故落位后整行着色一段时间。
- * 颜色用 `T.colors.chatOutgoing`：浅色主题 #FFD9F1FF、深色主题 #FF1D3D52，
+ * 颜色用 `this.T.colors.chatOutgoing`：浅色主题 #FFD9F1FF、深色主题 #FF1D3D52，
  * 两套主题下都是明显的蓝色调，比中性灰底更容易被注意到。
  */
 const JUMP_HIGHLIGHT_MS: number = 4000;
@@ -313,6 +308,14 @@ function toSandboxUri(path: string | null): string {
 
 @Component
 export struct ChatPage {
+  /**
+   * FEAT-UI-001 全局深色主题：entry 装配层把 ThemeManager 的当前主题写入
+   * AppStorage('activeTheme')，本页以 @StorageProp 订阅。该值变化会触发本页
+   * 重渲染。此前写死 `const T = LightTheme`，主题切换后引用不变，深色不生效。
+   * 短名 T 直接落在装饰器成员上——ArkUI 的 build 转换不接管 struct 内自定义
+   * getter，写成 getter 会在渲染闭包里取到 undefined 并抛 TypeError。
+   */
+  @StorageProp('activeTheme') T: Theme = LightTheme;
   @Prop @Watch('onUiStateChanged') uiState: ChatUiState = ChatUiState.initial();
 
   onDispatch: (intent: Object) => void = () => {};
@@ -624,11 +627,11 @@ export struct ChatPage {
               LoadingProgress()
                 .width(20)
                 .height(20)
-                .color(T.colors.accent)
+                .color(this.T.colors.accent)
             }
             .width('100%')
             .justifyContent(FlexAlign.Center)
-            .padding({ top: T.spacing.xs })
+            .padding({ top: this.T.spacing.xs })
           }
 
           List({ initialIndex: this.computeScrollTargetIndex(this.uiState.messages), scroller: this.scroller }) {
@@ -674,15 +677,15 @@ export struct ChatPage {
         // 发送失败等错误：已有消息时不挡列表，仅在输入栏上方出细条提示。
         if (this.uiState.errorMessage !== null && this.uiState.messages.length > 0) {
           Text(this.uiState.errorMessage)
-            .fontSize(T.typography.footnote.fontSize)
-            .fontColor(T.colors.destructive)
+            .fontSize(this.T.typography.footnote.fontSize)
+            .fontColor(this.T.colors.destructive)
             .maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
             .width('100%')
             .padding({
-              left: T.spacing.screenInset,
-              right: T.spacing.screenInset,
-              top: T.spacing.xs
+              left: this.T.spacing.screenInset,
+              right: this.T.spacing.screenInset,
+              top: this.T.spacing.xs
             })
         }
 
@@ -788,7 +791,7 @@ export struct ChatPage {
     }
     .width('100%')
     .height('100%')
-    .backgroundColor(T.colors.background)
+    .backgroundColor(this.T.colors.background)
   }
 
   @Builder
@@ -800,7 +803,7 @@ export struct ChatPage {
           Image($r('app.media.ic_close'))
             .width(24)
             .height(24)
-            .fillColor(T.colors.textPrimary)
+            .fillColor(this.T.colors.textPrimary)
         }
         .width(BACK_ARROW_SIZE)
         .height(BACK_ARROW_SIZE)
@@ -811,9 +814,9 @@ export struct ChatPage {
         })
 
         Text(`${this.uiState.selectedMessageIds.length} selected`)
-          .fontSize(T.typography.title.fontSize)
-          .fontWeight(T.typography.title.fontWeight)
-          .fontColor(T.colors.textPrimary)
+          .fontSize(this.T.typography.title.fontSize)
+          .fontWeight(this.T.typography.title.fontWeight)
+          .fontColor(this.T.colors.textPrimary)
           .textAlign(TextAlign.Center)
           .layoutWeight(1)
 
@@ -821,7 +824,7 @@ export struct ChatPage {
           Image($r('app.media.ic_forward'))
             .width(24)
             .height(24)
-            .fillColor(this.uiState.selectedMessageIds.length > 0 ? T.colors.accent : T.colors.disabled)
+            .fillColor(this.uiState.selectedMessageIds.length > 0 ? this.T.colors.accent : this.T.colors.disabled)
         }
         .width(BACK_ARROW_SIZE)
         .height(BACK_ARROW_SIZE)
@@ -837,7 +840,7 @@ export struct ChatPage {
           Image($r('app.media.ic_back'))
             .width(24)
             .height(24)
-            .fillColor(T.colors.accent)
+            .fillColor(this.T.colors.accent)
         }
         .width(BACK_ARROW_SIZE)
         .height(BACK_ARROW_SIZE)
@@ -850,9 +853,9 @@ export struct ChatPage {
         // MSG-109：标题 + 副标题（副标题非空时显示，subheadline 字号 textSecondary）。
         Column() {
           Text(this.uiState.chatTitle)
-            .fontSize(T.typography.title.fontSize)
-            .fontWeight(T.typography.title.fontWeight)
-            .fontColor(T.colors.textPrimary)
+            .fontSize(this.T.typography.title.fontSize)
+            .fontWeight(this.T.typography.title.fontWeight)
+            .fontColor(this.T.colors.textPrimary)
             .maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
             .onClick(() => {
@@ -862,8 +865,8 @@ export struct ChatPage {
 
           if (this.uiState.headerSubtitle.length > 0) {
             Text(this.uiState.headerSubtitle)
-              .fontSize(T.typography.subheadline.fontSize)
-              .fontColor(T.colors.textSecondary)
+              .fontSize(this.T.typography.subheadline.fontSize)
+              .fontColor(this.T.colors.textSecondary)
               .maxLines(1)
               .textOverflow({ overflow: TextOverflow.Ellipsis })
           }
@@ -877,7 +880,7 @@ export struct ChatPage {
             Image($r('app.media.ic_call'))
               .width(22)
               .height(22)
-              .fillColor(T.colors.accent)
+              .fillColor(this.T.colors.accent)
           }
           .width(SEARCH_BUTTON_SIZE)
           .height(SEARCH_BUTTON_SIZE)
@@ -893,7 +896,7 @@ export struct ChatPage {
           Image($r('app.media.ic_search'))
             .width(22)
             .height(22)
-            .fillColor(T.colors.accent)
+            .fillColor(this.T.colors.accent)
         }
         .width(SEARCH_BUTTON_SIZE)
         .height(SEARCH_BUTTON_SIZE)
@@ -908,7 +911,7 @@ export struct ChatPage {
           Image($r('app.media.ic_more_vert'))
             .width(22)
             .height(22)
-            .fillColor(T.colors.accent)
+            .fillColor(this.T.colors.accent)
         }
         .width(SEARCH_BUTTON_SIZE)
         .height(SEARCH_BUTTON_SIZE)
@@ -920,13 +923,13 @@ export struct ChatPage {
     .width('100%')
     .alignItems(VerticalAlign.Center)
     .padding({
-      left: T.spacing.sm,
-      right: T.spacing.screenInset,
-      top: T.spacing.sm,
-      bottom: T.spacing.sm
+      left: this.T.spacing.sm,
+      right: this.T.spacing.screenInset,
+      top: this.T.spacing.sm,
+      bottom: this.T.spacing.sm
     })
     .borderWidth({ bottom: 1 })
-    .borderColor(T.colors.divider)
+    .borderColor(this.T.colors.divider)
   }
 
   /**
@@ -950,7 +953,7 @@ export struct ChatPage {
             this.onDispatch(new ChatMenuAction('clear_history'));
           })
         MenuItem({ content: '删除聊天' })
-          .contentFontColor(T.colors.destructive)
+          .contentFontColor(this.T.colors.destructive)
           .onClick(() => {
             this.onDispatch(new ChatMenuAction('delete_chat'));
           })
@@ -985,32 +988,32 @@ export struct ChatPage {
       Column()
         .width(2)
         .height(34)
-        .backgroundColor(T.colors.accent)
+        .backgroundColor(this.T.colors.accent)
         .borderRadius(1)
-        .margin({ right: T.spacing.sm })
+        .margin({ right: this.T.spacing.sm })
 
       // 2. 中间：发送者标题 + 内容摘要（点击触发跳转定位）
       Column() {
         Row() {
           Text(pinned.senderTitle)
-            .fontSize(T.typography.caption.fontSize)
+            .fontSize(this.T.typography.caption.fontSize)
             .fontWeight(FontWeight.Medium)
-            .fontColor(T.colors.accent)
+            .fontColor(this.T.colors.accent)
             .maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
 
           Image($r('app.media.ic_chevron_down'))
             .width(12)
             .height(12)
-            .fillColor(T.colors.textSecondary)
+            .fillColor(this.T.colors.textSecondary)
             .margin({ left: 2 })
         }
         .width('100%')
         .alignItems(VerticalAlign.Center)
 
         Text(pinned.contentSnippet)
-          .fontSize(T.typography.body.fontSize - 1)
-          .fontColor(T.colors.textPrimary)
+          .fontSize(this.T.typography.body.fontSize - 1)
+          .fontColor(this.T.colors.textPrimary)
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
           .margin({ top: 2 })
@@ -1027,7 +1030,7 @@ export struct ChatPage {
         Image($r('app.media.ic_close'))
           .width(16)
           .height(16)
-          .fillColor(T.colors.textSecondary)
+          .fillColor(this.T.colors.textSecondary)
       }
       .width(36)
       .height(36)
@@ -1040,15 +1043,15 @@ export struct ChatPage {
     .width('100%')
     .height(48)
     .padding({
-      left: T.spacing.screenInset,
-      right: T.spacing.xs,
+      left: this.T.spacing.screenInset,
+      right: this.T.spacing.xs,
       top: 4,
       bottom: 4
     })
-    .backgroundColor(T.colors.surface)
+    .backgroundColor(this.T.colors.surface)
     .border({
       width: { bottom: 0.5 },
-      color: { bottom: T.colors.divider }
+      color: { bottom: this.T.colors.divider }
     })
     .alignItems(VerticalAlign.Center)
   }
@@ -1061,8 +1064,8 @@ export struct ChatPage {
         .fontSize(12)
         .fontWeight(FontWeight.Medium)
         .fontColor(Color.White)
-        .backgroundColor(T.colors.scrim)
-        .borderRadius(T.radius.full)
+        .backgroundColor(this.T.colors.scrim)
+        .borderRadius(this.T.radius.full)
         .padding({
           left: 10,
           right: 10,
@@ -1082,19 +1085,19 @@ export struct ChatPage {
       Text('新消息')
         .fontSize(13)
         .fontWeight(FontWeight.Medium)
-        .fontColor(T.colors.accent)
+        .fontColor(this.T.colors.accent)
 
       Image($r('app.media.ic_arrow_down'))
         .width(14)
         .height(14)
-        .fillColor(T.colors.accent)
+        .fillColor(this.T.colors.accent)
         .margin({ left: 4 })
     }
     .width('100%')
     .height(32)
-    .backgroundColor(T.colors.chatOutgoing)
+    .backgroundColor(this.T.colors.chatOutgoing)
     .borderWidth({ top: 0.5, bottom: 0.5 })
-    .borderColor(T.colors.divider)
+    .borderColor(this.T.colors.divider)
     .justifyContent(FlexAlign.Center)
     .alignItems(VerticalAlign.Center)
     .margin({ top: 6, bottom: 6 })
@@ -1130,20 +1133,20 @@ export struct ChatPage {
           Image(toSandboxUri(item.senderAvatarPath))
             .width(SENDER_AVATAR_SIZE)
             .height(SENDER_AVATAR_SIZE)
-            .borderRadius(T.radius.full)
+            .borderRadius(this.T.radius.full)
             .objectFit(ImageFit.Cover)
-            .margin({ right: T.spacing.xs })
+            .margin({ right: this.T.spacing.xs })
             .onClick(() => this.onSenderAvatarClick(item))
         } else {
           Text(avatarLettersForName(item.senderName))
             .width(SENDER_AVATAR_SIZE)
             .height(SENDER_AVATAR_SIZE)
-            .borderRadius(T.radius.full)
+            .borderRadius(this.T.radius.full)
             .backgroundColor(this.senderAvatarColor(item))
-            .fontColor(T.colors.textOnAccent)
-            .fontSize(T.typography.footnote.fontSize)
+            .fontColor(this.T.colors.textOnAccent)
+            .fontSize(this.T.typography.footnote.fontSize)
             .textAlign(TextAlign.Center)
-            .margin({ right: T.spacing.xs })
+            .margin({ right: this.T.spacing.xs })
             .onClick(() => this.onSenderAvatarClick(item))
         }
       }
@@ -1152,13 +1155,13 @@ export struct ChatPage {
         // MSG-102：署名行（气泡最顶部，回复引用之上）。
         if (this.showSenderUi(item)) {
           Text(item.senderName)
-            .fontSize(T.typography.subheadline.fontSize)
+            .fontSize(this.T.typography.subheadline.fontSize)
             .fontWeight(FontWeight.Medium)
             .fontColor(this.senderNameColor(item))
             .maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
             .alignSelf(ItemAlign.Start)
-            .margin({ bottom: T.spacing.hairline })
+            .margin({ bottom: this.T.spacing.hairline })
         }
 
         // 回复引用行（CHAT-004）：微缩图（贴纸/照片）+ 细色条 + 署名与摘要
@@ -1209,7 +1212,7 @@ export struct ChatPage {
                   })
                   .textBackgroundStyle({
                     color: this.spanBackgroundColor(span, item.messageId, spanIndex),
-                    radius: T.radius.sm
+                    radius: this.T.radius.sm
                   })
                   .onClick(() => {
                     this.onSpanClick(item.messageId, span, spanIndex);
@@ -1227,21 +1230,21 @@ export struct ChatPage {
                   })
                   .textBackgroundStyle({
                     color: this.spanBackgroundColor(span, item.messageId, spanIndex),
-                    radius: T.radius.sm
+                    radius: this.T.radius.sm
                   })
               }
             }, (span: MessageTextSpan, spanIndex: number) => `${item.messageId}:${spanIndex}`)
           }
           .alignSelf(ItemAlign.Start)
-          .fontSize(T.typography.body.fontSize)
-          .fontColor(T.colors.chatText)
-          .margin(item.media !== null ? { top: T.spacing.xs } : { top: 0 })
+          .fontSize(this.T.typography.body.fontSize)
+          .fontColor(this.T.colors.chatText)
+          .margin(item.media !== null ? { top: this.T.spacing.xs } : { top: 0 })
         } else if (item.text.length > 0) {
           Text(item.text)
             .alignSelf(ItemAlign.Start)
-            .fontSize(T.typography.body.fontSize)
-            .fontColor(T.colors.chatText)
-            .margin(item.media !== null ? { top: T.spacing.xs } : { top: 0 })
+            .fontSize(this.T.typography.body.fontSize)
+            .fontColor(this.T.colors.chatText)
+            .margin(item.media !== null ? { top: this.T.spacing.xs } : { top: 0 })
         }
 
         // 链接预览卡片（MSG-107）：默认在正文下方渲染
@@ -1264,19 +1267,19 @@ export struct ChatPage {
         }
       }
       .alignItems(HorizontalAlign.End)
-      .backgroundColor(item.isChannelPost ? Color.Transparent : (this.isStandaloneBubble(item) ? Color.Transparent : (item.isOutgoing ? T.colors.chatOutgoing : T.colors.chatIncoming)))
-      .borderRadius(item.isChannelPost ? 0 : (this.isStandaloneBubble(item) ? 0 : T.radius.lg))
+      .backgroundColor(item.isChannelPost ? Color.Transparent : (this.isStandaloneBubble(item) ? Color.Transparent : (item.isOutgoing ? this.T.colors.chatOutgoing : this.T.colors.chatIncoming)))
+      .borderRadius(item.isChannelPost ? 0 : (this.isStandaloneBubble(item) ? 0 : this.T.radius.lg))
       .clip(this.isStandaloneBubble(item) ? false : true)
       .padding(item.isChannelPost ? {
-        left: T.spacing.xs,
-        right: T.spacing.xs,
-        top: T.spacing.xs,
-        bottom: T.spacing.xs
+        left: this.T.spacing.xs,
+        right: this.T.spacing.xs,
+        top: this.T.spacing.xs,
+        bottom: this.T.spacing.xs
       } : (this.isStandaloneBubble(item) ? 0 : {
-        left: T.spacing.md,
-        right: T.spacing.md,
-        top: T.spacing.sm,
-        bottom: T.spacing.xs
+        left: this.T.spacing.md,
+        right: this.T.spacing.md,
+        top: this.T.spacing.sm,
+        bottom: this.T.spacing.xs
       }))
       .width(item.isChannelPost ? '100%' : (item.linkPreview !== null ? BUBBLE_MAX_WIDTH : undefined))
       .constraintSize({ maxWidth: item.isChannelPost ? '100%' : BUBBLE_MAX_WIDTH })
@@ -1311,16 +1314,16 @@ export struct ChatPage {
     .justifyContent(item.isChannelPost ? FlexAlign.Start : (item.isOutgoing ? FlexAlign.End : FlexAlign.Start))
     .alignItems(VerticalAlign.Bottom)
     .padding({
-      left: T.spacing.screenInset,
-      right: T.spacing.screenInset,
-      top: T.spacing.xs
+      left: this.T.spacing.screenInset,
+      right: this.T.spacing.screenInset,
+      top: this.T.spacing.xs
     })
     }
     .width('100%')
     // SEARCH-102：跳转落位后目标行整行着色，让用户看清"跳到了哪条"
     // （短会话里跳转前后画面差别小，仅靠滚动位置无法辨认）。
     .backgroundColor(this.highlightedMessageId === item.messageId
-      ? T.colors.chatOutgoing
+      ? this.T.colors.chatOutgoing
       : Color.Transparent)
   }
 
@@ -1330,47 +1333,47 @@ export struct ChatPage {
     Row() {
       if (item.isEdited) {
         Text('edited')
-          .fontSize(isOverlay ? 10 : T.typography.caption.fontSize)
-          .fontColor(isOverlay ? Color.White : (item.sendState === 'failed' ? T.colors.destructive : T.colors.textSecondary))
+          .fontSize(isOverlay ? 10 : this.T.typography.caption.fontSize)
+          .fontColor(isOverlay ? Color.White : (item.sendState === 'failed' ? this.T.colors.destructive : this.T.colors.textSecondary))
           .margin({ right: 3 })
       }
 
       if (item.timestampMs > 0) {
         Text(formatMessageTime(item.timestampMs))
-          .fontSize(isOverlay ? 10 : T.typography.caption.fontSize)
-          .fontColor(isOverlay ? Color.White : (item.sendState === 'failed' ? T.colors.destructive : T.colors.textSecondary))
+          .fontSize(isOverlay ? 10 : this.T.typography.caption.fontSize)
+          .fontColor(isOverlay ? Color.White : (item.sendState === 'failed' ? this.T.colors.destructive : this.T.colors.textSecondary))
       }
 
       if (item.sendState === 'pending') {
         Image($r('app.media.ic_clock'))
           .width(isOverlay ? 10 : 12)
           .height(isOverlay ? 10 : 12)
-          .fillColor(isOverlay ? Color.White : T.colors.textSecondary)
+          .fillColor(isOverlay ? Color.White : this.T.colors.textSecondary)
           .margin({ left: 3 })
       } else if (item.sendState === 'failed') {
         Image($r('app.media.ic_warning'))
           .width(isOverlay ? 11 : 13)
           .height(isOverlay ? 11 : 13)
-          .fillColor(T.colors.destructive)
+          .fillColor(this.T.colors.destructive)
           .margin({ left: 3 })
       } else if (item.isOutgoing) {
         if (item.isRead) {
           Image($r('app.media.ic_check_double'))
             .width(isOverlay ? 12 : 14)
             .height(isOverlay ? 12 : 14)
-            .fillColor(isOverlay ? Color.White : T.colors.accent)
+            .fillColor(isOverlay ? Color.White : this.T.colors.accent)
             .margin({ left: 3 })
         } else {
           Image($r('app.media.ic_check_single'))
             .width(isOverlay ? 11 : 13)
             .height(isOverlay ? 11 : 13)
-            .fillColor(isOverlay ? Color.White : T.colors.textSecondary)
+            .fillColor(isOverlay ? Color.White : this.T.colors.textSecondary)
             .margin({ left: 3 })
         }
       }
     }
     .alignItems(VerticalAlign.Center)
-    .margin(isOverlay ? 0 : { top: T.spacing.hairline })
+    .margin(isOverlay ? 0 : { top: this.T.spacing.hairline })
   }
 
   /** MSG-106：一条消息的勾选圈（选中实心 + 矢量勾，未选中空心）。 */
@@ -1381,18 +1384,18 @@ export struct ChatPage {
         Image($r('app.media.ic_check_single'))
           .width(14)
           .height(14)
-          .fillColor(T.colors.textOnAccent)
+          .fillColor(this.T.colors.textOnAccent)
       }
     }
     .width(SELECTION_MARK_SIZE)
     .height(SELECTION_MARK_SIZE)
-    .borderRadius(T.radius.full)
+    .borderRadius(this.T.radius.full)
     .borderWidth(1)
-    .borderColor(this.isSelected(item.messageId) ? T.colors.accent : T.colors.textSecondary)
-    .backgroundColor(this.isSelected(item.messageId) ? T.colors.accent : Color.Transparent)
+    .borderColor(this.isSelected(item.messageId) ? this.T.colors.accent : this.T.colors.textSecondary)
+    .backgroundColor(this.isSelected(item.messageId) ? this.T.colors.accent : Color.Transparent)
     .justifyContent(FlexAlign.Center)
     .alignItems(VerticalAlign.Center)
-    .margin({ left: T.spacing.xs, right: T.spacing.xs })
+    .margin({ left: this.T.spacing.xs, right: this.T.spacing.xs })
     .onClick(() => {
       this.onDispatch(new ToggleMessageSelection(item.messageId));
     })
@@ -1489,8 +1492,8 @@ export struct ChatPage {
           }
           .width(36)
           .height(36)
-          .borderRadius(T.radius.full)
-          .backgroundColor(T.colors.scrim)
+          .borderRadius(this.T.radius.full)
+          .backgroundColor(this.T.colors.scrim)
           .justifyContent(FlexAlign.Center)
           .alignItems(HorizontalAlign.Center)
         }
@@ -1503,7 +1506,7 @@ export struct ChatPage {
             Image($r('app.media.ic_photo'))
               .width(36)
               .height(36)
-              .fillColor(T.colors.textSecondary)
+              .fillColor(this.T.colors.textSecondary)
           }
         }
         .width('100%')
@@ -1517,8 +1520,8 @@ export struct ChatPage {
         this.MessageStatusBadge(item, true)
       }
       .padding({ left: 6, right: 6, top: 2, bottom: 2 })
-      .backgroundColor(T.colors.scrim)
-      .borderRadius(T.radius.full)
+      .backgroundColor(this.T.colors.scrim)
+      .borderRadius(this.T.radius.full)
       .margin({ right: 4, bottom: 4 })
     }
     .width(this.stickerWidth(media))
@@ -1545,12 +1548,12 @@ export struct ChatPage {
             Image($r('app.media.ic_refresh'))
               .width(22)
               .height(22)
-              .fillColor(T.colors.textOnAccent)
+              .fillColor(this.T.colors.textOnAccent)
           }
           .width(44)
           .height(44)
-          .borderRadius(T.radius.full)
-          .backgroundColor(T.colors.destructive)
+          .borderRadius(this.T.radius.full)
+          .backgroundColor(this.T.colors.destructive)
           .justifyContent(FlexAlign.Center)
           .alignItems(HorizontalAlign.Center)
         } else if (media.isUploading) {
@@ -1559,12 +1562,12 @@ export struct ChatPage {
             LoadingProgress()
               .width(28)
               .height(28)
-              .color(T.colors.textOnAccent)
+              .color(this.T.colors.textOnAccent)
           }
           .width(44)
           .height(44)
-          .borderRadius(T.radius.full)
-          .backgroundColor(T.colors.accent)
+          .borderRadius(this.T.radius.full)
+          .backgroundColor(this.T.colors.accent)
           .justifyContent(FlexAlign.Center)
           .alignItems(HorizontalAlign.Center)
         } else if (media.isDownloading) {
@@ -1573,12 +1576,12 @@ export struct ChatPage {
             LoadingProgress()
               .width(28)
               .height(28)
-              .color(T.colors.textOnAccent)
+              .color(this.T.colors.textOnAccent)
           }
           .width(44)
           .height(44)
-          .borderRadius(T.radius.full)
-          .backgroundColor(T.colors.accent)
+          .borderRadius(this.T.radius.full)
+          .backgroundColor(this.T.colors.accent)
           .justifyContent(FlexAlign.Center)
           .alignItems(HorizontalAlign.Center)
         } else if (media.isDownloaded) {
@@ -1587,12 +1590,12 @@ export struct ChatPage {
             Image($r('app.media.ic_file'))
               .width(22)
               .height(22)
-              .fillColor(T.colors.accent)
+              .fillColor(this.T.colors.accent)
           }
           .width(44)
           .height(44)
-          .borderRadius(T.radius.full)
-          .backgroundColor(T.colors.surfaceVariant)
+          .borderRadius(this.T.radius.full)
+          .backgroundColor(this.T.colors.surfaceVariant)
           .justifyContent(FlexAlign.Center)
           .alignItems(HorizontalAlign.Center)
         } else {
@@ -1601,19 +1604,19 @@ export struct ChatPage {
             Image($r('app.media.ic_download'))
               .width(20)
               .height(20)
-              .fillColor(T.colors.textOnAccent)
+              .fillColor(this.T.colors.textOnAccent)
           }
           .width(44)
           .height(44)
-          .borderRadius(T.radius.full)
-          .backgroundColor(T.colors.accent)
+          .borderRadius(this.T.radius.full)
+          .backgroundColor(this.T.colors.accent)
           .justifyContent(FlexAlign.Center)
           .alignItems(HorizontalAlign.Center)
         }
       }
       .width(44)
       .height(44)
-      .margin({ right: T.spacing.sm })
+      .margin({ right: this.T.spacing.sm })
       .onClick(() => {
         if (isFailed) {
           // FILE-103：失败重试发送
@@ -1634,16 +1637,16 @@ export struct ChatPage {
       // 右侧：文件名与文件大小 / 进度信息 / 失败提示
       Column() {
         Text(media.fileName.length > 0 ? media.fileName : 'Document')
-          .fontSize(T.typography.body.fontSize)
+          .fontSize(this.T.typography.body.fontSize)
           .fontWeight(FontWeight.Medium)
-          .fontColor(T.colors.textPrimary)
+          .fontColor(this.T.colors.textPrimary)
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
 
         Text(isFailed ? 'Failed · Tap to retry' : this.documentSubtitle(media))
-          .fontSize(T.typography.caption.fontSize)
-          .fontColor(isFailed ? T.colors.destructive : T.colors.textSecondary)
-          .margin({ top: T.spacing.xs })
+          .fontSize(this.T.typography.caption.fontSize)
+          .fontColor(isFailed ? this.T.colors.destructive : this.T.colors.textSecondary)
+          .margin({ top: this.T.spacing.xs })
       }
       .alignItems(HorizontalAlign.Start)
       .layoutWeight(1)
@@ -1651,10 +1654,10 @@ export struct ChatPage {
     .width('100%')
     .constraintSize({ minWidth: 180, maxWidth: 260 })
     .padding({
-      top: T.spacing.xs,
-      bottom: T.spacing.xs,
-      left: T.spacing.xs,
-      right: T.spacing.xs
+      top: this.T.spacing.xs,
+      bottom: this.T.spacing.xs,
+      left: this.T.spacing.xs,
+      right: this.T.spacing.xs
     })
   }
 
@@ -1682,24 +1685,24 @@ export struct ChatPage {
           LoadingProgress()
             .width(22)
             .height(22)
-            .color(T.colors.textOnAccent)
+            .color(this.T.colors.textOnAccent)
         } else if (this.uiState.playingVoiceMessageId === item.messageId) {
           Image($r('app.media.ic_pause'))
             .width(20)
             .height(20)
-            .fillColor(T.colors.textOnAccent)
+            .fillColor(this.T.colors.textOnAccent)
         } else {
           Image($r('app.media.ic_play'))
             .width(20)
             .height(20)
-            .fillColor(T.colors.textOnAccent)
+            .fillColor(this.T.colors.textOnAccent)
         }
       }
       .width(40)
       .height(40)
-      .borderRadius(T.radius.full)
-      .backgroundColor(T.colors.accent)
-      .margin({ right: T.spacing.sm })
+      .borderRadius(this.T.radius.full)
+      .backgroundColor(this.T.colors.accent)
+      .margin({ right: this.T.spacing.sm })
       .onClick(() => {
         if (media.isDownloading) {
           this.onDispatch(new CancelMediaDownload(media.fileId));
@@ -1725,8 +1728,8 @@ export struct ChatPage {
               .borderRadius(1)
               .backgroundColor(
                 (this.uiState.playingVoiceMessageId === item.messageId)
-                  ? (index <= Math.floor(this.uiState.voicePlaybackProgress * 28) ? T.colors.accent : (item.isOutgoing ? '#802AABEE' : '#80999999'))
-                  : T.colors.accent
+                  ? (index <= Math.floor(this.uiState.voicePlaybackProgress * 28) ? this.T.colors.accent : (item.isOutgoing ? '#802AABEE' : '#80999999'))
+                  : this.T.colors.accent
               )
               .margin({ right: 2 })
           }, (_sample: number, index: number) => `${index}`)
@@ -1741,20 +1744,20 @@ export struct ChatPage {
               ? formatDuration(this.uiState.voicePlaybackTimeSec)
               : formatDuration(media.duration)
           )
-            .fontSize(T.typography.caption.fontSize)
-            .fontColor(T.colors.textSecondary)
+            .fontSize(this.T.typography.caption.fontSize)
+            .fontColor(this.T.colors.textSecondary)
 
           if (!media.isListened && !item.isOutgoing) {
             Row()
               .width(6)
               .height(6)
-              .borderRadius(T.radius.full)
-              .backgroundColor(T.colors.accent)
-              .margin({ left: T.spacing.xs })
+              .borderRadius(this.T.radius.full)
+              .backgroundColor(this.T.colors.accent)
+              .margin({ left: this.T.spacing.xs })
           }
         }
         .alignItems(VerticalAlign.Center)
-        .margin({ top: T.spacing.hairline })
+        .margin({ top: this.T.spacing.hairline })
       }
       .alignItems(HorizontalAlign.Start)
       .layoutWeight(1)
@@ -1762,10 +1765,10 @@ export struct ChatPage {
     .alignItems(VerticalAlign.Center)
     .constraintSize({ minWidth: 200, maxWidth: 260 })
     .padding({
-      top: T.spacing.xs,
-      bottom: T.spacing.xs,
-      left: T.spacing.xs,
-      right: T.spacing.xs
+      top: this.T.spacing.xs,
+      bottom: this.T.spacing.xs,
+      left: this.T.spacing.xs,
+      right: this.T.spacing.xs
     })
   }
 
@@ -1779,36 +1782,36 @@ export struct ChatPage {
           Image($r('app.media.ic_refresh'))
             .width(22)
             .height(22)
-            .fillColor(T.colors.textOnAccent)
+            .fillColor(this.T.colors.textOnAccent)
         } else if (media.isUploading || media.isDownloading) {
           LoadingProgress()
             .width(24)
             .height(24)
-            .color(T.colors.textOnAccent)
+            .color(this.T.colors.textOnAccent)
         } else if (media.isDownloaded) {
           if (this.uiState.playingVoiceMessageId === messageId) {
             Image($r('app.media.ic_pause'))
               .width(22)
               .height(22)
-              .fillColor(T.colors.textOnAccent)
+              .fillColor(this.T.colors.textOnAccent)
           } else {
             Image($r('app.media.ic_play'))
               .width(22)
               .height(22)
-              .fillColor(T.colors.textOnAccent)
+              .fillColor(this.T.colors.textOnAccent)
           }
         } else {
           Image($r('app.media.ic_download'))
             .width(20)
             .height(20)
-            .fillColor(T.colors.textOnAccent)
+            .fillColor(this.T.colors.textOnAccent)
         }
       }
       .width(44)
       .height(44)
-      .borderRadius(T.radius.full)
-      .backgroundColor(isFailed ? T.colors.destructive : T.colors.accent)
-      .margin({ right: T.spacing.sm })
+      .borderRadius(this.T.radius.full)
+      .backgroundColor(isFailed ? this.T.colors.destructive : this.T.colors.accent)
+      .margin({ right: this.T.spacing.sm })
       .onClick(() => {
         if (isFailed) {
           this.onDispatch(new TapFailedMessage(messageId));
@@ -1833,9 +1836,9 @@ export struct ChatPage {
       // 右侧：标题与演奏者/时长
       Column() {
         Text(media.audioTitle.length > 0 ? media.audioTitle : (media.fileName.length > 0 ? media.fileName : this.t('Audio')))
-          .fontSize(T.typography.body.fontSize)
+          .fontSize(this.T.typography.body.fontSize)
           .fontWeight(FontWeight.Medium)
-          .fontColor(T.colors.textPrimary)
+          .fontColor(this.T.colors.textPrimary)
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
 
@@ -1846,21 +1849,21 @@ export struct ChatPage {
               total: 100,
               type: ProgressType.Linear
             })
-              .color(T.colors.accent)
-              .backgroundColor(T.colors.divider)
+              .color(this.T.colors.accent)
+              .backgroundColor(this.T.colors.divider)
               .height(3)
               .layoutWeight(1)
           }
           .width('100%')
-          .margin({ top: T.spacing.xs, bottom: 2 })
+          .margin({ top: this.T.spacing.xs, bottom: 2 })
         }
 
         Text(this.audioSubtitle(media, isFailed, messageId))
-          .fontSize(T.typography.caption.fontSize)
-          .fontColor(isFailed ? T.colors.destructive : T.colors.textSecondary)
+          .fontSize(this.T.typography.caption.fontSize)
+          .fontColor(isFailed ? this.T.colors.destructive : this.T.colors.textSecondary)
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
-          .margin({ top: this.uiState.playingVoiceMessageId === messageId ? 0 : T.spacing.xs })
+          .margin({ top: this.uiState.playingVoiceMessageId === messageId ? 0 : this.T.spacing.xs })
       }
       .alignItems(HorizontalAlign.Start)
       .layoutWeight(1)
@@ -1869,10 +1872,10 @@ export struct ChatPage {
     .alignItems(VerticalAlign.Center)
     .constraintSize({ minWidth: 200, maxWidth: 260 })
     .padding({
-      top: T.spacing.xs,
-      bottom: T.spacing.xs,
-      left: T.spacing.xs,
-      right: T.spacing.xs
+      top: this.T.spacing.xs,
+      bottom: this.T.spacing.xs,
+      left: this.T.spacing.xs,
+      right: this.T.spacing.xs
     })
   }
 
@@ -1929,12 +1932,12 @@ export struct ChatPage {
               LoadingProgress()
                 .width(28)
                 .height(28)
-                .color(T.colors.textOnAccent)
+                .color(this.T.colors.textOnAccent)
             }
             .width(44)
             .height(44)
-            .borderRadius(T.radius.full)
-            .backgroundColor(T.colors.scrim)
+            .borderRadius(this.T.radius.full)
+            .backgroundColor(this.T.colors.scrim)
             .justifyContent(FlexAlign.Center)
             .alignItems(HorizontalAlign.Center)
           } else {
@@ -1942,12 +1945,12 @@ export struct ChatPage {
               Image($r('app.media.ic_download'))
                 .width(22)
                 .height(22)
-                .fillColor(T.colors.textOnAccent)
+                .fillColor(this.T.colors.textOnAccent)
             }
             .width(44)
             .height(44)
-            .borderRadius(T.radius.full)
-            .backgroundColor(T.colors.scrim)
+            .borderRadius(this.T.radius.full)
+            .backgroundColor(this.T.colors.scrim)
             .justifyContent(FlexAlign.Center)
             .alignItems(HorizontalAlign.Center)
           }
@@ -1956,11 +1959,11 @@ export struct ChatPage {
             Image($r('app.media.ic_camera'))
               .width(36)
               .height(36)
-              .fillColor(T.colors.textSecondary)
+              .fillColor(this.T.colors.textSecondary)
           }
           .width(220)
           .height(220)
-          .backgroundColor(T.colors.surfaceVariant)
+          .backgroundColor(this.T.colors.surfaceVariant)
           .justifyContent(FlexAlign.Center)
           .alignItems(HorizontalAlign.Center)
         }
@@ -1995,11 +1998,11 @@ export struct ChatPage {
           Image(this.activeVideoNoteId === item.messageId ? $r('app.media.ic_volume_up') : $r('app.media.ic_mute'))
             .width(14)
             .height(14)
-            .fillColor(T.colors.textOnAccent)
+            .fillColor(this.T.colors.textOnAccent)
         }
         .padding(5)
-        .backgroundColor(T.colors.scrim)
-        .borderRadius(T.radius.full)
+        .backgroundColor(this.T.colors.scrim)
+        .borderRadius(this.T.radius.full)
         .position({ x: 10, y: 10 })
         .onClick(() => {
           if (this.activeVideoNoteId === item.messageId) {
@@ -2018,8 +2021,8 @@ export struct ChatPage {
         this.MessageStatusBadge(item, true)
       }
       .padding({ left: 6, right: 6, top: 2, bottom: 2 })
-      .backgroundColor(T.colors.scrim)
-      .borderRadius(T.radius.full)
+      .backgroundColor(this.T.colors.scrim)
+      .borderRadius(this.T.radius.full)
       .margin({ right: 6, bottom: 6 })
       .onClick(() => {
         this.onDispatch(new OpenMediaViewer(item.messageId));
@@ -2056,13 +2059,13 @@ export struct ChatPage {
                   Image($r('app.media.ic_photo'))
                     .width(22)
                     .height(22)
-                    .fillColor(T.colors.textSecondary)
+                    .fillColor(this.T.colors.textSecondary)
                 }
                 .width('100%')
                 .height('100%')
                 .justifyContent(FlexAlign.Center)
                 .alignItems(HorizontalAlign.Center)
-                .backgroundColor(T.colors.surfaceVariant)
+                .backgroundColor(this.T.colors.surfaceVariant)
               }
 
               if (!item.albumItems[geom.index].isDownloaded) {
@@ -2075,8 +2078,8 @@ export struct ChatPage {
                   }
                   .width(36)
                   .height(36)
-                  .borderRadius(T.radius.full)
-                  .backgroundColor(T.colors.scrim)
+                  .borderRadius(this.T.radius.full)
+                  .backgroundColor(this.T.colors.scrim)
                   .justifyContent(FlexAlign.Center)
                   .alignItems(HorizontalAlign.Center)
                 } else {
@@ -2088,8 +2091,8 @@ export struct ChatPage {
                   }
                   .width(32)
                   .height(32)
-                  .borderRadius(T.radius.full)
-                  .backgroundColor(T.colors.scrim)
+                  .borderRadius(this.T.radius.full)
+                  .backgroundColor(this.T.colors.scrim)
                   .justifyContent(FlexAlign.Center)
                   .alignItems(HorizontalAlign.Center)
                 }
@@ -2101,7 +2104,7 @@ export struct ChatPage {
                     .fontSize(10)
                     .fontWeight(FontWeight.Medium)
                     .fontColor(Color.White)
-                    .backgroundColor(T.colors.scrim)
+                    .backgroundColor(this.T.colors.scrim)
                     .padding({ left: 4, right: 4, top: 1, bottom: 1 })
                     .borderRadius(3)
                 }
@@ -2115,10 +2118,10 @@ export struct ChatPage {
             .width(geom.width)
             .height(geom.height)
             .borderRadius({
-              topLeft: geom.needTopLeftRound ? T.radius.md : 0,
-              topRight: geom.needTopRightRound ? T.radius.md : 0,
-              bottomLeft: geom.needBottomLeftRound ? T.radius.md : 0,
-              bottomRight: geom.needBottomRightRound ? T.radius.md : 0
+              topLeft: geom.needTopLeftRound ? this.T.radius.md : 0,
+              topRight: geom.needTopRightRound ? this.T.radius.md : 0,
+              bottomLeft: geom.needBottomLeftRound ? this.T.radius.md : 0,
+              bottomRight: geom.needBottomRightRound ? this.T.radius.md : 0
             })
             .clip(true)
             .onClick(() => {
@@ -2130,7 +2133,7 @@ export struct ChatPage {
       }, (line: MosaicLine, idx: number) => `line_${idx}_${line.lineHeight}`)
     }
     .width(this.getMosaicLayout(item).width)
-    .margin({ bottom: item.text.length > 0 ? T.spacing.xs : 0 })
+    .margin({ bottom: item.text.length > 0 ? this.T.spacing.xs : 0 })
   }
 
   /** 多媒体气泡渲染（MEDIA-101 / MEDIA-105 / FILE-103）：图片/视频/GIF 动图。 */
@@ -2152,7 +2155,7 @@ export struct ChatPage {
             .objectFit(ImageFit.Cover)
             .width('100%')
             .height('100%')
-            .borderRadius(T.radius.md)
+            .borderRadius(this.T.radius.md)
         } else if (media.kind === 'video') {
           // 视频气泡：优先展示封面图（缩略图），若无缩略图则以 Video 组件首帧占位
           if (media.thumbnailPath !== null) {
@@ -2160,7 +2163,7 @@ export struct ChatPage {
               .width('100%')
               .height('100%')
               .objectFit(ImageFit.Cover)
-              .borderRadius(T.radius.md)
+              .borderRadius(this.T.radius.md)
           } else {
             Video({
               src: toSandboxUri(media.localPath)
@@ -2171,7 +2174,7 @@ export struct ChatPage {
               .objectFit(ImageFit.Cover)
               .width('100%')
               .height('100%')
-              .borderRadius(T.radius.md)
+              .borderRadius(this.T.radius.md)
           }
         } else {
           // 普通图片或原生 GIF 格式图片
@@ -2179,39 +2182,39 @@ export struct ChatPage {
             .width('100%')
             .height('100%')
             .objectFit(ImageFit.Cover)
-            .borderRadius(T.radius.md)
+            .borderRadius(this.T.radius.md)
         }
       } else if (media.thumbnailPath !== null) {
         Image(toSandboxUri(media.thumbnailPath))
           .width('100%')
           .height('100%')
           .objectFit(ImageFit.Cover)
-          .borderRadius(T.radius.md)
+          .borderRadius(this.T.radius.md)
       } else {
         Column() {
           if (media.kind === 'video') {
             Image($r('app.media.ic_play'))
               .width(32)
               .height(32)
-              .fillColor(T.colors.textSecondary)
+              .fillColor(this.T.colors.textSecondary)
           } else if (media.kind === 'animation') {
             Image($r('app.media.ic_play'))
               .width(32)
               .height(32)
-              .fillColor(T.colors.textSecondary)
+              .fillColor(this.T.colors.textSecondary)
           } else {
             Image($r('app.media.ic_photo'))
               .width(32)
               .height(32)
-              .fillColor(T.colors.textSecondary)
+              .fillColor(this.T.colors.textSecondary)
           }
         }
         .width('100%')
         .height('100%')
         .justifyContent(FlexAlign.Center)
         .alignItems(HorizontalAlign.Center)
-        .backgroundColor(T.colors.surfaceVariant)
-        .borderRadius(T.radius.md)
+        .backgroundColor(this.T.colors.surfaceVariant)
+        .borderRadius(this.T.radius.md)
       }
 
       // 2. 状态与角标覆盖层
@@ -2221,12 +2224,12 @@ export struct ChatPage {
           Image($r('app.media.ic_refresh'))
             .width(24)
             .height(24)
-            .fillColor(T.colors.textOnAccent)
+            .fillColor(this.T.colors.textOnAccent)
         }
         .width(52)
         .height(52)
-        .borderRadius(T.radius.full)
-        .backgroundColor(T.colors.destructive)
+        .borderRadius(this.T.radius.full)
+        .backgroundColor(this.T.colors.destructive)
         .justifyContent(FlexAlign.Center)
         .alignItems(HorizontalAlign.Center)
         .onClick(() => {
@@ -2248,8 +2251,8 @@ export struct ChatPage {
           }
           .width(56)
           .height(56)
-          .borderRadius(T.radius.full)
-          .backgroundColor(T.colors.scrim)
+          .borderRadius(this.T.radius.full)
+          .backgroundColor(this.T.colors.scrim)
           .justifyContent(FlexAlign.Center)
           .alignItems(HorizontalAlign.Center)
           .onClick(() => {
@@ -2265,8 +2268,8 @@ export struct ChatPage {
             }
             .width(48)
             .height(48)
-            .borderRadius(T.radius.full)
-            .backgroundColor(T.colors.scrim)
+            .borderRadius(this.T.radius.full)
+            .backgroundColor(this.T.colors.scrim)
             .justifyContent(FlexAlign.Center)
             .alignItems(HorizontalAlign.Center)
             .onClick(() => {
@@ -2281,8 +2284,8 @@ export struct ChatPage {
             }
             .width(44)
             .height(44)
-            .borderRadius(T.radius.full)
-            .backgroundColor(T.colors.scrim)
+            .borderRadius(this.T.radius.full)
+            .backgroundColor(this.T.colors.scrim)
             .justifyContent(FlexAlign.Center)
             .alignItems(HorizontalAlign.Center)
             .onClick(() => {
@@ -2297,7 +2300,7 @@ export struct ChatPage {
             .fontSize(10)
             .fontWeight(FontWeight.Bold)
             .fontColor(Color.White)
-            .backgroundColor(T.colors.scrim)
+            .backgroundColor(this.T.colors.scrim)
             .padding({ left: 6, right: 6, top: 2, bottom: 2 })
             .borderRadius(4)
         }
@@ -2317,8 +2320,8 @@ export struct ChatPage {
             }
             .width(48)
             .height(48)
-            .borderRadius(T.radius.full)
-            .backgroundColor(T.colors.scrim)
+            .borderRadius(this.T.radius.full)
+            .backgroundColor(this.T.colors.scrim)
             .justifyContent(FlexAlign.Center)
             .alignItems(HorizontalAlign.Center)
             .onClick(() => {
@@ -2333,8 +2336,8 @@ export struct ChatPage {
             }
             .width(44)
             .height(44)
-            .borderRadius(T.radius.full)
-            .backgroundColor(T.colors.scrim)
+            .borderRadius(this.T.radius.full)
+            .backgroundColor(this.T.colors.scrim)
             .justifyContent(FlexAlign.Center)
             .alignItems(HorizontalAlign.Center)
             .onClick(() => {
@@ -2353,8 +2356,8 @@ export struct ChatPage {
           }
           .width(48)
           .height(48)
-          .borderRadius(T.radius.full)
-          .backgroundColor(T.colors.scrim)
+          .borderRadius(this.T.radius.full)
+          .backgroundColor(this.T.colors.scrim)
           .justifyContent(FlexAlign.Center)
           .alignItems(HorizontalAlign.Center)
           .onClick(() => {
@@ -2369,8 +2372,8 @@ export struct ChatPage {
           }
           .width(48)
           .height(48)
-          .borderRadius(T.radius.full)
-          .backgroundColor(T.colors.scrim)
+          .borderRadius(this.T.radius.full)
+          .backgroundColor(this.T.colors.scrim)
           .justifyContent(FlexAlign.Center)
           .alignItems(HorizontalAlign.Center)
           .onClick(() => {
@@ -2386,8 +2389,8 @@ export struct ChatPage {
           }
           .width(48)
           .height(48)
-          .borderRadius(T.radius.full)
-          .backgroundColor(T.colors.scrim)
+          .borderRadius(this.T.radius.full)
+          .backgroundColor(this.T.colors.scrim)
           .justifyContent(FlexAlign.Center)
           .alignItems(HorizontalAlign.Center)
         }
@@ -2398,7 +2401,7 @@ export struct ChatPage {
             .fontSize(11)
             .fontWeight(FontWeight.Medium)
             .fontColor(Color.White)
-            .backgroundColor(T.colors.scrim)
+            .backgroundColor(this.T.colors.scrim)
             .padding({ left: 6, right: 6, top: 2, bottom: 2 })
             .borderRadius(4)
         }
@@ -2411,9 +2414,9 @@ export struct ChatPage {
     }
     .width(this.mediaCardWidth(media))
     .height(this.mediaCardHeight(media))
-    .borderRadius(T.radius.md)
+    .borderRadius(this.T.radius.md)
     .clip(true)
-    .margin({ bottom: T.spacing.xs })
+    .margin({ bottom: this.T.spacing.xs })
     .onClick(() => {
       if (isFailed || media.isUploading || media.isDownloading || !media.isDownloaded) {
         return;
@@ -2454,7 +2457,7 @@ export struct ChatPage {
 
         Text(item.replyToSummary.length > 0 ? item.replyToSummary : 'Message')
           .fontSize(12)
-          .fontColor(T.colors.textSecondary)
+          .fontColor(this.T.colors.textSecondary)
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
           .margin({ top: 2 })
@@ -2466,7 +2469,7 @@ export struct ChatPage {
     }
     .alignSelf(ItemAlign.Start)
     .alignItems(VerticalAlign.Center)
-    .margin({ bottom: T.spacing.xs })
+    .margin({ bottom: this.T.spacing.xs })
     .onClick(() => {
       if (item.replyToMessageId !== null) {
         this.scrollToMessageId(item.replyToMessageId);
@@ -2481,7 +2484,7 @@ export struct ChatPage {
       // 1. 左侧 Telegram 风格细竖条（宽 3vp，accent 强调色，圆角 1.5vp，贯穿整个卡片包括大图/小图）
       Column()
         .width(3)
-        .backgroundColor(T.colors.accent)
+        .backgroundColor(this.T.colors.accent)
         .borderRadius(1.5)
         .alignSelf(ItemAlign.Stretch)
 
@@ -2492,7 +2495,7 @@ export struct ChatPage {
           Text(preview.siteName)
             .fontSize(12)
             .fontWeight(FontWeight.Bold)
-            .fontColor(T.colors.accent)
+            .fontColor(this.T.colors.accent)
             .maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
         }
@@ -2502,7 +2505,7 @@ export struct ChatPage {
           Text(preview.title)
             .fontSize(14)
             .fontWeight(FontWeight.Bold)
-            .fontColor(T.colors.chatText)
+            .fontColor(this.T.colors.chatText)
             .maxLines(2)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
             .margin({ top: preview.siteName.length > 0 ? 2 : 0 })
@@ -2513,7 +2516,7 @@ export struct ChatPage {
           Image(toSandboxUri(preview.thumbnailPath))
             .width('100%')
             .aspectRatio(preview.aspectRatio)
-            .borderRadius(T.radius.sm)
+            .borderRadius(this.T.radius.sm)
             .clip(true)
             .objectFit(ImageFit.Cover)
             .constraintSize({ maxHeight: 220 })
@@ -2526,7 +2529,7 @@ export struct ChatPage {
           if (preview.description.length > 0) {
             Text(preview.description)
               .fontSize(13)
-              .fontColor(T.colors.textSecondary)
+              .fontColor(this.T.colors.textSecondary)
               .maxLines(3)
               .textOverflow({ overflow: TextOverflow.Ellipsis })
               .margin({ top: 2 })
@@ -2537,7 +2540,7 @@ export struct ChatPage {
             Image(toSandboxUri(preview.thumbnailPath))
               .width('100%')
               .aspectRatio(preview.aspectRatio)
-              .borderRadius(T.radius.sm)
+              .borderRadius(this.T.radius.sm)
               .clip(true)
               .objectFit(ImageFit.Cover)
               .constraintSize({ maxHeight: 220 })
@@ -2549,7 +2552,7 @@ export struct ChatPage {
             if (preview.description.length > 0) {
               Text(preview.description)
                 .fontSize(13)
-                .fontColor(T.colors.textSecondary)
+                .fontColor(this.T.colors.textSecondary)
                 .maxLines(4)
                 .textOverflow({ overflow: TextOverflow.Ellipsis })
                 .layoutWeight(1)
@@ -2559,7 +2562,7 @@ export struct ChatPage {
               Image(toSandboxUri(preview.thumbnailPath))
                 .width(52)
                 .height(52)
-                .borderRadius(T.radius.sm)
+                .borderRadius(this.T.radius.sm)
                 .clip(true)
                 .objectFit(ImageFit.Cover)
                 .margin({ left: preview.description.length > 0 ? 6 : 0 })
@@ -2597,29 +2600,29 @@ export struct ChatPage {
       ForEach(item.reactionChips, (chip: ReactionChip) => {
         Row() {
           Text(chip.emoji)
-            .fontSize(T.typography.footnote.fontSize)
+            .fontSize(this.T.typography.footnote.fontSize)
           Text(` ${chip.count}`)
-            .fontSize(T.typography.caption.fontSize)
+            .fontSize(this.T.typography.caption.fontSize)
             .fontWeight(FontWeight.Medium)
-            .fontColor(chip.isChosen ? T.colors.textOnAccent : T.colors.textSecondary)
+            .fontColor(chip.isChosen ? this.T.colors.textOnAccent : this.T.colors.textSecondary)
         }
         .padding({
-          left: T.spacing.sm,
-          right: T.spacing.sm,
-          top: T.spacing.hairline,
-          bottom: T.spacing.hairline
+          left: this.T.spacing.sm,
+          right: this.T.spacing.sm,
+          top: this.T.spacing.hairline,
+          bottom: this.T.spacing.hairline
         })
         .height(26)
         .alignItems(VerticalAlign.Center)
-        .backgroundColor(chip.isChosen ? T.colors.accent : T.colors.surfaceVariant)
-        .borderRadius(T.radius.full)
-        .margin({ right: T.spacing.xs, top: T.spacing.xs })
+        .backgroundColor(chip.isChosen ? this.T.colors.accent : this.T.colors.surfaceVariant)
+        .borderRadius(this.T.radius.full)
+        .margin({ right: this.T.spacing.xs, top: this.T.spacing.xs })
         .onClick(() => {
           this.onDispatch(new ToggleMessageReaction(item.messageId, chip.emoji));
         })
       }, (chip: ReactionChip) => `${chip.emoji}:${chip.count}:${chip.isChosen}`)
     }
-    .margin({ top: T.spacing.xs })
+    .margin({ top: this.T.spacing.xs })
   }
 
   /** CHANNEL-101：频道帖子评论入口行 */
@@ -2629,29 +2632,29 @@ export struct ChatPage {
       Image($r('app.media.ic_comments'))
         .width(16)
         .height(16)
-        .fillColor(T.colors.accent)
-        .margin({ right: T.spacing.xs })
+        .fillColor(this.T.colors.accent)
+        .margin({ right: this.T.spacing.xs })
       Text(`${item.commentCount} 条评论`)
-        .fontSize(T.typography.footnote.fontSize)
+        .fontSize(this.T.typography.footnote.fontSize)
         .fontWeight(FontWeight.Medium)
-        .fontColor(T.colors.accent)
+        .fontColor(this.T.colors.accent)
         .layoutWeight(1)
       Image($r('app.media.ic_chevron_right'))
         .width(14)
         .height(14)
-        .fillColor(T.colors.accent)
+        .fillColor(this.T.colors.accent)
     }
     .width('100%')
     .alignItems(VerticalAlign.Center)
     .padding({
-      top: T.spacing.xs,
-      bottom: T.spacing.hairline,
-      left: T.spacing.hairline,
-      right: T.spacing.hairline
+      top: this.T.spacing.xs,
+      bottom: this.T.spacing.hairline,
+      left: this.T.spacing.hairline,
+      right: this.T.spacing.hairline
     })
-    .margin({ top: T.spacing.xs })
+    .margin({ top: this.T.spacing.xs })
     .borderWidth({ top: 1 })
-    .borderColor(T.colors.divider)
+    .borderColor(this.T.colors.divider)
     .onClick(() => {
       this.onDispatch(new OpenMessageComments(item.messageId));
     })
@@ -2664,32 +2667,32 @@ export struct ChatPage {
       Column()
         .width(3)
         .height(32)
-        .backgroundColor(T.colors.accent)
-        .borderRadius(T.radius.full)
+        .backgroundColor(this.T.colors.accent)
+        .borderRadius(this.T.radius.full)
 
       Column() {
         Text(mode.kind === 'edit' ? 'Edit Message' : `Reply to ${(mode as ComposerReplyMode).previewTitle}`)
-          .fontSize(T.typography.subheadline.fontSize)
-          .fontWeight(T.typography.headline.fontWeight)
-          .fontColor(T.colors.accent)
+          .fontSize(this.T.typography.subheadline.fontSize)
+          .fontWeight(this.T.typography.headline.fontWeight)
+          .fontColor(this.T.colors.accent)
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
 
         Text(mode.previewText)
-          .fontSize(T.typography.footnote.fontSize)
-          .fontColor(T.colors.textSecondary)
+          .fontSize(this.T.typography.footnote.fontSize)
+          .fontColor(this.T.colors.textSecondary)
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
       }
       .alignItems(HorizontalAlign.Start)
       .layoutWeight(1)
-      .margin({ left: T.spacing.sm })
+      .margin({ left: this.T.spacing.sm })
 
       Row() {
         Image($r('app.media.ic_close'))
           .width(18)
           .height(18)
-          .fillColor(T.colors.textSecondary)
+          .fillColor(this.T.colors.textSecondary)
       }
       .width(32)
       .height(32)
@@ -2702,12 +2705,12 @@ export struct ChatPage {
     .width('100%')
     .alignItems(VerticalAlign.Center)
     .padding({
-      left: T.spacing.screenInset,
-      right: T.spacing.screenInset,
-      top: T.spacing.xs,
-      bottom: T.spacing.xs
+      left: this.T.spacing.screenInset,
+      right: this.T.spacing.screenInset,
+      top: this.T.spacing.xs,
+      bottom: this.T.spacing.xs
     })
-    .backgroundColor(T.colors.surfaceVariant)
+    .backgroundColor(this.T.colors.surfaceVariant)
   }
 
   /** 长按操作菜单（CHAT-004）：全屏遮罩 + 底部动作面板；可见项已由 reducer 按权限过滤。 */
@@ -2717,7 +2720,7 @@ export struct ChatPage {
       Column()
         .width('100%')
         .height('100%')
-        .backgroundColor(T.colors.scrim)
+        .backgroundColor(this.T.colors.scrim)
         .onClick(() => {
           this.onDispatch(new DismissMessageActionMenu());
         })
@@ -2734,11 +2737,11 @@ export struct ChatPage {
             .height(42)
             .justifyContent(FlexAlign.Center)
             .alignItems(HorizontalAlign.Center)
-            .borderRadius(T.radius.full)
-            .backgroundColor(menu.chosenReactions.indexOf(emoji) !== -1 ? T.colors.surface : T.colors.surfaceVariant)
+            .borderRadius(this.T.radius.full)
+            .backgroundColor(menu.chosenReactions.indexOf(emoji) !== -1 ? this.T.colors.surface : this.T.colors.surfaceVariant)
             .border({
               width: menu.chosenReactions.indexOf(emoji) !== -1 ? 2 : 0,
-              color: T.colors.accent
+              color: this.T.colors.accent
             })
             .onClick(() => {
               this.onDispatch(new ToggleMessageReaction(menu.messageId, emoji));
@@ -2749,16 +2752,16 @@ export struct ChatPage {
         .width('100%')
         .justifyContent(FlexAlign.SpaceAround)
         .padding({
-          left: T.spacing.screenInset,
-          right: T.spacing.screenInset,
-          top: T.spacing.md,
-          bottom: T.spacing.sm
+          left: this.T.spacing.screenInset,
+          right: this.T.spacing.screenInset,
+          top: this.T.spacing.md,
+          bottom: this.T.spacing.sm
         })
 
         Divider()
-          .color(T.colors.divider)
+          .color(this.T.colors.divider)
           .strokeWidth(0.5)
-          .margin({ top: T.spacing.xs, bottom: T.spacing.xs })
+          .margin({ top: this.T.spacing.xs, bottom: this.T.spacing.xs })
 
         // FILE-103：失败消息展示 Resend 重发入口（对齐 Telegram X: Resend → Delete）
         if (menu.showResend) {
@@ -2766,21 +2769,21 @@ export struct ChatPage {
             Image($r('app.media.ic_send'))
               .width(22)
               .height(22)
-              .fillColor(T.colors.accent)
-              .margin({ right: T.spacing.md })
+              .fillColor(this.T.colors.accent)
+              .margin({ right: this.T.spacing.md })
             Text('Resend')
-              .fontSize(T.typography.body.fontSize)
+              .fontSize(this.T.typography.body.fontSize)
               .fontWeight(FontWeight.Medium)
-              .fontColor(T.colors.accent)
+              .fontColor(this.T.colors.accent)
               .layoutWeight(1)
           }
           .width('100%')
           .alignItems(VerticalAlign.Center)
           .padding({
-            left: T.spacing.screenInset,
-            right: T.spacing.screenInset,
-            top: T.spacing.md,
-            bottom: T.spacing.md
+            left: this.T.spacing.screenInset,
+            right: this.T.spacing.screenInset,
+            top: this.T.spacing.md,
+            bottom: this.T.spacing.md
           })
           .onClick(() => {
             this.onDispatch(new ResendFailedMessage(menu.messageId));
@@ -2792,20 +2795,20 @@ export struct ChatPage {
             Image($r('app.media.ic_reply'))
               .width(22)
               .height(22)
-              .fillColor(T.colors.textPrimary)
-              .margin({ right: T.spacing.md })
+              .fillColor(this.T.colors.textPrimary)
+              .margin({ right: this.T.spacing.md })
             Text('Reply')
-              .fontSize(T.typography.body.fontSize)
-              .fontColor(T.colors.textPrimary)
+              .fontSize(this.T.typography.body.fontSize)
+              .fontColor(this.T.colors.textPrimary)
               .layoutWeight(1)
           }
           .width('100%')
           .alignItems(VerticalAlign.Center)
           .padding({
-            left: T.spacing.screenInset,
-            right: T.spacing.screenInset,
-            top: T.spacing.md,
-            bottom: T.spacing.md
+            left: this.T.spacing.screenInset,
+            right: this.T.spacing.screenInset,
+            top: this.T.spacing.md,
+            bottom: this.T.spacing.md
           })
           .onClick(() => {
             this.onDispatch(new ReplyToMessage());
@@ -2818,20 +2821,20 @@ export struct ChatPage {
             Image($r('app.media.ic_copy'))
               .width(22)
               .height(22)
-              .fillColor(T.colors.textPrimary)
-              .margin({ right: T.spacing.md })
+              .fillColor(this.T.colors.textPrimary)
+              .margin({ right: this.T.spacing.md })
             Text('Copy')
-              .fontSize(T.typography.body.fontSize)
-              .fontColor(T.colors.textPrimary)
+              .fontSize(this.T.typography.body.fontSize)
+              .fontColor(this.T.colors.textPrimary)
               .layoutWeight(1)
           }
           .width('100%')
           .alignItems(VerticalAlign.Center)
           .padding({
-            left: T.spacing.screenInset,
-            right: T.spacing.screenInset,
-            top: T.spacing.md,
-            bottom: T.spacing.md
+            left: this.T.spacing.screenInset,
+            right: this.T.spacing.screenInset,
+            top: this.T.spacing.md,
+            bottom: this.T.spacing.md
           })
           .onClick(() => {
             this.onDispatch(new CopyMessageText());
@@ -2844,20 +2847,20 @@ export struct ChatPage {
             Image($r('app.media.ic_link'))
               .width(22)
               .height(22)
-              .fillColor(T.colors.textPrimary)
-              .margin({ right: T.spacing.md })
+              .fillColor(this.T.colors.textPrimary)
+              .margin({ right: this.T.spacing.md })
             Text('Copy Link')
-              .fontSize(T.typography.body.fontSize)
-              .fontColor(T.colors.textPrimary)
+              .fontSize(this.T.typography.body.fontSize)
+              .fontColor(this.T.colors.textPrimary)
               .layoutWeight(1)
           }
           .width('100%')
           .alignItems(VerticalAlign.Center)
           .padding({
-            left: T.spacing.screenInset,
-            right: T.spacing.screenInset,
-            top: T.spacing.md,
-            bottom: T.spacing.md
+            left: this.T.spacing.screenInset,
+            right: this.T.spacing.screenInset,
+            top: this.T.spacing.md,
+            bottom: this.T.spacing.md
           })
           .onClick(() => {
             this.onDispatch(new CopyMessageLink());
@@ -2870,20 +2873,20 @@ export struct ChatPage {
             Image($r('app.media.ic_forward'))
               .width(22)
               .height(22)
-              .fillColor(T.colors.textPrimary)
-              .margin({ right: T.spacing.md })
+              .fillColor(this.T.colors.textPrimary)
+              .margin({ right: this.T.spacing.md })
             Text('Forward')
-              .fontSize(T.typography.body.fontSize)
-              .fontColor(T.colors.textPrimary)
+              .fontSize(this.T.typography.body.fontSize)
+              .fontColor(this.T.colors.textPrimary)
               .layoutWeight(1)
           }
           .width('100%')
           .alignItems(VerticalAlign.Center)
           .padding({
-            left: T.spacing.screenInset,
-            right: T.spacing.screenInset,
-            top: T.spacing.md,
-            bottom: T.spacing.md
+            left: this.T.spacing.screenInset,
+            right: this.T.spacing.screenInset,
+            top: this.T.spacing.md,
+            bottom: this.T.spacing.md
           })
           .onClick(() => {
             this.onDispatch(new ForwardMessagesRequested());
@@ -2895,20 +2898,20 @@ export struct ChatPage {
             Image($r('app.media.ic_edit'))
               .width(22)
               .height(22)
-              .fillColor(T.colors.textPrimary)
-              .margin({ right: T.spacing.md })
+              .fillColor(this.T.colors.textPrimary)
+              .margin({ right: this.T.spacing.md })
             Text('Edit')
-              .fontSize(T.typography.body.fontSize)
-              .fontColor(T.colors.textPrimary)
+              .fontSize(this.T.typography.body.fontSize)
+              .fontColor(this.T.colors.textPrimary)
               .layoutWeight(1)
           }
           .width('100%')
           .alignItems(VerticalAlign.Center)
           .padding({
-            left: T.spacing.screenInset,
-            right: T.spacing.screenInset,
-            top: T.spacing.md,
-            bottom: T.spacing.md
+            left: this.T.spacing.screenInset,
+            right: this.T.spacing.screenInset,
+            top: this.T.spacing.md,
+            bottom: this.T.spacing.md
           })
           .onClick(() => {
             this.onDispatch(new EditMessage());
@@ -2921,20 +2924,20 @@ export struct ChatPage {
             Image($r('app.media.ic_pin'))
               .width(22)
               .height(22)
-              .fillColor(T.colors.textPrimary)
-              .margin({ right: T.spacing.md })
+              .fillColor(this.T.colors.textPrimary)
+              .margin({ right: this.T.spacing.md })
             Text(menu.isPinned ? 'Unpin' : 'Pin')
-              .fontSize(T.typography.body.fontSize)
-              .fontColor(T.colors.textPrimary)
+              .fontSize(this.T.typography.body.fontSize)
+              .fontColor(this.T.colors.textPrimary)
               .layoutWeight(1)
           }
           .width('100%')
           .alignItems(VerticalAlign.Center)
           .padding({
-            left: T.spacing.screenInset,
-            right: T.spacing.screenInset,
-            top: T.spacing.md,
-            bottom: T.spacing.md
+            left: this.T.spacing.screenInset,
+            right: this.T.spacing.screenInset,
+            top: this.T.spacing.md,
+            bottom: this.T.spacing.md
           })
           .onClick(() => {
             if (menu.isPinned) {
@@ -2950,20 +2953,20 @@ export struct ChatPage {
             Image($r('app.media.ic_delete'))
               .width(22)
               .height(22)
-              .fillColor(T.colors.destructive)
-              .margin({ right: T.spacing.md })
+              .fillColor(this.T.colors.destructive)
+              .margin({ right: this.T.spacing.md })
             Text('Delete')
-              .fontSize(T.typography.body.fontSize)
-              .fontColor(T.colors.destructive)
+              .fontSize(this.T.typography.body.fontSize)
+              .fontColor(this.T.colors.destructive)
               .layoutWeight(1)
           }
           .width('100%')
           .alignItems(VerticalAlign.Center)
           .padding({
-            left: T.spacing.screenInset,
-            right: T.spacing.screenInset,
-            top: T.spacing.md,
-            bottom: T.spacing.md
+            left: this.T.spacing.screenInset,
+            right: this.T.spacing.screenInset,
+            top: this.T.spacing.md,
+            bottom: this.T.spacing.md
           })
           .onClick(() => {
             this.onDispatch(new DeleteMessage());
@@ -2971,9 +2974,9 @@ export struct ChatPage {
         }
       }
       .width('100%')
-      .backgroundColor(T.colors.surface)
-      .borderRadius({ topLeft: T.radius.xl, topRight: T.radius.xl })
-      .padding({ top: T.spacing.sm, bottom: T.spacing.lg })
+      .backgroundColor(this.T.colors.surface)
+      .borderRadius({ topLeft: this.T.radius.xl, topRight: this.T.radius.xl })
+      .padding({ top: this.T.spacing.sm, bottom: this.T.spacing.lg })
     }
     .width('100%')
     .height('100%')
@@ -2988,7 +2991,7 @@ export struct ChatPage {
       Column()
         .width('100%')
         .height('100%')
-        .backgroundColor(T.colors.scrim)
+        .backgroundColor(this.T.colors.scrim)
         .onClick(() => {
           this.onDispatch(new CloseAttachmentMenu());
         })
@@ -2999,22 +3002,22 @@ export struct ChatPage {
         Row()
           .width(36)
           .height(4)
-          .borderRadius(T.radius.full)
-          .backgroundColor(T.colors.disabled)
-          .margin({ top: T.spacing.sm, bottom: T.spacing.md })
+          .borderRadius(this.T.radius.full)
+          .backgroundColor(this.T.colors.disabled)
+          .margin({ top: this.T.spacing.sm, bottom: this.T.spacing.md })
 
         // 标题行
         Row() {
           Text('Attach')
-            .fontSize(T.typography.title.fontSize)
-            .fontWeight(T.typography.title.fontWeight)
-            .fontColor(T.colors.textPrimary)
+            .fontSize(this.T.typography.title.fontSize)
+            .fontWeight(this.T.typography.title.fontWeight)
+            .fontColor(this.T.colors.textPrimary)
         }
         .width('100%')
         .padding({
-          left: T.spacing.screenInset,
-          right: T.spacing.screenInset,
-          bottom: T.spacing.md
+          left: this.T.spacing.screenInset,
+          right: this.T.spacing.screenInset,
+          bottom: this.T.spacing.md
         })
 
         // 附件选项网格
@@ -3025,25 +3028,25 @@ export struct ChatPage {
               Image($r('app.media.ic_photo'))
                 .width(28)
                 .height(28)
-                .fillColor(T.colors.accent)
+                .fillColor(this.T.colors.accent)
             }
             .width(56)
             .height(56)
-            .borderRadius(T.radius.full)
-            .backgroundColor(T.colors.surfaceVariant)
+            .borderRadius(this.T.radius.full)
+            .backgroundColor(this.T.colors.surfaceVariant)
             .justifyContent(FlexAlign.Center)
             .alignItems(HorizontalAlign.Center)
-            .margin({ bottom: T.spacing.xs })
+            .margin({ bottom: this.T.spacing.xs })
 
             Text('Gallery')
-              .fontSize(T.typography.footnote.fontSize)
-              .fontColor(T.colors.textPrimary)
+              .fontSize(this.T.typography.footnote.fontSize)
+              .fontColor(this.T.colors.textPrimary)
           }
           .alignItems(HorizontalAlign.Center)
           .onClick(() => {
             this.onDispatch(new PickAndSendPhoto());
           })
-          .margin({ right: T.spacing.xl })
+          .margin({ right: this.T.spacing.xl })
 
           // 选项 2：File (文件)
           Column() {
@@ -3051,19 +3054,19 @@ export struct ChatPage {
               Image($r('app.media.ic_file'))
                 .width(28)
                 .height(28)
-                .fillColor(T.colors.accent)
+                .fillColor(this.T.colors.accent)
             }
             .width(56)
             .height(56)
-            .borderRadius(T.radius.full)
-            .backgroundColor(T.colors.surfaceVariant)
+            .borderRadius(this.T.radius.full)
+            .backgroundColor(this.T.colors.surfaceVariant)
             .justifyContent(FlexAlign.Center)
             .alignItems(HorizontalAlign.Center)
-            .margin({ bottom: T.spacing.xs })
+            .margin({ bottom: this.T.spacing.xs })
 
             Text('File')
-              .fontSize(T.typography.footnote.fontSize)
-              .fontColor(T.colors.textPrimary)
+              .fontSize(this.T.typography.footnote.fontSize)
+              .fontColor(this.T.colors.textPrimary)
           }
           .alignItems(HorizontalAlign.Center)
           .onClick(() => {
@@ -3072,19 +3075,19 @@ export struct ChatPage {
         }
         .width('100%')
         .padding({
-          left: T.spacing.screenInset,
-          right: T.spacing.screenInset,
-          top: T.spacing.sm,
-          bottom: T.spacing.xl
+          left: this.T.spacing.screenInset,
+          right: this.T.spacing.screenInset,
+          top: this.T.spacing.sm,
+          bottom: this.T.spacing.xl
         })
       }
       .width('100%')
-      .backgroundColor(T.colors.surface)
+      .backgroundColor(this.T.colors.surface)
       .borderRadius({
-        topLeft: T.radius.xl,
-        topRight: T.radius.xl
+        topLeft: this.T.radius.xl,
+        topRight: this.T.radius.xl
       })
-      .padding({ bottom: T.spacing.screenInset })
+      .padding({ bottom: this.T.spacing.screenInset })
     }
     .width('100%')
     .height('100%')
@@ -3145,7 +3148,7 @@ export struct ChatPage {
                   }
                   .padding(16)
                   .borderRadius(16)
-                  .backgroundColor(T.colors.scrim)
+                  .backgroundColor(this.T.colors.scrim)
                   .onClick(() => {
                     this.onDispatch(new RequestMediaDownload(item.media.fileId));
                   })
@@ -3189,8 +3192,8 @@ export struct ChatPage {
                 }
                 .width(56)
                 .height(56)
-                .borderRadius(T.radius.full)
-                .backgroundColor(T.colors.scrim)
+                .borderRadius(this.T.radius.full)
+                .backgroundColor(this.T.colors.scrim)
                 .justifyContent(FlexAlign.Center)
                 .alignItems(HorizontalAlign.Center)
               }
@@ -3308,31 +3311,31 @@ export struct ChatPage {
 
       Column() {
         Text(this.getViewerTitle())
-          .fontSize(T.typography.title.fontSize)
-          .fontWeight(T.typography.title.fontWeight)
+          .fontSize(this.T.typography.title.fontSize)
+          .fontWeight(this.T.typography.title.fontWeight)
           .fontColor(Color.White)
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
 
         if (this.getViewerSubtitle().length > 0) {
           Text(this.getViewerSubtitle())
-            .fontSize(T.typography.caption.fontSize)
-            .fontColor(T.colors.textSecondary)
+            .fontSize(this.T.typography.caption.fontSize)
+            .fontColor(this.T.colors.textSecondary)
             .margin({ top: 2 })
         }
       }
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)
-      .margin({ left: T.spacing.xs })
+      .margin({ left: this.T.spacing.xs })
     }
     .width('100%')
     .padding({
-      left: T.spacing.sm,
-      right: T.spacing.md,
+      left: this.T.spacing.sm,
+      right: this.T.spacing.md,
       top: 36,
-      bottom: T.spacing.sm
+      bottom: this.T.spacing.sm
     })
-    .backgroundColor(T.colors.scrim)
+    .backgroundColor(this.T.colors.scrim)
   }
 
   @Builder
@@ -3340,7 +3343,7 @@ export struct ChatPage {
     Column() {
       Scroll() {
         Text(this.getViewerCaption())
-          .fontSize(T.typography.body.fontSize)
+          .fontSize(this.T.typography.body.fontSize)
           .fontColor(Color.White)
           .width('100%')
       }
@@ -3349,12 +3352,12 @@ export struct ChatPage {
     }
     .width('100%')
     .padding({
-      left: T.spacing.screenInset,
-      right: T.spacing.screenInset,
-      top: T.spacing.md,
+      left: this.T.spacing.screenInset,
+      right: this.T.spacing.screenInset,
+      top: this.T.spacing.md,
       bottom: 28
     })
-    .backgroundColor(T.colors.scrim)
+    .backgroundColor(this.T.colors.scrim)
   }
 
   private getViewerTitle(): string {
@@ -3393,13 +3396,13 @@ export struct ChatPage {
         Image(this.uiState.showEmojiBoard ? $r('app.media.ic_keyboard') : $r('app.media.ic_emoji'))
           .width(24)
           .height(24)
-          .fillColor(this.uiState.showEmojiBoard ? T.colors.accent : T.colors.textSecondary)
+          .fillColor(this.uiState.showEmojiBoard ? this.T.colors.accent : this.T.colors.textSecondary)
       }
       .width(COMPOSER_INPUT_HEIGHT)
       .height(COMPOSER_INPUT_HEIGHT)
       .justifyContent(FlexAlign.Center)
       .alignItems(VerticalAlign.Center)
-      .margin({ right: T.spacing.xs })
+      .margin({ right: this.T.spacing.xs })
       .onClick(() => {
         this.onDispatch(new ToggleEmojiBoard());
       })
@@ -3409,13 +3412,13 @@ export struct ChatPage {
           text: this.uiState.composerText,
           placeholder: 'Message'
         })
-          .fontSize(T.typography.body.fontSize)
-          .fontColor(T.colors.textPrimary)
-          .placeholderColor(T.colors.textSecondary)
+          .fontSize(this.T.typography.body.fontSize)
+          .fontColor(this.T.colors.textPrimary)
+          .placeholderColor(this.T.colors.textSecondary)
           .backgroundColor(Color.Transparent)
           .width('100%')
           .height(COMPOSER_INPUT_HEIGHT)
-          .padding({ left: T.spacing.md, right: T.spacing.md })
+          .padding({ left: this.T.spacing.md, right: this.T.spacing.md })
           .onChange((value: string) => {
             this.onDispatch(new ComposerTextChanged(value));
           })
@@ -3430,21 +3433,21 @@ export struct ChatPage {
       }
       .layoutWeight(1)
       .height(COMPOSER_INPUT_HEIGHT)
-      .backgroundColor(T.colors.surfaceVariant)
-      .borderRadius(T.radius.full)
+      .backgroundColor(this.T.colors.surfaceVariant)
+      .borderRadius(this.T.radius.full)
 
       // COMPOSER-102：统一附件入口按钮（展开/收起附件选择面板）
       Row() {
         Image($r('app.media.ic_attach'))
           .width(24)
           .height(24)
-          .fillColor(this.uiState.showAttachmentMenu ? T.colors.accent : T.colors.textSecondary)
+          .fillColor(this.uiState.showAttachmentMenu ? this.T.colors.accent : this.T.colors.textSecondary)
       }
       .width(COMPOSER_INPUT_HEIGHT)
       .height(COMPOSER_INPUT_HEIGHT)
       .justifyContent(FlexAlign.Center)
       .alignItems(VerticalAlign.Center)
-      .margin({ left: T.spacing.xs, right: T.spacing.xs })
+      .margin({ left: this.T.spacing.xs, right: this.T.spacing.xs })
       .onClick(() => {
         this.onDispatch(new ToggleAttachmentMenu());
       })
@@ -3453,12 +3456,12 @@ export struct ChatPage {
         Image(this.canSend() ? $r('app.media.ic_send') : $r('app.media.ic_mic'))
           .width(20)
           .height(20)
-          .fillColor(T.colors.textOnAccent)
+          .fillColor(this.T.colors.textOnAccent)
       }
       .width(SEND_BUTTON_SIZE)
       .height(SEND_BUTTON_SIZE)
-      .backgroundColor(T.colors.accent)
-      .borderRadius(T.radius.full)
+      .backgroundColor(this.T.colors.accent)
+      .borderRadius(this.T.radius.full)
       .justifyContent(FlexAlign.Center)
       .alignItems(VerticalAlign.Center)
       .onClick(() => {
@@ -3472,13 +3475,13 @@ export struct ChatPage {
     .width('100%')
     .alignItems(VerticalAlign.Center)
     .padding({
-      left: T.spacing.screenInset,
-      right: T.spacing.screenInset,
-      top: T.spacing.xs,
-      bottom: T.spacing.sm
+      left: this.T.spacing.screenInset,
+      right: this.T.spacing.screenInset,
+      top: this.T.spacing.xs,
+      bottom: this.T.spacing.sm
     })
     .borderWidth({ top: 1 })
-    .borderColor(T.colors.divider)
+    .borderColor(this.T.colors.divider)
   }
 
   /** VOICE-101：录音控制条（全宽：红色录音指示点、秒级计时、放弃取消按钮、发送按钮） */
@@ -3490,17 +3493,17 @@ export struct ChatPage {
         Row()
           .width(10)
           .height(10)
-          .borderRadius(T.radius.full)
-          .backgroundColor(T.colors.destructive)
-          .margin({ right: T.spacing.xs })
+          .borderRadius(this.T.radius.full)
+          .backgroundColor(this.T.colors.destructive)
+          .margin({ right: this.T.spacing.xs })
 
         Text(formatDuration(this.uiState.recordingDurationSec))
-          .fontSize(T.typography.body.fontSize)
-          .fontColor(T.colors.textPrimary)
+          .fontSize(this.T.typography.body.fontSize)
+          .fontColor(this.T.colors.textPrimary)
           .fontWeight(FontWeight.Medium)
       }
       .alignItems(VerticalAlign.Center)
-      .margin({ left: T.spacing.sm })
+      .margin({ left: this.T.spacing.sm })
 
       Blank()
 
@@ -3509,14 +3512,14 @@ export struct ChatPage {
         Image($r('app.media.ic_close'))
           .width(20)
           .height(20)
-          .fillColor(T.colors.textSecondary)
+          .fillColor(this.T.colors.textSecondary)
       }
       .width(SEND_BUTTON_SIZE)
       .height(SEND_BUTTON_SIZE)
-      .borderRadius(T.radius.full)
+      .borderRadius(this.T.radius.full)
       .justifyContent(FlexAlign.Center)
       .alignItems(VerticalAlign.Center)
-      .margin({ right: T.spacing.sm })
+      .margin({ right: this.T.spacing.sm })
       .onClick(() => {
         this.onDispatch(new CancelVoiceRecord());
       })
@@ -3526,12 +3529,12 @@ export struct ChatPage {
         Image($r('app.media.ic_send'))
           .width(20)
           .height(20)
-          .fillColor(T.colors.textOnAccent)
+          .fillColor(this.T.colors.textOnAccent)
       }
       .width(SEND_BUTTON_SIZE)
       .height(SEND_BUTTON_SIZE)
-      .backgroundColor(T.colors.accent)
-      .borderRadius(T.radius.full)
+      .backgroundColor(this.T.colors.accent)
+      .borderRadius(this.T.radius.full)
       .justifyContent(FlexAlign.Center)
       .alignItems(VerticalAlign.Center)
       .onClick(() => {
@@ -3539,17 +3542,17 @@ export struct ChatPage {
       })
     }
     .width('100%')
-    .height(COMPOSER_INPUT_HEIGHT + T.spacing.xs + T.spacing.sm)
+    .height(COMPOSER_INPUT_HEIGHT + this.T.spacing.xs + this.T.spacing.sm)
     .alignItems(VerticalAlign.Center)
     .padding({
-      left: T.spacing.screenInset,
-      right: T.spacing.screenInset,
-      top: T.spacing.xs,
-      bottom: T.spacing.sm
+      left: this.T.spacing.screenInset,
+      right: this.T.spacing.screenInset,
+      top: this.T.spacing.xs,
+      bottom: this.T.spacing.sm
     })
-    .backgroundColor(T.colors.surface)
+    .backgroundColor(this.T.colors.surface)
     .borderWidth({ top: 1 })
-    .borderColor(T.colors.divider)
+    .borderColor(this.T.colors.divider)
   }
 
   /** CHANNEL-101：非成员频道底部"加入频道"全宽条 */
@@ -3559,25 +3562,25 @@ export struct ChatPage {
       Button('加入频道')
         .width('100%')
         .height(40)
-        .backgroundColor(T.colors.accent)
-        .fontColor(T.colors.textOnAccent)
-        .fontSize(T.typography.headline.fontSize)
+        .backgroundColor(this.T.colors.accent)
+        .fontColor(this.T.colors.textOnAccent)
+        .fontSize(this.T.typography.headline.fontSize)
         .fontWeight(FontWeight.Medium)
-        .borderRadius(T.radius.md)
+        .borderRadius(this.T.radius.md)
         .onClick(() => {
           this.onDispatch(new JoinChannel());
         })
     }
     .width('100%')
     .padding({
-      left: T.spacing.screenInset,
-      right: T.spacing.screenInset,
-      top: T.spacing.xs,
-      bottom: T.spacing.sm
+      left: this.T.spacing.screenInset,
+      right: this.T.spacing.screenInset,
+      top: this.T.spacing.xs,
+      bottom: this.T.spacing.sm
     })
     .borderWidth({ top: 1 })
-    .borderColor(T.colors.divider)
-    .backgroundColor(T.colors.surface)
+    .borderColor(this.T.colors.divider)
+    .backgroundColor(this.T.colors.surface)
   }
 
   /** CHANNEL-101：已加入频道底部"静音"快捷操作条（Telegram X 广播频道模式） */
@@ -3588,33 +3591,33 @@ export struct ChatPage {
         Image($r('app.media.ic_mute'))
           .width(20)
           .height(20)
-          .fillColor(T.colors.accent)
-          .margin({ right: T.spacing.sm })
+          .fillColor(this.T.colors.accent)
+          .margin({ right: this.T.spacing.sm })
 
         Text('静音')
-          .fontSize(T.typography.headline.fontSize)
+          .fontSize(this.T.typography.headline.fontSize)
           .fontWeight(FontWeight.Medium)
-          .fontColor(T.colors.accent)
+          .fontColor(this.T.colors.accent)
       }
       .width('100%')
       .height(40)
       .justifyContent(FlexAlign.Center)
       .alignItems(VerticalAlign.Center)
-      .backgroundColor(T.colors.surfaceVariant)
-      .borderRadius(T.radius.md)
+      .backgroundColor(this.T.colors.surfaceVariant)
+      .borderRadius(this.T.radius.md)
       .onClick(() => {
         this.onDispatch(new ChatMenuAction('mute'));
       })
     }
     .width('100%')
     .padding({
-      left: T.spacing.screenInset,
-      right: T.spacing.screenInset,
-      top: T.spacing.xs,
-      bottom: T.spacing.sm
+      left: this.T.spacing.screenInset,
+      right: this.T.spacing.screenInset,
+      top: this.T.spacing.xs,
+      bottom: this.T.spacing.sm
     })
     .borderWidth({ top: 1 })
-    .borderColor(T.colors.divider)
+    .borderColor(this.T.colors.divider)
   }
 
   private canSend(): boolean {
@@ -3634,17 +3637,17 @@ export struct ChatPage {
 
   /** 署名颜色：senderColorIndex 取调色板；-1 兜底 accent。 */
   private senderNameColor(item: MessageItem): string {
-    return item.senderColorIndex >= 0 ? nameColorForIndex(item.senderColorIndex) : T.colors.accent;
+    return item.senderColorIndex >= 0 ? nameColorForIndex(item.senderColorIndex) : this.T.colors.accent;
   }
 
   /** 头像底色：与署名同色调色板取色。 */
   private senderAvatarColor(item: MessageItem): string {
-    return item.senderColorIndex >= 0 ? nameColorForIndex(item.senderColorIndex) : T.colors.accent;
+    return item.senderColorIndex >= 0 ? nameColorForIndex(item.senderColorIndex) : this.T.colors.accent;
   }
 
   /** 回复引用左侧竖条与发件人昵称颜色：取发送者同款调色板，-1 兜底 accent。 */
   private replyLineColor(item: MessageItem): string {
-    return item.replySenderColorIndex >= 0 ? nameColorForIndex(item.replySenderColorIndex) : T.colors.accent;
+    return item.replySenderColorIndex >= 0 ? nameColorForIndex(item.replySenderColorIndex) : this.T.colors.accent;
   }
 
   /** 点击回复引用跳转到被回复消息所在位置 */
@@ -3673,7 +3676,7 @@ export struct ChatPage {
   }
 
   private spanFontSize(span: MessageTextSpan): number {
-    return span.isCode || span.isPre ? CODE_FONT_SIZE : T.typography.body.fontSize;
+    return span.isCode || span.isPre ? this.T.typography.body.fontSize - 2 : this.T.typography.body.fontSize;
   }
 
   private spanFontFamily(span: MessageTextSpan): string {
@@ -3683,15 +3686,15 @@ export struct ChatPage {
 
   private spanFontColor(span: MessageTextSpan, messageId: number, spanIndex: number): string {
     if (span.isSpoiler && !this.isSpoilerRevealed(messageId, spanIndex)) {
-      return SPOILER_MASK_COLOR; // 遮罩态：文字与遮罩同色，内容不可读
+      return this.T.colors.textPrimary; // 遮罩态：文字与遮罩同色，内容不可读
     }
     if (span.linkUrl !== null) {
-      return T.colors.link;
+      return this.T.colors.link;
     }
     if (span.isAccent) {
-      return T.colors.accent;
+      return this.T.colors.accent;
     }
-    return T.colors.chatText;
+    return this.T.colors.chatText;
   }
 
   private spanDecorationType(span: MessageTextSpan): TextDecorationType {
@@ -3707,10 +3710,10 @@ export struct ChatPage {
 
   private spanBackgroundColor(span: MessageTextSpan, messageId: number, spanIndex: number): ResourceColor {
     if (span.isSpoiler && !this.isSpoilerRevealed(messageId, spanIndex)) {
-      return SPOILER_MASK_COLOR; // 遮罩态深色块
+      return this.T.colors.textPrimary; // 遮罩态深色块
     }
     if (span.isSpoiler || span.isCode || span.isPre) {
-      return T.colors.surfaceVariant; // 揭开后 / code 的浅底提示
+      return this.T.colors.surfaceVariant; // 揭开后 / code 的浅底提示
     }
     return Color.Transparent;
   }
@@ -3765,12 +3768,12 @@ export struct ChatPage {
       LoadingProgress()
         .width(48)
         .height(48)
-        .color(T.colors.accent)
-        .margin({ bottom: T.spacing.lg })
+        .color(this.T.colors.accent)
+        .margin({ bottom: this.T.spacing.lg })
 
       Text('Loading messages...')
-        .fontSize(T.typography.body.fontSize)
-        .fontColor(T.colors.textSecondary)
+        .fontSize(this.T.typography.body.fontSize)
+        .fontColor(this.T.colors.textSecondary)
     }
     .width('100%')
     .layoutWeight(1)
@@ -3782,8 +3785,8 @@ export struct ChatPage {
   EmptyView() {
     Column() {
       Text('No messages yet')
-        .fontSize(T.typography.body.fontSize)
-        .fontColor(T.colors.textSecondary)
+        .fontSize(this.T.typography.body.fontSize)
+        .fontColor(this.T.colors.textSecondary)
     }
     .width('100%')
     .layoutWeight(1)
@@ -3795,26 +3798,26 @@ export struct ChatPage {
   ErrorView(errorMessage: string) {
     Column() {
       Text('Failed to load messages')
-        .fontSize(T.typography.title.fontSize)
-        .fontWeight(T.typography.title.fontWeight)
-        .fontColor(T.colors.destructive)
-        .margin({ bottom: T.spacing.md })
+        .fontSize(this.T.typography.title.fontSize)
+        .fontWeight(this.T.typography.title.fontWeight)
+        .fontColor(this.T.colors.destructive)
+        .margin({ bottom: this.T.spacing.md })
 
       Text(errorMessage)
-        .fontSize(T.typography.footnote.fontSize)
-        .fontColor(T.colors.textSecondary)
+        .fontSize(this.T.typography.footnote.fontSize)
+        .fontColor(this.T.colors.textSecondary)
         .textAlign(TextAlign.Center)
         .margin({
-          bottom: T.spacing.xxl,
-          left: T.spacing.xxl,
-          right: T.spacing.xxl
+          bottom: this.T.spacing.xxl,
+          left: this.T.spacing.xxl,
+          right: this.T.spacing.xxl
         })
 
       Button('Try Again')
         .width('60%')
         .height(44)
-        .backgroundColor(T.colors.accent)
-        .borderRadius(T.radius.full)
+        .backgroundColor(this.T.colors.accent)
+        .borderRadius(this.T.radius.full)
         .onClick(() => {
           this.onDispatch(new LoadInitialMessages());
         })
@@ -3837,7 +3840,7 @@ export struct ChatPage {
           Image($r('app.media.ic_close'))
             .width(20)
             .height(20)
-            .fillColor(T.colors.accent)
+            .fillColor(this.T.colors.accent)
         }
         .width(BACK_ARROW_SIZE)
         .height(BACK_ARROW_SIZE)
@@ -3850,11 +3853,11 @@ export struct ChatPage {
         TextInput({ placeholder: 'Search in chat...' })
           .width('100%')
           .height(COMPOSER_INPUT_HEIGHT)
-          .fontSize(T.typography.body.fontSize)
-          .fontColor(T.colors.textPrimary)
-          .backgroundColor(T.colors.backgroundSecondary)
-          .borderRadius(T.radius.sm)
-          .padding({ left: T.spacing.sm, right: T.spacing.sm })
+          .fontSize(this.T.typography.body.fontSize)
+          .fontColor(this.T.colors.textPrimary)
+          .backgroundColor(this.T.colors.backgroundSecondary)
+          .borderRadius(this.T.radius.sm)
+          .padding({ left: this.T.spacing.sm, right: this.T.spacing.sm })
           .onChange((value: string) => {
             this.onDispatch(new ChatSearchQueryChanged(value));
             // 防抖：输入停顿 300ms 后自动执行搜索（对齐 Telegram X 即时搜索体验）。
@@ -3873,13 +3876,13 @@ export struct ChatPage {
       .width('100%')
       .alignItems(VerticalAlign.Center)
       .padding({
-        left: T.spacing.sm,
-        right: T.spacing.screenInset,
-        top: T.spacing.sm,
-        bottom: T.spacing.sm
+        left: this.T.spacing.sm,
+        right: this.T.spacing.screenInset,
+        top: this.T.spacing.sm,
+        bottom: this.T.spacing.sm
       })
       .borderWidth({ bottom: 1 })
-      .borderColor(T.colors.divider)
+      .borderColor(this.T.colors.divider)
 
       // 结果列表
       if (this.uiState.isSearching) {
@@ -3887,7 +3890,7 @@ export struct ChatPage {
           LoadingProgress()
             .width(40)
             .height(40)
-            .color(T.colors.accent)
+            .color(this.T.colors.accent)
         }
         .width('100%')
         .layoutWeight(1)
@@ -3900,8 +3903,8 @@ export struct ChatPage {
           Text(this.uiState.searchQuery.trim().length === 0
             ? 'Search messages in this chat'
             : 'No results')
-            .fontSize(T.typography.body.fontSize)
-            .fontColor(T.colors.textSecondary)
+            .fontSize(this.T.typography.body.fontSize)
+            .fontColor(this.T.colors.textSecondary)
             .textAlign(TextAlign.Center)
         }
         .width('100%')
@@ -3915,33 +3918,33 @@ export struct ChatPage {
               Column() {
                 Row() {
                   Text(result.textSnippet.length > 0 ? result.textSnippet : '[Message]')
-                    .fontSize(T.typography.body.fontSize)
-                    .fontColor(T.colors.textPrimary)
+                    .fontSize(this.T.typography.body.fontSize)
+                    .fontColor(this.T.colors.textPrimary)
                     .maxLines(2)
                     .textOverflow({ overflow: TextOverflow.Ellipsis })
                     .layoutWeight(1)
 
                   Text(result.dateText)
-                    .fontSize(T.typography.footnote.fontSize)
-                    .fontColor(T.colors.textSecondary)
+                    .fontSize(this.T.typography.footnote.fontSize)
+                    .fontColor(this.T.colors.textSecondary)
                 }
                 .width('100%')
                 .alignItems(VerticalAlign.Center)
 
                 if (!result.jumpable) {
                   Text('Tap to load')
-                    .fontSize(T.typography.footnote.fontSize)
-                    .fontColor(T.colors.accent)
+                    .fontSize(this.T.typography.footnote.fontSize)
+                    .fontColor(this.T.colors.accent)
                 }
               }
               .width('100%')
               .padding({
-                left: T.spacing.screenInset,
-                right: T.spacing.screenInset,
-                top: T.spacing.sm,
-                bottom: T.spacing.sm
+                left: this.T.spacing.screenInset,
+                right: this.T.spacing.screenInset,
+                top: this.T.spacing.sm,
+                bottom: this.T.spacing.sm
               })
-              .backgroundColor(T.colors.background)
+              .backgroundColor(this.T.colors.background)
             }
             .onClick(() => {
               this.onDispatch(new JumpToSearchResult(result.messageId));
@@ -3955,6 +3958,6 @@ export struct ChatPage {
     }
     .width('100%')
     .height('100%')
-    .backgroundColor(T.colors.background)
+    .backgroundColor(this.T.colors.background)
   }
 }

@@ -9,7 +9,7 @@
  * 全部颜色/间距/字号走 design tokens（core-design-system）。
  */
 
-import { LightTheme } from '@tgx/core-design-system';
+import { LightTheme, Theme } from '@tgx/core-design-system';
 import { getAvatarColorIndex } from '@tgx/core-domain';
 import { fileUri } from '@kit.CoreFileKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
@@ -17,7 +17,6 @@ import { ProfileUiState } from '../contract/ProfileUiState';
 import { ProfileIntent, MessageUserRequested, OnSharedTabSelected, LoadMoreSharedContent } from '../contract/ProfileIntent';
 import { SharedMediaItem, SharedFileItem, SharedLinkItem, SharedGroupItem } from '../contract/SharedContentItems';
 
-const T = LightTheme;
 
 /** 本地沙箱绝对路径 → 可渲染 uri（与 feature/chat、feature/chat_list 的同名助手一致）。 */
 function toSandboxUri(path: string | null): string {
@@ -77,6 +76,14 @@ const PAGE_TAG: string = 'ProfilePage';
 
 @Component
 export struct ProfilePage {
+  /**
+   * FEAT-UI-001 全局深色主题：entry 装配层把 ThemeManager 的当前主题写入
+   * AppStorage('activeTheme')，本页以 @StorageProp 订阅。该值变化会触发本页
+   * 重渲染。此前写死 `const T = LightTheme`，主题切换后引用不变，深色不生效。
+   * 短名 T 直接落在装饰器成员上——ArkUI 的 build 转换不接管 struct 内自定义
+   * getter，写成 getter 会在渲染闭包里取到 undefined 并抛 TypeError。
+   */
+  @StorageProp('activeTheme') T: Theme = LightTheme;
   @Prop uiState: ProfileUiState = ProfileUiState.initial();
   onDispatch: (intent: ProfileIntent) => void = (): void => {};
   onBack: () => void = (): void => {};
@@ -143,30 +150,30 @@ export struct ProfilePage {
       Image($r('app.media.ic_back'))
         .width(24)
         .height(24)
-        .fillColor(T.colors.accent)
-        .margin({ left: T.spacing.xs, right: T.spacing.md })
+        .fillColor(this.T.colors.accent)
+        .margin({ left: this.T.spacing.xs, right: this.T.spacing.md })
         .onClick(() => {
           this.onBack();
         })
 
       Text('User Info')
-        .fontSize(T.typography.title.fontSize)
-        .fontWeight(T.typography.title.fontWeight)
-        .fontColor(T.colors.textPrimary)
+        .fontSize(this.T.typography.title.fontSize)
+        .fontWeight(this.T.typography.title.fontWeight)
+        .fontColor(this.T.colors.textPrimary)
         .layoutWeight(1)
 
       Image($r('app.media.ic_more_vert'))
         .width(24)
         .height(24)
-        .fillColor(T.colors.textPrimary)
-        .margin({ right: T.spacing.xs })
+        .fillColor(this.T.colors.textPrimary)
+        .margin({ right: this.T.spacing.xs })
         .bindMenu(this.menuElements())
     }
     .width('100%')
     .height(56)
     .alignItems(VerticalAlign.Center)
-    .padding({ left: T.spacing.sm, right: T.spacing.sm })
-    .backgroundColor(T.colors.background)
+    .padding({ left: this.T.spacing.sm, right: this.T.spacing.sm })
+    .backgroundColor(this.T.colors.background)
   }
 
   @Builder
@@ -175,15 +182,15 @@ export struct ProfilePage {
       Image(toSandboxUri(this.uiState.avatarPath))
         .width(AVATAR_SIZE)
         .height(AVATAR_SIZE)
-        .borderRadius(T.radius.full)
+        .borderRadius(this.T.radius.full)
         .objectFit(ImageFit.Cover)
     } else {
       Text(this.uiState.avatarLetters.length > 0 ? this.uiState.avatarLetters : '?')
         .width(AVATAR_SIZE)
         .height(AVATAR_SIZE)
-        .borderRadius(T.radius.full)
+        .borderRadius(this.T.radius.full)
         .backgroundColor(this.avatarColor(this.uiState.avatarColorIndex))
-        .fontColor(T.colors.textOnAccent)
+        .fontColor(this.T.colors.textOnAccent)
         .fontSize(36)
         .fontWeight(FontWeight.Medium)
         .textAlign(TextAlign.Center)
@@ -196,17 +203,17 @@ export struct ProfilePage {
       Image(icon)
         .width(22)
         .height(22)
-        .fillColor(T.colors.textSecondary)
-        .margin({ right: T.spacing.md })
+        .fillColor(this.T.colors.textSecondary)
+        .margin({ right: this.T.spacing.md })
 
       Column() {
         Text(label)
-          .fontSize(T.typography.footnote.fontSize)
-          .fontColor(T.colors.textSecondary)
+          .fontSize(this.T.typography.footnote.fontSize)
+          .fontColor(this.T.colors.textSecondary)
         Text(value)
-          .fontSize(T.typography.body.fontSize)
-          .fontColor(T.colors.textPrimary)
-          .margin({ top: T.spacing.hairline })
+          .fontSize(this.T.typography.body.fontSize)
+          .fontColor(this.T.colors.textPrimary)
+          .margin({ top: this.T.spacing.hairline })
       }
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)
@@ -214,10 +221,10 @@ export struct ProfilePage {
     .width('100%')
     .alignItems(VerticalAlign.Center)
     .padding({
-      left: T.spacing.screenInset,
-      right: T.spacing.screenInset,
-      top: T.spacing.sm,
-      bottom: T.spacing.sm
+      left: this.T.spacing.screenInset,
+      right: this.T.spacing.screenInset,
+      top: this.T.spacing.sm,
+      bottom: this.T.spacing.sm
     })
   }
 
@@ -228,23 +235,23 @@ export struct ProfilePage {
       Image($r('app.media.ic_notifications'))
         .width(22)
         .height(22)
-        .fillColor(T.colors.textSecondary)
+        .fillColor(this.T.colors.textSecondary)
       Text('通知')
-        .fontSize(T.typography.body.fontSize)
-        .fontColor(T.colors.textPrimary)
-        .margin({ left: T.spacing.sm })
+        .fontSize(this.T.typography.body.fontSize)
+        .fontColor(this.T.colors.textPrimary)
+        .margin({ left: this.T.spacing.sm })
         .layoutWeight(1)
       Text(this.uiState.notificationText)
-        .fontSize(T.typography.subheadline.fontSize)
-        .fontColor(T.colors.textSecondary)
+        .fontSize(this.T.typography.subheadline.fontSize)
+        .fontColor(this.T.colors.textSecondary)
     }
     .width('100%')
     .alignItems(VerticalAlign.Center)
     .padding({
-      left: T.spacing.screenInset,
-      right: T.spacing.screenInset,
-      top: T.spacing.sm,
-      bottom: T.spacing.sm
+      left: this.T.spacing.screenInset,
+      right: this.T.spacing.screenInset,
+      top: this.T.spacing.sm,
+      bottom: this.T.spacing.sm
     })
   }
 
@@ -253,24 +260,24 @@ export struct ProfilePage {
   SharedTabBar() {
     Row() {
       ForEach(SHARED_TABS.slice(), (tab: SharedTabSpec, index: number) => {
-        Column({ space: T.spacing.xs }) {
+        Column({ space: this.T.spacing.xs }) {
           Image(tab.icon)
             .width(20)
             .height(20)
             .fillColor(this.uiState.activeSharedTab === index
-              ? T.colors.accent
-              : T.colors.textSecondary)
+              ? this.T.colors.accent
+              : this.T.colors.textSecondary)
           Text(tab.label)
-            .fontSize(T.typography.footnote.fontSize)
+            .fontSize(this.T.typography.footnote.fontSize)
             .fontColor(this.uiState.activeSharedTab === index
-              ? T.colors.accent
-              : T.colors.textSecondary)
+              ? this.T.colors.accent
+              : this.T.colors.textSecondary)
           Blank()
             .width(24)
             .height(2)
             .backgroundColor(this.uiState.activeSharedTab === index
-              ? T.colors.accent
-              : T.colors.background)
+              ? this.T.colors.accent
+              : this.T.colors.background)
         }
         .layoutWeight(1)
         .onClick(() => {
@@ -279,7 +286,7 @@ export struct ProfilePage {
       }, (tab: SharedTabSpec, index: number) => `${index}`)
     }
     .width('100%')
-    .padding({ top: T.spacing.sm, bottom: T.spacing.sm })
+    .padding({ top: this.T.spacing.sm, bottom: this.T.spacing.sm })
   }
 
   /** PROFILE-103：内容区空态（对齐 TGX 文案）。 */
@@ -287,17 +294,17 @@ export struct ProfilePage {
   SharedEmpty(title: string, subtitle: string) {
     Column() {
       Text(title)
-        .fontSize(T.typography.subheadline.fontSize)
-        .fontColor(T.colors.textPrimary)
+        .fontSize(this.T.typography.subheadline.fontSize)
+        .fontColor(this.T.colors.textPrimary)
         .textAlign(TextAlign.Center)
       Text(subtitle)
-        .fontSize(T.typography.footnote.fontSize)
-        .fontColor(T.colors.textSecondary)
+        .fontSize(this.T.typography.footnote.fontSize)
+        .fontColor(this.T.colors.textSecondary)
         .textAlign(TextAlign.Center)
-        .margin({ top: T.spacing.xs })
+        .margin({ top: this.T.spacing.xs })
     }
     .width('100%')
-    .padding({ top: T.spacing.lg, bottom: T.spacing.lg, left: T.spacing.lg, right: T.spacing.lg })
+    .padding({ top: this.T.spacing.lg, bottom: this.T.spacing.lg, left: this.T.spacing.lg, right: this.T.spacing.lg })
     .alignItems(HorizontalAlign.Center)
   }
 
@@ -319,16 +326,16 @@ export struct ProfilePage {
                 Image(item.isPhoto ? $r('app.media.ic_photo') : $r('app.media.ic_file'))
                   .width(24)
                   .height(24)
-                  .fillColor(T.colors.textSecondary)
+                  .fillColor(this.T.colors.textSecondary)
               }
               .width('100%')
               .aspectRatio(1)
               .justifyContent(FlexAlign.Center)
-              .backgroundColor(T.colors.surfaceVariant)
+              .backgroundColor(this.T.colors.surfaceVariant)
             }
           }
           .width('33.33%')
-          .padding(T.spacing.hairline)
+          .padding(this.T.spacing.hairline)
         }, (item: SharedMediaItem, index: number) => `${item.fileId}_${index}`)
       }
       .width('100%')
@@ -346,31 +353,31 @@ export struct ProfilePage {
             Image($r('app.media.ic_file'))
               .width(28)
               .height(28)
-              .fillColor(T.colors.accent)
+              .fillColor(this.T.colors.accent)
             Column() {
               Text(item.fileName)
-                .fontSize(T.typography.body.fontSize)
-                .fontColor(T.colors.textPrimary)
+                .fontSize(this.T.typography.body.fontSize)
+                .fontColor(this.T.colors.textPrimary)
                 .maxLines(1)
                 .textOverflow({ overflow: TextOverflow.Ellipsis })
               Text(item.fileSizeText.length > 0 && item.dateText.length > 0
                 ? `${item.fileSizeText} · ${item.dateText}`
                 : (item.fileSizeText.length > 0 ? item.fileSizeText : item.dateText))
-                .fontSize(T.typography.footnote.fontSize)
-                .fontColor(T.colors.textSecondary)
-                .margin({ top: T.spacing.hairline })
+                .fontSize(this.T.typography.footnote.fontSize)
+                .fontColor(this.T.colors.textSecondary)
+                .margin({ top: this.T.spacing.hairline })
             }
-            .margin({ left: T.spacing.sm })
+            .margin({ left: this.T.spacing.sm })
             .layoutWeight(1)
             .alignItems(HorizontalAlign.Start)
           }
           .width('100%')
           .alignItems(VerticalAlign.Center)
           .padding({
-            left: T.spacing.screenInset,
-            right: T.spacing.screenInset,
-            top: T.spacing.sm,
-            bottom: T.spacing.sm
+            left: this.T.spacing.screenInset,
+            right: this.T.spacing.screenInset,
+            top: this.T.spacing.sm,
+            bottom: this.T.spacing.sm
           })
         }, (item: SharedFileItem, index: number) => `${index}`)
       }
@@ -383,48 +390,48 @@ export struct ProfilePage {
     if (this.uiState.sharedLinks.length === 0) {
       this.SharedEmpty('暂无链接', '在此聊天中分享链接，并在您所有的设备上访问。')
     } else {
-      Column({ space: T.spacing.sm }) {
+      Column({ space: this.T.spacing.sm }) {
         ForEach(this.uiState.sharedLinks.slice(), (item: SharedLinkItem, index: number) => {
           Column() {
             if (item.siteName.length > 0) {
               Text(item.siteName)
-                .fontSize(T.typography.body.fontSize)
+                .fontSize(this.T.typography.body.fontSize)
                 .fontWeight(FontWeight.Medium)
-                .fontColor(T.colors.textPrimary)
+                .fontColor(this.T.colors.textPrimary)
                 .maxLines(1)
                 .textOverflow({ overflow: TextOverflow.Ellipsis })
                 .width('100%')
             }
             if (item.description.length > 0) {
               Text(item.description)
-                .fontSize(T.typography.subheadline.fontSize)
-                .fontColor(T.colors.textSecondary)
+                .fontSize(this.T.typography.subheadline.fontSize)
+                .fontColor(this.T.colors.textSecondary)
                 .maxLines(2)
                 .textOverflow({ overflow: TextOverflow.Ellipsis })
                 .width('100%')
-                .margin({ top: item.siteName.length > 0 ? T.spacing.hairline : 0 })
+                .margin({ top: item.siteName.length > 0 ? this.T.spacing.hairline : 0 })
             }
             Text(item.url)
-              .fontSize(T.typography.footnote.fontSize)
-              .fontColor(T.colors.link)
+              .fontSize(this.T.typography.footnote.fontSize)
+              .fontColor(this.T.colors.link)
               .maxLines(1)
               .textOverflow({ overflow: TextOverflow.Ellipsis })
               .width('100%')
-              .margin({ top: T.spacing.xs })
+              .margin({ top: this.T.spacing.xs })
           }
           .width('100%')
-          .padding(T.spacing.md)
-          .backgroundColor(T.colors.surfaceVariant)
-          .borderRadius(T.radius.md)
+          .padding(this.T.spacing.md)
+          .backgroundColor(this.T.colors.surfaceVariant)
+          .borderRadius(this.T.radius.md)
           .alignItems(HorizontalAlign.Start)
         }, (item: SharedLinkItem, index: number) => `${index}`)
       }
       .width('100%')
       .padding({
-        left: T.spacing.screenInset,
-        right: T.spacing.screenInset,
-        top: T.spacing.sm,
-        bottom: T.spacing.sm
+        left: this.T.spacing.screenInset,
+        right: this.T.spacing.screenInset,
+        top: this.T.spacing.sm,
+        bottom: this.T.spacing.sm
       })
     }
   }
@@ -440,37 +447,37 @@ export struct ProfilePage {
             Text(this.groupLetters(item.title))
               .width(40)
               .height(40)
-              .borderRadius(T.radius.full)
+              .borderRadius(this.T.radius.full)
               .backgroundColor(this.avatarColor(getAvatarColorIndex(item.chatId)))
-              .fontColor(T.colors.textOnAccent)
+              .fontColor(this.T.colors.textOnAccent)
               .fontSize(16)
               .textAlign(TextAlign.Center)
             Column() {
               Text(item.title)
-                .fontSize(T.typography.body.fontSize)
-                .fontColor(T.colors.textPrimary)
+                .fontSize(this.T.typography.body.fontSize)
+                .fontColor(this.T.colors.textPrimary)
                 .maxLines(1)
                 .textOverflow({ overflow: TextOverflow.Ellipsis })
               if (item.subtitle.length > 0) {
                 Text(item.subtitle)
-                  .fontSize(T.typography.subheadline.fontSize)
-                  .fontColor(T.colors.textSecondary)
+                  .fontSize(this.T.typography.subheadline.fontSize)
+                  .fontColor(this.T.colors.textSecondary)
                   .maxLines(1)
                   .textOverflow({ overflow: TextOverflow.Ellipsis })
-                  .margin({ top: T.spacing.hairline })
+                  .margin({ top: this.T.spacing.hairline })
               }
             }
-            .margin({ left: T.spacing.sm })
+            .margin({ left: this.T.spacing.sm })
             .layoutWeight(1)
             .alignItems(HorizontalAlign.Start)
           }
           .width('100%')
           .alignItems(VerticalAlign.Center)
           .padding({
-            left: T.spacing.screenInset,
-            right: T.spacing.screenInset,
-            top: T.spacing.sm,
-            bottom: T.spacing.sm
+            left: this.T.spacing.screenInset,
+            right: this.T.spacing.screenInset,
+            top: this.T.spacing.sm,
+            bottom: this.T.spacing.sm
           })
           .onClick(() => {
             hilog.info(DOMAIN, PAGE_TAG, 'profile_shared_group_click chatId=%{public}d', item.chatId);
@@ -503,7 +510,7 @@ export struct ProfilePage {
           LoadingProgress()
             .width(40)
             .height(40)
-            .color(T.colors.accent)
+            .color(this.T.colors.accent)
         }
         .width('100%')
         .layoutWeight(1)
@@ -512,8 +519,8 @@ export struct ProfilePage {
       } else if (this.uiState.errorMessage !== null && this.uiState.displayName.length === 0) {
         Column() {
           Text(this.uiState.errorMessage)
-            .fontSize(T.typography.body.fontSize)
-            .fontColor(T.colors.textSecondary)
+            .fontSize(this.T.typography.body.fontSize)
+            .fontColor(this.T.colors.textSecondary)
         }
         .width('100%')
         .layoutWeight(1)
@@ -526,28 +533,28 @@ export struct ProfilePage {
               this.Avatar()
 
               Text(this.uiState.displayName.length > 0 ? this.uiState.displayName : 'Unknown')
-                .fontSize(T.typography.largeTitle.fontSize)
+                .fontSize(this.T.typography.largeTitle.fontSize)
                 .fontWeight(FontWeight.Medium)
-                .fontColor(T.colors.textPrimary)
-                .margin({ top: T.spacing.md })
+                .fontColor(this.T.colors.textPrimary)
+                .margin({ top: this.T.spacing.md })
                 .textAlign(TextAlign.Center)
 
               if (this.uiState.statusText.length > 0) {
                 Text(this.uiState.statusText)
-                  .fontSize(T.typography.subheadline.fontSize)
+                  .fontSize(this.T.typography.subheadline.fontSize)
                   .fontColor(this.uiState.statusText === 'online'
-                    ? T.colors.accent
-                    : T.colors.textSecondary)
-                  .margin({ top: T.spacing.xs })
+                    ? this.T.colors.accent
+                    : this.T.colors.textSecondary)
+                  .margin({ top: this.T.spacing.xs })
               }
             }
             .width('100%')
             .alignItems(HorizontalAlign.Center)
-            .padding({ top: T.spacing.lg, bottom: T.spacing.md })
+            .padding({ top: this.T.spacing.lg, bottom: this.T.spacing.md })
 
             Divider()
-              .color(T.colors.divider)
-              .margin({ left: T.spacing.screenInset, right: T.spacing.screenInset })
+              .color(this.T.colors.divider)
+              .margin({ left: this.T.spacing.screenInset, right: this.T.spacing.screenInset })
 
             if (this.uiState.username.length > 0) {
               this.InfoRow($r('app.media.ic_username'), 'Username', `@${this.uiState.username}`)
@@ -564,8 +571,8 @@ export struct ProfilePage {
             this.NotificationRow()
 
             Divider()
-              .color(T.colors.divider)
-              .margin({ left: T.spacing.screenInset, right: T.spacing.screenInset })
+              .color(this.T.colors.divider)
+              .margin({ left: this.T.spacing.screenInset, right: this.T.spacing.screenInset })
 
             this.SharedTabBar()
 
@@ -574,10 +581,10 @@ export struct ProfilePage {
                 LoadingProgress()
                   .width(32)
                   .height(32)
-                  .color(T.colors.accent)
+                  .color(this.T.colors.accent)
               }
               .width('100%')
-              .padding({ top: T.spacing.lg, bottom: T.spacing.lg })
+              .padding({ top: this.T.spacing.lg, bottom: this.T.spacing.lg })
               .justifyContent(FlexAlign.Center)
               .alignItems(HorizontalAlign.Center)
             } else {
@@ -585,27 +592,27 @@ export struct ProfilePage {
 
               if (this.hasSharedItems()) {
                 if (this.uiState.sharedLoadingMore) {
-                  Row({ space: T.spacing.xs }) {
+                  Row({ space: this.T.spacing.xs }) {
                     LoadingProgress()
                       .width(20)
                       .height(20)
-                      .color(T.colors.accent)
+                      .color(this.T.colors.accent)
                     Text('正在加载更多...')
-                      .fontSize(T.typography.footnote.fontSize)
-                      .fontColor(T.colors.textSecondary)
+                      .fontSize(this.T.typography.footnote.fontSize)
+                      .fontColor(this.T.colors.textSecondary)
                   }
                   .width('100%')
                   .justifyContent(FlexAlign.Center)
-                  .padding({ top: T.spacing.md, bottom: T.spacing.md })
+                  .padding({ top: this.T.spacing.md, bottom: this.T.spacing.md })
                 } else if (this.uiState.sharedHasMore) {
                   Row() {
                     Text('加载更多')
-                      .fontSize(T.typography.subheadline.fontSize)
-                      .fontColor(T.colors.accent)
+                      .fontSize(this.T.typography.subheadline.fontSize)
+                      .fontColor(this.T.colors.accent)
                   }
                   .width('100%')
                   .justifyContent(FlexAlign.Center)
-                  .padding({ top: T.spacing.sm, bottom: T.spacing.md })
+                  .padding({ top: this.T.spacing.sm, bottom: this.T.spacing.md })
                   .onClick(() => {
                     this.onDispatch(new LoadMoreSharedContent(this.uiState.activeSharedTab));
                   })
@@ -628,26 +635,26 @@ export struct ProfilePage {
             Image($r('app.media.ic_comments'))
               .width(20)
               .height(20)
-              .fillColor(T.colors.textOnAccent)
-              .margin({ right: T.spacing.xs })
+              .fillColor(this.T.colors.textOnAccent)
+              .margin({ right: this.T.spacing.xs })
 
             Text('Message')
-              .fontSize(T.typography.body.fontSize)
+              .fontSize(this.T.typography.body.fontSize)
               .fontWeight(FontWeight.Medium)
-              .fontColor(T.colors.textOnAccent)
+              .fontColor(this.T.colors.textOnAccent)
           }
           .justifyContent(FlexAlign.Center)
           .alignItems(VerticalAlign.Center)
         }
         .width('100%')
         .height(MESSAGE_BUTTON_HEIGHT)
-        .backgroundColor(T.colors.accent)
-        .borderRadius(T.radius.md)
+        .backgroundColor(this.T.colors.accent)
+        .borderRadius(this.T.radius.md)
         .margin({
-          left: T.spacing.screenInset,
-          right: T.spacing.screenInset,
-          top: T.spacing.sm,
-          bottom: T.spacing.md
+          left: this.T.spacing.screenInset,
+          right: this.T.spacing.screenInset,
+          top: this.T.spacing.sm,
+          bottom: this.T.spacing.md
         })
         .onClick(() => {
           this.onDispatch(new MessageUserRequested());
@@ -656,6 +663,6 @@ export struct ProfilePage {
     }
     .width('100%')
     .height('100%')
-    .backgroundColor(T.colors.background)
+    .backgroundColor(this.T.colors.background)
   }
 }

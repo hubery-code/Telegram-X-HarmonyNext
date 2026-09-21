@@ -5,12 +5,19 @@
  * 全部色彩/字号/间距用 design_system token。
  */
 
-import { LightTheme } from '@tgx/core-design-system';
+import { LightTheme, Theme } from '@tgx/core-design-system';
 
-const T = LightTheme;
 
 @Component
 export struct RegistrationPage {
+  /**
+   * FEAT-UI-001 全局深色主题：entry 装配层把 ThemeManager 的当前主题写入
+   * AppStorage('activeTheme')，本页以 @StorageProp 订阅。该值变化会触发本页
+   * 重渲染。此前写死 `const T = LightTheme`，主题切换后引用不变，深色不生效。
+   * 短名 T 直接落在装饰器成员上——ArkUI 的 build 转换不接管 struct 内自定义
+   * getter，写成 getter 会在渲染闭包里取到 undefined 并抛 TypeError。
+   */
+  @StorageProp('activeTheme') T: Theme = LightTheme;
   @Prop firstName: string = '';
   @Prop lastName: string = '';
   @Prop isSubmitting: boolean = false;
@@ -23,31 +30,31 @@ export struct RegistrationPage {
   build() {
     Column() {
       Text('Your Name')
-        .fontSize(T.typography.largeTitle.fontSize)
-        .fontWeight(T.typography.largeTitle.fontWeight)
-        .fontColor(T.colors.textPrimary)
-        .margin({ top: T.spacing.huge, bottom: T.spacing.sm })
+        .fontSize(this.T.typography.largeTitle.fontSize)
+        .fontWeight(this.T.typography.largeTitle.fontWeight)
+        .fontColor(this.T.colors.textPrimary)
+        .margin({ top: this.T.spacing.huge, bottom: this.T.spacing.sm })
 
       Text('Enter your name to complete registration.')
-        .fontSize(T.typography.subheadline.fontSize)
-        .fontColor(T.colors.textSecondary)
+        .fontSize(this.T.typography.subheadline.fontSize)
+        .fontColor(this.T.colors.textSecondary)
         .textAlign(TextAlign.Center)
-        .margin({ bottom: T.spacing.xxl, left: T.spacing.lg, right: T.spacing.lg })
+        .margin({ bottom: this.T.spacing.xxl, left: this.T.spacing.lg, right: this.T.spacing.lg })
 
       TextInput({
         text: this.firstName,
         placeholder: 'First name (required)'
       })
-        .fontSize(T.typography.body.fontSize)
+        .fontSize(this.T.typography.body.fontSize)
         .width('90%')
         .height(48)
-        .backgroundColor(T.colors.surfaceVariant)
+        .backgroundColor(this.T.colors.surfaceVariant)
         .border({
           width: 1,
-          color: this.errorMessage !== null ? T.colors.destructive : T.colors.border,
-          radius: T.radius.md
+          color: this.errorMessage !== null ? this.T.colors.destructive : this.T.colors.border,
+          radius: this.T.radius.md
         })
-        .margin({ bottom: T.spacing.md })
+        .margin({ bottom: this.T.spacing.md })
         .onChange((val: string) => {
           this.onFirstNameChanged(val);
         })
@@ -56,14 +63,14 @@ export struct RegistrationPage {
         text: this.lastName,
         placeholder: 'Last name (optional)'
       })
-        .fontSize(T.typography.body.fontSize)
+        .fontSize(this.T.typography.body.fontSize)
         .width('90%')
         .height(48)
-        .backgroundColor(T.colors.surfaceVariant)
+        .backgroundColor(this.T.colors.surfaceVariant)
         .border({
           width: 1,
-          color: T.colors.border,
-          radius: T.radius.md
+          color: this.T.colors.border,
+          radius: this.T.radius.md
         })
         .onChange((val: string) => {
           this.onLastNameChanged(val);
@@ -71,9 +78,9 @@ export struct RegistrationPage {
 
       if (this.errorMessage !== null) {
         Text(this.errorMessage)
-          .fontSize(T.typography.footnote.fontSize)
-          .fontColor(T.colors.destructive)
-          .margin({ top: T.spacing.sm, left: T.spacing.xxl, right: T.spacing.xxl })
+          .fontSize(this.T.typography.footnote.fontSize)
+          .fontColor(this.T.colors.destructive)
+          .margin({ top: this.T.spacing.sm, left: this.T.spacing.xxl, right: this.T.spacing.xxl })
           .alignSelf(ItemAlign.Start)
       }
 
@@ -85,27 +92,27 @@ export struct RegistrationPage {
             LoadingProgress()
               .width(20)
               .height(20)
-              .color(T.colors.textOnAccent)
-              .margin({ right: T.spacing.sm })
+              .color(this.T.colors.textOnAccent)
+              .margin({ right: this.T.spacing.sm })
           }
           Text(this.isSubmitting ? 'Registering...' : 'Complete')
-            .fontSize(T.typography.callout.fontSize)
-            .fontWeight(T.typography.largeTitle.fontWeight)
-            .fontColor(T.colors.textOnAccent)
+            .fontSize(this.T.typography.callout.fontSize)
+            .fontWeight(this.T.typography.largeTitle.fontWeight)
+            .fontColor(this.T.colors.textOnAccent)
         }
       }
       .width('90%')
       .height(48)
-      .backgroundColor(this.isSubmitting ? T.colors.disabled : T.colors.accent)
-      .borderRadius(T.radius.full)
+      .backgroundColor(this.isSubmitting ? this.T.colors.disabled : this.T.colors.accent)
+      .borderRadius(this.T.radius.full)
       .enabled(!this.isSubmitting)
-      .margin({ bottom: T.spacing.huge })
+      .margin({ bottom: this.T.spacing.huge })
       .onClick(() => {
         this.onSubmit();
       })
     }
     .width('100%')
     .height('100%')
-    .backgroundColor(T.colors.background)
+    .backgroundColor(this.T.colors.background)
   }
 }

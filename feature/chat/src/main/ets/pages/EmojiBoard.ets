@@ -13,11 +13,10 @@
  * limitations under the License.
  */
 
-import { LightTheme } from '@tgx/core-design-system';
+import { LightTheme, Theme } from '@tgx/core-design-system';
 import { StickerSetItem, StickerPack, DEFAULT_STICKER_PACKS } from '../model/StickerSetPreviewState';
 import { GifItem, GIF_CATEGORIES, DEFAULT_RECENT_GIFS, DEFAULT_GIF_PACKS } from '../model/GifItem';
 
-const T = LightTheme;
 
 export interface StickerPreviewItem {
   readonly id: string;
@@ -146,6 +145,14 @@ const STICKER_PACK_TABS: string[] = ['🕒', '🔥', '🐱', '😎'];
 
 @Component
 export struct EmojiBoard {
+  /**
+   * FEAT-UI-001 全局深色主题：entry 装配层把 ThemeManager 的当前主题写入
+   * AppStorage('activeTheme')，本页以 @StorageProp 订阅。该值变化会触发本页
+   * 重渲染。此前写死 `const T = LightTheme`，主题切换后引用不变，深色不生效。
+   * 短名 T 直接落在装饰器成员上——ArkUI 的 build 转换不接管 struct 内自定义
+   * getter，写成 getter 会在渲染闭包里取到 undefined 并抛 TypeError。
+   */
+  @StorageProp('activeTheme') T: Theme = LightTheme;
   onSelectEmoji: (emoji: string) => void = () => {};
   onDeleteChar: () => void = () => {};
   onSelectSticker: (emoji: string) => void = () => {};
@@ -193,10 +200,10 @@ export struct EmojiBoard {
             Image($r('app.media.ic_emoji'))
               .width(22)
               .height(22)
-              .fillColor(this.currentMainTab === 'emoji' ? T.colors.accent : T.colors.textSecondary)
+              .fillColor(this.currentMainTab === 'emoji' ? this.T.colors.accent : this.T.colors.textSecondary)
           }
           .height('100%')
-          .padding({ left: T.spacing.md, right: T.spacing.md })
+          .padding({ left: this.T.spacing.md, right: this.T.spacing.md })
           .justifyContent(FlexAlign.Center)
           .alignItems(VerticalAlign.Center)
           .onClick(() => {
@@ -208,10 +215,10 @@ export struct EmojiBoard {
             Image($r('app.media.ic_sticker'))
               .width(22)
               .height(22)
-              .fillColor(this.currentMainTab === 'sticker' ? T.colors.accent : T.colors.textSecondary)
+              .fillColor(this.currentMainTab === 'sticker' ? this.T.colors.accent : this.T.colors.textSecondary)
           }
           .height('100%')
-          .padding({ left: T.spacing.md, right: T.spacing.md })
+          .padding({ left: this.T.spacing.md, right: this.T.spacing.md })
           .justifyContent(FlexAlign.Center)
           .alignItems(VerticalAlign.Center)
           .onClick(() => {
@@ -223,10 +230,10 @@ export struct EmojiBoard {
             Image($r('app.media.ic_gif'))
               .width(22)
               .height(22)
-              .fillColor(this.currentMainTab === 'gif' ? T.colors.accent : T.colors.textSecondary)
+              .fillColor(this.currentMainTab === 'gif' ? this.T.colors.accent : this.T.colors.textSecondary)
           }
           .height('100%')
-          .padding({ left: T.spacing.md, right: T.spacing.md })
+          .padding({ left: this.T.spacing.md, right: this.T.spacing.md })
           .justifyContent(FlexAlign.Center)
           .alignItems(VerticalAlign.Center)
           .onClick(() => {
@@ -242,7 +249,7 @@ export struct EmojiBoard {
           Image($r('app.media.ic_backspace'))
             .width(22)
             .height(22)
-            .fillColor(T.colors.textSecondary)
+            .fillColor(this.T.colors.textSecondary)
         }
         .width(48)
         .height('100%')
@@ -255,12 +262,12 @@ export struct EmojiBoard {
       .width('100%')
       .height(44)
       .borderWidth({ top: 1 })
-      .borderColor(T.colors.divider)
-      .backgroundColor(T.colors.surface)
+      .borderColor(this.T.colors.divider)
+      .backgroundColor(this.T.colors.surface)
     }
     .width('100%')
     .height(280)
-    .backgroundColor(T.colors.surface)
+    .backgroundColor(this.T.colors.surface)
   }
 
   /** 表情视图：分类横向滚动条 + 8列 Emoji 网格 / 最近表情空态 */
@@ -285,10 +292,10 @@ export struct EmojiBoard {
               Row()
                 .width(28)
                 .height(2)
-                .backgroundColor(this.currentEmojiCategory === index ? T.colors.accent : Color.Transparent)
+                .backgroundColor(this.currentEmojiCategory === index ? this.T.colors.accent : Color.Transparent)
                 .borderRadius(1)
             }
-            .padding({ left: T.spacing.sm, right: T.spacing.sm })
+            .padding({ left: this.T.spacing.sm, right: this.T.spacing.sm })
             .height(36)
             .justifyContent(FlexAlign.Center)
             .alignItems(HorizontalAlign.Center)
@@ -304,7 +311,7 @@ export struct EmojiBoard {
       .scrollable(ScrollDirection.Horizontal)
       .scrollBar(BarState.Off)
       .borderWidth({ bottom: 1 })
-      .borderColor(T.colors.divider)
+      .borderColor(this.T.colors.divider)
 
       // 表情主体展示区（分类 0 为 Recent，分类 1..7 为内置各组）
       if (this.currentEmojiCategory === 0) {
@@ -313,18 +320,18 @@ export struct EmojiBoard {
             // Recent 顶栏（展示标题与清空入口）
             Row() {
               Text('Recent')
-                .fontSize(T.typography.caption.fontSize)
+                .fontSize(this.T.typography.caption.fontSize)
                 .fontWeight(FontWeight.Medium)
-                .fontColor(T.colors.textSecondary)
+                .fontColor(this.T.colors.textSecondary)
 
               Blank()
 
               Text('Clear')
-                .fontSize(T.typography.caption.fontSize)
+                .fontSize(this.T.typography.caption.fontSize)
                 .fontWeight(FontWeight.Medium)
-                .fontColor(T.colors.accent)
-                .padding({ left: T.spacing.sm, right: T.spacing.sm, top: 4, bottom: 4 })
-                .borderRadius(T.radius.sm)
+                .fontColor(this.T.colors.accent)
+                .padding({ left: this.T.spacing.sm, right: this.T.spacing.sm, top: 4, bottom: 4 })
+                .borderRadius(this.T.radius.sm)
                 .onClick(() => {
                   if (this.onClearRecent) {
                     this.onClearRecent();
@@ -332,7 +339,7 @@ export struct EmojiBoard {
                 })
             }
             .width('100%')
-            .padding({ left: T.spacing.md, right: T.spacing.md, top: T.spacing.xs, bottom: T.spacing.xs })
+            .padding({ left: this.T.spacing.md, right: this.T.spacing.md, top: this.T.spacing.xs, bottom: this.T.spacing.xs })
 
             // 最近使用表情网格
             Grid() {
@@ -346,7 +353,7 @@ export struct EmojiBoard {
                   .height(42)
                   .justifyContent(FlexAlign.Center)
                   .alignItems(VerticalAlign.Center)
-                  .borderRadius(T.radius.sm)
+                  .borderRadius(this.T.radius.sm)
                   .onClick(() => {
                     this.onSelectEmoji(emoji);
                   })
@@ -357,9 +364,9 @@ export struct EmojiBoard {
             .rowsGap(2)
             .columnsGap(2)
             .padding({
-              left: T.spacing.xs,
-              right: T.spacing.xs,
-              bottom: T.spacing.xs
+              left: this.T.spacing.xs,
+              right: this.T.spacing.xs,
+              bottom: this.T.spacing.xs
             })
             .layoutWeight(1)
             .scrollBar(BarState.Off)
@@ -372,15 +379,15 @@ export struct EmojiBoard {
             Text('🕒')
               .fontSize(38)
               .opacity(0.4)
-              .margin({ bottom: T.spacing.sm })
+              .margin({ bottom: this.T.spacing.sm })
             Text('No Recent Emojis')
-              .fontSize(T.typography.body.fontSize)
+              .fontSize(this.T.typography.body.fontSize)
               .fontWeight(FontWeight.Medium)
-              .fontColor(T.colors.textPrimary)
+              .fontColor(this.T.colors.textPrimary)
             Text('Emojis you send will appear here')
-              .fontSize(T.typography.caption.fontSize)
-              .fontColor(T.colors.textSecondary)
-              .margin({ top: T.spacing.xs })
+              .fontSize(this.T.typography.caption.fontSize)
+              .fontColor(this.T.colors.textSecondary)
+              .margin({ top: this.T.spacing.xs })
           }
           .width('100%')
           .height('100%')
@@ -400,7 +407,7 @@ export struct EmojiBoard {
               .height(42)
               .justifyContent(FlexAlign.Center)
               .alignItems(VerticalAlign.Center)
-              .borderRadius(T.radius.sm)
+              .borderRadius(this.T.radius.sm)
               .onClick(() => {
                 this.onSelectEmoji(emoji);
               })
@@ -411,10 +418,10 @@ export struct EmojiBoard {
         .rowsGap(2)
         .columnsGap(2)
         .padding({
-          left: T.spacing.xs,
-          right: T.spacing.xs,
-          top: T.spacing.xs,
-          bottom: T.spacing.xs
+          left: this.T.spacing.xs,
+          right: this.T.spacing.xs,
+          top: this.T.spacing.xs,
+          bottom: this.T.spacing.xs
         })
         .layoutWeight(1)
         .scrollBar(BarState.Off)
@@ -446,10 +453,10 @@ export struct EmojiBoard {
               Row()
                 .width(28)
                 .height(2)
-                .backgroundColor(this.currentStickerPackIndex === index ? T.colors.accent : Color.Transparent)
+                .backgroundColor(this.currentStickerPackIndex === index ? this.T.colors.accent : Color.Transparent)
                 .borderRadius(1)
             }
-            .padding({ left: T.spacing.sm, right: T.spacing.sm })
+            .padding({ left: this.T.spacing.sm, right: this.T.spacing.sm })
             .height(36)
             .justifyContent(FlexAlign.Center)
             .alignItems(HorizontalAlign.Center)
@@ -465,7 +472,7 @@ export struct EmojiBoard {
       .scrollable(ScrollDirection.Horizontal)
       .scrollBar(BarState.Off)
       .borderWidth({ bottom: 1 })
-      .borderColor(T.colors.divider)
+      .borderColor(this.T.colors.divider)
 
       // 贴纸主体展示区（分类 0 为 Recent，分类 1..3 为内置贴纸包）
       if (this.currentStickerPackIndex === 0) {
@@ -474,18 +481,18 @@ export struct EmojiBoard {
             // Recent 顶栏（展示标题与清空入口）
             Row() {
               Text('Recent Stickers')
-                .fontSize(T.typography.caption.fontSize)
+                .fontSize(this.T.typography.caption.fontSize)
                 .fontWeight(FontWeight.Medium)
-                .fontColor(T.colors.textSecondary)
+                .fontColor(this.T.colors.textSecondary)
 
               Blank()
 
               Text('Clear')
-                .fontSize(T.typography.caption.fontSize)
+                .fontSize(this.T.typography.caption.fontSize)
                 .fontWeight(FontWeight.Medium)
-                .fontColor(T.colors.accent)
-                .padding({ left: T.spacing.sm, right: T.spacing.sm, top: 4, bottom: 4 })
-                .borderRadius(T.radius.sm)
+                .fontColor(this.T.colors.accent)
+                .padding({ left: this.T.spacing.sm, right: this.T.spacing.sm, top: 4, bottom: 4 })
+                .borderRadius(this.T.radius.sm)
                 .onClick(() => {
                   if (this.onClearRecentStickers) {
                     this.onClearRecentStickers();
@@ -493,7 +500,7 @@ export struct EmojiBoard {
                 })
             }
             .width('100%')
-            .padding({ left: T.spacing.md, right: T.spacing.md, top: T.spacing.xs, bottom: T.spacing.xs })
+            .padding({ left: this.T.spacing.md, right: this.T.spacing.md, top: this.T.spacing.xs, bottom: this.T.spacing.xs })
 
             // 最近使用贴纸网格 (5列，72vp高度)
             Grid() {
@@ -507,7 +514,7 @@ export struct EmojiBoard {
                   .height(72)
                   .justifyContent(FlexAlign.Center)
                   .alignItems(VerticalAlign.Center)
-                  .borderRadius(T.radius.sm)
+                  .borderRadius(this.T.radius.sm)
                   .onClick(() => {
                     if (this.onSendSticker) {
                       this.onSendSticker(item);
@@ -521,9 +528,9 @@ export struct EmojiBoard {
             .rowsGap(4)
             .columnsGap(4)
             .padding({
-              left: T.spacing.xs,
-              right: T.spacing.xs,
-              bottom: T.spacing.xs
+              left: this.T.spacing.xs,
+              right: this.T.spacing.xs,
+              bottom: this.T.spacing.xs
             })
             .layoutWeight(1)
             .scrollBar(BarState.Off)
@@ -536,15 +543,15 @@ export struct EmojiBoard {
             Text('🕒')
               .fontSize(38)
               .opacity(0.4)
-              .margin({ bottom: T.spacing.sm })
+              .margin({ bottom: this.T.spacing.sm })
             Text('No Recent Stickers')
-              .fontSize(T.typography.body.fontSize)
+              .fontSize(this.T.typography.body.fontSize)
               .fontWeight(FontWeight.Medium)
-              .fontColor(T.colors.textPrimary)
+              .fontColor(this.T.colors.textPrimary)
             Text('Stickers you send will appear here')
-              .fontSize(T.typography.caption.fontSize)
-              .fontColor(T.colors.textSecondary)
-              .margin({ top: T.spacing.xs })
+              .fontSize(this.T.typography.caption.fontSize)
+              .fontColor(this.T.colors.textSecondary)
+              .margin({ top: this.T.spacing.xs })
           }
           .width('100%')
           .height('100%')
@@ -559,29 +566,29 @@ export struct EmojiBoard {
             Row() {
               Text(DEFAULT_STICKER_PACKS[this.currentStickerPackIndex - 1].icon)
                 .fontSize(18)
-                .margin({ right: T.spacing.xs })
+                .margin({ right: this.T.spacing.xs })
               Text(`${DEFAULT_STICKER_PACKS[this.currentStickerPackIndex - 1].title} · ${DEFAULT_STICKER_PACKS[this.currentStickerPackIndex - 1].stickers.length} stickers`)
-                .fontSize(T.typography.caption.fontSize)
+                .fontSize(this.T.typography.caption.fontSize)
                 .fontWeight(FontWeight.Medium)
-                .fontColor(T.colors.textPrimary)
+                .fontColor(this.T.colors.textPrimary)
             }
             .layoutWeight(1)
 
             Row() {
               Text('查看贴纸包')
-                .fontSize(T.typography.caption.fontSize)
+                .fontSize(this.T.typography.caption.fontSize)
                 .fontWeight(FontWeight.Medium)
-                .fontColor(T.colors.accent)
+                .fontColor(this.T.colors.accent)
             }
-            .padding({ left: T.spacing.sm, right: T.spacing.sm, top: 4, bottom: 4 })
-            .backgroundColor(T.colors.surfaceVariant)
-            .borderRadius(T.radius.full)
+            .padding({ left: this.T.spacing.sm, right: this.T.spacing.sm, top: 4, bottom: 4 })
+            .backgroundColor(this.T.colors.surfaceVariant)
+            .borderRadius(this.T.radius.full)
             .onClick(() => {
               this.onOpenStickerSet(DEFAULT_STICKER_PACKS[this.currentStickerPackIndex - 1].id);
             })
           }
           .width('100%')
-          .padding({ left: T.spacing.md, right: T.spacing.md, top: T.spacing.xs, bottom: T.spacing.xs })
+          .padding({ left: this.T.spacing.md, right: this.T.spacing.md, top: this.T.spacing.xs, bottom: this.T.spacing.xs })
           .alignItems(VerticalAlign.Center)
 
           // 贴纸大图网格 (5列，72vp高度)
@@ -596,7 +603,7 @@ export struct EmojiBoard {
                 .height(72)
                 .justifyContent(FlexAlign.Center)
                 .alignItems(VerticalAlign.Center)
-                .borderRadius(T.radius.sm)
+                .borderRadius(this.T.radius.sm)
                 .onClick(() => {
                   if (this.onSendSticker) {
                     this.onSendSticker(item);
@@ -610,9 +617,9 @@ export struct EmojiBoard {
           .rowsGap(4)
           .columnsGap(4)
           .padding({
-            left: T.spacing.xs,
-            right: T.spacing.xs,
-            bottom: T.spacing.xs
+            left: this.T.spacing.xs,
+            right: this.T.spacing.xs,
+            bottom: this.T.spacing.xs
           })
           .layoutWeight(1)
           .scrollBar(BarState.Off)
@@ -662,7 +669,7 @@ export struct EmojiBoard {
         TextInput({ placeholder: 'Search GIFs', text: this.gifSearchQuery })
           .layoutWeight(1)
           .height('100%')
-          .fontSize(T.typography.caption.fontSize)
+          .fontSize(this.T.typography.caption.fontSize)
           .backgroundColor(Color.Transparent)
           .onChange((value: string) => {
             this.gifSearchQuery = value;
@@ -671,7 +678,7 @@ export struct EmojiBoard {
         if (this.gifSearchQuery.length > 0) {
           Text('✕')
             .fontSize(14)
-            .fontColor(T.colors.textSecondary)
+            .fontColor(this.T.colors.textSecondary)
             .margin({ right: 10 })
             .onClick(() => {
               this.gifSearchQuery = '';
@@ -680,9 +687,9 @@ export struct EmojiBoard {
       }
       .width('100%')
       .height(36)
-      .margin({ left: T.spacing.md, right: T.spacing.md, top: T.spacing.xs, bottom: 4 })
-      .backgroundColor(T.colors.surfaceVariant)
-      .borderRadius(T.radius.full)
+      .margin({ left: this.T.spacing.md, right: this.T.spacing.md, top: this.T.spacing.xs, bottom: 4 })
+      .backgroundColor(this.T.colors.surfaceVariant)
+      .borderRadius(this.T.radius.full)
       .alignItems(VerticalAlign.Center)
 
       // 2. 动图热门分类胶囊滚动条（搜索态隐藏）
@@ -694,12 +701,12 @@ export struct EmojiBoard {
                 Text(cat)
                   .fontSize(13)
                   .fontWeight(this.currentGifCategoryIndex === index ? FontWeight.Bold : FontWeight.Normal)
-                  .fontColor(this.currentGifCategoryIndex === index ? '#FFFFFF' : T.colors.textSecondary)
+                  .fontColor(this.currentGifCategoryIndex === index ? '#FFFFFF' : this.T.colors.textSecondary)
               }
               .height(28)
               .padding({ left: 12, right: 12 })
-              .backgroundColor(this.currentGifCategoryIndex === index ? T.colors.accent : T.colors.surfaceVariant)
-              .borderRadius(T.radius.full)
+              .backgroundColor(this.currentGifCategoryIndex === index ? this.T.colors.accent : this.T.colors.surfaceVariant)
+              .borderRadius(this.T.radius.full)
               .alignItems(VerticalAlign.Center)
               .onClick(() => {
                 this.currentGifCategoryIndex = index;
@@ -710,7 +717,7 @@ export struct EmojiBoard {
         .listDirection(Axis.Horizontal)
         .height(36)
         .width('100%')
-        .padding({ left: T.spacing.md, right: T.spacing.md })
+        .padding({ left: this.T.spacing.md, right: this.T.spacing.md })
         .scrollBar(BarState.Off)
       }
 
@@ -718,28 +725,28 @@ export struct EmojiBoard {
       Row() {
         if (this.gifSearchQuery.trim().length > 0) {
           Text(`Search results (${this.getActiveGifs().length})`)
-            .fontSize(T.typography.caption.fontSize)
+            .fontSize(this.T.typography.caption.fontSize)
             .fontWeight(FontWeight.Medium)
-            .fontColor(T.colors.textSecondary)
+            .fontColor(this.T.colors.textSecondary)
         } else if (this.currentGifCategoryIndex === 0) {
           Text('Recent GIFs')
-            .fontSize(T.typography.caption.fontSize)
+            .fontSize(this.T.typography.caption.fontSize)
             .fontWeight(FontWeight.Medium)
-            .fontColor(T.colors.textSecondary)
+            .fontColor(this.T.colors.textSecondary)
         } else {
           Text(`${GIF_CATEGORIES[this.currentGifCategoryIndex]} · ${this.getActiveGifs().length} GIFs`)
-            .fontSize(T.typography.caption.fontSize)
+            .fontSize(this.T.typography.caption.fontSize)
             .fontWeight(FontWeight.Medium)
-            .fontColor(T.colors.textSecondary)
+            .fontColor(this.T.colors.textSecondary)
         }
 
         Blank()
 
         if (this.currentGifCategoryIndex === 0 && this.recentGifs.length > 0 && this.gifSearchQuery.trim().length === 0) {
           Text('Clear')
-            .fontSize(T.typography.caption.fontSize)
+            .fontSize(this.T.typography.caption.fontSize)
             .fontWeight(FontWeight.Medium)
-            .fontColor(T.colors.accent)
+            .fontColor(this.T.colors.accent)
             .onClick(() => {
               if (this.onClearRecentGifs) {
                 this.onClearRecentGifs();
@@ -749,7 +756,7 @@ export struct EmojiBoard {
       }
       .width('100%')
       .height(28)
-      .padding({ left: T.spacing.md, right: T.spacing.md })
+      .padding({ left: this.T.spacing.md, right: this.T.spacing.md })
       .alignItems(VerticalAlign.Center)
 
       // 4. 网格区或空态
@@ -757,15 +764,15 @@ export struct EmojiBoard {
         Column() {
           Text('🕒')
             .fontSize(44)
-            .margin({ bottom: T.spacing.sm })
+            .margin({ bottom: this.T.spacing.sm })
           Text('No Recent GIFs')
-            .fontSize(T.typography.body.fontSize)
+            .fontSize(this.T.typography.body.fontSize)
             .fontWeight(FontWeight.Bold)
-            .fontColor(T.colors.textPrimary)
+            .fontColor(this.T.colors.textPrimary)
             .margin({ bottom: 4 })
           Text('GIFs you send will appear here')
-            .fontSize(T.typography.caption.fontSize)
-            .fontColor(T.colors.textSecondary)
+            .fontSize(this.T.typography.caption.fontSize)
+            .fontColor(this.T.colors.textSecondary)
         }
         .width('100%')
         .layoutWeight(1)
@@ -783,7 +790,7 @@ export struct EmojiBoard {
                   Text(gif.title)
                     .fontSize(12)
                     .fontWeight(FontWeight.Medium)
-                    .fontColor(T.colors.textPrimary)
+                    .fontColor(this.T.colors.textPrimary)
                     .maxLines(1)
                     .textOverflow({ overflow: TextOverflow.Ellipsis })
                 }
@@ -805,8 +812,8 @@ export struct EmojiBoard {
               }
               .width('100%')
               .height(100)
-              .backgroundColor(T.colors.surfaceVariant)
-              .borderRadius(T.radius.md)
+              .backgroundColor(this.T.colors.surfaceVariant)
+              .borderRadius(this.T.radius.md)
               .onClick(() => {
                 if (this.onSendGif) {
                   this.onSendGif(gif);
@@ -819,9 +826,9 @@ export struct EmojiBoard {
         .rowsGap(8)
         .columnsGap(8)
         .padding({
-          left: T.spacing.md,
-          right: T.spacing.md,
-          bottom: T.spacing.md
+          left: this.T.spacing.md,
+          right: this.T.spacing.md,
+          bottom: this.T.spacing.md
         })
         .layoutWeight(1)
         .scrollBar(BarState.Off)

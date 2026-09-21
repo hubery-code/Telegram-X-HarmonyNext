@@ -8,10 +8,9 @@
  * - 底部全宽大按钮：“添加 X 个贴纸” / “移除贴纸包”，带加载 Spinner。
  */
 
-import { LightTheme } from '@tgx/core-design-system';
+import { LightTheme, Theme } from '@tgx/core-design-system';
 import { StickerSetPreviewState, StickerSetItem } from '../model/StickerSetPreviewState';
 
-const T = LightTheme;
 
 function toSandboxUri(path: string | null): string {
   if (!path || path.length === 0) {
@@ -22,6 +21,14 @@ function toSandboxUri(path: string | null): string {
 
 @Component
 export struct StickerSetPreviewSheet {
+  /**
+   * FEAT-UI-001 全局深色主题：entry 装配层把 ThemeManager 的当前主题写入
+   * AppStorage('activeTheme')，本页以 @StorageProp 订阅。该值变化会触发本页
+   * 重渲染。此前写死 `const T = LightTheme`，主题切换后引用不变，深色不生效。
+   * 短名 T 直接落在装饰器成员上——ArkUI 的 build 转换不接管 struct 内自定义
+   * getter，写成 getter 会在渲染闭包里取到 undefined 并抛 TypeError。
+   */
+  @StorageProp('activeTheme') T: Theme = LightTheme;
   @Prop preview: StickerSetPreviewState | null = null;
   onClose: () => void = () => {};
   onInstall: (setId: string) => void = () => {};
@@ -36,7 +43,7 @@ export struct StickerSetPreviewSheet {
         Column()
           .width('100%')
           .height('100%')
-          .backgroundColor(T.colors.scrim)
+          .backgroundColor(this.T.colors.scrim)
           .onClick(() => {
             this.onClose();
           })
@@ -47,23 +54,23 @@ export struct StickerSetPreviewSheet {
           Row()
             .width(36)
             .height(4)
-            .borderRadius(T.radius.full)
-            .backgroundColor(T.colors.divider)
-            .margin({ top: T.spacing.sm, bottom: T.spacing.xs })
+            .borderRadius(this.T.radius.full)
+            .backgroundColor(this.T.colors.divider)
+            .margin({ top: this.T.spacing.sm, bottom: this.T.spacing.xs })
 
           // 头部：标题、贴纸数量、关闭按钮
           Row() {
             Column() {
               Text(this.preview.title.length > 0 ? this.preview.title : '贴纸包详情')
-                .fontSize(T.typography.headline.fontSize)
+                .fontSize(this.T.typography.headline.fontSize)
                 .fontWeight(FontWeight.Bold)
-                .fontColor(T.colors.textPrimary)
+                .fontColor(this.T.colors.textPrimary)
                 .maxLines(1)
                 .textOverflow({ overflow: TextOverflow.Ellipsis })
 
               Text(this.formatSubtitle())
-                .fontSize(T.typography.caption.fontSize)
-                .fontColor(T.colors.textSecondary)
+                .fontSize(this.T.typography.caption.fontSize)
+                .fontColor(this.T.colors.textSecondary)
                 .margin({ top: 2 })
             }
             .alignItems(HorizontalAlign.Start)
@@ -74,23 +81,23 @@ export struct StickerSetPreviewSheet {
               Image($r('app.media.ic_close'))
                 .width(20)
                 .height(20)
-                .fillColor(T.colors.textSecondary)
+                .fillColor(this.T.colors.textSecondary)
             }
             .width(36)
             .height(36)
-            .borderRadius(T.radius.full)
+            .borderRadius(this.T.radius.full)
             .justifyContent(FlexAlign.Center)
             .alignItems(VerticalAlign.Center)
-            .backgroundColor(T.colors.surfaceVariant)
+            .backgroundColor(this.T.colors.surfaceVariant)
             .onClick(() => {
               this.onClose();
             })
           }
           .width('100%')
-          .padding({ left: T.spacing.md, right: T.spacing.md, top: T.spacing.xs, bottom: T.spacing.sm })
+          .padding({ left: this.T.spacing.md, right: this.T.spacing.md, top: this.T.spacing.xs, bottom: this.T.spacing.sm })
 
           Divider()
-            .color(T.colors.divider)
+            .color(this.T.colors.divider)
             .strokeWidth(1)
 
           // 中间内容区：加载态 / 错误态 / 贴纸网格
@@ -100,11 +107,11 @@ export struct StickerSetPreviewSheet {
                 LoadingProgress()
                   .width(36)
                   .height(36)
-                  .color(T.colors.accent)
+                  .color(this.T.colors.accent)
                 Text('正在加载贴纸包...')
-                  .fontSize(T.typography.caption.fontSize)
-                  .fontColor(T.colors.textSecondary)
-                  .margin({ top: T.spacing.sm })
+                  .fontSize(this.T.typography.caption.fontSize)
+                  .fontColor(this.T.colors.textSecondary)
+                  .margin({ top: this.T.spacing.sm })
               }
               .width('100%')
               .height(220)
@@ -113,12 +120,12 @@ export struct StickerSetPreviewSheet {
             } else if (this.preview.errorMessage !== null && this.preview.stickers.length === 0) {
               Column() {
                 Text(this.preview.errorMessage)
-                  .fontSize(T.typography.body.fontSize)
-                  .fontColor(T.colors.destructive)
+                  .fontSize(this.T.typography.body.fontSize)
+                  .fontColor(this.T.colors.destructive)
                 Button('重试')
-                  .fontSize(T.typography.caption.fontSize)
-                  .backgroundColor(T.colors.accent)
-                  .margin({ top: T.spacing.sm })
+                  .fontSize(this.T.typography.caption.fontSize)
+                  .backgroundColor(this.T.colors.accent)
+                  .margin({ top: this.T.spacing.sm })
                   .onClick(() => {
                     if (this.preview !== null) {
                       this.onRetry(this.preview.setId);
@@ -153,7 +160,7 @@ export struct StickerSetPreviewSheet {
                     .height(68)
                     .justifyContent(FlexAlign.Center)
                     .alignItems(VerticalAlign.Center)
-                    .borderRadius(T.radius.md)
+                    .borderRadius(this.T.radius.md)
                     .onClick(() => {
                       this.onSelectSticker(item);
                     })
@@ -161,13 +168,13 @@ export struct StickerSetPreviewSheet {
                 }, (item: StickerSetItem) => `${item.id}_${item.localPath ?? ''}`)
               }
               .columnsTemplate('1fr 1fr 1fr 1fr 1fr')
-              .rowsGap(T.spacing.xs)
-              .columnsGap(T.spacing.xs)
+              .rowsGap(this.T.spacing.xs)
+              .columnsGap(this.T.spacing.xs)
               .padding({
-                left: T.spacing.sm,
-                right: T.spacing.sm,
-                top: T.spacing.sm,
-                bottom: T.spacing.sm
+                left: this.T.spacing.sm,
+                right: this.T.spacing.sm,
+                top: this.T.spacing.sm,
+                bottom: this.T.spacing.sm
               })
               .layoutWeight(1)
               .scrollBar(BarState.Auto)
@@ -177,7 +184,7 @@ export struct StickerSetPreviewSheet {
           .width('100%')
 
           Divider()
-            .color(T.colors.divider)
+            .color(this.T.colors.divider)
             .strokeWidth(1)
 
           // 底部全宽大操作按钮
@@ -187,18 +194,18 @@ export struct StickerSetPreviewSheet {
                 LoadingProgress()
                   .width(20)
                   .height(20)
-                  .color(this.preview.isInstalled ? T.colors.textPrimary : T.colors.textOnAccent)
-                  .margin({ right: T.spacing.sm })
+                  .color(this.preview.isInstalled ? this.T.colors.textPrimary : this.T.colors.textOnAccent)
+                  .margin({ right: this.T.spacing.sm })
               }
               Text(this.formatButtonLabel())
-                .fontSize(T.typography.body.fontSize)
+                .fontSize(this.T.typography.body.fontSize)
                 .fontWeight(FontWeight.Medium)
-                .fontColor(this.preview.isInstalled ? T.colors.destructive : T.colors.textOnAccent)
+                .fontColor(this.preview.isInstalled ? this.T.colors.destructive : this.T.colors.textOnAccent)
             }
             .width('100%')
             .height(48)
-            .borderRadius(T.radius.full)
-            .backgroundColor(this.preview.isInstalled ? T.colors.surfaceVariant : T.colors.accent)
+            .borderRadius(this.T.radius.full)
+            .backgroundColor(this.preview.isInstalled ? this.T.colors.surfaceVariant : this.T.colors.accent)
             .justifyContent(FlexAlign.Center)
             .alignItems(VerticalAlign.Center)
             .onClick(() => {
@@ -214,18 +221,18 @@ export struct StickerSetPreviewSheet {
           }
           .width('100%')
           .padding({
-            left: T.spacing.md,
-            right: T.spacing.md,
-            top: T.spacing.sm,
-            bottom: T.spacing.md
+            left: this.T.spacing.md,
+            right: this.T.spacing.md,
+            top: this.T.spacing.sm,
+            bottom: this.T.spacing.md
           })
         }
         .width('100%')
         .constraintSize({ maxHeight: '72%' })
-        .backgroundColor(T.colors.surface)
+        .backgroundColor(this.T.colors.surface)
         .borderRadius({
-          topLeft: T.radius.lg,
-          topRight: T.radius.lg
+          topLeft: this.T.radius.lg,
+          topRight: this.T.radius.lg
         })
       }
       .width('100%')

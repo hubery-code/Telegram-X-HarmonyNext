@@ -8,13 +8,20 @@
  * 4. 底部即时回复输入栏：圆角输入框 + 蓝底圆形发送按钮。
  */
 
-import { LightTheme } from '@tgx/core-design-system';
+import { LightTheme, Theme } from '@tgx/core-design-system';
 import { CommentItem, CommentsCoordinator, CommentsUiState } from '../coordinator/CommentsCoordinator';
 
-const T = LightTheme;
 
 @Component
 export struct CommentsPage {
+  /**
+   * FEAT-UI-001 全局深色主题：entry 装配层把 ThemeManager 的当前主题写入
+   * AppStorage('activeTheme')，本页以 @StorageProp 订阅。该值变化会触发本页
+   * 重渲染。此前写死 `const T = LightTheme`，主题切换后引用不变，深色不生效。
+   * 短名 T 直接落在装饰器成员上——ArkUI 的 build 转换不接管 struct 内自定义
+   * getter，写成 getter 会在渲染闭包里取到 undefined 并抛 TypeError。
+   */
+  @StorageProp('activeTheme') T: Theme = LightTheme;
   @Prop uiState: CommentsUiState;
   coordinator?: CommentsCoordinator;
   onBack: () => void = () => {};
@@ -28,7 +35,7 @@ export struct CommentsPage {
           Image($r('app.media.ic_back'))
             .width(24)
             .height(24)
-            .fillColor(T.colors.textPrimary)
+            .fillColor(this.T.colors.textPrimary)
         }
         .width(44)
         .height(44)
@@ -41,29 +48,29 @@ export struct CommentsPage {
         // 标题与副标题
         Column() {
           Text(this.uiState.commentsCount > 0 ? `评论 (${this.uiState.commentsCount})` : '评论')
-            .fontSize(T.typography.headline.fontSize)
+            .fontSize(this.T.typography.headline.fontSize)
             .fontWeight(FontWeight.Bold)
-            .fontColor(T.colors.textPrimary)
+            .fontColor(this.T.colors.textPrimary)
             .maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
 
           Text(this.uiState.channelTitle)
-            .fontSize(T.typography.footnote.fontSize)
-            .fontColor(T.colors.textSecondary)
+            .fontSize(this.T.typography.footnote.fontSize)
+            .fontColor(this.T.colors.textSecondary)
             .maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
             .margin({ top: 2 })
         }
         .alignItems(HorizontalAlign.Start)
         .layoutWeight(1)
-        .margin({ left: T.spacing.xs })
+        .margin({ left: this.T.spacing.xs })
       }
       .width('100%')
       .height(56)
-      .padding({ left: T.spacing.sm, right: T.spacing.md })
-      .backgroundColor(T.colors.surface)
+      .padding({ left: this.T.spacing.sm, right: this.T.spacing.md })
+      .backgroundColor(this.T.colors.surface)
       .borderWidth({ bottom: 0.5 })
-      .borderColor(T.colors.divider)
+      .borderColor(this.T.colors.divider)
 
       // 2. 吸顶主帖摘要预览卡片
       Row() {
@@ -71,45 +78,45 @@ export struct CommentsPage {
         Column()
           .width(3)
           .height('100%')
-          .backgroundColor(T.colors.accent)
-          .borderRadius(T.radius.full)
-          .margin({ right: T.spacing.sm })
+          .backgroundColor(this.T.colors.accent)
+          .borderRadius(this.T.radius.full)
+          .margin({ right: this.T.spacing.sm })
 
         Column() {
           Row() {
             Text(this.uiState.channelTitle)
-              .fontSize(T.typography.footnote.fontSize)
+              .fontSize(this.T.typography.footnote.fontSize)
               .fontWeight(FontWeight.Medium)
-              .fontColor(T.colors.accent)
+              .fontColor(this.T.colors.accent)
               .maxLines(1)
               .textOverflow({ overflow: TextOverflow.Ellipsis })
               .layoutWeight(1)
 
             if (this.uiState.postDate.length > 0) {
               Text(this.uiState.postDate)
-                .fontSize(T.typography.caption.fontSize)
-                .fontColor(T.colors.textTertiary)
-                .margin({ left: T.spacing.xs })
+                .fontSize(this.T.typography.caption.fontSize)
+                .fontColor(this.T.colors.textTertiary)
+                .margin({ left: this.T.spacing.xs })
             }
           }
           .width('100%')
           .alignItems(VerticalAlign.Center)
 
           Text(this.uiState.postText.length > 0 ? this.uiState.postText : '原始帖子内容')
-            .fontSize(T.typography.body.fontSize)
-            .fontColor(T.colors.textPrimary)
+            .fontSize(this.T.typography.body.fontSize)
+            .fontColor(this.T.colors.textPrimary)
             .maxLines(2)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
-            .margin({ top: T.spacing.xs })
+            .margin({ top: this.T.spacing.xs })
         }
         .alignItems(HorizontalAlign.Start)
         .layoutWeight(1)
       }
       .width('100%')
-      .padding(T.spacing.md)
-      .backgroundColor(T.colors.surfaceVariant)
+      .padding(this.T.spacing.md)
+      .backgroundColor(this.T.colors.surfaceVariant)
       .borderWidth({ bottom: 1 })
-      .borderColor(T.colors.divider)
+      .borderColor(this.T.colors.divider)
 
       // 3. 评论流列表
       Stack({ alignContent: Alignment.Center }) {
@@ -117,18 +124,18 @@ export struct CommentsPage {
           LoadingProgress()
             .width(36)
             .height(36)
-            .color(T.colors.accent)
+            .color(this.T.colors.accent)
         } else if (!this.uiState.isLoading && this.uiState.comments.length === 0) {
           Column() {
             Image($r('app.media.ic_comments'))
               .width(48)
               .height(48)
-              .fillColor(T.colors.textTertiary)
-              .margin({ bottom: T.spacing.sm })
+              .fillColor(this.T.colors.textTertiary)
+              .margin({ bottom: this.T.spacing.sm })
 
             Text('还没有评论，留下第一条评论吧')
-              .fontSize(T.typography.footnote.fontSize)
-              .fontColor(T.colors.textSecondary)
+              .fontSize(this.T.typography.footnote.fontSize)
+              .fontColor(this.T.colors.textSecondary)
           }
           .justifyContent(FlexAlign.Center)
           .alignItems(HorizontalAlign.Center)
@@ -144,16 +151,16 @@ export struct CommentsPage {
           .width('100%')
           .height('100%')
           .padding({
-            left: T.spacing.md,
-            right: T.spacing.md,
-            top: T.spacing.md,
-            bottom: T.spacing.md
+            left: this.T.spacing.md,
+            right: this.T.spacing.md,
+            top: this.T.spacing.md,
+            bottom: this.T.spacing.md
           })
         }
       }
       .width('100%')
       .layoutWeight(1)
-      .backgroundColor(T.colors.background)
+      .backgroundColor(this.T.colors.background)
 
       // 4. 底部评论输入栏
       Row() {
@@ -161,14 +168,14 @@ export struct CommentsPage {
           text: this.uiState.inputText,
           placeholder: '发表评论...'
         })
-          .fontSize(T.typography.body.fontSize)
-          .placeholderColor(T.colors.textTertiary)
-          .fontColor(T.colors.textPrimary)
-          .backgroundColor(T.colors.surfaceVariant)
-          .borderRadius(T.radius.full)
+          .fontSize(this.T.typography.body.fontSize)
+          .placeholderColor(this.T.colors.textTertiary)
+          .fontColor(this.T.colors.textPrimary)
+          .backgroundColor(this.T.colors.surfaceVariant)
+          .borderRadius(this.T.radius.full)
           .height(40)
           .layoutWeight(1)
-          .padding({ left: T.spacing.md, right: T.spacing.md })
+          .padding({ left: this.T.spacing.md, right: this.T.spacing.md })
           .onChange((value: string) => {
             if (this.coordinator !== undefined) {
               this.coordinator.setInputText(value);
@@ -185,19 +192,19 @@ export struct CommentsPage {
             LoadingProgress()
               .width(20)
               .height(20)
-              .color(T.colors.textOnAccent)
+              .color(this.T.colors.textOnAccent)
           } else {
             Image($r('app.media.ic_send'))
               .width(18)
               .height(18)
-              .fillColor(T.colors.textOnAccent)
+              .fillColor(this.T.colors.textOnAccent)
           }
         }
         .width(40)
         .height(40)
-        .borderRadius(T.radius.full)
-        .backgroundColor(this.uiState.inputText.trim().length > 0 ? T.colors.accent : T.colors.textTertiary)
-        .margin({ left: T.spacing.sm })
+        .borderRadius(this.T.radius.full)
+        .backgroundColor(this.uiState.inputText.trim().length > 0 ? this.T.colors.accent : this.T.colors.textTertiary)
+        .margin({ left: this.T.spacing.sm })
         .onClick(() => {
           if (this.coordinator !== undefined) {
             this.coordinator.sendComment();
@@ -206,18 +213,18 @@ export struct CommentsPage {
       }
       .width('100%')
       .padding({
-        left: T.spacing.md,
-        right: T.spacing.md,
-        top: T.spacing.sm,
-        bottom: T.spacing.sm
+        left: this.T.spacing.md,
+        right: this.T.spacing.md,
+        top: this.T.spacing.sm,
+        bottom: this.T.spacing.sm
       })
-      .backgroundColor(T.colors.surface)
+      .backgroundColor(this.T.colors.surface)
       .borderWidth({ top: 0.5 })
-      .borderColor(T.colors.divider)
+      .borderColor(this.T.colors.divider)
     }
     .width('100%')
     .height('100%')
-    .backgroundColor(T.colors.background)
+    .backgroundColor(this.T.colors.background)
   }
 
   /** 单条评论气泡 */
@@ -228,48 +235,48 @@ export struct CommentsPage {
       if (!item.isOutgoing) {
         Stack({ alignContent: Alignment.Center }) {
           Text(item.senderAvatarLetter)
-            .fontSize(T.typography.caption.fontSize)
+            .fontSize(this.T.typography.caption.fontSize)
             .fontWeight(FontWeight.Bold)
-            .fontColor(T.colors.textOnAccent)
+            .fontColor(this.T.colors.textOnAccent)
         }
         .width(36)
         .height(36)
         .borderRadius(18)
         .backgroundColor(item.senderAvatarColor)
-        .margin({ right: T.spacing.sm })
+        .margin({ right: this.T.spacing.sm })
       }
 
       // 气泡卡片
       Column() {
         if (!item.isOutgoing) {
           Text(item.senderName)
-            .fontSize(T.typography.caption.fontSize)
+            .fontSize(this.T.typography.caption.fontSize)
             .fontWeight(FontWeight.Bold)
             .fontColor(item.senderAvatarColor)
             .margin({ bottom: 3 })
         }
 
         Text(item.text)
-          .fontSize(T.typography.body.fontSize)
-          .fontColor(T.colors.textPrimary)
+          .fontSize(this.T.typography.body.fontSize)
+          .fontColor(this.T.colors.textPrimary)
 
         Row() {
           Text(item.dateText)
             .fontSize(10)
-            .fontColor(T.colors.textTertiary)
+            .fontColor(this.T.colors.textTertiary)
 
           if (item.isOutgoing) {
             if (item.isSending) {
               Image($r('app.media.ic_clock'))
                 .width(10)
                 .height(10)
-                .fillColor(T.colors.textTertiary)
+                .fillColor(this.T.colors.textTertiary)
                 .margin({ left: 4 })
             } else {
               Image($r('app.media.ic_check_single'))
                 .width(12)
                 .height(12)
-                .fillColor(T.colors.accent)
+                .fillColor(this.T.colors.accent)
                 .margin({ left: 4 })
             }
           }
@@ -280,13 +287,13 @@ export struct CommentsPage {
         .margin({ top: 3 })
       }
       .padding({
-        left: T.spacing.md,
-        right: T.spacing.md,
-        top: T.spacing.sm,
-        bottom: T.spacing.xs
+        left: this.T.spacing.md,
+        right: this.T.spacing.md,
+        top: this.T.spacing.sm,
+        bottom: this.T.spacing.xs
       })
-      .backgroundColor(item.isOutgoing ? T.colors.surfaceVariant : T.colors.surface)
-      .borderRadius(T.radius.md)
+      .backgroundColor(item.isOutgoing ? this.T.colors.surfaceVariant : this.T.colors.surface)
+      .borderRadius(this.T.radius.md)
       .constraintSize({ minWidth: 80, maxWidth: 280 })
       .shadow({
         radius: 2,

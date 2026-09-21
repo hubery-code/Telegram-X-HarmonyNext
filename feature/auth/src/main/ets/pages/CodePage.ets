@@ -5,12 +5,19 @@
  * 全部色彩/字号/间距用 design_system token。
  */
 
-import { LightTheme } from '@tgx/core-design-system';
+import { LightTheme, Theme } from '@tgx/core-design-system';
 
-const T = LightTheme;
 
 @Component
 export struct CodePage {
+  /**
+   * FEAT-UI-001 全局深色主题：entry 装配层把 ThemeManager 的当前主题写入
+   * AppStorage('activeTheme')，本页以 @StorageProp 订阅。该值变化会触发本页
+   * 重渲染。此前写死 `const T = LightTheme`，主题切换后引用不变，深色不生效。
+   * 短名 T 直接落在装饰器成员上——ArkUI 的 build 转换不接管 struct 内自定义
+   * getter，写成 getter 会在渲染闭包里取到 undefined 并抛 TypeError。
+   */
+  @StorageProp('activeTheme') T: Theme = LightTheme;
   @Prop formattedPhone: string = '';
   @Prop code: string = '';
   @Prop codeLength: number = 5;
@@ -34,22 +41,22 @@ export struct CodePage {
   build() {
     Column() {
       Text('Enter Code')
-        .fontSize(T.typography.largeTitle.fontSize)
-        .fontWeight(T.typography.largeTitle.fontWeight)
-        .fontColor(T.colors.textPrimary)
-        .margin({ top: T.spacing.huge, bottom: T.spacing.sm })
+        .fontSize(this.T.typography.largeTitle.fontSize)
+        .fontWeight(this.T.typography.largeTitle.fontWeight)
+        .fontColor(this.T.colors.textPrimary)
+        .margin({ top: this.T.spacing.huge, bottom: this.T.spacing.sm })
 
       Text(`We sent an SMS with the code to ${this.formattedPhone}`)
-        .fontSize(T.typography.subheadline.fontSize)
-        .fontColor(T.colors.textSecondary)
+        .fontSize(this.T.typography.subheadline.fontSize)
+        .fontColor(this.T.colors.textSecondary)
         .textAlign(TextAlign.Center)
-        .margin({ bottom: T.spacing.sm, left: T.spacing.lg, right: T.spacing.lg })
+        .margin({ bottom: this.T.spacing.sm, left: this.T.spacing.lg, right: this.T.spacing.lg })
 
       Text('Wrong number?')
-        .fontSize(T.typography.subheadline.fontSize)
-        .fontColor(T.colors.accent)
-        .fontWeight(T.typography.headline.fontWeight)
-        .margin({ bottom: T.spacing.xxl })
+        .fontSize(this.T.typography.subheadline.fontSize)
+        .fontColor(this.T.colors.accent)
+        .fontWeight(this.T.typography.headline.fontWeight)
+        .margin({ bottom: this.T.spacing.xxl })
         .onClick(() => {
           this.onBackToPhone();
         })
@@ -60,16 +67,16 @@ export struct CodePage {
       })
         .type(InputType.Number)
         .maxLength(this.codeLength)
-        .fontSize(T.typography.largeTitle.fontSize)
-        .fontWeight(T.typography.largeTitle.fontWeight)
+        .fontSize(this.T.typography.largeTitle.fontSize)
+        .fontWeight(this.T.typography.largeTitle.fontWeight)
         .textAlign(TextAlign.Center)
         .width('70%')
         .height(52)
-        .backgroundColor(T.colors.surfaceVariant)
+        .backgroundColor(this.T.colors.surfaceVariant)
         .border({
           width: 1,
-          color: this.errorMessage !== null ? T.colors.destructive : T.colors.border,
-          radius: T.radius.md
+          color: this.errorMessage !== null ? this.T.colors.destructive : this.T.colors.border,
+          radius: this.T.radius.md
         })
         .onChange((val: string) => {
           this.onCodeChanged(val);
@@ -77,26 +84,26 @@ export struct CodePage {
 
       if (this.errorMessage !== null) {
         Text(this.errorMessage)
-          .fontSize(T.typography.footnote.fontSize)
-          .fontColor(T.colors.destructive)
-          .margin({ top: T.spacing.sm, left: T.spacing.xxl, right: T.spacing.xxl })
+          .fontSize(this.T.typography.footnote.fontSize)
+          .fontColor(this.T.colors.destructive)
+          .margin({ top: this.T.spacing.sm, left: this.T.spacing.xxl, right: this.T.spacing.xxl })
           .textAlign(TextAlign.Center)
       }
 
       if (this.canResendCode) {
         Text('Resend code')
-          .fontSize(T.typography.subheadline.fontSize)
-          .fontColor(T.colors.accent)
-          .fontWeight(T.typography.headline.fontWeight)
-          .margin({ top: T.spacing.xxl })
+          .fontSize(this.T.typography.subheadline.fontSize)
+          .fontColor(this.T.colors.accent)
+          .fontWeight(this.T.typography.headline.fontWeight)
+          .margin({ top: this.T.spacing.xxl })
           .onClick(() => {
             this.onResend();
           })
       } else {
         Text(`Resend code in ${this.formatCountdown(this.resendTimeoutSeconds)}`)
-          .fontSize(T.typography.subheadline.fontSize)
-          .fontColor(T.colors.textTertiary)
-          .margin({ top: T.spacing.xxl })
+          .fontSize(this.T.typography.subheadline.fontSize)
+          .fontColor(this.T.colors.textTertiary)
+          .margin({ top: this.T.spacing.xxl })
       }
 
       Blank()
@@ -107,27 +114,27 @@ export struct CodePage {
             LoadingProgress()
               .width(20)
               .height(20)
-              .color(T.colors.textOnAccent)
-              .margin({ right: T.spacing.sm })
+              .color(this.T.colors.textOnAccent)
+              .margin({ right: this.T.spacing.sm })
           }
           Text(this.isSubmitting ? 'Verifying...' : 'Submit')
-            .fontSize(T.typography.callout.fontSize)
-            .fontWeight(T.typography.largeTitle.fontWeight)
-            .fontColor(T.colors.textOnAccent)
+            .fontSize(this.T.typography.callout.fontSize)
+            .fontWeight(this.T.typography.largeTitle.fontWeight)
+            .fontColor(this.T.colors.textOnAccent)
         }
       }
       .width('90%')
       .height(48)
-      .backgroundColor(this.isSubmitting ? T.colors.disabled : T.colors.accent)
-      .borderRadius(T.radius.full)
+      .backgroundColor(this.isSubmitting ? this.T.colors.disabled : this.T.colors.accent)
+      .borderRadius(this.T.radius.full)
       .enabled(!this.isSubmitting)
-      .margin({ bottom: T.spacing.huge })
+      .margin({ bottom: this.T.spacing.huge })
       .onClick(() => {
         this.onSubmit();
       })
     }
     .width('100%')
     .height('100%')
-    .backgroundColor(T.colors.background)
+    .backgroundColor(this.T.colors.background)
   }
 }

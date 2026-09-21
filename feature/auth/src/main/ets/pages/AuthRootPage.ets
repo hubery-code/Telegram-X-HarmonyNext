@@ -5,7 +5,7 @@
  * 全部色彩/字号/间距用 design_system token。
  */
 
-import { LightTheme } from '@tgx/core-design-system';
+import { LightTheme, Theme } from '@tgx/core-design-system';
 import { AuthUiState } from '../contract/AuthUiState';
 import {
   BackToPhone,
@@ -33,10 +33,17 @@ import { RegistrationPage } from './RegistrationPage';
 import { RecaptchaPage } from './RecaptchaPage';
 import { QrCodePage } from './QrCodePage';
 
-const T = LightTheme;
 
 @Component
 export struct AuthRootPage {
+  /**
+   * FEAT-UI-001 全局深色主题：entry 装配层把 ThemeManager 的当前主题写入
+   * AppStorage('activeTheme')，本页以 @StorageProp 订阅。该值变化会触发本页
+   * 重渲染。此前写死 `const T = LightTheme`，主题切换后引用不变，深色不生效。
+   * 短名 T 直接落在装饰器成员上——ArkUI 的 build 转换不接管 struct 内自定义
+   * getter，写成 getter 会在渲染闭包里取到 undefined 并抛 TypeError。
+   */
+  @StorageProp('activeTheme') T: Theme = LightTheme;
   @Prop uiState: AuthUiState = AuthUiState.initial();
 
   onDispatch: (intent: Object) => void = () => {};
@@ -146,21 +153,21 @@ export struct AuthRootPage {
       } else if (this.uiState.step === 'failed') {
         Column() {
           Text('Authorization Failed')
-            .fontSize(T.typography.title.fontSize)
-            .fontWeight(T.typography.largeTitle.fontWeight)
-            .fontColor(T.colors.destructive)
-            .margin({ top: 48, bottom: T.spacing.md })
+            .fontSize(this.T.typography.title.fontSize)
+            .fontWeight(this.T.typography.largeTitle.fontWeight)
+            .fontColor(this.T.colors.destructive)
+            .margin({ top: 48, bottom: this.T.spacing.md })
 
           Text(this.uiState.errorMessage !== null ? this.uiState.errorMessage : 'An unexpected error occurred.')
-            .fontSize(T.typography.footnote.fontSize)
-            .fontColor(T.colors.textSecondary)
+            .fontSize(this.T.typography.footnote.fontSize)
+            .fontColor(this.T.colors.textSecondary)
             .textAlign(TextAlign.Center)
-            .margin({ bottom: T.spacing.xxl, left: T.spacing.xxl, right: T.spacing.xxl })
+            .margin({ bottom: this.T.spacing.xxl, left: this.T.spacing.xxl, right: this.T.spacing.xxl })
 
           Button('Try Again')
             .width('80%')
             .height(44)
-            .backgroundColor(T.colors.accent)
+            .backgroundColor(this.T.colors.accent)
             .onClick(() => {
               this.onDispatch(new BackToPhone());
             })
@@ -173,12 +180,12 @@ export struct AuthRootPage {
           LoadingProgress()
             .width(48)
             .height(48)
-            .color(T.colors.accent)
-            .margin({ top: 120, bottom: T.spacing.lg })
+            .color(this.T.colors.accent)
+            .margin({ top: 120, bottom: this.T.spacing.lg })
 
           Text(this.uiState.step === 'ready' ? 'Signing in...' : 'Connecting...')
-            .fontSize(T.typography.body.fontSize)
-            .fontColor(T.colors.textSecondary)
+            .fontSize(this.T.typography.body.fontSize)
+            .fontColor(this.T.colors.textSecondary)
         }
         .width('100%')
         .height('100%')
@@ -187,6 +194,6 @@ export struct AuthRootPage {
     }
     .width('100%')
     .height('100%')
-    .backgroundColor(T.colors.background)
+    .backgroundColor(this.T.colors.background)
   }
 }

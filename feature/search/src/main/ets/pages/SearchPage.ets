@@ -10,7 +10,7 @@
  * 色彩、字号与间距统一使用 core/design_system token。
  */
 
-import { LightTheme } from '@tgx/core-design-system';
+import { LightTheme, Theme } from '@tgx/core-design-system';
 import { SearchChatItem } from '../contract/SearchChatItem';
 import { SearchMessageItem } from '../contract/SearchMessageItem';
 import { SearchTab, SearchUiState } from '../contract/SearchUiState';
@@ -23,7 +23,6 @@ import {
 } from '../contract/SearchIntent';
 import { SearchCoordinator } from '../coordinator/SearchCoordinator';
 
-const T = LightTheme;
 const AVATAR_SIZE: number = 44;
 
 const AVATAR_COLORS: string[] = [
@@ -52,6 +51,14 @@ function getAvatarLetter(title: string): string {
 
 @Component
 export struct SearchPage {
+  /**
+   * FEAT-UI-001 全局深色主题：entry 装配层把 ThemeManager 的当前主题写入
+   * AppStorage('activeTheme')，本页以 @StorageProp 订阅。该值变化会触发本页
+   * 重渲染。此前写死 `const T = LightTheme`，主题切换后引用不变，深色不生效。
+   * 短名 T 直接落在装饰器成员上——ArkUI 的 build 转换不接管 struct 内自定义
+   * getter，写成 getter 会在渲染闭包里取到 undefined 并抛 TypeError。
+   */
+  @StorageProp('activeTheme') T: Theme = LightTheme;
   @Prop uiState: SearchUiState = SearchUiState.initial();
   coordinator: SearchCoordinator | null = null;
   onDispatch: (intent: Object) => void = () => {};
@@ -147,8 +154,8 @@ export struct SearchPage {
         Image($r('app.media.ic_back'))
           .width(24)
           .height(24)
-          .fillColor(T.colors.accent)
-          .margin({ right: T.spacing.sm })
+          .fillColor(this.T.colors.accent)
+          .margin({ right: this.T.spacing.sm })
           .onClick(() => {
             this.onBack();
           })
@@ -157,9 +164,9 @@ export struct SearchPage {
           .searchButton('Search')
           .layoutWeight(1)
           .height(40)
-          .backgroundColor(T.colors.surfaceVariant)
-          .placeholderColor(T.colors.textSecondary)
-          .textFont({ size: T.typography.body.fontSize })
+          .backgroundColor(this.T.colors.surfaceVariant)
+          .placeholderColor(this.T.colors.textSecondary)
+          .textFont({ size: this.T.typography.body.fontSize })
           .onChange((value: string) => {
             this.handleQueryChange(value);
           })
@@ -169,10 +176,10 @@ export struct SearchPage {
       }
       .width('100%')
       .padding({
-        left: T.spacing.screenInset,
-        right: T.spacing.screenInset,
-        top: T.spacing.sm,
-        bottom: T.spacing.xs
+        left: this.T.spacing.screenInset,
+        right: this.T.spacing.screenInset,
+        top: this.T.spacing.sm,
+        bottom: this.T.spacing.xs
       })
 
       // 2. Tab 切换
@@ -180,14 +187,14 @@ export struct SearchPage {
         ForEach(this.tabs, (tab: SearchTab) => {
           Column() {
             Text(this.getTabLabel(tab))
-              .fontSize(T.typography.subheadline.fontSize)
+              .fontSize(this.T.typography.subheadline.fontSize)
               .fontWeight(this.uiState.activeTab === tab ? FontWeight.Bold : FontWeight.Normal)
-              .fontColor(this.uiState.activeTab === tab ? T.colors.accent : T.colors.textSecondary)
-              .padding({ top: T.spacing.sm, bottom: T.spacing.xs })
+              .fontColor(this.uiState.activeTab === tab ? this.T.colors.accent : this.T.colors.textSecondary)
+              .padding({ top: this.T.spacing.sm, bottom: this.T.spacing.xs })
 
             Divider()
               .strokeWidth(2)
-              .color(this.uiState.activeTab === tab ? T.colors.accent : Color.Transparent)
+              .color(this.uiState.activeTab === tab ? this.T.colors.accent : Color.Transparent)
               .width('70%')
           }
           .layoutWeight(1)
@@ -200,7 +207,7 @@ export struct SearchPage {
       .width('100%')
       .border({
         width: { bottom: 1 },
-        color: T.colors.divider
+        color: this.T.colors.divider
       })
 
       // 3. 内容区
@@ -218,7 +225,7 @@ export struct SearchPage {
     }
     .width('100%')
     .height('100%')
-    .backgroundColor(T.colors.background)
+    .backgroundColor(this.T.colors.background)
   }
 
   @Builder
@@ -227,11 +234,11 @@ export struct SearchPage {
       LoadingProgress()
         .width(36)
         .height(36)
-        .color(T.colors.accent)
+        .color(this.T.colors.accent)
       Text('Searching...')
-        .fontSize(T.typography.subheadline.fontSize)
-        .fontColor(T.colors.textSecondary)
-        .margin({ top: T.spacing.sm })
+        .fontSize(this.T.typography.subheadline.fontSize)
+        .fontColor(this.T.colors.textSecondary)
+        .margin({ top: this.T.spacing.sm })
     }
     .width('100%')
     .layoutWeight(1)
@@ -243,21 +250,21 @@ export struct SearchPage {
   private ErrorView(message: string) {
     Column() {
       Text('Search Error')
-        .fontSize(T.typography.headline.fontSize)
+        .fontSize(this.T.typography.headline.fontSize)
         .fontWeight(FontWeight.Bold)
-        .fontColor(T.colors.destructive)
+        .fontColor(this.T.colors.destructive)
         .textAlign(TextAlign.Center)
       Text(message)
-        .fontSize(T.typography.subheadline.fontSize)
-        .fontColor(T.colors.destructive)
+        .fontSize(this.T.typography.subheadline.fontSize)
+        .fontColor(this.T.colors.destructive)
         .textAlign(TextAlign.Center)
-        .margin({ top: T.spacing.xs })
+        .margin({ top: this.T.spacing.xs })
       Button('Retry')
-        .fontSize(T.typography.subheadline.fontSize)
-        .fontColor(T.colors.textOnAccent)
-        .backgroundColor(T.colors.accent)
-        .borderRadius(T.radius.md)
-        .margin({ top: T.spacing.md })
+        .fontSize(this.T.typography.subheadline.fontSize)
+        .fontColor(this.T.colors.textOnAccent)
+        .backgroundColor(this.T.colors.accent)
+        .borderRadius(this.T.radius.md)
+        .margin({ top: this.T.spacing.md })
         .onClick(() => {
           this.handleQuerySubmit(this.uiState.query);
         })
@@ -267,8 +274,8 @@ export struct SearchPage {
     .justifyContent(FlexAlign.Center)
     .alignItems(HorizontalAlign.Center)
     .padding({
-      left: T.spacing.screenInset,
-      right: T.spacing.screenInset
+      left: this.T.spacing.screenInset,
+      right: this.T.spacing.screenInset
     })
   }
 
@@ -278,16 +285,16 @@ export struct SearchPage {
       Image($r('app.media.ic_search'))
         .width(48)
         .height(48)
-        .fillColor(T.colors.textTertiary)
-        .margin({ bottom: T.spacing.md })
+        .fillColor(this.T.colors.textTertiary)
+        .margin({ bottom: this.T.spacing.md })
       Text('No Results')
-        .fontSize(T.typography.headline.fontSize)
+        .fontSize(this.T.typography.headline.fontSize)
         .fontWeight(FontWeight.Bold)
-        .fontColor(T.colors.textPrimary)
+        .fontColor(this.T.colors.textPrimary)
       Text(`No results found for "${this.uiState.query}"`)
-        .fontSize(T.typography.subheadline.fontSize)
-        .fontColor(T.colors.textSecondary)
-        .margin({ top: T.spacing.xs })
+        .fontSize(this.T.typography.subheadline.fontSize)
+        .fontColor(this.T.colors.textSecondary)
+        .margin({ top: this.T.spacing.xs })
     }
     .width('100%')
     .layoutWeight(1)
@@ -301,67 +308,67 @@ export struct SearchPage {
       if (this.uiState.recentSearches.length > 0) {
         Row() {
           Text('Recent Searches')
-            .fontSize(T.typography.subheadline.fontSize)
+            .fontSize(this.T.typography.subheadline.fontSize)
             .fontWeight(FontWeight.Bold)
-            .fontColor(T.colors.textPrimary)
+            .fontColor(this.T.colors.textPrimary)
 
           Blank()
 
           Text('Clear All')
-            .fontSize(T.typography.caption.fontSize)
-            .fontColor(T.colors.accent)
+            .fontSize(this.T.typography.caption.fontSize)
+            .fontColor(this.T.colors.accent)
             .onClick(() => {
               this.handleClearRecent();
             })
         }
         .width('100%')
         .padding({
-          left: T.spacing.screenInset,
-          right: T.spacing.screenInset,
-          top: T.spacing.md,
-          bottom: T.spacing.sm
+          left: this.T.spacing.screenInset,
+          right: this.T.spacing.screenInset,
+          top: this.T.spacing.md,
+          bottom: this.T.spacing.sm
         })
 
         Flex({ wrap: FlexWrap.Wrap }) {
           ForEach(this.uiState.recentSearches, (term: string) => {
             Row() {
               Text(term)
-                .fontSize(T.typography.caption.fontSize)
-                .fontColor(T.colors.textPrimary)
+                .fontSize(this.T.typography.caption.fontSize)
+                .fontColor(this.T.colors.textPrimary)
             }
             .padding({
-              left: T.spacing.md,
-              right: T.spacing.md,
-              top: T.spacing.xs,
-              bottom: T.spacing.xs
+              left: this.T.spacing.md,
+              right: this.T.spacing.md,
+              top: this.T.spacing.xs,
+              bottom: this.T.spacing.xs
             })
-            .margin({ right: T.spacing.xs, bottom: T.spacing.xs })
-            .backgroundColor(T.colors.surfaceVariant)
-            .borderRadius(T.radius.full)
+            .margin({ right: this.T.spacing.xs, bottom: this.T.spacing.xs })
+            .backgroundColor(this.T.colors.surfaceVariant)
+            .borderRadius(this.T.radius.full)
             .onClick(() => {
               this.handleRecentSearchClick(term);
             })
           }, (term: string) => term)
         }
         .padding({
-          left: T.spacing.screenInset,
-          right: T.spacing.screenInset
+          left: this.T.spacing.screenInset,
+          right: this.T.spacing.screenInset
         })
       } else {
         Column() {
           Image($r('app.media.ic_search'))
             .width(56)
             .height(56)
-            .fillColor(T.colors.textTertiary)
-            .margin({ bottom: T.spacing.md })
+            .fillColor(this.T.colors.textTertiary)
+            .margin({ bottom: this.T.spacing.md })
           Text('Search Telegram')
-            .fontSize(T.typography.headline.fontSize)
+            .fontSize(this.T.typography.headline.fontSize)
             .fontWeight(FontWeight.Bold)
-            .fontColor(T.colors.textSecondary)
+            .fontColor(this.T.colors.textSecondary)
           Text('Search for chats, channels, and messages')
-            .fontSize(T.typography.subheadline.fontSize)
-            .fontColor(T.colors.textTertiary)
-            .margin({ top: T.spacing.xs })
+            .fontSize(this.T.typography.subheadline.fontSize)
+            .fontColor(this.T.colors.textTertiary)
+            .margin({ top: this.T.spacing.xs })
         }
         .width('100%')
         .layoutWeight(1)
@@ -383,14 +390,14 @@ export struct SearchPage {
       ) {
         ListItem() {
           Text(`CHATS (${this.uiState.chatResults.length})`)
-            .fontSize(T.typography.caption.fontSize)
+            .fontSize(this.T.typography.caption.fontSize)
             .fontWeight(FontWeight.Bold)
-            .fontColor(T.colors.textSecondary)
+            .fontColor(this.T.colors.textSecondary)
             .padding({
-              left: T.spacing.screenInset,
-              right: T.spacing.screenInset,
-              top: T.spacing.md,
-              bottom: T.spacing.xs
+              left: this.T.spacing.screenInset,
+              right: this.T.spacing.screenInset,
+              top: this.T.spacing.md,
+              bottom: this.T.spacing.xs
             })
         }
 
@@ -411,14 +418,14 @@ export struct SearchPage {
       ) {
         ListItem() {
           Text(`MESSAGES (${this.uiState.messageResults.length})`)
-            .fontSize(T.typography.caption.fontSize)
+            .fontSize(this.T.typography.caption.fontSize)
             .fontWeight(FontWeight.Bold)
-            .fontColor(T.colors.textSecondary)
+            .fontColor(this.T.colors.textSecondary)
             .padding({
-              left: T.spacing.screenInset,
-              right: T.spacing.screenInset,
-              top: T.spacing.md,
-              bottom: T.spacing.xs
+              left: this.T.spacing.screenInset,
+              right: this.T.spacing.screenInset,
+              top: this.T.spacing.md,
+              bottom: this.T.spacing.xs
             })
         }
 
@@ -436,9 +443,9 @@ export struct SearchPage {
     .layoutWeight(1)
     .divider({
       strokeWidth: 1,
-      color: T.colors.divider,
-      startMargin: T.spacing.screenInset + AVATAR_SIZE + T.spacing.md,
-      endMargin: T.spacing.none
+      color: this.T.colors.divider,
+      startMargin: this.T.spacing.screenInset + AVATAR_SIZE + this.T.spacing.md,
+      endMargin: this.T.spacing.none
     })
   }
 
@@ -449,9 +456,9 @@ export struct SearchPage {
       Text(getAvatarLetter(item.title))
         .width(AVATAR_SIZE)
         .height(AVATAR_SIZE)
-        .borderRadius(T.radius.full)
+        .borderRadius(this.T.radius.full)
         .backgroundColor(getAvatarColor(item.chatId))
-        .fontColor(T.colors.textOnAccent)
+        .fontColor(this.T.colors.textOnAccent)
         .fontSize(18)
         .fontWeight(FontWeight.Bold)
         .textAlign(TextAlign.Center)
@@ -459,50 +466,50 @@ export struct SearchPage {
       Column() {
         Row() {
           Text(item.title)
-            .fontSize(T.typography.body.fontSize)
+            .fontSize(this.T.typography.body.fontSize)
             .fontWeight(FontWeight.Medium)
-            .fontColor(T.colors.textPrimary)
+            .fontColor(this.T.colors.textPrimary)
             .maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
             .layoutWeight(1)
 
           if (item.isChannel) {
             Text('Channel')
-              .fontSize(T.typography.caption.fontSize)
-              .fontColor(T.colors.accent)
-              .padding({ left: T.spacing.xs, right: T.spacing.xs })
-              .backgroundColor(T.colors.surfaceVariant)
-              .borderRadius(T.radius.sm)
-              .margin({ left: T.spacing.xs })
+              .fontSize(this.T.typography.caption.fontSize)
+              .fontColor(this.T.colors.accent)
+              .padding({ left: this.T.spacing.xs, right: this.T.spacing.xs })
+              .backgroundColor(this.T.colors.surfaceVariant)
+              .borderRadius(this.T.radius.sm)
+              .margin({ left: this.T.spacing.xs })
           } else if (item.isGroup) {
             Text('Group')
-              .fontSize(T.typography.caption.fontSize)
-              .fontColor(T.colors.textSecondary)
-              .padding({ left: T.spacing.xs, right: T.spacing.xs })
-              .backgroundColor(T.colors.surfaceVariant)
-              .borderRadius(T.radius.sm)
-              .margin({ left: T.spacing.xs })
+              .fontSize(this.T.typography.caption.fontSize)
+              .fontColor(this.T.colors.textSecondary)
+              .padding({ left: this.T.spacing.xs, right: this.T.spacing.xs })
+              .backgroundColor(this.T.colors.surfaceVariant)
+              .borderRadius(this.T.radius.sm)
+              .margin({ left: this.T.spacing.xs })
           }
         }
         .width('100%')
 
         if (item.username.length > 0) {
           Text(`@${item.username}`)
-            .fontSize(T.typography.subheadline.fontSize)
-            .fontColor(T.colors.textSecondary)
+            .fontSize(this.T.typography.subheadline.fontSize)
+            .fontColor(this.T.colors.textSecondary)
             .margin({ top: 2 })
         }
       }
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)
-      .margin({ left: T.spacing.md })
+      .margin({ left: this.T.spacing.md })
     }
     .width('100%')
     .padding({
-      left: T.spacing.screenInset,
-      right: T.spacing.screenInset,
-      top: T.spacing.sm,
-      bottom: T.spacing.sm
+      left: this.T.spacing.screenInset,
+      right: this.T.spacing.screenInset,
+      top: this.T.spacing.sm,
+      bottom: this.T.spacing.sm
     })
   }
 
@@ -513,9 +520,9 @@ export struct SearchPage {
       Text(getAvatarLetter(item.chatTitle))
         .width(AVATAR_SIZE)
         .height(AVATAR_SIZE)
-        .borderRadius(T.radius.full)
+        .borderRadius(this.T.radius.full)
         .backgroundColor(getAvatarColor(item.chatId))
-        .fontColor(T.colors.textOnAccent)
+        .fontColor(this.T.colors.textOnAccent)
         .fontSize(18)
         .fontWeight(FontWeight.Bold)
         .textAlign(TextAlign.Center)
@@ -523,31 +530,31 @@ export struct SearchPage {
       Column() {
         Row() {
           Text(item.chatTitle)
-            .fontSize(T.typography.body.fontSize)
+            .fontSize(this.T.typography.body.fontSize)
             .fontWeight(FontWeight.Medium)
-            .fontColor(T.colors.textPrimary)
+            .fontColor(this.T.colors.textPrimary)
             .maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
             .layoutWeight(1)
 
           Text(item.dateFormatted)
-            .fontSize(T.typography.caption.fontSize)
-            .fontColor(T.colors.textSecondary)
-            .margin({ left: T.spacing.xs })
+            .fontSize(this.T.typography.caption.fontSize)
+            .fontColor(this.T.colors.textSecondary)
+            .margin({ left: this.T.spacing.xs })
         }
         .width('100%')
 
         Row() {
           if (item.senderName.length > 0) {
             Text(`${item.senderName}: `)
-              .fontSize(T.typography.subheadline.fontSize)
-              .fontColor(T.colors.textSecondary)
+              .fontSize(this.T.typography.subheadline.fontSize)
+              .fontColor(this.T.colors.textSecondary)
               .fontWeight(FontWeight.Medium)
           }
 
           Text(item.textSnippet)
-            .fontSize(T.typography.subheadline.fontSize)
-            .fontColor(T.colors.textSecondary)
+            .fontSize(this.T.typography.subheadline.fontSize)
+            .fontColor(this.T.colors.textSecondary)
             .maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
             .layoutWeight(1)
@@ -557,14 +564,14 @@ export struct SearchPage {
       }
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)
-      .margin({ left: T.spacing.md })
+      .margin({ left: this.T.spacing.md })
     }
     .width('100%')
     .padding({
-      left: T.spacing.screenInset,
-      right: T.spacing.screenInset,
-      top: T.spacing.sm,
-      bottom: T.spacing.sm
+      left: this.T.spacing.screenInset,
+      right: this.T.spacing.screenInset,
+      top: this.T.spacing.sm,
+      bottom: this.T.spacing.sm
     })
   }
 }

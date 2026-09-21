@@ -9,12 +9,11 @@
  * 全部颜色/间距/字号走 design tokens（core-design-system）。
  */
 
-import { LightTheme } from '@tgx/core-design-system';
+import { LightTheme, Theme } from '@tgx/core-design-system';
 import { fileUri } from '@kit.CoreFileKit';
 import { SelfProfileUiState } from '../contract/SelfProfileUiState';
 import { SelfProfileIntent, EditTapped, SettingsSectionTapped } from '../contract/SelfProfileIntent';
 
-const T = LightTheme;
 
 /** 本地沙箱绝对路径 → 可渲染 uri（与 feature/profile 的同名助手一致，复制自该模块）。 */
 function toSandboxUri(path: string | null): string {
@@ -59,6 +58,14 @@ const FAB_SIZE: number = 56;
 
 @Component
 export struct SelfProfilePage {
+  /**
+   * FEAT-UI-001 全局深色主题：entry 装配层把 ThemeManager 的当前主题写入
+   * AppStorage('activeTheme')，本页以 @StorageProp 订阅。该值变化会触发本页
+   * 重渲染。此前写死 `const T = LightTheme`，主题切换后引用不变，深色不生效。
+   * 短名 T 直接落在装饰器成员上——ArkUI 的 build 转换不接管 struct 内自定义
+   * getter，写成 getter 会在渲染闭包里取到 undefined 并抛 TypeError。
+   */
+  @StorageProp('activeTheme') T: Theme = LightTheme;
   @Prop uiState: SelfProfileUiState = SelfProfileUiState.initial();
   onDispatch: (intent: SelfProfileIntent) => void = (): void => {};
   onBack: () => void = (): void => {};
@@ -77,8 +84,8 @@ export struct SelfProfilePage {
         Image($r('app.media.ic_back'))
           .width(24)
           .height(24)
-          .fillColor(T.colors.textOnAccent)
-          .margin({ left: T.spacing.xs })
+          .fillColor(this.T.colors.textOnAccent)
+          .margin({ left: this.T.spacing.xs })
           .onClick(() => {
             this.onBack();
           })
@@ -87,31 +94,31 @@ export struct SelfProfilePage {
       .width('100%')
       .height(56)
       .alignItems(VerticalAlign.Center)
-      .padding({ left: T.spacing.sm, right: T.spacing.sm })
+      .padding({ left: this.T.spacing.sm, right: this.T.spacing.sm })
 
       Column() {
         this.Avatar()
 
         Text(this.uiState.displayName.length > 0 ? this.uiState.displayName : '…')
-          .fontSize(T.typography.largeTitle.fontSize)
+          .fontSize(this.T.typography.largeTitle.fontSize)
           .fontWeight(FontWeight.Medium)
-          .fontColor(T.colors.textOnAccent)
-          .margin({ top: T.spacing.md })
+          .fontColor(this.T.colors.textOnAccent)
+          .margin({ top: this.T.spacing.md })
           .textAlign(TextAlign.Center)
 
         if (this.uiState.statusText.length > 0) {
           Text(this.uiState.statusText)
-            .fontSize(T.typography.subheadline.fontSize)
-            .fontColor(T.colors.textOnAccent)
-            .margin({ top: T.spacing.xs })
+            .fontSize(this.T.typography.subheadline.fontSize)
+            .fontColor(this.T.colors.textOnAccent)
+            .margin({ top: this.T.spacing.xs })
         }
       }
       .width('100%')
       .alignItems(HorizontalAlign.Center)
-      .padding({ bottom: T.spacing.lg })
+      .padding({ bottom: this.T.spacing.lg })
     }
     .width('100%')
-    .backgroundColor(T.colors.accent)
+    .backgroundColor(this.T.colors.accent)
   }
 
   @Builder
@@ -120,17 +127,17 @@ export struct SelfProfilePage {
       Image(toSandboxUri(this.uiState.avatarPath))
         .width(AVATAR_SIZE)
         .height(AVATAR_SIZE)
-        .borderRadius(T.radius.full)
-        .border({ width: 2, color: T.colors.textOnAccent })
+        .borderRadius(this.T.radius.full)
+        .border({ width: 2, color: this.T.colors.textOnAccent })
         .objectFit(ImageFit.Cover)
     } else {
       Text(this.uiState.avatarLetters.length > 0 ? this.uiState.avatarLetters : '?')
         .width(AVATAR_SIZE)
         .height(AVATAR_SIZE)
-        .borderRadius(T.radius.full)
-        .border({ width: 2, color: T.colors.textOnAccent })
+        .borderRadius(this.T.radius.full)
+        .border({ width: 2, color: this.T.colors.textOnAccent })
         .backgroundColor(this.avatarColor(this.uiState.avatarColorIndex))
-        .fontColor(T.colors.textOnAccent)
+        .fontColor(this.T.colors.textOnAccent)
         .fontSize(36)
         .fontWeight(FontWeight.Medium)
         .textAlign(TextAlign.Center)
@@ -143,17 +150,17 @@ export struct SelfProfilePage {
       Image(icon)
         .width(22)
         .height(22)
-        .fillColor(T.colors.textSecondary)
-        .margin({ right: T.spacing.md })
+        .fillColor(this.T.colors.textSecondary)
+        .margin({ right: this.T.spacing.md })
 
       Column() {
         Text(label)
-          .fontSize(T.typography.footnote.fontSize)
-          .fontColor(T.colors.textSecondary)
+          .fontSize(this.T.typography.footnote.fontSize)
+          .fontColor(this.T.colors.textSecondary)
         Text(value)
-          .fontSize(T.typography.body.fontSize)
-          .fontColor(T.colors.textPrimary)
-          .margin({ top: T.spacing.hairline })
+          .fontSize(this.T.typography.body.fontSize)
+          .fontColor(this.T.colors.textPrimary)
+          .margin({ top: this.T.spacing.hairline })
       }
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)
@@ -161,10 +168,10 @@ export struct SelfProfilePage {
     .width('100%')
     .alignItems(VerticalAlign.Center)
     .padding({
-      left: T.spacing.screenInset,
-      right: T.spacing.screenInset,
-      top: T.spacing.sm,
-      bottom: T.spacing.sm
+      left: this.T.spacing.screenInset,
+      right: this.T.spacing.screenInset,
+      top: this.T.spacing.sm,
+      bottom: this.T.spacing.sm
     })
   }
 
@@ -183,7 +190,7 @@ export struct SelfProfilePage {
       }
     }
     .width('100%')
-    .backgroundColor(T.colors.background)
+    .backgroundColor(this.T.colors.background)
   }
 
   @Builder
@@ -195,33 +202,33 @@ export struct SelfProfilePage {
             Image(entry.icon)
               .width(22)
               .height(22)
-              .fillColor(T.colors.textSecondary)
-              .margin({ right: T.spacing.md })
+              .fillColor(this.T.colors.textSecondary)
+              .margin({ right: this.T.spacing.md })
 
             Text(entry.label)
-              .fontSize(T.typography.body.fontSize)
-              .fontColor(T.colors.textPrimary)
+              .fontSize(this.T.typography.body.fontSize)
+              .fontColor(this.T.colors.textPrimary)
               .layoutWeight(1)
 
             if (entry.subtitle.length > 0) {
               Text(entry.subtitle)
-                .fontSize(T.typography.subheadline.fontSize)
-                .fontColor(T.colors.textSecondary)
+                .fontSize(this.T.typography.subheadline.fontSize)
+                .fontColor(this.T.colors.textSecondary)
             }
 
             Image($r('app.media.ic_chevron_right'))
               .width(18)
               .height(18)
-              .fillColor(T.colors.textSecondary)
-              .margin({ left: T.spacing.sm })
+              .fillColor(this.T.colors.textSecondary)
+              .margin({ left: this.T.spacing.sm })
           }
           .width('100%')
           .alignItems(VerticalAlign.Center)
           .padding({
-            left: T.spacing.md,
-            right: T.spacing.md,
-            top: T.spacing.sm,
-            bottom: T.spacing.sm
+            left: this.T.spacing.md,
+            right: this.T.spacing.md,
+            top: this.T.spacing.sm,
+            bottom: this.T.spacing.sm
           })
           .onClick(() => {
             this.onDispatch(new SettingsSectionTapped(entry.key));
@@ -229,21 +236,21 @@ export struct SelfProfilePage {
 
           if (index < SETTINGS_ENTRIES.length - 1) {
             Divider()
-              .color(T.colors.divider)
-              .margin({ left: T.spacing.md })
+              .color(this.T.colors.divider)
+              .margin({ left: this.T.spacing.md })
           }
         }
         .width('100%')
       }, (entry: SettingsEntry) => entry.key)
     }
     .width('100%')
-    .backgroundColor(T.colors.backgroundSecondary)
-    .borderRadius(T.radius.md)
+    .backgroundColor(this.T.colors.backgroundSecondary)
+    .borderRadius(this.T.radius.md)
     .margin({
-      left: T.spacing.screenInset,
-      right: T.spacing.screenInset,
-      top: T.spacing.md,
-      bottom: T.spacing.md
+      left: this.T.spacing.screenInset,
+      right: this.T.spacing.screenInset,
+      top: this.T.spacing.md,
+      bottom: this.T.spacing.md
     })
   }
 
@@ -257,7 +264,7 @@ export struct SelfProfilePage {
             LoadingProgress()
               .width(40)
               .height(40)
-              .color(T.colors.accent)
+              .color(this.T.colors.accent)
           }
           .width('100%')
           .layoutWeight(1)
@@ -266,8 +273,8 @@ export struct SelfProfilePage {
         } else if (this.uiState.errorMessage !== null && this.uiState.displayName.length === 0) {
           Column() {
             Text(this.uiState.errorMessage)
-              .fontSize(T.typography.body.fontSize)
-              .fontColor(T.colors.textSecondary)
+              .fontSize(this.T.typography.body.fontSize)
+              .fontColor(this.T.colors.textSecondary)
           }
           .width('100%')
           .layoutWeight(1)
@@ -287,25 +294,25 @@ export struct SelfProfilePage {
       }
       .width('100%')
       .height('100%')
-      .backgroundColor(T.colors.background)
+      .backgroundColor(this.T.colors.background)
 
       if (!this.uiState.isLoading && this.uiState.errorMessage === null) {
         Column() {
           Image($r('app.media.ic_edit'))
             .width(24)
             .height(24)
-            .fillColor(T.colors.textOnAccent)
+            .fillColor(this.T.colors.textOnAccent)
         }
         .width(FAB_SIZE)
         .height(FAB_SIZE)
-        .borderRadius(T.radius.full)
-        .backgroundColor(T.colors.accent)
+        .borderRadius(this.T.radius.full)
+        .backgroundColor(this.T.colors.accent)
         .justifyContent(FlexAlign.Center)
         .alignItems(HorizontalAlign.Center)
         .onClick(() => {
           this.onDispatch(new EditTapped());
         })
-        .margin({ right: T.spacing.screenInset, bottom: T.spacing.lg })
+        .margin({ right: this.T.spacing.screenInset, bottom: this.T.spacing.lg })
       }
     }
     .width('100%')

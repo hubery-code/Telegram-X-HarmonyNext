@@ -118,13 +118,19 @@ import { HarmonyAudioPlayerAdapter } from '../platform/HarmonyAudioPlayerAdapter
 import { HarmonyAudioRecorderAdapter } from '../platform/HarmonyAudioRecorderAdapter';
 import { createHarmonyLogger } from '../platform/HarmonyLogSink';
 
-const T = LightTheme;
 const DOMAIN: number = 0x0000;
 const TAG: string = 'Index';
 
 @Entry
 @Component
 struct Index {
+  /**
+   * FEAT-UI-001 全局深色主题适配：entry 作为装配层把 ThemeManager 的当前 Theme
+   * 写入 AppStorage('activeTheme')，各页面以 @StorageProp 订阅同一对象引用。
+   * 此前各页面写死 `const T = LightTheme`，主题切换后引用不变，导致抽屉夜间模式
+   * 开关可以拨动但界面无任何变化。
+   */
+  @StorageProp('activeTheme') T: Theme = LightTheme;
   @State currentRoute: AppRoute = { name: 'auth' };
   @State uiState: AuthUiState = AuthUiState.initial();
   @State chatListUiState: ChatListUiState = ChatListUiState.initial();
@@ -205,6 +211,7 @@ struct Index {
   private bootstrapResult: BootstrapResult | null = null;
   private currentAccountKey: string = 'default';
 
+
   aboutToAppear(): void {
     const result: BootstrapResult | undefined = AppStorage.get<BootstrapResult>('bootstrapResult');
     if (result === undefined || result === null) {
@@ -222,9 +229,12 @@ struct Index {
       this.mediaPickerAdapter.setCacheDir(result.cacheDir);
     }
 
-    this.isNightMode = ThemeManager.getInstance().getTheme().mode === 'dark';
+    const initialTheme: Theme = ThemeManager.getInstance().getTheme();
+    this.isNightMode = initialTheme.mode === 'dark';
+    AppStorage.setOrCreate<Theme>('activeTheme', initialTheme);
     this.unsubscribeThemeFn = ThemeManager.getInstance().subscribe((theme: Theme): void => {
       this.isNightMode = theme.mode === 'dark';
+      AppStorage.setOrCreate<Theme>('activeTheme', theme);
     });
 
     this.unsubscribeNavFn = this.navController.subscribe((route: AppRoute, prev: AppRoute | null) => {
@@ -1102,20 +1112,20 @@ struct Index {
       if (this.bootstrapError !== null) {
         Column() {
           Text('Bootstrap Error')
-            .fontSize(T.typography.title.fontSize)
-            .fontWeight(T.typography.title.fontWeight)
-            .fontColor(T.colors.destructive)
-            .margin({ bottom: T.spacing.sm })
+            .fontSize(this.T.typography.title.fontSize)
+            .fontWeight(this.T.typography.title.fontWeight)
+            .fontColor(this.T.colors.destructive)
+            .margin({ bottom: this.T.spacing.sm })
 
           Text(this.bootstrapError)
-            .fontSize(T.typography.body.fontSize)
-            .fontColor(T.colors.textSecondary)
+            .fontSize(this.T.typography.body.fontSize)
+            .fontColor(this.T.colors.textSecondary)
         }
         .width('100%')
         .height('100%')
         .justifyContent(FlexAlign.Center)
         .alignItems(HorizontalAlign.Center)
-        .backgroundColor(T.colors.background)
+        .backgroundColor(this.T.colors.background)
       } else if (this.currentRoute.name === 'chat') {
         Stack() {
           ChatPage({
@@ -1280,6 +1290,6 @@ struct Index {
     }
     .width('100%')
     .height('100%')
-    .backgroundColor(T.colors.background)
+    .backgroundColor(this.T.colors.background)
   }
 }
