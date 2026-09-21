@@ -1036,8 +1036,11 @@ export default function messageProjectionTest(): void {
       msg.is_pinned = false;
       projection.addCachedMessage(msg);
 
-      expect(projection.state.messages.length).assertEqual(1);
-      expect(projection.state.messages[0].is_pinned).assertEqual(false);
+      // addCachedMessage 的契约是"只进 messagesById 查询缓存、不进 orderedIds 展示列表"，
+      // 因此这里必须用 getMessageById 读回，不能用 state.messages。
+      const cached: Message | undefined = projection.getMessageById(1234);
+      expect(cached !== undefined).assertTrue();
+      expect(cached?.is_pinned).assertEqual(false);
 
       let notifiedMsgId: number = 0;
       let notifiedIsPinned: boolean = false;
@@ -1054,7 +1057,7 @@ export default function messageProjectionTest(): void {
       bridge.emitUpdate(scope.clientId, 'updateMessageIsPinned', pinUpdateFields);
       await flushAsync();
 
-      expect(projection.state.messages[0].is_pinned).assertEqual(true);
+      expect(projection.getMessageById(1234)?.is_pinned).assertEqual(true);
       expect(notifiedMsgId).assertEqual(1234);
       expect(notifiedIsPinned).assertEqual(true);
 
@@ -1106,8 +1109,10 @@ export default function messageProjectionTest(): void {
       msg.interaction_info = null;
       projection.addCachedMessage(msg);
 
-      expect(projection.state.messages.length).assertEqual(1);
-      expect(projection.state.messages[0].interaction_info).assertNull();
+      // 同 updateMessageIsPinned 用例：addCachedMessage 只填查询缓存，断言走 getMessageById。
+      const cached: Message | undefined = projection.getMessageById(5678);
+      expect(cached !== undefined).assertTrue();
+      expect(cached?.interaction_info).assertNull();
 
       const interactionUpdateFields: Record<string, TdWireValue> = {};
       interactionUpdateFields['chat_id'] = 42;
@@ -1121,7 +1126,9 @@ export default function messageProjectionTest(): void {
       bridge.emitUpdate(scope.clientId, 'updateMessageInteractionInfo', interactionUpdateFields);
       await flushAsync();
 
-      expect(projection.state.messages[0].interaction_info !== null).assertTrue();
+      const updated: Message | undefined = projection.getMessageById(5678);
+      expect(updated !== undefined).assertTrue();
+      expect(updated?.interaction_info !== undefined && updated?.interaction_info !== null).assertTrue();
       expect(stateNotifyCount > 0).assertTrue();
 
       projection.stop();
