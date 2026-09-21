@@ -129,3 +129,13 @@ echo "telegram.api_hash=你的HASH" >> local.properties
 - TDLib 以 [Boost Software License 1.0](https://github.com/tdlib/td/blob/master/LICENSE_1_0.txt) 发布
 - OpenSSL 以 [Apache License 2.0](https://www.openssl.org/source/license.html) 发布
 - `native/tdcore/third_party/` 内的上游源码各自遵循其原始许可证
+
+## ☕ 请我喝杯咖啡 / Donate
+
+开发这款纯血鸿蒙版 Telegram X 的过程，就像在真机上跑 TDLib —— 经常遇到网络隔离、session 丢失、额度耗尽。如果你觉得这个项目有意思，愿意赞助一杯咖啡（或者更关键的是，赞助几个 token 让我能继续肝下去），可以通过下面的二维码请我喝一杯：
+
+| 微信支付 | 支付宝 |
+| :---: | :---: |
+| <img src="docs/images/donations/wechat_pay.png" width="180" alt="微信支付" /> | <img src="docs/images/donations/alipay.jpg" width="180" alt="支付宝" /> |
+
+> 💡 温馨提示：打赏不能解锁更多 GIF 分类，但能显著提升我续命时的 token 到账概率 😂
