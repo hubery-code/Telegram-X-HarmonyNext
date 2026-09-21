@@ -47,6 +47,7 @@ import { LightTheme, Theme, chatTextSizeOf } from '@tgx/core-design-system';
 import { Lang } from '@tgx/core-common';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { common } from '@kit.AbilityKit';
+import { display } from '@kit.ArkUI';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { fileUri } from '@kit.CoreFileKit';
 import { MessageItem } from '../model/MessageItem';
@@ -259,8 +260,17 @@ function messageRowKey(
   return `${item.messageId}:${fnv1a32(signature)}`;
 }
 
-/** LazyForEach 数据源：整体替换 items 并触发全量刷新。 */
-export class MessageListDataSource implements IDataSource {  private items: MessageItem[] = [];
+/**
+ * LazyForEach 数据源：按「行签名」做差分，只通知真正变化的行。
+ *
+ * 原实现无条件 `onDataReloaded()`（全量重建）。而上传进度每 200ms
+ * （coordinator 的 scheduleThrottledSync）就推一次新 items，于是整张列表的
+ * ListItem 全部销毁重建、图片与视频重新解码——肉眼就是「上传的时候一闪一闪」。
+ * 改成逐行 onDataChange 后，只有签名真正变化的那一行会重绘。
+ */
+export class MessageListDataSource implements IDataSource {
+  private items: MessageItem[] = [];
+  private keys: string[] = [];
   private listeners: DataChangeListener[] = [];
 
   totalCount(): number {
@@ -284,10 +294,37 @@ export class MessageListDataSource implements IDataSource {  private items: Mess
     }
   }
 
-  setItems(items: readonly MessageItem[]): void {
-    this.items = items.slice(0);
+  /**
+   * 同步数据源。keys 必须与 items 同长同序（来自 ChatPage.rowKeyAt）。
+   * - 长度不变：逐行比签名，只对变化的行发 onDataChange（行节点按 key 原地重绘）；
+   * - 长度变化：列表结构变了（新消息 / 翻页前插 / 删除），仍走 onDataReloaded。
+   */
+  setItems(items: readonly MessageItem[], keys: readonly string[]): void {
+    const next: MessageItem[] = items.slice(0);
+    const nextKeys: string[] = keys.slice(0);
+    if (this.items.length !== next.length || this.keys.length !== nextKeys.length) {
+      this.items = next;
+      this.keys = nextKeys;
+      this.listeners.forEach((listener: DataChangeListener) => {
+        listener.onDataReloaded();
+      });
+      return;
+    }
+    const changed: number[] = [];
+    for (let i = 0; i < next.length; i++) {
+      if (this.keys[i] !== nextKeys[i]) {
+        changed.push(i);
+      }
+    }
+    this.items = next;
+    this.keys = nextKeys;
+    if (changed.length === 0) {
+      return;
+    }
     this.listeners.forEach((listener: DataChangeListener) => {
-      listener.onDataReloaded();
+      for (let k = 0; k < changed.length; k++) {
+        listener.onDataChange(changed[k]);
+      }
     });
   }
 }
@@ -353,6 +390,48 @@ export struct ChatPage {
   /** VOICE-101：上次渲染的正在播放语音消息 ID 与进度采样。 */
   private shownPlayingVoiceMessageId: number | null = null;
   private shownVoiceProgress: number = 0;
+  /** 屏幕宽度（vp），aboutToAppear 时取一次。气泡内容区宽度上限由它算出，见 contentMaxVp()。 */
+  private screenWidthVp: number = 360;
+
+  /**
+   * 气泡「内容区」的最大宽度（vp）。
+   *
+   * 为什么必须有这个数：气泡容器（ChatRow 里那个 Column）带
+   * `padding({ left/right: spacing.md })`，而宽度只由 `constraintSize({ maxWidth: '78%' })`
+   * 限制——是百分比、不是确定值。于是当内容比内容区更宽时，ArkUI 把子节点的可用宽度按
+   * 「边框宽 − 右内边距」计算，再按 Column 的 alignItems(End) 右对齐摆放：子节点整体向左
+   * 溢出 spacing.md，被容器的 `.clip(true)` 一刀切掉。
+   *
+   * 实测（MEDIA-105 联调：360vp 屏 / 密度 3.4889 的模拟器，uinode 树）：
+   *   气泡容器 892px(255.7vp = 78% × 328)，内容区应为 808px(231.7vp)
+   *   文档气泡内容行实际 850px(243.6vp)，左边缘压在容器左边缘 308px（应为 350px）
+   *   → 左溢出 42px(12vp = spacing.md)；44vp 圆钮同时被挤成 108×154px 的椭圆
+   *   视频卡片硬编码 240vp > 231.7vp → 同样左溢出，卡片中心比气泡中心偏左约 4vp
+   *
+   * 所以凡是用「具体数值宽度」的子组件（媒体卡片、文档/语音/音频行的文字列）都必须用
+   * 这里的上限收敛，不能再写死 240/260。
+   */
+  private contentMaxVp(): number {
+    const rowContentVp: number = this.screenWidthVp - 2 * this.T.spacing.screenInset;
+    const bubbleFrac: number = parseFloat(BUBBLE_MAX_WIDTH) / 100;
+    return Math.max(120, Math.floor(rowContentVp * bubbleFrac) - 2 * this.T.spacing.md);
+  }
+
+  /**
+   * 气泡内「定宽图标 + layoutWeight 文字列」横排时，文字列的宽度上限。
+   *
+   * 文字列带 layoutWeight，在过度约束的 Row 里会先占满自己的理想宽度（长文件名可达 200vp），
+   * 反过来把定宽图标挤到剩余空间——44vp 圆钮实测只有 31vp。显式给出上限后，
+   * Row 的「图标 + 间距 + 文字」恰好等于可用宽度，图标不再被挤。
+   */
+  private rowTextMaxVp(iconBox: number, iconGap: number): number {
+    return Math.max(80, this.contentMaxVp() - 2 * this.T.spacing.xs - iconBox - iconGap);
+  }
+
+  /** 媒体卡片（图片/视频/动图）的边长上限：既要 ≤ 设计上限 240vp，也要 ≤ 气泡内容区宽度。 */
+  private mediaCardBaseVp(): number {
+    return Math.min(240, this.contentMaxVp());
+  }
 
   /** MSG-106：当前选择集签名（含模式开关；未进入多选态恒为空串）。 */
   private selectionSignature(): string {
@@ -368,6 +447,30 @@ export struct ChatPage {
       return false;
     }
     return isMessageSelected(this.uiState.selectedMessageIds, messageId);
+  }
+
+  /**
+   * 单行渲染签名（== LazyForEach key）。
+   *
+   * 这里是唯一真源：LazyForEach 的 keyGenerator 与数据源差分的比较都走它。
+   * 两处若各写一份，差分结果会和 LazyForEach 的 key 判断不一致，行就会漏刷或空刷。
+   */
+  private rowKeyAt(item: MessageItem): string {
+    return messageRowKey(
+      item,
+      this.isSelected(item.messageId),
+      this.highlightedMessageId === item.messageId,
+      this.uiState.playingVoiceMessageId === item.messageId ?
+        `play:${Math.floor(this.uiState.voicePlaybackProgress * 28)}:${this.uiState.voicePlaybackTimeSec}` : ''
+    );
+  }
+
+  private buildRowKeys(messages: readonly MessageItem[]): string[] {
+    const keys: string[] = [];
+    for (let i = 0; i < messages.length; i++) {
+      keys.push(this.rowKeyAt(messages[i]));
+    }
+    return keys;
   }
 
   /** 对齐 Telegram X（canGoUnread）：未读数 > 0 且存在已读水位时才定位未读。 */
@@ -400,7 +503,15 @@ export struct ChatPage {
 
   aboutToAppear(): void {
     this.hasUserScrolled = false;
-    this.dataSource.setItems(this.uiState.messages);
+    // 气泡内容区宽度上限依赖屏宽，取一次即可（避免每帧查 display）。
+    // 用 densityPixels 自己换算：全局 px2vp 已标记 deprecated。
+    try {
+      const info: display.Display = display.getDefaultDisplaySync();
+      this.screenWidthVp = info.densityPixels > 0 ? Math.round(info.width / info.densityPixels) : 360;
+    } catch (_e) {
+      this.screenWidthVp = 360;
+    }
+    this.dataSource.setItems(this.uiState.messages, this.buildRowKeys(this.uiState.messages));
     this.shownMessages = this.uiState.messages;
     this.shownSelectionSignature = this.selectionSignature();
     this.shownCount = this.uiState.messages.length;
@@ -446,12 +557,12 @@ export struct ChatPage {
     if (jumpIndex >= 0) {
       // 数据源先同步到最新，再延迟一帧居中定位（等列表完成一次布局）。
       if (messagesChanged) {
-        this.dataSource.setItems(messages);
+        this.dataSource.setItems(messages, this.buildRowKeys(messages));
         this.shownMessages = messages;
         this.shownCount = messages.length;
         this.lastTailMessageId = messages.length > 0 ? messages[messages.length - 1].messageId : 0;
       } else if (selectionChanged) {
-        this.dataSource.setItems(messages);
+        this.dataSource.setItems(messages, this.buildRowKeys(messages));
       }
       if (selectionChanged) {
         this.shownSelectionSignature = selectionSignature;
@@ -461,10 +572,11 @@ export struct ChatPage {
       return;
     }
     // composerText 等变化不触碰列表：仅 messages 引用变化才刷新数据源，
-    // 避免输入栏每次击键都触发 LazyForEach 全量重载。
-    // MSG-106 例外：多选态变化也是"原地变更"，必须重载列表让勾选圈上屏
-    // （messages 数组引用不变，但 row key 含 selected，需重新求 key）。
-    // VOICE-101 例外：语音播放态与进度变化也是"原地变更"，必须重载列表让播放图标与波形更新。
+    // 避免输入栏每次击键都触发列表刷新。
+    // MSG-106 例外：多选态变化也是"原地变更"，但 messages 数组引用不变。
+    // VOICE-101 例外：语音播放态与进度变化同样是"原地变更"。
+    // 这两类变化都写进了行签名（见 rowKeyAt），交给 setItems 的行级差分处理，
+    // 只重绘勾选圈/波形所在的那几行，不再全量重载。
     const playingVoiceChanged: boolean = (this.uiState.playingVoiceMessageId !== this.shownPlayingVoiceMessageId) ||
       (this.uiState.playingVoiceMessageId !== null && Math.floor(this.uiState.voicePlaybackProgress * 28) !== Math.floor(this.shownVoiceProgress * 28));
 
@@ -479,15 +591,15 @@ export struct ChatPage {
       this.shownVoiceProgress = this.uiState.voicePlaybackProgress;
     }
     if (!messagesChanged) {
-      // 只变了选择态或语音播放态：重载数据源让 row key 重算，但不触碰滚动位置。
-      this.dataSource.setItems(messages);
+      // 只变了选择态或语音播放态：让行签名差分把这几行重绘，滚动位置不动。
+      this.dataSource.setItems(messages, this.buildRowKeys(messages));
       return;
     }
     const count: number = messages.length;
     const tailId: number = count > 0 ? messages[count - 1].messageId : 0;
     const firstContent: boolean = this.shownCount === 0 && count > 0;
     const grewAtTail: boolean = count > 0 && tailId !== this.lastTailMessageId;
-    this.dataSource.setItems(messages);
+    this.dataSource.setItems(messages, this.buildRowKeys(messages));
     this.shownMessages = messages;
     this.shownCount = count;
     this.lastTailMessageId = tailId;
@@ -640,13 +752,7 @@ export struct ChatPage {
               ListItem() {
                 this.MessageRow(item)
               }
-            }, (item: MessageItem) => messageRowKey(
-              item,
-              this.isSelected(item.messageId),
-              this.highlightedMessageId === item.messageId,
-              this.uiState.playingVoiceMessageId === item.messageId ?
-                `play:${Math.floor(this.uiState.voicePlaybackProgress * 28)}:${this.uiState.voicePlaybackTimeSec}` : ''
-            ))
+            }, (item: MessageItem) => this.rowKeyAt(item))
           }
           .width('100%')
           .layoutWeight(1)
@@ -1408,26 +1514,34 @@ export struct ChatPage {
     })
   }
 
+  /**
+   * 媒体卡片宽度（vp）。上限必须同时受「设计上限 240」与「气泡内容区宽度」约束：
+   * 写死 240 会让卡片比气泡内容区更宽，容器右对齐后卡片向左溢出并被 `.clip(true)` 裁掉，
+   * 卡片里的上传进度圈 / 播放钮跟着整体偏左，看起来就是"没居中"。
+   */
   private mediaCardWidth(media: MediaAttachment): number {
+    const base: number = this.mediaCardBaseVp();
     if (media.width <= 0 || media.height <= 0) {
-      return 220;
+      return Math.min(220, base);
     }
     const ratio: number = media.width / media.height;
     if (ratio >= 1.0) {
-      return 240;
+      return base;
     }
-    return Math.max(140, Math.min(240, Math.round(240 * ratio)));
+    return Math.max(Math.min(140, base), Math.min(base, Math.round(base * ratio)));
   }
 
+  /** 媒体卡片高度（vp）。宽高比以 base 为基准算，保证卡片不变形。 */
   private mediaCardHeight(media: MediaAttachment): number {
+    const base: number = this.mediaCardBaseVp();
     if (media.width <= 0 || media.height <= 0) {
-      return 160;
+      return Math.min(160, base);
     }
     const ratio: number = media.width / media.height;
     if (ratio >= 1.0) {
-      return Math.max(120, Math.min(240, Math.round(240 / ratio)));
+      return Math.max(120, Math.min(240, Math.round(base / ratio)));
     }
-    return 240;
+    return base;
   }
 
   private isSticker(item: MessageItem): boolean {
@@ -1623,6 +1737,9 @@ export struct ChatPage {
       }
       .width(44)
       .height(44)
+      // 定宽圆钮：不让它参与 Row 的宽度分配，否则会被 layoutWeight 文字列挤成椭圆。
+      .flexShrink(0)
+      .constraintSize({ minWidth: 44, maxWidth: 44 })
       .margin({ right: this.T.spacing.sm })
       .onClick(() => {
         if (isFailed) {
@@ -1657,9 +1774,14 @@ export struct ChatPage {
       }
       .alignItems(HorizontalAlign.Start)
       .layoutWeight(1)
+      // 显式收窄文字列：长文件名（不可断行）理想宽度可达 200vp，
+      // 若让它先占满，44vp 图标就只剩 30vp（实测 108×154px）。
+      .constraintSize({ maxWidth: this.rowTextMaxVp(44, this.T.spacing.sm) })
     }
     .width('100%')
-    .constraintSize({ minWidth: 180, maxWidth: 260 })
+    // maxWidth 用气泡内容区宽度（而不是 260）：行内文字列带 layoutWeight，
+    // 行若比内容区宽就会左溢被裁，并把定宽图标挤扁。
+    .constraintSize({ minWidth: 180, maxWidth: this.contentMaxVp() })
     .padding({
       top: this.T.spacing.xs,
       bottom: this.T.spacing.xs,
@@ -1709,6 +1831,9 @@ export struct ChatPage {
       .height(40)
       .borderRadius(this.T.radius.full)
       .backgroundColor(this.T.colors.accent)
+      // 定宽播放钮：不参与 Row 的宽度分配，避免被文字列挤扁（与文档气泡同因）。
+      .flexShrink(0)
+      .constraintSize({ minWidth: 40, maxWidth: 40 })
       .margin({ right: this.T.spacing.sm })
       .onClick(() => {
         if (media.isDownloading) {
@@ -1768,9 +1893,12 @@ export struct ChatPage {
       }
       .alignItems(HorizontalAlign.Start)
       .layoutWeight(1)
+      // 显式收窄：否则波形/时长列先占满理想宽度，把 40vp 播放钮挤成椭圆（与文档气泡同因）。
+      .constraintSize({ maxWidth: this.rowTextMaxVp(40, this.T.spacing.sm) })
     }
     .alignItems(VerticalAlign.Center)
-    .constraintSize({ minWidth: 200, maxWidth: 260 })
+    // maxWidth 用气泡内容区宽度，不用 260——行比内容区宽会左溢被 .clip(true) 裁掉。
+    .constraintSize({ minWidth: 200, maxWidth: this.contentMaxVp() })
     .padding({
       top: this.T.spacing.xs,
       bottom: this.T.spacing.xs,
@@ -1818,6 +1946,9 @@ export struct ChatPage {
       .height(44)
       .borderRadius(this.T.radius.full)
       .backgroundColor(isFailed ? this.T.colors.destructive : this.T.colors.accent)
+      // 定宽圆钮：不参与 Row 的宽度分配，避免被文字列挤扁（与文档气泡同因）。
+      .flexShrink(0)
+      .constraintSize({ minWidth: 44, maxWidth: 44 })
       .margin({ right: this.T.spacing.sm })
       .onClick(() => {
         if (isFailed) {
@@ -1874,10 +2005,13 @@ export struct ChatPage {
       }
       .alignItems(HorizontalAlign.Start)
       .layoutWeight(1)
+      // 显式收窄：否则曲目/歌手列先占满理想宽度，把 44vp 封面钮挤成椭圆（与文档气泡同因）。
+      .constraintSize({ maxWidth: this.rowTextMaxVp(44, this.T.spacing.sm) })
     }
     .width('100%')
     .alignItems(VerticalAlign.Center)
-    .constraintSize({ minWidth: 200, maxWidth: 260 })
+    // maxWidth 用气泡内容区宽度，不用 260——行比内容区宽会左溢被 .clip(true) 裁掉。
+    .constraintSize({ minWidth: 200, maxWidth: this.contentMaxVp() })
     .padding({
       top: this.T.spacing.xs,
       bottom: this.T.spacing.xs,
@@ -2243,18 +2377,17 @@ export struct ChatPage {
           this.onDispatch(new TapFailedMessage(messageId));
         })
       } else if (media.kind === 'photo') {
+        // 同视频：只判 isUploading，进度为 0 时也先把圈画出来，避免"等一会才出现进度条"。
         if (media.isUploading) {
           Column() {
             LoadingProgress()
               .width(36)
               .height(36)
               .color(Color.White)
-            if (media.uploadProgress > 0 && media.uploadProgress < 1) {
-              Text(`${Math.round(media.uploadProgress * 100)}%`)
-                .fontSize(11)
-                .fontColor(Color.White)
-                .margin({ top: 4 })
-            }
+            Text(`${Math.round(media.uploadProgress * 100)}%`)
+              .fontSize(11)
+              .fontColor(Color.White)
+              .margin({ top: 4 })
           }
           .width(56)
           .height(56)
@@ -2356,18 +2489,18 @@ export struct ChatPage {
         // 视频：上传中 → 上传环（可取消）；未下载 → 下载环/下载钮；已就绪 → 播放钮。
         // MEDIA-105：上传态必须优先于「已下载」判断——出站视频的本地文件天然"已下载"，
         // 若先判 isDownloaded 就会直接显示播放钮，上传进度完全不可见。
-        if (media.isUploading && media.uploadProgress < 1) {
+        // 判据只留 isUploading（原先还要求 uploadProgress < 1）：进度尚为 0 时也要先把
+        // 圈画出来，否则从"发起上传"到"首个进度回调"之间是一段没有任何指示的空窗期。
+        if (media.isUploading) {
           Column() {
             LoadingProgress()
               .width(36)
               .height(36)
               .color(Color.White)
-            if (media.uploadProgress > 0) {
-              Text(`${Math.round(media.uploadProgress * 100)}%`)
-                .fontSize(11)
-                .fontColor(Color.White)
-                .margin({ top: 4 })
-            }
+            Text(`${Math.round(media.uploadProgress * 100)}%`)
+              .fontSize(11)
+              .fontColor(Color.White)
+              .margin({ top: 4 })
           }
           .width(56)
           .height(56)

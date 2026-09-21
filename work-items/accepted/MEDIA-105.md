@@ -209,3 +209,62 @@ hilog 中的一对人证（同一秒内）：
 | 7 | 断网后重发一条视频 | 气泡转失败态；点击失败钮 → 菜单出现 Resend；Resend 后能成功 | ☐ |
 | 8 | 发送时带输入框文字 | 文字作为 caption 附在视频下（非独立文本消息） | ☐ |
 | 9 | 先回复某条消息再发视频 | 视频气泡内嵌回复引用块，指向被回复消息 | ☐ |
+
+## 联调追加 2：气泡几何缺陷修复（2026-09-21 晚）
+
+主人在真机实测截图（红框标注）报三处现象，排查后确认**同一根因**：
+
+1. 文档气泡左侧圆形图标「被截取了一截」；
+2. 视频气泡的上传进度圈「没有居中」，且进度条要等一会才出现；
+3. 上传时界面「一闪一闪」。
+
+### 根因
+
+气泡容器（`ChatRow` 里那个 `Column`）带 `padding({ left/right: spacing.md })`，
+但宽度只由 `constraintSize({ maxWidth: '78%' })` 限制——**是百分比、不是确定值**。
+当内容比内容区更宽时，ArkUI 按「边框宽 − 右内边距」给子节点算可用宽度，
+再按 `alignItems(HorizontalAlign.End)` 右对齐摆放：子节点整体**向左溢出 `spacing.md`**，
+被容器的 `.clip(true)` 一刀切掉。
+
+对 360vp 屏（模拟器密度 3.4889）实测 uinode 树：
+
+| 节点 | 缺陷态 | 正确值 |
+|---|---|---|
+| 气泡容器 | 892px = 255.7vp（78% × 328） | — |
+| 内容区（应） | 808px = 231.7vp | — |
+| 文档气泡内容行 `Row` | **850px，左边缘 308px** | 809px，左边缘 350px |
+| 44vp 图标 `Stack` | **108×154px（椭圆）** | 154×154px |
+| 图标内白色箭头 `Image` | 66×70 @ x308（贴容器左缘） | 70×70 且居中于圆心 |
+| 视频卡片 `Stack` | **840px，左边缘 318px** | 809px，左边缘 350px |
+| 视频遮罩圆（56vp） | 圆心 738 ≠ 气泡中心 754 | 圆心 == 气泡中心 |
+| 语音气泡播放钮（40vp） | **108×154px（椭圆）** | 140×140px |
+
+三个放大因素：
+- `mediaCardWidth()` **硬编码 240vp** > 内容区 231.7vp；
+- 文档/语音/音频行的文字列带 `layoutWeight(1)`，在过度约束的 `Row` 里**先占满自己的理想宽度**
+  （长文件名可达 200vp），反过来把定宽图标挤到剩余空间——44vp → 31vp；
+- `Row` 的 `constraintSize({ maxWidth: 260 })` 也没扣掉气泡的左右内边距。
+
+### 修复
+
+| 改动 | 位置 |
+|---|---|
+| 新增 `contentMaxVp()`：气泡内容区宽度上限（屏宽 − 2×screenInset，×78%，再 − 2×md） | `ChatPage.ets` |
+| 新增 `rowTextMaxVp(iconBox, iconGap)`：横排文字列宽度上限 | `ChatPage.ets` |
+| `mediaCardWidth/Height` 收敛到 `mediaCardBaseVp() = min(240, contentMaxVp())`，宽高比以 base 为基准 | `ChatPage.ets` |
+| `DocumentBubble` / `VoiceNoteBubble` / `AudioBubble`：`Row.maxWidth` 改 `contentMaxVp()`；文字列加 `constraintSize({ maxWidth })`；定宽圆钮加 `flexShrink(0)` + 锁定 `constraintSize` | `ChatPage.ets` |
+| 上传进度：视频/图片上传态判据只留 `isUploading`（原先还要求 `uploadProgress < 1`），百分比不再等首字节 | `ChatPage.ets` |
+| **闪烁**：`MessageListDataSource.setItems(items, keys)` 改为**按行签名差分**，长度不变时只对变化的行发 `onDataChange`，不再无脑 `onDataReloaded()` | `ChatPage.ets` |
+| 行签名真源统一为 `ChatPage.rowKeyAt()`，LazyForEach 的 keyGenerator 与差分共用一份 | `ChatPage.ets` |
+
+**「一闪一闪」的机理**：上传进度每 200ms（coordinator `scheduleThrottledSync`）推一次新 items，
+原实现每次都 `onDataReloaded()` → 整张列表的 `ListItem` 全部销毁重建、图片与视频重新解码。
+改为逐行 `onDataChange` 后只有进度真正推进的那一行重绘。
+
+### 验证（模拟器 127.0.0.1:5555，uinode 树 + 屏幕像素双重取证）
+
+- 文档气泡内容行 `809px @ x350..1159`；图标 `154×154px`；箭头 `70×70` 居中于圆心；
+- 「Huawei Share.txt」第二个文档气泡同规格；
+- 语音气泡播放钮 `140×140px`，`Row @ x458`（= 容器 416 + 42）；
+- 视频卡片 `809px @ x350..1159`，遮罩圆圆心 **754.5** vs 气泡中心 **754.0**；
+- 屏幕截图直接量测：文档图标 bbox **154×154px**（正圆，非椭圆）。
