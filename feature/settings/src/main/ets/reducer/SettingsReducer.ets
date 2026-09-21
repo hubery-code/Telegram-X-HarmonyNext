@@ -9,11 +9,12 @@
  */
 
 import { Reducer, ReducerEnv, ReducerResult, reduced } from '@tgx/feature-template';
-import { ThemeManager } from '@tgx/core-design-system';
+import { ThemeManager, clampChatFontSize } from '@tgx/core-design-system';
 import { Lang, LanguagePreference } from '@tgx/core-common';
 import { SettingsUiState, SettingsUiStateOptions } from '../contract/SettingsUiState';
 import {
   CacheCleared,
+  ChangeChatFontSize,
   ChangeLanguage,
   ChangeThemeMode,
   CloseAccountSwitcher,
@@ -232,6 +233,38 @@ export const settingsReducer: Reducer<SettingsUiState, SettingsIntent, SettingsE
       const nextState: SettingsUiState = state.copyWith(options);
       const effects: readonly SettingsEffect[] = [
         new ShowToastEffect(`Theme mode set to ${themeIntent.themeMode}`)
+      ];
+      return reduced(nextState, effects);
+    }
+
+    case 'changeChatFontSize': {
+      const fontIntent: ChangeChatFontSize = intent as ChangeChatFontSize;
+      // 先吸附到合法档位再比对——避免「滑块拖到 15.4」这类中间值被写进状态，
+      // 档位表是唯一真相源（TGX 的 isGoodChatFontSize 是同一意图的严格版）。
+      const applied: number = clampChatFontSize(fontIntent.chatFontSize);
+      if (state.chatFontSize === applied) {
+        return reduced(state);
+      }
+
+      // 1. 同步更新全局 ThemeManager（消息内容文字的字号来源）
+      ThemeManager.getInstance().setChatFontSize(applied);
+
+      // 2. 同步写入 AppStorage。这里**只做这一件事**：落盘由 entry 装配层完成
+      //    （entry/Index.ets 的 @StorageProp + @Watch → store/SettingsStore.ets），
+      //    业务层因此保持零 Kit 依赖。约定该键在 AppStorage 里存**字符串**，
+      //    与 entry 启动时的回灌写法保持一致。
+      try {
+        AppStorage.setOrCreate<string>('chatFontSize', `${applied}`);
+      } catch (_e) {
+        // 无 AppStorage 运行环境（如纯逻辑单测）容错
+      }
+
+      const options: SettingsUiStateOptions = {
+        chatFontSize: applied
+      };
+      const nextState: SettingsUiState = state.copyWith(options);
+      const effects: readonly SettingsEffect[] = [
+        new ShowToastEffect(`Chat text size set to ${applied}`)
       ];
       return reduced(nextState, effects);
     }

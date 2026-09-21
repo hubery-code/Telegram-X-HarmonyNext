@@ -43,7 +43,7 @@
  * （删除聊天 destructive 色），菜单动作统一走 ChatMenuAction 占位入口。
  */
 
-import { LightTheme, Theme } from '@tgx/core-design-system';
+import { LightTheme, Theme, chatTextSizeOf } from '@tgx/core-design-system';
 import { Lang } from '@tgx/core-common';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { common } from '@kit.AbilityKit';
@@ -94,6 +94,7 @@ import {
   RequestMediaDownload,
   PickAndSendPhoto,
   PickAndSendFile,
+  PickAndSendVideo,
   CancelMediaUpload,
   OpenAttachmentMenu,
   CloseAttachmentMenu,
@@ -985,9 +986,11 @@ export struct ChatPage {
   PinnedMessageBar(pinned: PinnedMessageInfo) {
     Row() {
       // 1. 左侧竖彩条 (2vp 宽，accent 色)
+      // 竖条跟随栏内文字放大：默认档 34vp 不变，高档位下与两行摘要等高，避免出现
+      // 「栏长条短」的失衡（SET-105）。
       Column()
         .width(2)
-        .height(34)
+        .height(this.chatText(34))
         .backgroundColor(this.T.colors.accent)
         .borderRadius(1)
         .margin({ right: this.T.spacing.sm })
@@ -996,7 +999,7 @@ export struct ChatPage {
       Column() {
         Row() {
           Text(pinned.senderTitle)
-            .fontSize(this.T.typography.caption.fontSize)
+            .fontSize(this.chatText(this.T.typography.caption.fontSize, -1))
             .fontWeight(FontWeight.Medium)
             .fontColor(this.T.colors.accent)
             .maxLines(1)
@@ -1012,7 +1015,7 @@ export struct ChatPage {
         .alignItems(VerticalAlign.Center)
 
         Text(pinned.contentSnippet)
-          .fontSize(this.T.typography.body.fontSize - 1)
+          .fontSize(this.chatText(this.T.typography.body.fontSize, -1))
           .fontColor(this.T.colors.textPrimary)
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -1041,7 +1044,11 @@ export struct ChatPage {
       })
     }
     .width('100%')
-    .height(48)
+    // SET-105：栏高不能写死。栏内两行文字（发送者标题 + 内容摘要）已接入聊天字号，
+    // 26 档时两行合计 ≈48vp + 间距/内边距 ≈ 58vp，写死 48vp 会把内容压回去并溢出到
+    // 下方消息列表（模拟器实测溢出 66px）。这里改成「最小 48vp、随内容增长」：
+    // 默认档内容装得下，视觉与改造前一致；高档位栏体自然变高，不再压字。
+    .constraintSize({ minHeight: 48 })
     .padding({
       left: this.T.spacing.screenInset,
       right: this.T.spacing.xs,
@@ -1155,7 +1162,7 @@ export struct ChatPage {
         // MSG-102：署名行（气泡最顶部，回复引用之上）。
         if (this.showSenderUi(item)) {
           Text(item.senderName)
-            .fontSize(this.T.typography.subheadline.fontSize)
+            .fontSize(this.chatText(this.T.typography.subheadline.fontSize))
             .fontWeight(FontWeight.Medium)
             .fontColor(this.senderNameColor(item))
             .maxLines(1)
@@ -1236,13 +1243,13 @@ export struct ChatPage {
             }, (span: MessageTextSpan, spanIndex: number) => `${item.messageId}:${spanIndex}`)
           }
           .alignSelf(ItemAlign.Start)
-          .fontSize(this.T.typography.body.fontSize)
+          .fontSize(this.chatText(this.T.typography.body.fontSize))
           .fontColor(this.T.colors.chatText)
           .margin(item.media !== null ? { top: this.T.spacing.xs } : { top: 0 })
         } else if (item.text.length > 0) {
           Text(item.text)
             .alignSelf(ItemAlign.Start)
-            .fontSize(this.T.typography.body.fontSize)
+            .fontSize(this.chatText(this.T.typography.body.fontSize))
             .fontColor(this.T.colors.chatText)
             .margin(item.media !== null ? { top: this.T.spacing.xs } : { top: 0 })
         }
@@ -1637,14 +1644,14 @@ export struct ChatPage {
       // 右侧：文件名与文件大小 / 进度信息 / 失败提示
       Column() {
         Text(media.fileName.length > 0 ? media.fileName : 'Document')
-          .fontSize(this.T.typography.body.fontSize)
+          .fontSize(this.chatText(this.T.typography.body.fontSize))
           .fontWeight(FontWeight.Medium)
           .fontColor(this.T.colors.textPrimary)
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
 
         Text(isFailed ? 'Failed · Tap to retry' : this.documentSubtitle(media))
-          .fontSize(this.T.typography.caption.fontSize)
+          .fontSize(this.chatText(this.T.typography.caption.fontSize, -2))
           .fontColor(isFailed ? this.T.colors.destructive : this.T.colors.textSecondary)
           .margin({ top: this.T.spacing.xs })
       }
@@ -1744,7 +1751,7 @@ export struct ChatPage {
               ? formatDuration(this.uiState.voicePlaybackTimeSec)
               : formatDuration(media.duration)
           )
-            .fontSize(this.T.typography.caption.fontSize)
+            .fontSize(this.chatText(this.T.typography.caption.fontSize, -2))
             .fontColor(this.T.colors.textSecondary)
 
           if (!media.isListened && !item.isOutgoing) {
@@ -1836,7 +1843,7 @@ export struct ChatPage {
       // 右侧：标题与演奏者/时长
       Column() {
         Text(media.audioTitle.length > 0 ? media.audioTitle : (media.fileName.length > 0 ? media.fileName : this.t('Audio')))
-          .fontSize(this.T.typography.body.fontSize)
+          .fontSize(this.chatText(this.T.typography.body.fontSize))
           .fontWeight(FontWeight.Medium)
           .fontColor(this.T.colors.textPrimary)
           .maxLines(1)
@@ -1859,7 +1866,7 @@ export struct ChatPage {
         }
 
         Text(this.audioSubtitle(media, isFailed, messageId))
-          .fontSize(this.T.typography.caption.fontSize)
+          .fontSize(this.chatText(this.T.typography.caption.fontSize, -2))
           .fontColor(isFailed ? this.T.colors.destructive : this.T.colors.textSecondary)
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -2346,8 +2353,32 @@ export struct ChatPage {
           }
         }
       } else if (media.kind === 'video') {
-        // 视频：居中下载/播放按钮
-        if (!media.isDownloaded && media.isDownloading) {
+        // 视频：上传中 → 上传环（可取消）；未下载 → 下载环/下载钮；已就绪 → 播放钮。
+        // MEDIA-105：上传态必须优先于「已下载」判断——出站视频的本地文件天然"已下载"，
+        // 若先判 isDownloaded 就会直接显示播放钮，上传进度完全不可见。
+        if (media.isUploading && media.uploadProgress < 1) {
+          Column() {
+            LoadingProgress()
+              .width(36)
+              .height(36)
+              .color(Color.White)
+            if (media.uploadProgress > 0) {
+              Text(`${Math.round(media.uploadProgress * 100)}%`)
+                .fontSize(11)
+                .fontColor(Color.White)
+                .margin({ top: 4 })
+            }
+          }
+          .width(56)
+          .height(56)
+          .borderRadius(this.T.radius.full)
+          .backgroundColor(this.T.colors.scrim)
+          .justifyContent(FlexAlign.Center)
+          .alignItems(HorizontalAlign.Center)
+          .onClick(() => {
+            this.onDispatch(new CancelMediaUpload(messageId));
+          })
+        } else if (!media.isDownloaded && media.isDownloading) {
           Column() {
             LoadingProgress()
               .width(36)
@@ -2600,9 +2631,9 @@ export struct ChatPage {
       ForEach(item.reactionChips, (chip: ReactionChip) => {
         Row() {
           Text(chip.emoji)
-            .fontSize(this.T.typography.footnote.fontSize)
+            .fontSize(this.chatText(this.T.typography.footnote.fontSize, -4))
           Text(` ${chip.count}`)
-            .fontSize(this.T.typography.caption.fontSize)
+            .fontSize(this.chatText(this.T.typography.caption.fontSize, -4))
             .fontWeight(FontWeight.Medium)
             .fontColor(chip.isChosen ? this.T.colors.textOnAccent : this.T.colors.textSecondary)
         }
@@ -3048,7 +3079,33 @@ export struct ChatPage {
           })
           .margin({ right: this.T.spacing.xl })
 
-          // 选项 2：File (文件)
+          // 选项 2：Video (视频) —— MEDIA-105 / FEAT-MEDIA-002
+          Column() {
+            Column() {
+              Image($r('app.media.ic_video'))
+                .width(28)
+                .height(28)
+                .fillColor(this.T.colors.accent)
+            }
+            .width(56)
+            .height(56)
+            .borderRadius(this.T.radius.full)
+            .backgroundColor(this.T.colors.surfaceVariant)
+            .justifyContent(FlexAlign.Center)
+            .alignItems(HorizontalAlign.Center)
+            .margin({ bottom: this.T.spacing.xs })
+
+            Text('Video')
+              .fontSize(this.T.typography.footnote.fontSize)
+              .fontColor(this.T.colors.textPrimary)
+          }
+          .alignItems(HorizontalAlign.Center)
+          .onClick(() => {
+            this.onDispatch(new PickAndSendVideo());
+          })
+          .margin({ right: this.T.spacing.xl })
+
+          // 选项 3：File (文件)
           Column() {
             Column() {
               Image($r('app.media.ic_file'))
@@ -3675,8 +3732,22 @@ export struct ChatPage {
     }
   }
 
+  /**
+   * FEAT-UI-002 / SET-105：消息内容文字的字号。
+   *
+   * 以现有排版 token 为基准按「聊天字号倍率」等比缩放——默认档（15）倍率为
+   * 1.0，故默认视觉与改造前逐像素一致、不引入回归；调档时消息内容区的正文/
+   * 署名/时间戳/反应等比联动。`diff` 偏移语义对齐 TGX `TGMessage` 的
+   * `setTextSizeDiff`（时间戳 −1~−2、反应 −4）。下限由 `chatTextSizeOf` 守住。
+   */
+  private chatText(base: number, diff: number = 0): number {
+    return chatTextSizeOf(base, this.T.chatFontSize, diff);
+  }
+
   private spanFontSize(span: MessageTextSpan): number {
-    return span.isCode || span.isPre ? this.T.typography.body.fontSize - 2 : this.T.typography.body.fontSize;
+    const body: number = this.T.typography.body.fontSize;
+    // 正文随聊天字号；code/pre 再降 2（对齐 TGX 的 setTextSizeDiff(-2)）。
+    return span.isCode || span.isPre ? this.chatText(body, -2) : this.chatText(body);
   }
 
   private spanFontFamily(span: MessageTextSpan): string {

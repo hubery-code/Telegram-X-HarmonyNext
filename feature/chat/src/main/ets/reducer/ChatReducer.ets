@@ -134,6 +134,7 @@ import {
   ResendMessage,
   CopyTextToClipboard,
   PickAndSendPhotoEffect,
+  PickAndSendVideoEffect,
   PickAndSendFileEffect,
   CancelMediaDownloadEffect,
   FetchChatSearch,
@@ -472,6 +473,21 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
       const caption: string = state.composerText.trim();
       const effects: ChatEffect[] = [
         new PickAndSendFileEffect(state.chatId, replyToMessageId, caption)
+      ];
+      const nextState: ChatUiState = state.showAttachmentMenu ? state.copyWith({ showAttachmentMenu: false }) : state;
+      return reduced(nextState, effects);
+    }
+
+    // MEDIA-105：与选图/选文件同构——带出回复目标与当前草稿作为 caption，
+    // 并收起附件面板。真正的选取与发送交给 coordinator（需要系统选择器副作用）。
+    case 'pickAndSendVideo': {
+      let replyToMessageId: number = 0;
+      if (state.composerMode !== null && state.composerMode.kind === 'reply') {
+        replyToMessageId = (state.composerMode as ComposerReplyMode).targetMessageId;
+      }
+      const caption: string = state.composerText.trim();
+      const effects: ChatEffect[] = [
+        new PickAndSendVideoEffect(state.chatId, replyToMessageId, caption)
       ];
       const nextState: ChatUiState = state.showAttachmentMenu ? state.copyWith({ showAttachmentMenu: false }) : state;
       return reduced(nextState, effects);

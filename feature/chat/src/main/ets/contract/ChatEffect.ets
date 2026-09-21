@@ -196,6 +196,20 @@ export class PickAndSendFileEffect implements Effect {
   }
 }
 
+/** MEDIA-105：调用媒体选择器选视频并发送 */
+export class PickAndSendVideoEffect implements Effect {
+  readonly kind: 'pickAndSendVideo' = 'pickAndSendVideo';
+  readonly chatId: number;
+  readonly replyToMessageId: number;
+  readonly caption: string;
+
+  constructor(chatId: number, replyToMessageId: number = 0, caption: string = '') {
+    this.chatId = chatId;
+    this.replyToMessageId = replyToMessageId;
+    this.caption = caption;
+  }
+}
+
 /** FILE-103：取消媒体/文件下载副作用。 */
 export class CancelMediaDownloadEffect implements Effect {
   readonly kind: 'cancelMediaDownload' = 'cancelMediaDownload';
@@ -429,6 +443,7 @@ export type ChatEffect =
   | CopyTextToClipboard
   | PickAndSendPhotoEffect
   | PickAndSendFileEffect
+  | PickAndSendVideoEffect
   | CancelMediaDownloadEffect
   | FetchChatSearch
   | JumpToMessage

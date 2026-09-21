@@ -55,6 +55,60 @@ export default function mediaPickerPortTest() {
       expect(caught).assertTrue();
     });
 
+    it('pickVideo_returnsMockedVideos_withMetadataAndThumbnail', 0, async () => {
+      const picker: FakeMediaPicker = new FakeMediaPicker();
+      const mockVideos: PickedMedia[] = [
+        {
+          uri: 'file://media/video1.mp4',
+          path: '/sandbox/video1.mp4',
+          name: 'video1.mp4',
+          size: 5242880,
+          mimeType: 'video/mp4',
+          duration: 12,
+          width: 1920,
+          height: 1080,
+          thumbnailPath: '/sandbox/thumb_1.jpg',
+          thumbnailWidth: 320,
+          thumbnailHeight: 180
+        },
+        { uri: 'file://media/video2.mp4', path: '/sandbox/video2.mp4', name: 'video2.mp4' }
+      ];
+      picker.setVideosToReturn(mockVideos);
+
+      const single: PickedMedia[] = await picker.pickVideo(1);
+      expect(single.length).assertEqual(1);
+      expect(single[0].path).assertEqual('/sandbox/video1.mp4');
+      expect(single[0].duration).assertEqual(12);
+      expect(single[0].width).assertEqual(1920);
+      expect(single[0].height).assertEqual(1080);
+      expect(single[0].thumbnailPath).assertEqual('/sandbox/thumb_1.jpg');
+      expect(single[0].thumbnailWidth).assertEqual(320);
+      expect(single[0].thumbnailHeight).assertEqual(180);
+      expect(picker.pickVideoCalls).assertEqual(1);
+
+      const all: PickedMedia[] = await picker.pickVideo(5);
+      expect(all.length).assertEqual(2);
+      // 第二条没有元数据/缩略图仍是合法输入（模拟抽帧失败），字段应保持 undefined
+      expect(all[1].duration === undefined).assertTrue();
+      expect(all[1].thumbnailPath === undefined).assertTrue();
+      expect(picker.pickVideoCalls).assertEqual(2);
+    });
+
+    it('pickVideo_handlesRejection_whenConfigured', 0, async () => {
+      const picker: FakeMediaPicker = new FakeMediaPicker();
+      picker.shouldReject = true;
+      picker.rejectError = new Error('User cancelled');
+
+      let caught: boolean = false;
+      try {
+        await picker.pickVideo();
+      } catch (err) {
+        caught = true;
+      }
+      expect(caught).assertTrue();
+      expect(picker.pickVideoCalls).assertEqual(1);
+    });
+
     it('reset_clearsState', 0, async () => {
       const picker: FakeMediaPicker = new FakeMediaPicker();
       picker.setPhotosToReturn([{ uri: 'photo.png' }]);
@@ -64,6 +118,19 @@ export default function mediaPickerPortTest() {
       picker.reset();
       expect(picker.pickPhotoCalls).assertEqual(0);
       const empty: PickedMedia[] = await picker.pickPhoto();
+      expect(empty.length).assertEqual(0);
+    });
+
+    it('reset_alsoClearsVideoState', 0, async () => {
+      const picker: FakeMediaPicker = new FakeMediaPicker();
+      picker.setVideosToReturn([{ uri: 'v.mp4', duration: 3 }]);
+      const before: PickedMedia[] = await picker.pickVideo();
+      expect(before.length).assertEqual(1);
+      expect(picker.pickVideoCalls).assertEqual(1);
+
+      picker.reset();
+      expect(picker.pickVideoCalls).assertEqual(0);
+      const empty: PickedMedia[] = await picker.pickVideo();
       expect(empty.length).assertEqual(0);
     });
 

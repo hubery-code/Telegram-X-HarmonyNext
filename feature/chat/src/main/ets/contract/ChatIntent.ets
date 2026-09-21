@@ -344,6 +344,11 @@ export class PickAndSendFile implements Intent {
   readonly kind: 'pickAndSendFile' = 'pickAndSendFile';
 }
 
+/** MEDIA-105：调起相册选取视频并发送（附带当前输入栏草稿作为 caption 与回复引用）。 */
+export class PickAndSendVideo implements Intent {
+  readonly kind: 'pickAndSendVideo' = 'pickAndSendVideo';
+}
+
 /** 取消正在上传或待发送的媒体消息并撤回 */
 export class CancelMediaUpload implements Intent {
   readonly kind: 'cancelMediaUpload' = 'cancelMediaUpload';
@@ -656,6 +661,7 @@ export type ChatIntent =
   | RequestMediaDownload
   | PickAndSendPhoto
   | PickAndSendFile
+  | PickAndSendVideo
   | CancelMediaUpload
   | RestoreDraft
   | OpenAttachmentMenu

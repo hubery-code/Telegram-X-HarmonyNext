@@ -25,7 +25,8 @@
  * 均由类型化控制器负责。
  */
 
-import { LightTheme, Theme, ThemeManager } from '@tgx/core-design-system';
+import { LightTheme, Theme, ThemeManager, parseChatFontSize, CHAT_FONT_SIZE_DEFAULT } from '@tgx/core-design-system';
+import { saveChatFontSize } from '../store/SettingsStore';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { AccountDescriptor, AccountScope } from '@tgx/core-account';
 import { AppError, ManualClock, Result, SequentialIdGenerator } from '@tgx/core-common';
@@ -206,6 +207,17 @@ struct Index {
   @State drawerAccountLetters: string = '';
   private drawerAccountLoaded: boolean = false;
   @State isNightMode: boolean = false;
+  /**
+   * SET-105 / FEAT-UI-002：聊天字号的落盘通道。
+   *
+   * 业务层（feature_settings 的 reducer）只把值写进 AppStorage，不碰 Kit；由 entry
+   * 以装配层身份监听该键变化并落盘。`@StorageProp` + `@Watch` 是 ArkUI 里拿到
+   * 「AppStorage 键变化」的标准方式。启动回灌在 EntryAbility 里完成（见
+   * store/SettingsStore.ets），这里只负责用户改动后的写盘方向。
+   */
+  @StorageProp('chatFontSize') @Watch('onChatFontSizeChanged') chatFontSizeRaw: string =
+    `${CHAT_FONT_SIZE_DEFAULT}`;
+  private chatFontSizeReady: boolean = false;
   private unsubscribeThemeFn: (() => void) | null = null;
   private accountScope: AccountScope | null = null;
   private bootstrapResult: BootstrapResult | null = null;
@@ -229,6 +241,15 @@ struct Index {
       this.mediaPickerAdapter.setCacheDir(result.cacheDir);
     }
 
+    // SET-105 / FEAT-UI-002：先把持久化的聊天字号灌进 ThemeManager，再取初始 Theme。
+    // 顺序很关键——若先取 Theme 再设字号，首帧会以默认字号渲染并立刻被推一次多余的刷新。
+    // 注意：该键在 AppStorage 里按**字符串**约定存放（entry 回灌与 feature_settings
+    // 的 reducer 都写 `${size}`），统一交给 parseChatFontSize 做类型收敛。
+    const savedChatFontSizeRaw: number | string | undefined | null = AppStorage.get<string>('chatFontSize');
+    ThemeManager.getInstance().setChatFontSize(parseChatFontSize(savedChatFontSizeRaw));
+    // 首帧读完初值后才允许落盘，避免启动回灌本身触发一次无意义的写。
+    this.chatFontSizeReady = true;
+
     const initialTheme: Theme = ThemeManager.getInstance().getTheme();
     this.isNightMode = initialTheme.mode === 'dark';
     AppStorage.setOrCreate<Theme>('activeTheme', initialTheme);
@@ -245,6 +266,17 @@ struct Index {
     this.initAuthCoordinatorSubscription(result.scope);
     this.updateAvailableAccounts();
     this.fetchDrawerAccount();
+  }
+
+  /**
+   * SET-105：`chatFontSize` 变化 → 落盘。值是字符串（AppStorage 里的约定），
+   * 数值收敛与档位吸附都交给 SettingsStore → clampChatFontSize。
+   */
+  private onChatFontSizeChanged(): void {
+    if (!this.chatFontSizeReady) {
+      return;
+    }
+    saveChatFontSize(this.chatFontSizeRaw);
   }
 
   aboutToDisappear(): void {

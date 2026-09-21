@@ -34,7 +34,17 @@ export {
   MIN_READABLE_FONT_SIZE,
   clampFontScale,
   scaleTextStyle,
-  scaleTypography
+  scaleTypography,
+  CHAT_FONT_SIZE_STEPS,
+  CHAT_FONT_SIZE_DEFAULT,
+  CHAT_FONT_SIZE_MIN,
+  CHAT_FONT_SIZE_MAX,
+  clampChatFontSize,
+  parseChatFontSize,
+  chatFontSizeIndex,
+  chatFontSizeAt,
+  chatFontScaleOf,
+  chatTextSizeOf
 } from './FontScale';
 export {
   ThemeMode,

@@ -167,6 +167,13 @@ export class SettingsCoordinator {
       this.currentState = this.currentState.copyWith({ themeMode: currentThemePref });
     }
 
+    // FEAT-UI-002 / SET-105：与 ThemeManager 的字号对齐。
+    // entry 启动时已把持久化字号灌进 ThemeManager，这里是设置页的首次同步。
+    const currentFontSize: number = ThemeManager.getInstance().getChatFontSize();
+    if (this.currentState.chatFontSize !== currentFontSize) {
+      this.currentState = this.currentState.copyWith({ chatFontSize: currentFontSize });
+    }
+
     const currentLangPref: LanguagePreference = Lang.getInstance().getPreference();
     const currentLangCode: string = Lang.getInstance().getLanguage();
     if (this.currentState.languagePreference !== currentLangPref || this.currentState.languageCode !== currentLangCode) {
@@ -182,8 +189,13 @@ export class SettingsCoordinator {
         return;
       }
       const pref = ThemeManager.getInstance().getPreference();
-      if (self.currentState.themeMode !== pref) {
-        self.currentState = self.currentState.copyWith({ themeMode: pref });
+      const fontSize: number = ThemeManager.getInstance().getChatFontSize();
+      // 字号与主题共用这一条订阅：两者都会重建 Theme 对象，分开订阅会重复通知。
+      if (self.currentState.themeMode !== pref || self.currentState.chatFontSize !== fontSize) {
+        self.currentState = self.currentState.copyWith({
+          themeMode: pref,
+          chatFontSize: fontSize
+        });
         for (let i = 0; i < self.listeners.length; i++) {
           self.listeners[i](self.currentState);
         }

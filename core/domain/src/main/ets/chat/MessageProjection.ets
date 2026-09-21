@@ -93,6 +93,9 @@ import {
   InputMessageDocument,
   InputVoiceNote,
   InputMessageVoiceNote,
+  InputVideo,
+  InputThumbnail,
+  InputMessageVideo,
   InputMessageReplyToMessage,
   InputMessageText,
   LinkPreviewOptions,
@@ -516,6 +519,84 @@ export class MessageProjection {
 
     const content: InputMessageDocument = new InputMessageDocument();
     content.document = doc;
+    if (caption !== undefined && caption.trim().length > 0) {
+      const formatted: FormattedText = new FormattedText();
+      formatted.text = caption.trim();
+      content.caption = formatted;
+    }
+
+    const req: SendMessage = new SendMessage();
+    req.chat_id = this.chatId;
+    if (replyToMessageId > 0) {
+      const replyTo: InputMessageReplyToMessage = new InputMessageReplyToMessage();
+      replyTo.message_id = replyToMessageId;
+      req.reply_to = replyTo;
+    }
+    req.input_message_content = content;
+
+    return this.scope.request('sendMessage', encodeSendMessage(req) as TdWireObject);
+  }
+
+  /**
+   * 发送视频消息（MEDIA-105 / FEAT-MEDIA-002 发侧）：组 InputMessageVideo 调 sendMessage。
+   *
+   * 形状对齐 TGX `data/TD.java`（InputMessageVideo / InputVideo）：
+   * - video.video = InputFileLocal(沙箱物理路径)；
+   * - thumbnailPath 非空时附 InputThumbnail —— TDLib 的 inputThumbnail 只接受
+   *   `InputFile` 而不支持按 file_id 复用，所以必须传真文件；
+   *   TDLib 文档建议缩略图边长不超过 320，调用方负责给合理尺寸；
+   * - duration/width/height 为 0 时不覆盖 DTO 默认值（TDLib 自行探测），
+   *   避免用假 0 覆盖掉服务端可推断的真实值；
+   * - supports_streaming 置 true：视频走流式播放，接收端可边下边播。
+   *
+   * localPath 为空直接判 parameter/missing；caption 可选；
+   * replyToMessageId > 0 时挂 reply_to。
+   */
+  sendVideoMessage(
+    localPath: string,
+    caption?: string,
+    replyToMessageId: number = 0,
+    durationSec: number = 0,
+    width: number = 0,
+    height: number = 0,
+    thumbnailPath?: string,
+    thumbnailWidth: number = 0,
+    thumbnailHeight: number = 0
+  ): Result<TdPendingRequest, AppError> {
+    const trimmedPath: string = localPath.trim();
+    if (trimmedPath.length === 0) {
+      return err<TdPendingRequest, AppError>(
+        AppErrors.parameter('missing', 'localPath', 'video local path is empty')
+      );
+    }
+    const fileLocal: InputFileLocal = new InputFileLocal();
+    fileLocal.path = trimmedPath;
+
+    const video: InputVideo = new InputVideo();
+    video.video = fileLocal;
+    if (durationSec > 0) {
+      video.duration = Math.floor(durationSec);
+    }
+    if (width > 0) {
+      video.width = Math.floor(width);
+    }
+    if (height > 0) {
+      video.height = Math.floor(height);
+    }
+    video.supports_streaming = true;
+
+    if (thumbnailPath !== undefined && thumbnailPath.trim().length > 0) {
+      const thumbFile: InputFileLocal = new InputFileLocal();
+      thumbFile.path = thumbnailPath.trim();
+      const thumbnail: InputThumbnail = new InputThumbnail();
+      thumbnail.thumbnail = thumbFile;
+      thumbnail.width = thumbnailWidth > 0 ? Math.floor(thumbnailWidth) : 0;
+      thumbnail.height = thumbnailHeight > 0 ? Math.floor(thumbnailHeight) : 0;
+      video.thumbnail = thumbnail;
+    }
+
+    const content: InputMessageVideo = new InputMessageVideo();
+    content.video = video;
     if (caption !== undefined && caption.trim().length > 0) {
       const formatted: FormattedText = new FormattedText();
       formatted.text = caption.trim();

@@ -540,10 +540,102 @@ export default function messageProjectionTest(): void {
       expect(file['path']).assertEqual('/data/img.png');
     });
 
+    it('should construct valid SendMessage with InputMessageVideo and thumbnail', 0, (): void => {
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const scope: AccountScope = createScope(bridge);
+      const projection: MessageProjection = new MessageProjection(42, scope);
+
+      const res: Result<TdPendingRequest, AppError> = projection.sendVideoMessage(
+        '/data/storage/el2/base/uploads/clip.mp4',
+        'Beach clip',
+        100,
+        12,
+        1920,
+        1080,
+        '/data/storage/el2/base/uploads/thumb_1.jpg',
+        320,
+        180
+      );
+      expect(res.ok).assertTrue();
+
+      const sent: Record<string, TdWireValue> = bridge.lastSentJson();
+      expect(sent['@type']).assertEqual('sendMessage');
+      expect(sent['chat_id']).assertEqual(42);
+
+      const replyTo = sent['reply_to'] as Record<string, TdWireValue>;
+      expect(replyTo['@type']).assertEqual('inputMessageReplyToMessage');
+      expect(replyTo['message_id']).assertEqual(100);
+
+      const content = sent['input_message_content'] as Record<string, TdWireValue>;
+      expect(content['@type']).assertEqual('inputMessageVideo');
+
+      const video = content['video'] as Record<string, TdWireValue>;
+      expect(video['@type']).assertEqual('inputVideo');
+      expect(video['duration']).assertEqual(12);
+      expect(video['width']).assertEqual(1920);
+      expect(video['height']).assertEqual(1080);
+      // 视频走流式播放：接收端可边下边播（对齐 TGX InputVideo.supports_streaming）
+      expect(video['supports_streaming']).assertTrue();
+
+      const videoFile = video['video'] as Record<string, TdWireValue>;
+      expect(videoFile['@type']).assertEqual('inputFileLocal');
+      expect(videoFile['path']).assertEqual('/data/storage/el2/base/uploads/clip.mp4');
+
+      const thumb = video['thumbnail'] as Record<string, TdWireValue>;
+      expect(thumb['@type']).assertEqual('inputThumbnail');
+      expect(thumb['width']).assertEqual(320);
+      expect(thumb['height']).assertEqual(180);
+      const thumbFile = thumb['thumbnail'] as Record<string, TdWireValue>;
+      expect(thumbFile['@type']).assertEqual('inputFileLocal');
+      expect(thumbFile['path']).assertEqual('/data/storage/el2/base/uploads/thumb_1.jpg');
+
+      const caption = content['caption'] as Record<string, TdWireValue>;
+      expect(caption['text']).assertEqual('Beach clip');
+    });
+
+    it('should reject sendVideoMessage when localPath is empty', 0, (): void => {
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const scope: AccountScope = createScope(bridge);
+      const projection: MessageProjection = new MessageProjection(42, scope);
+
+      const res: Result<TdPendingRequest, AppError> = projection.sendVideoMessage('   ', 'Caption');
+      expect(res.ok).assertFalse();
+      expect(bridge.sent.length).assertEqual(0);
+    });
+
+    it('should omit thumbnail and keep zero metadata for minimal sendVideoMessage', 0, (): void => {
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const scope: AccountScope = createScope(bridge);
+      const projection: MessageProjection = new MessageProjection(42, scope);
+
+      // 无元数据、无缩略图（模拟模拟器抽帧/读元数据失败）也必须能发出去
+      const res: Result<TdPendingRequest, AppError> = projection.sendVideoMessage('/data/clip.mp4');
+      expect(res.ok).assertTrue();
+
+      const sent: Record<string, TdWireValue> = bridge.lastSentJson();
+      expect(sent['reply_to']).assertNull();
+
+      const content = sent['input_message_content'] as Record<string, TdWireValue>;
+      expect(content['@type']).assertEqual('inputMessageVideo');
+      expect(content['caption']).assertNull();
+
+      const video = content['video'] as Record<string, TdWireValue>;
+      // 0 / 空缩略图时不覆盖 DTO 默认值，交由 TDLib 自行探测
+      expect(video['duration']).assertEqual(0);
+      expect(video['width']).assertEqual(0);
+      expect(video['height']).assertEqual(0);
+      expect(video['thumbnail']).assertNull();
+      expect(video['supports_streaming']).assertTrue();
+
+      const videoFile = video['video'] as Record<string, TdWireValue>;
+      expect(videoFile['path']).assertEqual('/data/clip.mp4');
+    });
+
     it('should assemble sendMessage with inputMessageDocument and reply_to', 0, (): void => {
       const bridge: TestNativeBridge = new TestNativeBridge();
       const scope: AccountScope = createScope(bridge);
       const projection: MessageProjection = new MessageProjection(42, scope);
+
 
       const res: Result<TdPendingRequest, AppError> = projection.sendDocumentMessage(
         '/data/storage/el2/base/docs/document.pdf',

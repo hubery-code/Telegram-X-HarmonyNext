@@ -8,7 +8,7 @@ import {
 import { SpacingTokens, DefaultSpacing, SPACING_TOKEN_NAMES } from './Spacing';
 import { RadiusTokens, DefaultRadius, RADIUS_TOKEN_NAMES } from './Radius';
 import { MotionTokens, DefaultMotion, MOTION_TOKEN_NAMES, BezierCurve } from './Motion';
-import { clampFontScale, scaleTypography } from './FontScale';
+import { clampFontScale, scaleTypography, CHAT_FONT_SIZE_DEFAULT, clampChatFontSize } from './FontScale';
 
 export type ThemeMode = 'light' | 'dark';
 export type ThemePreference = 'system' | 'light' | 'dark';
@@ -26,10 +26,23 @@ export interface Theme {
   radius: RadiusTokens;
   motion: MotionTokens;
   fontScale: number;
+  /**
+   * FEAT-UI-002 / SET-105：聊天消息字号（sp，离散档位）。
+   * 与 `fontScale`（系统字号，全站连续倍率）正交——本字段只约束消息内容
+   * 文字的基准大小，由 `chatTextSizeOf(theme.chatFontSize, diff)` 派生具体字号。
+   */
+  chatFontSize: number;
 }
 
-/** Build a theme. `fontScale` is clamped to the supported range. */
-export function createTheme(mode: ThemeMode, fontScale: number = 1.0): Theme {
+/**
+ * Build a theme. `fontScale` is clamped to the supported range; `chatFontSize`
+ * is snapped to the nearest legal step (see FontScale.ts).
+ */
+export function createTheme(
+  mode: ThemeMode,
+  fontScale: number = 1.0,
+  chatFontSize: number = CHAT_FONT_SIZE_DEFAULT
+): Theme {
   return {
     mode: mode,
     colors: mode === 'dark' ? DarkColors : LightColors,
@@ -37,7 +50,8 @@ export function createTheme(mode: ThemeMode, fontScale: number = 1.0): Theme {
     spacing: DefaultSpacing,
     radius: DefaultRadius,
     motion: DefaultMotion,
-    fontScale: clampFontScale(fontScale)
+    fontScale: clampFontScale(fontScale),
+    chatFontSize: clampChatFontSize(chatFontSize)
   };
 }
 

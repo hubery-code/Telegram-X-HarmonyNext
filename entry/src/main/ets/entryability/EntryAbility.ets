@@ -4,6 +4,7 @@ import { window } from '@kit.ArkUI';
 import { bootstrap, BootstrapResult } from '../Bootstrap';
 import { TdlibParametersConfig } from '@tgx/feature-auth';
 import { TELEGRAM_CREDENTIALS } from '../config/AppCredentials';
+import { initSettingsStore, loadChatFontSize, KEY_CHAT_FONT_SIZE } from '../store/SettingsStore';
 
 const DOMAIN: number = 0x0000;
 const TAG: string = 'EntryAbility';
@@ -46,6 +47,19 @@ export default class EntryAbility extends UIAbility {
   }
 
   onWindowStageCreate(windowStage: window.WindowStage): void {
+    // SET-105 / FEAT-UI-002：把聊天字号接入磁盘持久化。
+    //
+    // 这里用 `preferences` Kit（见 store/SettingsStore.ets）而不是 ArkUI 的
+    // `PersistentStorage.persistProp`——后者在这套 SDK 上「写盘成功、恢复静默
+    // 失败」（详细实测记录见 SettingsStore.ets 顶部注释）。
+    //
+    // 时序要点：必须在 `loadContent` 之前把盘上的值灌进 AppStorage，
+    // 页面 aboutToAppear 才能读到；否则首帧会先按默认档渲染再跳一次。
+    initSettingsStore(this.context);
+    const restoredChatFontSize: number = loadChatFontSize();
+    AppStorage.setOrCreate<string>(KEY_CHAT_FONT_SIZE, `${restoredChatFontSize}`);
+    hilog.info(DOMAIN, TAG, 'chatFontSize restored: %{public}s', `${restoredChatFontSize}`);
+
     windowStage.loadContent('pages/Index', (err) => {
       if (err.code) {
         hilog.error(DOMAIN, TAG, 'loadContent failed: %{public}s', JSON.stringify(err));

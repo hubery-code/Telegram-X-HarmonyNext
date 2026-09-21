@@ -163,6 +163,7 @@ import {
   RequestMediaDownload,
   PickAndSendPhoto,
   PickAndSendFile,
+  PickAndSendVideo,
   ComposerTextChanged,
   CancelComposerMode,
   RestoreDraft,
@@ -205,6 +206,7 @@ import {
   CopyTextToClipboard,
   PickAndSendPhotoEffect,
   PickAndSendFileEffect,
+  PickAndSendVideoEffect,
   CancelMediaDownloadEffect,
   FetchChatSearch,
   JumpToMessage,
@@ -473,6 +475,15 @@ export class ChatCoordinator {
   private readonly fileSubscriptions: Map<number, Subscription> = new Map();
   /** 已下发过 downloadFile 的文件 id 集合，防重复请求风暴。 */
   private readonly requestedFileIds: Set<number> = new Set();
+  /**
+   * MEDIA-105：待发送视频的**本地缩略图**缓存，key = 送进 TDLib 的视频沙箱物理路径。
+   *
+   * 为什么需要它：出站消息在服务端生成缩略图之前，回灌的 `messageVideo.video.thumbnail`
+   * 一直是 null，气泡就会退化成「Video 组件首帧占位」而不是我们本地的缩略图。
+   * 我们自己在适配器里抽了首帧，就顺手按视频路径记一份，让出站气泡**一上屏就有缩略图**。
+   * TDLib 补上官方 thumbnail 后（`video.thumbnail` 非空）此缓存自动让位，不再参与渲染。
+   */
+  private readonly pendingVideoThumbnails: Map<string, string> = new Map();
   /** MSG-104：已读上报节流（lastReported 只增不减）。 */
   private readonly readThrottle: ReadReportThrottle = new ReadReportThrottle();
   /** 回复引用消息详情已发起过 getMessage 的 messageId 集合，防重复请求。 */
@@ -1199,7 +1210,12 @@ export class ChatCoordinator {
       }
 
       const fileId: number = targetFile.id;
-      const localPath: string | null = this.fileRegistry.getLocalPath(fileId);
+      let localPath: string | null = this.fileRegistry.getLocalPath(fileId);
+      // 出站视频：TDLib 回灌的本地路径即我们自己送进去的沙箱文件，
+      // 注册表尚未收录时直接取 file.local.path，保证气泡立刻有本地源可渲染。
+      if (localPath === null && targetFile.local !== null && targetFile.local.path.length > 0) {
+        localPath = targetFile.local.path;
+      }
       const isDownloaded: boolean = this.fileRegistry.isDownloaded(fileId);
       const progress: number = this.fileRegistry.getDownloadProgress(fileId);
       const latestFile: File | null = this.fileRegistry.getFile(fileId);
@@ -1214,10 +1230,39 @@ export class ChatCoordinator {
           this.requestMediaDownload(video.thumbnail.file.id, 2);
         }
       }
+      // MEDIA-105 出站兜底：服务端缩略图尚未就绪时，用发送前本地抽的首帧顶上，
+      // 让「视频缩略图先展示」在发送侧也成立。
+      if (thumbPath === null && localPath !== null) {
+        const localThumb: string | undefined = this.pendingVideoThumbnails.get(localPath);
+        if (localThumb !== undefined) {
+          thumbPath = localThumb;
+        }
+      }
+
+      // MEDIA-105：上传态（此前视频分支漏了这一对，导致出站视频没有进度圈/取消钮）。
+      const isUploading: boolean = this.fileRegistry.isUploading(fileId) ||
+        (message.is_outgoing && message.sending_state !== null && message.sending_state.type === 'messageSendingStatePending');
+      const uploadProgress: number = this.fileRegistry.getUploadProgress(fileId);
+      if (isUploading && !this.fileSubscriptions.has(fileId)) {
+        const sub: Subscription = this.fileRegistry.subscribeFile(fileId, (file: File) => {
+          if (!this.destroyed) {
+            if (file.remote !== null && file.remote.is_uploading_completed) {
+              // 上传完成：服务端缩略图即将就绪，本地兜底图可以退场。
+              if (localPath !== null) {
+                this.pendingVideoThumbnails.delete(localPath);
+              }
+              this.scheduleSyncFromProjection();
+            } else {
+              this.scheduleThrottledSync();
+            }
+          }
+        });
+        this.fileSubscriptions.set(fileId, sub);
+      }
 
       // 视频较小（<= 10MB）自动下载，便于直接播放
       const videoSize: number = targetFile.size;
-      if (!isDownloaded && !isDownloading && videoSize > 0 && videoSize <= 10 * 1024 * 1024) {
+      if (!isDownloaded && !isDownloading && !isUploading && videoSize > 0 && videoSize <= 10 * 1024 * 1024) {
         this.requestMediaDownload(fileId, 1);
       }
 
@@ -1237,7 +1282,9 @@ export class ChatCoordinator {
         progress,
         captionText,
         captionSpans,
-        videoContent.has_spoiler
+        videoContent.has_spoiler,
+        isUploading,
+        uploadProgress
       );
     }
 
@@ -2825,6 +2872,13 @@ export class ChatCoordinator {
         break;
       }
 
+      case 'pickAndSendVideo': {
+        // MEDIA-105：与选图同构，只是选择器换成视频并额外带上时长/宽高/缩略图。
+        const pick: PickAndSendVideoEffect = effect as PickAndSendVideoEffect;
+        this.handlePickAndSendVideo(pick.replyToMessageId, pick.caption);
+        break;
+      }
+
       case 'cancelMediaDownload': {
         const cancel: CancelMediaDownloadEffect = effect as CancelMediaDownloadEffect;
         this.cancelMediaDownload(cancel.fileId);
@@ -2997,6 +3051,11 @@ export class ChatCoordinator {
     this.dispatch(new PickAndSendFile());
   }
 
+  /** MEDIA-105：调起相册选取视频并发送 */
+  public pickAndSendVideo(): void {
+    this.dispatch(new PickAndSendVideo());
+  }
+
   /** FILE-103：取消正在下载的媒体文件 */
   public cancelMediaDownload(fileId: number): Result<TdPendingRequest, AppError> {
     this.requestedFileIds.delete(fileId);
@@ -3091,6 +3150,70 @@ export class ChatCoordinator {
       }
     } catch (err) {
       this.logger.error(TAG, 'pick_file_error', String(err));
+    }
+  }
+
+  /**
+   * MEDIA-105（FEAT-MEDIA-002 发侧）：调起相册选视频 → sendVideoMessage。
+   *
+   * 与选图/选文件同构，差异在于：
+   * - 选择器走 pickVideo，额外带回 duration / width / height / thumbnailPath
+   *   （后三者由 entry 适配器用 AVMetadataExtractor + AVImageGenerator 取得）；
+   * - 缩略图先登记进 pendingVideoThumbnails，让出站气泡立刻有图可显；
+   * - 元数据缺失（模拟器抽帧失败等）不算错误，照常发送，
+   *   TDLib 会自行探测，气泡退化为首帧占位。
+   */
+  private async handlePickAndSendVideo(replyToMessageId: number = 0, caption: string = ''): Promise<void> {
+    try {
+      const pickedMedia: PickedMedia[] = await this.mediaPickerPort.pickVideo(1);
+      if (this.destroyed || pickedMedia.length === 0) {
+        return;
+      }
+      const picked: PickedMedia = pickedMedia[0];
+      const path: string = (picked.path !== undefined && picked.path.length > 0) ? picked.path : picked.uri;
+      if (path.length === 0) {
+        return;
+      }
+      const thumbnailPath: string | undefined =
+        (picked.thumbnailPath !== undefined && picked.thumbnailPath.length > 0) ? picked.thumbnailPath : undefined;
+      if (thumbnailPath !== undefined) {
+        this.pendingVideoThumbnails.set(path, thumbnailPath);
+      }
+
+      this.dispatch(new ComposerTextChanged(''));
+      if (this.currentState.composerMode !== null) {
+        this.dispatch(new CancelComposerMode());
+      }
+      const result: Result<TdPendingRequest, AppError> = this.projection.sendVideoMessage(
+        path,
+        caption.length > 0 ? caption : undefined,
+        replyToMessageId,
+        picked.duration !== undefined ? picked.duration : 0,
+        picked.width !== undefined ? picked.width : 0,
+        picked.height !== undefined ? picked.height : 0,
+        thumbnailPath,
+        picked.thumbnailWidth !== undefined ? picked.thumbnailWidth : 0,
+        picked.thumbnailHeight !== undefined ? picked.thumbnailHeight : 0
+      );
+      this.projection.clearChatDraftMessage();
+      if (result.err) {
+        this.logger.logError(TAG, result.error);
+        this.dispatch(new OnMessageSendFailed(result.error));
+      }
+      if (result.ok) {
+        result.value.promise.then((res: Result<TdWireObject, AppError>) => {
+          if (res.err) {
+            this.logger.logError(TAG, res.error);
+            if (!this.destroyed) {
+              this.dispatch(new OnMessageSendFailed(res.error));
+            }
+          } else {
+            this.logger.info(TAG, 'send_video_message_ok', `chatId=${this.currentState.chatId}`);
+          }
+        }).catch(() => {});
+      }
+    } catch (err) {
+      this.logger.error(TAG, 'pick_video_error', String(err));
     }
   }
 

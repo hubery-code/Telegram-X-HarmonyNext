@@ -10,6 +10,7 @@
  */
 
 import { DarkTheme, LightTheme, Theme, ThemeMode, ThemePreference, createTheme } from './Theme';
+import { CHAT_FONT_SIZE_DEFAULT, clampChatFontSize } from './FontScale';
 
 export { ThemePreference };
 export type ThemeListener = (theme: Theme) => void;
@@ -28,18 +29,20 @@ export function resolveThemeMode(
 }
 
 /**
- * Pure function: resolve effective Theme instance from preference, system mode, and optional font scale.
+ * Pure function: resolve effective Theme instance from preference, system mode,
+ * optional font scale, and optional chat font size.
  */
 export function resolveTheme(
   preference: ThemePreference,
   systemMode: ThemeMode = 'light',
-  fontScale: number = 1.0
+  fontScale: number = 1.0,
+  chatFontSize: number = CHAT_FONT_SIZE_DEFAULT
 ): Theme {
   const mode: ThemeMode = resolveThemeMode(preference, systemMode);
-  if (fontScale === 1.0) {
+  if (fontScale === 1.0 && chatFontSize === CHAT_FONT_SIZE_DEFAULT) {
     return mode === 'dark' ? DarkTheme : LightTheme;
   }
-  return createTheme(mode, fontScale);
+  return createTheme(mode, fontScale, chatFontSize);
 }
 
 export class ThemeManager {
@@ -48,18 +51,26 @@ export class ThemeManager {
   private preference: ThemePreference = 'system';
   private systemMode: ThemeMode = 'light';
   private fontScale: number = 1.0;
+  private chatFontSize: number = CHAT_FONT_SIZE_DEFAULT;
   private currentTheme: Theme = LightTheme;
   private readonly listeners: ThemeListener[] = [];
 
   constructor(
     initialPreference: ThemePreference = 'system',
     initialSystemMode: ThemeMode = 'light',
-    initialFontScale: number = 1.0
+    initialFontScale: number = 1.0,
+    initialChatFontSize: number = CHAT_FONT_SIZE_DEFAULT
   ) {
     this.preference = initialPreference;
     this.systemMode = initialSystemMode;
     this.fontScale = initialFontScale;
-    this.currentTheme = resolveTheme(this.preference, this.systemMode, this.fontScale);
+    this.chatFontSize = clampChatFontSize(initialChatFontSize);
+    this.currentTheme = resolveTheme(
+      this.preference,
+      this.systemMode,
+      this.fontScale,
+      this.chatFontSize
+    );
   }
 
   static getInstance(): ThemeManager {
@@ -123,6 +134,25 @@ export class ThemeManager {
     this.updateEffectiveTheme();
   }
 
+  /** FEAT-UI-002 / SET-105：当前聊天字号（sp，恒为合法档位）。 */
+  getChatFontSize(): number {
+    return this.chatFontSize;
+  }
+
+  /**
+   * 设置聊天字号。输入会被吸附到最近的合法档位——TGX `setChatFontSize` 是
+   * 严格拒绝非法值（返回 false），这里选择吸附，使跨版本持久化数据不会因
+   * 档位表变化而丢失用户设置。
+   */
+  setChatFontSize(fontSize: number): void {
+    const next: number = clampChatFontSize(fontSize);
+    if (this.chatFontSize === next) {
+      return;
+    }
+    this.chatFontSize = next;
+    this.updateEffectiveTheme();
+  }
+
   getTheme(): Theme {
     return this.currentTheme;
   }
@@ -139,7 +169,8 @@ export class ThemeManager {
     return resolveTheme(
       preference,
       systemMode !== undefined ? systemMode : this.systemMode,
-      this.fontScale
+      this.fontScale,
+      this.chatFontSize
     );
   }
 
@@ -171,12 +202,18 @@ export class ThemeManager {
     this.preference = 'system';
     this.systemMode = 'light';
     this.fontScale = 1.0;
+    this.chatFontSize = CHAT_FONT_SIZE_DEFAULT;
     this.listeners.length = 0;
-    this.currentTheme = resolveTheme('system', 'light', 1.0);
+    this.currentTheme = resolveTheme('system', 'light', 1.0, CHAT_FONT_SIZE_DEFAULT);
   }
 
   private updateEffectiveTheme(): void {
-    const nextTheme: Theme = resolveTheme(this.preference, this.systemMode, this.fontScale);
+    const nextTheme: Theme = resolveTheme(
+      this.preference,
+      this.systemMode,
+      this.fontScale,
+      this.chatFontSize
+    );
     this.currentTheme = nextTheme;
     this.notifyListeners();
   }

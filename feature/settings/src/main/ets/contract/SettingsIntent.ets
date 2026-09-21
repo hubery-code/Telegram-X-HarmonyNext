@@ -106,6 +106,20 @@ export class ChangeThemeMode implements Intent {
   }
 }
 
+/**
+ * FEAT-UI-002 / SET-105：调整聊天消息字号。
+ * 单位 sp，传入值会被吸附到最近合法档位（见 `@tgx/core-design-system` 的
+ * `clampChatFontSize`），因此调用方可以直接传滑块/档位按钮的原始值。
+ */
+export class ChangeChatFontSize implements Intent {
+  readonly kind: 'changeChatFontSize' = 'changeChatFontSize';
+  readonly chatFontSize: number;
+
+  constructor(chatFontSize: number) {
+    this.chatFontSize = chatFontSize;
+  }
+}
+
 export class ChangeLanguage implements Intent {
   readonly kind: 'changeLanguage' = 'changeLanguage';
   readonly languagePreference: LanguagePreference;
@@ -281,6 +295,7 @@ export type SettingsIntent =
   | NotificationScopeUpdated
   | NotificationScopeUpdateFailed
   | ChangeThemeMode
+  | ChangeChatFontSize
   | ChangeLanguage
   | SetLanguage
   | RequestLogout

@@ -10,11 +10,21 @@
  * - 色彩/字号/间距全部使用 design_system token。
  */
 
-import { DarkTheme, LightTheme, Theme, ThemeManager } from '@tgx/core-design-system';
+import {
+  DarkTheme,
+  LightTheme,
+  Theme,
+  ThemeManager,
+  CHAT_FONT_SIZE_STEPS,
+  chatFontSizeAt,
+  chatFontSizeIndex,
+  chatTextSizeOf
+} from '@tgx/core-design-system';
 import { Lang, LanguagePreference, SupportedLanguage } from '@tgx/core-common';
 import { SettingsThemeMode, SettingsUiState } from '../contract/SettingsUiState';
 import {
   CancelLogout,
+  ChangeChatFontSize,
   ChangeLanguage,
   ChangeThemeMode,
   ClearCacheRequested,
@@ -150,6 +160,7 @@ export struct SettingsPage {
 
             this.SectionTitle(this.t('APPEARANCE'))
             this.ThemeCardView()
+            this.ChatFontSizeCardView()
 
             this.SectionTitle(this.t('LANGUAGE'))
             this.LanguageCardView()
@@ -575,6 +586,101 @@ export struct SettingsPage {
       .onClick((): void => {
         this.onDispatch(new ChangeThemeMode(mode));
       })
+  }
+
+  /** FEAT-UI-002 / SET-105：当前字号档位下标（滑块 0..N-1）。 */
+  private chatFontStepIndex(): number {
+    return chatFontSizeIndex(this.uiState.chatFontSize);
+  }
+
+  /** 当前档位对应的字号（sp），用于卡片右上角读数。 */
+  private chatFontStepValue(): number {
+    return chatFontSizeAt(this.chatFontStepIndex());
+  }
+
+  /**
+   * FEAT-UI-002 / SET-105：聊天字号卡片。
+   *
+   * 档位与 TGX `Settings.CHAT_FONT_SIZES` 逐值对齐（12–26，默认 15）。滑块用
+   * **档位下标**驱动而非字号本身——档位是非等距的（…14,15,16,18,20…），下标
+   * 才是线性量。下方预览行复用消息区的 `chatTextSizeOf`，与聊天页所见一致。
+   */
+  @Builder
+  ChatFontSizeCardView() {
+    Column() {
+      Row() {
+        Image($r('app.media.ic_text_size'))
+          .width(22)
+          .height(22)
+          .fillColor(this.getTheme().colors.accent)
+          .margin({ right: this.getTheme().spacing.sm })
+
+        Text(this.t('Chat Text Size'))
+          .fontSize(this.getTheme().typography.body.fontSize)
+          .fontWeight(this.getTheme().typography.headline.fontWeight)
+          .fontColor(this.getTheme().colors.textPrimary)
+          .layoutWeight(1)
+
+        Text(`${this.chatFontStepValue()}`)
+          .fontSize(this.getTheme().typography.footnote.fontSize)
+          .fontColor(this.getTheme().colors.textSecondary)
+      }
+      .width('100%')
+      .alignItems(VerticalAlign.Center)
+
+      Row() {
+        Text('A')
+          .fontSize(this.getTheme().typography.caption.fontSize)
+          .fontColor(this.getTheme().colors.textSecondary)
+          .margin({ right: this.getTheme().spacing.xs })
+
+        Slider({
+          value: this.chatFontStepIndex(),
+          min: 0,
+          max: CHAT_FONT_SIZE_STEPS.length - 1,
+          step: 1,
+          style: SliderStyle.OutSet
+        })
+          .layoutWeight(1)
+          .selectedColor(this.getTheme().colors.accent)
+          .trackColor(this.getTheme().colors.surfaceVariant)
+          .onChange((value: number, mode: SliderChangeMode): void => {
+            // reducer 对「同一档位」幂等，拖动过程中每帧派发是安全的。
+            this.onDispatch(new ChangeChatFontSize(chatFontSizeAt(Math.round(value))));
+          })
+
+        Text('A')
+          .fontSize(this.getTheme().typography.headline.fontSize)
+          .fontColor(this.getTheme().colors.textSecondary)
+          .margin({ left: this.getTheme().spacing.xs })
+      }
+      .width('100%')
+      .alignItems(VerticalAlign.Center)
+      .margin({ top: this.getTheme().spacing.xs })
+
+      Column() {
+        Text(this.t('This is how your messages will look.'))
+          .fontSize(chatTextSizeOf(
+            this.getTheme().typography.body.fontSize,
+            this.uiState.chatFontSize
+          ))
+          .fontColor(this.getTheme().colors.chatText)
+          .lineHeight(chatTextSizeOf(
+            this.getTheme().typography.body.fontSize,
+            this.uiState.chatFontSize
+          ) * 1.35)
+      }
+      .width('100%')
+      .alignItems(HorizontalAlign.Start)
+      .padding(this.getTheme().spacing.sm)
+      .backgroundColor(this.getTheme().colors.surfaceVariant)
+      .borderRadius(this.getTheme().radius.md)
+      .margin({ top: this.getTheme().spacing.sm })
+    }
+    .width('100%')
+    .padding(this.getTheme().spacing.md)
+    .backgroundColor(this.getTheme().colors.surface)
+    .borderRadius(this.getTheme().radius.md)
   }
 
   private getLanguageSummary(): string {

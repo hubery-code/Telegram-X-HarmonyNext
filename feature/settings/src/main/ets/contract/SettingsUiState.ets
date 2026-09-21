@@ -8,7 +8,7 @@
  */
 
 import { UiState } from '@tgx/feature-template';
-import { ThemePreference } from '@tgx/core-design-system';
+import { ThemePreference, CHAT_FONT_SIZE_DEFAULT } from '@tgx/core-design-system';
 import { LanguagePreference } from '@tgx/core-common';
 import { NotificationScopeKey } from '../model/NotificationSettings';
 import { ActiveSessionItem } from '../model/ActiveSessionItem';
@@ -46,6 +46,8 @@ export interface SettingsUiStateOptions {
   readonly activeSessions?: readonly ActiveSessionItem[];
   /** FEAT-P2-008：是否正在加载会话列表。 */
   readonly isLoadingSessions?: boolean;
+  /** FEAT-UI-002 / SET-105：聊天消息字号（sp，合法档位）。 */
+  readonly chatFontSize?: number;
 }
 
 export class SettingsUiState implements UiState {
@@ -82,6 +84,8 @@ export class SettingsUiState implements UiState {
   readonly activeSessions: readonly ActiveSessionItem[];
   /** FEAT-P2-008：是否正在加载会话列表。 */
   readonly isLoadingSessions: boolean;
+  /** FEAT-UI-002 / SET-105：聊天消息字号（sp，恒为合法档位）。 */
+  readonly chatFontSize: number;
 
   constructor(
     userId: number,
@@ -110,7 +114,8 @@ export class SettingsUiState implements UiState {
     showAccountSwitcher: boolean = false,
     showDevicesPage: boolean = false,
     activeSessions: readonly ActiveSessionItem[] = [],
-    isLoadingSessions: boolean = false
+    isLoadingSessions: boolean = false,
+    chatFontSize: number = CHAT_FONT_SIZE_DEFAULT
   ) {
     this.userId = userId;
     this.displayName = displayName;
@@ -139,6 +144,7 @@ export class SettingsUiState implements UiState {
     this.showDevicesPage = showDevicesPage;
     this.activeSessions = activeSessions;
     this.isLoadingSessions = isLoadingSessions;
+    this.chatFontSize = chatFontSize;
   }
 
   static initial(
@@ -146,7 +152,8 @@ export class SettingsUiState implements UiState {
     languagePreference: LanguagePreference = 'system',
     languageCode: string = 'en',
     currentAccountKey: string = '',
-    availableAccounts: readonly string[] = []
+    availableAccounts: readonly string[] = [],
+    chatFontSize: number = CHAT_FONT_SIZE_DEFAULT
   ): SettingsUiState {
     return new SettingsUiState(
       0,
@@ -175,7 +182,8 @@ export class SettingsUiState implements UiState {
       false,
       false,
       [],
-      false
+      false,
+      chatFontSize
     );
   }
 
@@ -217,7 +225,8 @@ export class SettingsUiState implements UiState {
       options.showAccountSwitcher !== undefined ? options.showAccountSwitcher : this.showAccountSwitcher,
       options.showDevicesPage !== undefined ? options.showDevicesPage : this.showDevicesPage,
       options.activeSessions !== undefined ? options.activeSessions : this.activeSessions,
-      options.isLoadingSessions !== undefined ? options.isLoadingSessions : this.isLoadingSessions
+      options.isLoadingSessions !== undefined ? options.isLoadingSessions : this.isLoadingSessions,
+      options.chatFontSize !== undefined ? options.chatFontSize : this.chatFontSize
     );
   }
 }
