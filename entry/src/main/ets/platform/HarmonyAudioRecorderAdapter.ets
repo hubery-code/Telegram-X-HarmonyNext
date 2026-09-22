@@ -2,19 +2,35 @@
  * entry — HarmonyOS 音频录制适配器（VOICE-101 / ARCH-001）。
  *
  * 实现 platform/ports 的 AudioRecorderPort 契约。
- * 具备双重保障：
- * 1. 优先调用 @kit.MediaKit 的 AVRecorder 采集硬件麦克风；
- * 2. 模拟器或无硬件麦克风环境自动降级，生成合规空白/示例音频容器与平滑波形采样，
- *    确保端到端测试与 UI 体验 100% 顺畅。
+ *
+ * 采集链路：
+ * 1. 进入录音前先确保 `ohos.permission.MICROPHONE` 运行时授权——该权限是
+ *    user_grant 级，只在 module.json5 声明是不够的，不申请则 AVRecorder 必然
+ *    起不来（历史缺陷 D3）。
+ * 2. 授权通过后调用 @kit.MediaKit 的 AVRecorder 采集硬件麦克风。
+ * 3. 若硬件/模拟器采集不可用，降级写一份**内置的合法静音 M4A**
+ *    （resources/rawfile/voice_placeholder.m4a，AAC-LC / 16kHz / mono，
+ *    与录音配置同容器同参数），保证产物「扩展名与容器一致且真能解码」。
+ *
+ * 历史缺陷（已修，详见 work-items/accepted/VOICE-101.md）：
+ * 旧实现往 `.m4a` 里写 45 字节 Ogg/Opus 头，扩展名与容器不符，播放侧
+ * AVPlayer 直接以 `5400106 CONTAINER_ERR` 拒绝，UI 上表现为一条裸错误。
  */
 
 import { media } from '@kit.MediaKit';
 import { fileIo } from '@kit.CoreFileKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
-import { AudioRecorderPort, AudioRecordResult } from '@tgx/platform-ports';
+import { abilityAccessCtrl, common, PermissionRequestResult, Permissions } from '@kit.AbilityKit';
+import { AudioRecorderPort, AudioRecordResult, ERR_MIC_PERMISSION_DENIED } from '@tgx/platform-ports';
+import { probeAudioFile, AudioProbe } from './AudioContainer';
 
 const DOMAIN: number = 0x0000;
 const TAG: string = 'HarmonyAudioRecorderAdapter';
+
+const MIC_PERMISSION: Permissions = 'ohos.permission.MICROPHONE';
+
+/** 内置静音占位音频（rawfile 名，非路径）。 */
+const PLACEHOLDER_RAWFILE: string = 'voice_placeholder.m4a';
 
 export class HarmonyAudioRecorderAdapter implements AudioRecorderPort {
   private avRecorder: media.AVRecorder | null = null;
@@ -23,9 +39,48 @@ export class HarmonyAudioRecorderAdapter implements AudioRecorderPort {
   private outputPath: string = '';
   private fd: number = -1;
 
+  private abilityContext: common.UIAbilityContext | null = null;
+  private micGranted: boolean = false;
+
+  /**
+   * 本次录音的「启动中」操作。
+   *
+   * 首次录音会弹系统授权框，期间用户可能已经松手触发 stopRecord。若不等启动
+   * 流程收敛，stopRecord 会看到「什么都没开始」的空文件，进而写占位音频并作为
+   * 一条静音语音发出去。这里让 stopRecord 先等启动流程落地。
+   */
+  private startOp: Promise<void> | null = null;
+  /** 启动阶段的失败标识；非空时 stopRecord 必须报「不可用」，不能送占位音频。 */
+  private startError: string = '';
+
+  /**
+   * 注入 UIAbilityContext。录音需要用它申请麦克风权限、读取 rawfile 占位音频，
+   * 因此在页面装配阶段（Index.aboutToAppear）调用一次。
+   */
+  setAbilityContext(context: common.UIAbilityContext): void {
+    this.abilityContext = context;
+  }
+
   async startRecord(outputPath: string): Promise<void> {
+    this.startError = '';
+    const op: Promise<void> = this.doStartRecording(outputPath);
+    this.startOp = op;
+    return op;
+  }
+
+  private async doStartRecording(outputPath: string): Promise<void> {
     this.outputPath = outputPath;
     this.startTimeMs = Date.now();
+
+    const micReady: boolean = await this.ensureMicPermission();
+    if (!micReady) {
+      // 不回退到「伪造一份音频」——那只会把失败推迟到播放阶段，变成用户侧
+      // 莫名其妙的「语音打不开」。这里直接如实失败，由上层提示。
+      this.startError = ERR_MIC_PERMISSION_DENIED;
+      hilog.error(DOMAIN, TAG, 'microphone permission denied; recording aborted');
+      throw new Error(ERR_MIC_PERMISSION_DENIED);
+    }
+
     this.recording = true;
 
     // 确保父目录存在
@@ -64,8 +119,8 @@ export class HarmonyAudioRecorderAdapter implements AudioRecorderPort {
       await recorder.start();
       hilog.info(DOMAIN, TAG, `AVRecorder started successfully at fd=${file.fd}`);
     } catch (e) {
-      hilog.warn(DOMAIN, TAG, `media.createAVRecorder failed (emulator/mock fallback): ${String(e)}`);
-      // 降级：关闭已打开的文件句柄，使用容错机制
+      hilog.warn(DOMAIN, TAG, `AVRecorder unavailable, will fall back to placeholder clip: ${String(e)}`);
+      // 降级：关闭已打开的文件句柄（文件保持 0 字节，stopRecord 时写入占位音频）
       if (this.fd >= 0) {
         try {
           fileIo.closeSync(this.fd);
@@ -79,8 +134,30 @@ export class HarmonyAudioRecorderAdapter implements AudioRecorderPort {
   }
 
   async stopRecord(): Promise<AudioRecordResult> {
+    // 首次录音弹授权框时用户可能已松手：先等启动流程收敛，再决定怎么收尾。
+    const op: Promise<void> | null = this.startOp;
+    this.startOp = null;
+    if (op !== null) {
+      try {
+        await op;
+      } catch (_e) {
+        // 启动失败已在 startRecord 侧抛给调用方，这里只等待收敛。
+      }
+    }
+
     this.recording = false;
     const durationMs: number = Math.max(1000, Date.now() - this.startTimeMs);
+
+    if (this.startError.length > 0) {
+      // 启动就失败了（缺权限等）：绝不能把占位音频当成本次录音发出去。
+      hilog.error(DOMAIN, TAG, `stopRecord after failed start (${this.startError}); no audio produced`);
+      return {
+        filePath: this.outputPath,
+        durationMs,
+        waveform: this.generateNaturalWaveform(28),
+        playable: false
+      };
+    }
 
     if (this.avRecorder !== null) {
       try {
@@ -101,22 +178,29 @@ export class HarmonyAudioRecorderAdapter implements AudioRecorderPort {
       this.fd = -1;
     }
 
-    // 确保录音输出文件存在且非空（若模拟器硬件未写入，生成合法占位音频容器，防止 TDLib 拒绝）
-    this.ensureValidAudioFile(this.outputPath);
+    // 保证产物是「扩展名与容器一致、可解码」的文件；采集没写出字节时补占位音频。
+    this.ensurePlayableOutput();
+    const probe: AudioProbe = probeAudioFile(this.outputPath);
 
     // 生成符合自然语音起伏的 28 采样点波形（0..31 范围）
     const waveform: number[] = this.generateNaturalWaveform(28);
 
-    hilog.info(DOMAIN, TAG, `stopRecord completed: durationMs=${durationMs}, file=${this.outputPath}`);
+    hilog.info(
+      DOMAIN, TAG,
+      `stopRecord completed: durationMs=${durationMs}, size=${probe.size}, container=${probe.container}, playable=${probe.playable}, reason=${probe.reason}`
+    );
     return {
       filePath: this.outputPath,
       durationMs,
-      waveform
+      waveform,
+      playable: probe.playable
     };
   }
 
   async cancelRecord(): Promise<void> {
     this.recording = false;
+    this.startError = '';
+    this.startOp = null;
 
     if (this.avRecorder !== null) {
       try {
@@ -160,31 +244,90 @@ export class HarmonyAudioRecorderAdapter implements AudioRecorderPort {
     return Date.now() - this.startTimeMs;
   }
 
-  private ensureValidAudioFile(path: string): void {
+  /**
+   * 确保输出文件是可解码的音频容器。
+   *
+   * 采集成功（文件已是合法 M4A）→ 原样保留。
+   * 采集失败（0 字节或残片）→ 覆写为内置静音 M4A，保证「能播」优先于「有内容」。
+   */
+  private ensurePlayableOutput(): void {
+    const probe: AudioProbe = probeAudioFile(this.outputPath);
+    if (probe.playable) {
+      return;
+    }
+
+    hilog.warn(
+      DOMAIN, TAG,
+      `recording output unusable (reason=${probe.reason}, size=${probe.size}); writing placeholder clip`
+    );
+
+    const clip: Uint8Array | null = this.loadPlaceholderClip();
+    if (clip === null || clip.length === 0) {
+      hilog.error(DOMAIN, TAG, 'placeholder clip unavailable; recording output left unplayable');
+      return;
+    }
+
     try {
-      let needsWrite: boolean = true;
-      if (fileIo.accessSync(path)) {
-        const stat = fileIo.statSync(path);
-        if (stat.size > 0) {
-          needsWrite = false;
-        }
+      if (fileIo.accessSync(this.outputPath)) {
+        fileIo.unlinkSync(this.outputPath);
       }
-      if (needsWrite) {
-        const file = fileIo.openSync(path, fileIo.OpenMode.CREATE | fileIo.OpenMode.READ_WRITE);
-        // 极简 Ogg/Opus 或 M4A 文件头特征字节
-        const dummyAudioHeader = new Uint8Array([
-          0x4F, 0x67, 0x67, 0x53, 0x00, 0x02, 0x00, 0x00,
-          0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00,
-          0x00, 0x00, 0x00, 0x00, 0x12, 0x34, 0x56, 0x78,
-          0x01, 0x13, 0x4F, 0x70, 0x75, 0x73, 0x48, 0x65,
-          0x61, 0x64, 0x01, 0x01, 0x38, 0x01, 0x80, 0xBB,
-          0x00, 0x00, 0x00, 0x00, 0x00
-        ]);
-        fileIo.writeSync(file.fd, dummyAudioHeader.buffer);
-        fileIo.closeSync(file.fd);
-      }
+      const file = fileIo.openSync(this.outputPath, fileIo.OpenMode.CREATE | fileIo.OpenMode.READ_WRITE);
+      // 精确拷贝到独立 ArrayBuffer，避免把底层多余容量一并写出。
+      const payload: Uint8Array = new Uint8Array(clip.length);
+      payload.set(clip);
+      fileIo.writeSync(file.fd, payload.buffer);
+      fileIo.closeSync(file.fd);
+      hilog.info(DOMAIN, TAG, `placeholder clip written: bytes=${clip.length}`);
     } catch (e) {
-      hilog.error(DOMAIN, TAG, `ensureValidAudioFile error: ${String(e)}`);
+      hilog.error(DOMAIN, TAG, `write placeholder clip failed: ${String(e)}`);
+    }
+  }
+
+  /** 读取内置静音占位音频；上下文缺失或资源缺失时返回 null。 */
+  private loadPlaceholderClip(): Uint8Array | null {
+    const ctx: common.UIAbilityContext | null = this.abilityContext;
+    if (ctx === null) {
+      hilog.error(DOMAIN, TAG, 'abilityContext not attached; cannot load placeholder clip');
+      return null;
+    }
+    try {
+      return ctx.resourceManager.getRawFileContentSync(PLACEHOLDER_RAWFILE);
+    } catch (e) {
+      hilog.error(DOMAIN, TAG, `load placeholder clip failed: ${String(e)}`);
+      return null;
+    }
+  }
+
+  /**
+   * 确保麦克风运行时权限已授予。
+   *
+   * 已授权时 `requestPermissionsFromUser` 直接返回结果、不弹窗，因此可以无脑调用。
+   * 上下文未注入时放行——此时无法申请权限，硬性拦截会让录音功能整体不可用；
+   * 放行后退化为占位音频，行为与修复前一致但不再产生不可播放的文件。
+   */
+  private async ensureMicPermission(): Promise<boolean> {
+    if (this.micGranted) {
+      return true;
+    }
+
+    const ctx: common.UIAbilityContext | null = this.abilityContext;
+    if (ctx === null) {
+      hilog.warn(DOMAIN, TAG, 'abilityContext not attached; skip microphone permission request');
+      return true;
+    }
+
+    try {
+      const atManager: abilityAccessCtrl.AtManager = abilityAccessCtrl.createAtManager();
+      const result: PermissionRequestResult =
+        await atManager.requestPermissionsFromUser(ctx, [MIC_PERMISSION]);
+      const granted: boolean = result.authResults.length > 0 && result.authResults[0] === 0;
+      this.micGranted = granted;
+      hilog.info(DOMAIN, TAG, `microphone permission ${granted ? 'granted' : 'denied'}`);
+      return granted;
+    } catch (e) {
+      hilog.error(DOMAIN, TAG, `request microphone permission failed: ${String(e)}`);
+      // 申请过程本身出错（而非用户拒绝）时放行，走占位兜底，避免功能整体不可用。
+      return true;
     }
   }
 

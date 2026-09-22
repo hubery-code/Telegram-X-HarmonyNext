@@ -19,7 +19,8 @@ export class FakeAudioRecorder implements AudioRecorderPort {
     return {
       filePath: this.currentPath,
       durationMs: duration,
-      waveform: this.mockWaveform
+      waveform: this.mockWaveform,
+      playable: true
     };
   }
 

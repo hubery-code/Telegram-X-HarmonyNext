@@ -33,7 +33,7 @@ export {
   AudioPlaybackCompleteCallback,
   AudioPlaybackErrorCallback
 } from './AudioPlayerPort';
-export { AudioRecorderPort, AudioRecordResult } from './AudioRecorderPort';
+export { AudioRecorderPort, AudioRecordResult, ERR_MIC_PERMISSION_DENIED } from './AudioRecorderPort';
 export { FakePreferencesStore } from './fakes/FakePreferencesStore';
 export { FakeSecureKeyStore } from './fakes/FakeSecureKeyStore';
 export { FakeSecureRandom } from './fakes/FakeSecureRandom';

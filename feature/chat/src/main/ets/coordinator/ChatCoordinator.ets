@@ -43,6 +43,7 @@ import {
   FakeMediaPicker,
   AudioPlayerPort,
   AudioRecorderPort,
+  ERR_MIC_PERMISSION_DENIED,
   FakeAudioPlayer,
   FakeAudioRecorder
 } from '@tgx/platform-ports';
@@ -3496,7 +3497,13 @@ export class ChatCoordinator {
         this.dispatch(new VoiceRecordTick(this.recordingSeconds));
       }, 1000);
     } catch (e) {
-      this.logger.error(TAG, 'start_voice_record_failed', String(e));
+      const reason: string = String(e);
+      this.logger.error(TAG, 'start_voice_record_failed', reason);
+      // 麦克风权限是最常见且唯一「用户可自救」的失败原因，单独给可操作提示。
+      this.toastPort.showToast(
+        reason.indexOf(ERR_MIC_PERMISSION_DENIED) >= 0 ? '需要麦克风权限才能录音' : '无法开始录音',
+        2000
+      );
       this.dispatch(new CancelVoiceRecord());
     }
   }
@@ -3509,6 +3516,12 @@ export class ChatCoordinator {
       }
       const result = await this.audioRecorderPort.stopRecord();
       if (!result.filePath || result.filePath.length === 0) {
+        return;
+      }
+      if (result.playable === false) {
+        // 产物不可解码：宁可少发一条，也不要落地一条永远打不开的语音消息。
+        this.logger.error(TAG, 'voice_record_unplayable', 'recording output is not decodable; skip send');
+        this.toastPort.showToast('录音失败，未发送', 2000);
         return;
       }
       const durationSec: number = Math.max(1, Math.round(result.durationMs / 1000));

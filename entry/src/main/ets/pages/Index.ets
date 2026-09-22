@@ -28,6 +28,7 @@
 import { LightTheme, Theme, ThemeManager, parseChatFontSize, CHAT_FONT_SIZE_DEFAULT } from '@tgx/core-design-system';
 import { saveChatFontSize } from '../store/SettingsStore';
 import { hilog } from '@kit.PerformanceAnalysisKit';
+import { common } from '@kit.AbilityKit';
 import { AccountDescriptor, AccountScope } from '@tgx/core-account';
 import { AppError, ManualClock, Result, SequentialIdGenerator } from '@tgx/core-common';
 import { ReducerEnv } from '@tgx/feature-template';
@@ -239,6 +240,15 @@ struct Index {
     if (result.cacheDir !== undefined && result.cacheDir.length > 0) {
       this.cacheDir = result.cacheDir;
       this.mediaPickerAdapter.setCacheDir(result.cacheDir);
+    }
+
+    // VOICE-101：录音适配器需要 AbilityContext 才能申请麦克风运行时权限、
+    // 读取 rawfile 占位音频。字段初始化阶段拿不到 context，只能在这里注入。
+    const hostContext = this.getUIContext().getHostContext();
+    if (hostContext !== undefined) {
+      this.audioRecorderAdapter.setAbilityContext(hostContext as common.UIAbilityContext);
+    } else {
+      hilog.warn(DOMAIN, TAG, 'no host context; voice recording will fall back to placeholder clip');
     }
 
     // SET-105 / FEAT-UI-002：先把持久化的聊天字号灌进 ThemeManager，再取初始 Theme。
