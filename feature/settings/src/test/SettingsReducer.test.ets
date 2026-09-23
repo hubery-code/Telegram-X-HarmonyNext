@@ -29,6 +29,7 @@ import {
   TerminateAllOtherSessionsIntent,
   ProfileLoaded,
   RequestAddAccount,
+  SectionFocused,
   RequestLogout,
   SetAvailableAccounts,
   SetErrorMessage,
@@ -648,6 +649,47 @@ export default function settingsReducerTest(): void {
       expect(result.state === state).assertTrue();
       expect(result.effects.length).assertEqual(1);
       expect(result.effects[0].kind).assertEqual('terminateAllOtherSessions');
+    });
+
+    it('sectionFocused_notificationsSwitchesSectionWithoutEffects', 0, () => {
+      const state = SettingsUiState.initial();
+      expect(state.section).assertEqual('all');
+
+      const result = settingsReducer(state, new SectionFocused('notifications'), makeEnv());
+      expect(result.state.section).assertEqual('notifications');
+      expect(result.effects.length).assertEqual(0);
+    });
+
+    it('sectionFocused_dataAndStorageSwitchesSection', 0, () => {
+      const state = SettingsUiState.initial();
+      const result = settingsReducer(state, new SectionFocused('data_and_storage'), makeEnv());
+      expect(result.state.section).assertEqual('data_and_storage');
+      expect(result.state.showDevicesPage).assertFalse();
+    });
+
+    it('sectionFocused_devicesOpensActiveSessionsSubPage', 0, () => {
+      const state = SettingsUiState.initial();
+      const result = settingsReducer(state, new SectionFocused('devices'), makeEnv());
+
+      // 设备行的落点是既有的整屏活跃会话子页：分区保持 'all'，并触发会话拉取。
+      expect(result.state.section).assertEqual('all');
+      expect(result.state.showDevicesPage).assertTrue();
+      expect(result.state.isLoadingSessions).assertTrue();
+      expect(result.effects.length).assertEqual(1);
+      expect(result.effects[0].kind).assertEqual('loadActiveSessions');
+    });
+
+    it('sectionFocused_unknownSectionFallsBackToFullPage', 0, () => {
+      const state = SettingsUiState.initial().copyWith({ section: 'notifications' });
+      const result = settingsReducer(state, new SectionFocused('privacy_and_security'), makeEnv());
+      expect(result.state.section).assertEqual('all');
+    });
+
+    it('copyWith_keepsSectionWhenUnspecified', 0, () => {
+      const state = SettingsUiState.initial().copyWith({ section: 'data_and_storage' });
+      const next = state.copyWith({ displayName: 'hubery' });
+      expect(next.section).assertEqual('data_and_storage');
+      expect(next.displayName).assertEqual('hubery');
     });
   });
 }

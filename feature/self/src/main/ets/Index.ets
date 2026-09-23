@@ -11,8 +11,12 @@ export {
   SettingsSectionTapped,
   SelfProfileIntent
 } from './contract/SelfProfileIntent';
-export { FetchMeEffect, SelfProfileEffect } from './contract/SelfProfileEffect';
-export { selfProfileReducer } from './reducer/SelfProfileReducer';
+export {
+  FetchMeEffect,
+  OpenSettingsSection,
+  SelfProfileEffect
+} from './contract/SelfProfileEffect';
+export { selfProfileReducer, isSelfSettingsSection } from './reducer/SelfProfileReducer';
 export {
   SelfProfileCoordinatorOptions,
   SelfProfileUiStateListener,

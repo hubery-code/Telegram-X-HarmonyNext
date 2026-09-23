@@ -13,8 +13,8 @@ import {
   EditTapped,
   SettingsSectionTapped
 } from '../main/ets/contract/SelfProfileIntent';
-import { SelfProfileEffect } from '../main/ets/contract/SelfProfileEffect';
-import { selfProfileReducer } from '../main/ets/reducer/SelfProfileReducer';
+import { OpenSettingsSection, SelfProfileEffect } from '../main/ets/contract/SelfProfileEffect';
+import { selfProfileReducer, isSelfSettingsSection } from '../main/ets/reducer/SelfProfileReducer';
 
 function makeEnv(): ReducerEnv {
   return {
@@ -83,8 +83,25 @@ export default function selfProfileReducerTest(): void {
       expect(result.effects.length).assertEqual(0);
     });
 
-    it('settingsSectionTapped_eachSection_isNoOp', 0, () => {
-      const sections: string[] = ['devices', 'notifications', 'data_and_storage', 'privacy_and_security'];
+    it('settingsSectionTapped_knownSections_emitOpenSettingsSection', 0, () => {
+      const sections: string[] = ['devices', 'notifications', 'data_and_storage'];
+      for (let i = 0; i < sections.length; i++) {
+        const state: SelfProfileUiState = makeState().copyWith({ isLoading: false, displayName: 'N' });
+        const result: ReducerResult<SelfProfileUiState, SelfProfileEffect> = selfProfileReducer(
+          state,
+          new SettingsSectionTapped(sections[i]),
+          makeEnv()
+        );
+        expect(result.state === state).assertTrue();
+        expect(result.effects.length).assertEqual(1);
+        const effect: OpenSettingsSection = result.effects[0] as OpenSettingsSection;
+        expect(effect.kind).assertEqual('openSettingsSection');
+        expect(effect.section).assertEqual(sections[i]);
+      }
+    });
+
+    it('settingsSectionTapped_unknownSection_isNoOp', 0, () => {
+      const sections: string[] = ['privacy_and_security', '', 'Devices', 'appearance'];
       for (let i = 0; i < sections.length; i++) {
         const state: SelfProfileUiState = makeState().copyWith({ isLoading: false, displayName: 'N' });
         const result: ReducerResult<SelfProfileUiState, SelfProfileEffect> = selfProfileReducer(
@@ -95,6 +112,15 @@ export default function selfProfileReducerTest(): void {
         expect(result.state === state).assertTrue();
         expect(result.effects.length).assertEqual(0);
       }
+    });
+
+    it('isSelfSettingsSection_matchesWhitelistOnly', 0, () => {
+      expect(isSelfSettingsSection('devices')).assertTrue();
+      expect(isSelfSettingsSection('notifications')).assertTrue();
+      expect(isSelfSettingsSection('data_and_storage')).assertTrue();
+      expect(isSelfSettingsSection('privacy_and_security')).assertFalse();
+      expect(isSelfSettingsSection('all')).assertFalse();
+      expect(isSelfSettingsSection('')).assertFalse();
     });
   });
 }

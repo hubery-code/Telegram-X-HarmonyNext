@@ -4,7 +4,7 @@
  * 对齐 TGX 自身资料页（ProfileController Args 为自身时的 editMode 分支）：
  * 绿色头部（居中大头像 + 展示名 + 在线状态）+ 右下角 ✎ 编辑 FAB +
  * 信息行（@username / 手机 / 个人简介 / 生日）+ 设置入口组
- * （设备 / 通知 / 数据和存储 / 隐私和安全，占位点击）。
+ * （设备 / 通知 / 数据和存储，点击直达设置页对应分区）。
  *
  * 全部颜色/间距/字号走 design tokens（core-design-system）。
  */
@@ -37,19 +37,22 @@ const AVATAR_PALETTE: string[] = [
   '#FF309EBA', '#FF368AD1', '#FFC7508B'
 ];
 
-/** 设置入口组（SELF-101 点击仅占位 dispatch，副标题对齐 TGX 截图）。 */
+/**
+ * 设置入口组（SELF-101）：key 与 `settingsSection/{section}` 路由参数一致，
+ * 点击经 reducer 出 OpenSettingsSection 效应。只列**已有落点**的三项——
+ * 「隐私和安全」在 TGX 是独立页，本页依赖 TDLib getPrivacySettingRules 分区尚未
+ * 拆包，先不占位（此前四行都写死副标题且点了没反应）。
+ */
 interface SettingsEntry {
   readonly key: string;
   readonly label: string;
-  readonly subtitle: string;
   readonly icon: Resource;
 }
 
 const SETTINGS_ENTRIES: SettingsEntry[] = [
-  { key: 'devices', label: '设备', subtitle: '—', icon: $r('app.media.ic_devices') },
-  { key: 'notifications', label: '通知', subtitle: '开启', icon: $r('app.media.ic_notifications') },
-  { key: 'data_and_storage', label: '数据和存储', subtitle: '', icon: $r('app.media.ic_storage') },
-  { key: 'privacy_and_security', label: '隐私和安全', subtitle: '', icon: $r('app.media.ic_lock') }
+  { key: 'devices', label: '设备', icon: $r('app.media.ic_devices') },
+  { key: 'notifications', label: '通知', icon: $r('app.media.ic_notifications') },
+  { key: 'data_and_storage', label: '数据和存储', icon: $r('app.media.ic_storage') }
 ];
 
 const BACK_ARROW_SIZE: number = 44;
@@ -209,12 +212,6 @@ export struct SelfProfilePage {
               .fontSize(this.T.typography.body.fontSize)
               .fontColor(this.T.colors.textPrimary)
               .layoutWeight(1)
-
-            if (entry.subtitle.length > 0) {
-              Text(entry.subtitle)
-                .fontSize(this.T.typography.subheadline.fontSize)
-                .fontColor(this.T.colors.textSecondary)
-            }
 
             Image($r('app.media.ic_chevron_right'))
               .width(18)

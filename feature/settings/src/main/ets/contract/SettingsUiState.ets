@@ -12,6 +12,7 @@ import { ThemePreference, CHAT_FONT_SIZE_DEFAULT } from '@tgx/core-design-system
 import { LanguagePreference } from '@tgx/core-common';
 import { NotificationScopeKey } from '../model/NotificationSettings';
 import { ActiveSessionItem } from '../model/ActiveSessionItem';
+import { SettingsSectionKey } from '../model/SettingsSection';
 
 export type SettingsThemeMode = ThemePreference;
 
@@ -48,6 +49,8 @@ export interface SettingsUiStateOptions {
   readonly isLoadingSessions?: boolean;
   /** FEAT-UI-002 / SET-105：聊天消息字号（sp，合法档位）。 */
   readonly chatFontSize?: number;
+  /** SELF-101：分区直达时的可见分区；缺省 'all' 即完整设置页。 */
+  readonly section?: SettingsSectionKey;
 }
 
 export class SettingsUiState implements UiState {
@@ -86,6 +89,8 @@ export class SettingsUiState implements UiState {
   readonly isLoadingSessions: boolean;
   /** FEAT-UI-002 / SET-105：聊天消息字号（sp，恒为合法档位）。 */
   readonly chatFontSize: number;
+  /** SELF-101：分区直达时的可见分区；'all' 为完整设置页。 */
+  readonly section: SettingsSectionKey;
 
   constructor(
     userId: number,
@@ -115,7 +120,8 @@ export class SettingsUiState implements UiState {
     showDevicesPage: boolean = false,
     activeSessions: readonly ActiveSessionItem[] = [],
     isLoadingSessions: boolean = false,
-    chatFontSize: number = CHAT_FONT_SIZE_DEFAULT
+    chatFontSize: number = CHAT_FONT_SIZE_DEFAULT,
+    section: SettingsSectionKey = 'all'
   ) {
     this.userId = userId;
     this.displayName = displayName;
@@ -145,6 +151,7 @@ export class SettingsUiState implements UiState {
     this.activeSessions = activeSessions;
     this.isLoadingSessions = isLoadingSessions;
     this.chatFontSize = chatFontSize;
+    this.section = section;
   }
 
   static initial(
@@ -226,7 +233,8 @@ export class SettingsUiState implements UiState {
       options.showDevicesPage !== undefined ? options.showDevicesPage : this.showDevicesPage,
       options.activeSessions !== undefined ? options.activeSessions : this.activeSessions,
       options.isLoadingSessions !== undefined ? options.isLoadingSessions : this.isLoadingSessions,
-      options.chatFontSize !== undefined ? options.chatFontSize : this.chatFontSize
+      options.chatFontSize !== undefined ? options.chatFontSize : this.chatFontSize,
+      options.section !== undefined ? options.section : this.section
     );
   }
 }

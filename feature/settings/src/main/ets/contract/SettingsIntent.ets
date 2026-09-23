@@ -244,6 +244,19 @@ export class CloseDevicesPage implements Intent {
   readonly kind: 'closeDevicesPage' = 'closeDevicesPage';
 }
 
+/**
+ * SELF-101：分区直达。`section` 是路由带来的外部字符串（`settingsSection/{section}`），
+ * 由 reducer 经 `parseSettingsSection` 收敛后才写入状态；'devices' 转成打开活跃会话子页。
+ */
+export class SectionFocused implements Intent {
+  readonly kind: 'sectionFocused' = 'sectionFocused';
+  readonly section: string;
+
+  constructor(section: string) {
+    this.section = section;
+  }
+}
+
 /** FEAT-P2-008：拉取活跃设备/会话列表。 */
 export class LoadActiveSessions implements Intent {
   readonly kind: 'loadActiveSessions' = 'loadActiveSessions';
@@ -318,4 +331,5 @@ export type SettingsIntent =
   | ActiveSessionsLoaded
   | ActiveSessionsLoadFailed
   | TerminateSessionIntent
-  | TerminateAllOtherSessionsIntent;
+  | TerminateAllOtherSessionsIntent
+  | SectionFocused;

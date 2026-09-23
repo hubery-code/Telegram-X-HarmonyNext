@@ -38,6 +38,7 @@ export {
   SetAvailableAccounts,
   OpenDevicesPage,
   CloseDevicesPage,
+  SectionFocused,
   LoadActiveSessions,
   ActiveSessionsLoaded,
   ActiveSessionsLoadFailed,
@@ -68,6 +69,14 @@ export {
 // Model
 export { ActiveSessionItem } from './model/ActiveSessionItem';
 export { formatBytes, formatStorageLabel } from './model/StorageSize';
+export {
+  SettingsSectionKey,
+  SettingsCardKey,
+  parseSettingsSection,
+  settingsSectionTitleKey,
+  settingsCardsForSection,
+  sectionShowsCard
+} from './model/SettingsSection';
 export {
   NotificationScopeKey,
   NOTIFICATIONS_MUTED_FOREVER_SECONDS,

@@ -12,6 +12,7 @@ import { Reducer, ReducerEnv, ReducerResult, reduced } from '@tgx/feature-templa
 import { ThemeManager, clampChatFontSize } from '@tgx/core-design-system';
 import { Lang, LanguagePreference } from '@tgx/core-common';
 import { SettingsUiState, SettingsUiStateOptions } from '../contract/SettingsUiState';
+import { parseSettingsSection } from '../model/SettingsSection';
 import {
   CacheCleared,
   ChangeChatFontSize,
@@ -36,6 +37,7 @@ import {
   ToggleNotificationScope,
   OpenDevicesPage,
   CloseDevicesPage,
+  SectionFocused,
   LoadActiveSessions,
   ActiveSessionsLoaded,
   ActiveSessionsLoadFailed,
@@ -434,6 +436,24 @@ export const settingsReducer: Reducer<SettingsUiState, SettingsIntent, SettingsE
     case 'closeDevicesPage': {
       const options: SettingsUiStateOptions = {
         showDevicesPage: false
+      };
+      return reduced(state.copyWith(options));
+    }
+
+    case 'sectionFocused': {
+      const focus: SectionFocused = intent as SectionFocused;
+      // 'devices' 的落点是既有的整屏活跃会话子页，不占分区渲染。
+      if (focus.section === 'devices') {
+        const options: SettingsUiStateOptions = {
+          section: 'all',
+          showDevicesPage: true,
+          isLoadingSessions: true,
+          errorMessage: null
+        };
+        return reduced(state.copyWith(options), [new LoadActiveSessionsEffect()]);
+      }
+      const options: SettingsUiStateOptions = {
+        section: parseSettingsSection(focus.section)
       };
       return reduced(state.copyWith(options));
     }

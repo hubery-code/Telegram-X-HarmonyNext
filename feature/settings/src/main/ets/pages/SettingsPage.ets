@@ -42,6 +42,7 @@ import {
   ToggleNotifications
 } from '../contract/SettingsIntent';
 import { NotificationScopeKey } from '../model/NotificationSettings';
+import { SettingsCardKey, sectionShowsCard, settingsSectionTitleKey } from '../model/SettingsSection';
 import { DevicesSubPage } from './DevicesSubPage';
 
 const AVATAR_SIZE: number = 64;
@@ -128,6 +129,16 @@ export struct SettingsPage {
     return AVATAR_PALETTE[idx];
   }
 
+  /** SELF-101：分区直达时只渲染该分区的卡片块（'all' 即全量）。 */
+  private showsCard(card: SettingsCardKey): boolean {
+    return sectionShowsCard(this.uiState.section, card);
+  }
+
+  /** 分区页的标题已经是分区名，不再重复渲染分区小标题。 */
+  private showsSectionTitle(): boolean {
+    return this.uiState.section === 'all';
+  }
+
   private getAccountsList(): string[] {
     const list: string[] = [];
     for (let i = 0; i < this.uiState.availableAccounts.length; i++) {
@@ -147,28 +158,50 @@ export struct SettingsPage {
               this.ErrorBannerView()
             }
 
-            this.ProfileCardView()
+            if (this.showsCard('profile')) {
+              this.ProfileCardView()
+            }
 
-            this.SectionTitle(this.t('NOTIFICATIONS'))
-            this.NotificationsCardView()
+            if (this.showsCard('notifications')) {
+              if (this.showsSectionTitle()) {
+                this.SectionTitle(this.t('NOTIFICATIONS'))
+              }
+              this.NotificationsCardView()
+            }
 
-            this.SectionTitle(this.t('DEVICES'))
-            this.DevicesCardView()
+            if (this.showsCard('devices')) {
+              if (this.showsSectionTitle()) {
+                this.SectionTitle(this.t('DEVICES'))
+              }
+              this.DevicesCardView()
+            }
 
-            this.SectionTitle(this.t('DATA AND STORAGE'))
-            this.StorageCardView()
+            if (this.showsCard('storage')) {
+              if (this.showsSectionTitle()) {
+                this.SectionTitle(this.t('DATA AND STORAGE'))
+              }
+              this.StorageCardView()
+            }
 
-            this.SectionTitle(this.t('APPEARANCE'))
-            this.ThemeCardView()
-            this.ChatFontSizeCardView()
+            if (this.showsCard('appearance')) {
+              this.SectionTitle(this.t('APPEARANCE'))
+              this.ThemeCardView()
+              this.ChatFontSizeCardView()
+            }
 
-            this.SectionTitle(this.t('LANGUAGE'))
-            this.LanguageCardView()
+            if (this.showsCard('language')) {
+              this.SectionTitle(this.t('LANGUAGE'))
+              this.LanguageCardView()
+            }
 
-            this.SectionTitle(this.t('ABOUT'))
-            this.AboutCardView()
+            if (this.showsCard('about')) {
+              this.SectionTitle(this.t('ABOUT'))
+              this.AboutCardView()
+            }
 
-            this.LogoutSectionView()
+            if (this.showsCard('logout')) {
+              this.LogoutSectionView()
+            }
           }
           .width('100%')
           .padding({
@@ -178,6 +211,7 @@ export struct SettingsPage {
           })
         }
         .layoutWeight(1)
+        .align(Alignment.TopStart)
         .scrollBar(BarState.Off)
       }
       .width('100%')
@@ -222,7 +256,7 @@ export struct SettingsPage {
           this.onBack();
         })
 
-      Text(this.t('Settings'))
+      Text(this.t(settingsSectionTitleKey(this.uiState.section)))
         .fontSize(this.getTheme().typography.largeTitle.fontSize)
         .fontWeight(this.getTheme().typography.largeTitle.fontWeight)
         .fontColor(this.getTheme().colors.textPrimary)

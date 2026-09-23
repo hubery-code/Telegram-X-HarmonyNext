@@ -7,7 +7,8 @@
  *   birthdate（`YYYY年M月D日 (N 岁)`，按当前日期算 N；year=0 退化为 `M月D日`）；
  * - 大头像（profile_photo.big）：FileRegistry 本地路径命中即用，未命中
  *   downloadFile(priority 2) 并订阅 updateFile，落盘后回灌路径；
- * - EditTapped / SettingsSectionTapped 仅占位 log（后续工作包接编辑页/设置页）。
+ * - SettingsSectionTapped 经 reducer 出 OpenSettingsSection 效应，由装配层注入的
+ *   onOpenSettingsSection 回调落路由；EditTapped 仍为占位 log（编辑页未拆包）。
  *
  * 生命周期：构造即建 registries（其构造自带 start），start() 发 getMe，
  * destroy() 停订阅并停两个 registry。
@@ -40,10 +41,9 @@ import {
   SelfProfileIntent,
   OnProfileLoaded,
   OnAvatarFileLoaded,
-  OnProfileFailed,
-  SettingsSectionTapped
+  OnProfileFailed
 } from '../contract/SelfProfileIntent';
-import { SelfProfileEffect, FetchMeEffect } from '../contract/SelfProfileEffect';
+import { SelfProfileEffect, FetchMeEffect, OpenSettingsSection } from '../contract/SelfProfileEffect';
 import { selfProfileReducer } from '../reducer/SelfProfileReducer';
 
 const TAG: string = 'SelfProfileCoordinator';
@@ -53,6 +53,8 @@ const AVATAR_DOWNLOAD_PRIORITY: number = 2;
 
 export interface SelfProfileCoordinatorOptions {
   readonly logger?: Logger;
+  /** SELF-101：入口行落地导航（section 与 settingsSection/{section} 路由同名）。 */
+  readonly onOpenSettingsSection?: (section: string) => void;
 }
 
 export type SelfProfileUiStateListener = (uiState: SelfProfileUiState) => void;
@@ -138,6 +140,7 @@ export class SelfProfileCoordinator {
   private readonly userRegistry: UserRegistry;
   private readonly fileRegistry: FileRegistry;
   private readonly logger: Logger;
+  private readonly onOpenSettingsSection: ((section: string) => void) | null;
   private readonly env: ReducerEnv;
   private currentState: SelfProfileUiState;
   private readonly listeners: SelfProfileUiStateListener[] = [];
@@ -156,6 +159,9 @@ export class SelfProfileCoordinator {
     this.logger = options !== undefined && options.logger !== undefined
       ? options.logger
       : new Logger();
+    this.onOpenSettingsSection = options !== undefined && options.onOpenSettingsSection !== undefined
+      ? options.onOpenSettingsSection
+      : null;
     this.env = {
       clock: new ManualClock(1000, 500),
       ids: new SequentialIdGenerator('self-')
@@ -183,12 +189,9 @@ export class SelfProfileCoordinator {
         this.listeners[i](this.currentState);
       }
     }
-    // 占位动作：仅 log，后续工作包接编辑页/设置页导航。
+    // 占位动作：编辑资料页尚未拆包，仅 log。
     if (intent.kind === 'editTapped') {
       this.logger.info(TAG, 'edit_tapped');
-    } else if (intent.kind === 'settingsSectionTapped') {
-      const tapped: SettingsSectionTapped = intent as SettingsSectionTapped;
-      this.logger.info(TAG, 'settings_section_tapped', `section=${tapped.section}`);
     }
     for (let i = 0; i < result.effects.length; i++) {
       this.executeEffect(result.effects[i]);
@@ -222,6 +225,14 @@ export class SelfProfileCoordinator {
 
   private executeEffect(effect: SelfProfileEffect): void {
     switch (effect.kind) {
+      case 'openSettingsSection': {
+        const open: OpenSettingsSection = effect as OpenSettingsSection;
+        this.logger.info(TAG, 'open_settings_section', `section=${open.section}`);
+        if (this.onOpenSettingsSection !== null) {
+          this.onOpenSettingsSection(open.section);
+        }
+        break;
+      }
       case 'fetchMe': {
         this.logger.info(TAG, 'fetch_me');
         const req: GetMe = new GetMe();

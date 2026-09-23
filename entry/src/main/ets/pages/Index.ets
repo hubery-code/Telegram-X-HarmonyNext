@@ -32,7 +32,7 @@ import { common } from '@kit.AbilityKit';
 import { AccountDescriptor, AccountScope } from '@tgx/core-account';
 import { AppError, ManualClock, Result, SequentialIdGenerator } from '@tgx/core-common';
 import { ReducerEnv } from '@tgx/feature-template';
-import { AppRoute, ChatRoute, ChatInfoRoute, UserProfileRoute, CommentsRoute } from '@tgx/core-navigation';
+import { AppRoute, ChatRoute, ChatInfoRoute, UserProfileRoute, CommentsRoute, SettingsSectionRoute } from '@tgx/core-navigation';
 import { EntryNavigationController } from '../navigation/EntryNavigationController';
 import {
   AuthRootPage,
@@ -73,6 +73,7 @@ import {
   SwitchAccount,
   RequestAddAccount,
   CloseDevicesPage,
+  SectionFocused,
   CloseAccountSwitcher,
   CancelLogout
 } from '@tgx/feature-settings';
@@ -403,6 +404,11 @@ struct Index {
       if (this.settingsCoordinator === null) {
         this.openSettings();
       }
+      // SELF-101：「我的资料」入口带 section 时直达对应分区/子页。
+      if (route.name === 'settingsSection') {
+        const sectionRoute: SettingsSectionRoute = route as SettingsSectionRoute;
+        this.settingsDispatch(new SectionFocused(sectionRoute.section));
+      }
     } else if (route.name === 'search') {
       if (this.searchCoordinator === null) {
         this.openSearch();
@@ -648,7 +654,10 @@ struct Index {
     }
     this.closeSelfProfile();
     const coordinator: SelfProfileCoordinator = new SelfProfileCoordinator(this.accountScope, {
-      logger: this.logger
+      logger: this.logger,
+      onOpenSettingsSection: (section: string): void => {
+        this.navController.navigateTo({ name: 'settingsSection', section: section });
+      }
     });
     this.selfProfileCoordinator = coordinator;
     this.unsubscribeSelfFn = coordinator.subscribe((uiState: SelfProfileUiState): void => {

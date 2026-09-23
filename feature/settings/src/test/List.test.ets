@@ -3,6 +3,7 @@ import storageSizeTest from './StorageSize.test';
 import settingsThemeTest from './SettingsTheme.test';
 import notificationSettingsTest from './NotificationSettings.test';
 import devicesSubPageTest from './DevicesSubPage.test';
+import settingsSectionTest from './SettingsSection.test';
 
 export default function testsuite(): void {
   settingsReducerTest();
@@ -10,4 +11,5 @@ export default function testsuite(): void {
   settingsThemeTest();
   notificationSettingsTest();
   devicesSubPageTest();
+  settingsSectionTest();
 }
