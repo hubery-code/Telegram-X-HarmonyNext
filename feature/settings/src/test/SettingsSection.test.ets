@@ -43,8 +43,12 @@ export default function settingsSectionTest(): void {
     });
 
     it('cards_allSectionShowsEveryBlock', 0, () => {
-      expect(settingsCardsForSection('all').length).assertEqual(8);
+      expect(settingsCardsForSection('all').length).assertEqual(9);
       expect(sectionShowsCard('all', 'logout')).assertTrue();
+      // SELF-102：隐私行只在完整设置页出现，不单独成区（落点是整屏子页）。
+      expect(sectionShowsCard('all', 'privacy')).assertTrue();
+      expect(sectionShowsCard('notifications', 'privacy')).assertFalse();
+      expect(sectionShowsCard('data_and_storage', 'privacy')).assertFalse();
     });
   });
 }

@@ -7,16 +7,19 @@
  *
  * `devices` 不占用分区渲染：设置页内已有整屏的活跃会话子页（DevicesSubPage），
  * 直达它才是 TGX「设备」行的落点，故由 reducer 转成 showDevicesPage=true。
+ * `privacy`（SELF-102）同理，落点是 PrivacySubPage；两者都只作为卡片行出现在
+ * 完整设置页里，不单独成一个分区。
  */
 
 export type SettingsSectionKey = 'all' | 'notifications' | 'data_and_storage';
 
 /** 分区页内渲染的卡片块。 */
 export type SettingsCardKey =
-  'profile' | 'notifications' | 'devices' | 'storage' | 'appearance' | 'language' | 'about' | 'logout';
+  | 'profile' | 'notifications' | 'devices' | 'privacy' | 'storage'
+  | 'appearance' | 'language' | 'about' | 'logout';
 
 const ALL_CARDS: SettingsCardKey[] = [
-  'profile', 'notifications', 'devices', 'storage', 'appearance', 'language', 'about', 'logout'
+  'profile', 'notifications', 'devices', 'privacy', 'storage', 'appearance', 'language', 'about', 'logout'
 ];
 
 const NOTIFICATIONS_CARDS: SettingsCardKey[] = ['notifications'];

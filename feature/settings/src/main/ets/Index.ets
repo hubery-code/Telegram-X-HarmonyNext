@@ -44,6 +44,13 @@ export {
   ActiveSessionsLoadFailed,
   TerminateSessionIntent,
   TerminateAllOtherSessionsIntent,
+  OpenPrivacyPage,
+  ClosePrivacyPage,
+  LoadPrivacySettings,
+  PrivacySettingsLoaded,
+  TogglePrivacySetting,
+  PrivacySettingUpdated,
+  PrivacySettingUpdateFailed,
   SettingsIntent
 } from './contract/SettingsIntent';
 
@@ -63,12 +70,27 @@ export {
   LoadActiveSessionsEffect,
   TerminateSessionEffect,
   TerminateAllOtherSessionsEffect,
+  LoadPrivacySettingsEffect,
+  SetPrivacySettingEffect,
   SettingsEffect
 } from './contract/SettingsEffect';
 
 // Model
 export { ActiveSessionItem } from './model/ActiveSessionItem';
 export { formatBytes, formatStorageLabel } from './model/StorageSize';
+export {
+  PrivacyChoice,
+  PrivacySettingItem,
+  PrivacySettingKey,
+  PRIVACY_SETTING_KEYS,
+  choiceFromRules,
+  isPrivacyChoiceWritable,
+  nextPrivacyChoice,
+  privacyChoiceLabel,
+  privacySettingLabel,
+  rulesForChoice,
+  toUserPrivacySetting
+} from './model/PrivacySettings';
 export {
   SettingsSectionKey,
   SettingsCardKey,
@@ -97,3 +119,4 @@ export {
 // UI Pages
 export { SettingsPage, AVATAR_PALETTE } from './pages/SettingsPage';
 export { DevicesSubPage, formatSessionDate } from './pages/DevicesSubPage';
+export { PrivacySubPage } from './pages/PrivacySubPage';

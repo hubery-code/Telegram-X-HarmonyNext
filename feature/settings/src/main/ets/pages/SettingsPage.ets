@@ -39,11 +39,20 @@ import {
   SettingsIntent,
   SwitchAccount,
   ToggleNotificationScope,
-  ToggleNotifications
+  ToggleNotifications,
+  ClosePrivacyPage,
+  OpenPrivacyPage
 } from '../contract/SettingsIntent';
 import { NotificationScopeKey } from '../model/NotificationSettings';
+import {
+  PrivacyChoice,
+  PrivacySettingItem,
+  PrivacySettingKey,
+  privacyChoiceLabel
+} from '../model/PrivacySettings';
 import { SettingsCardKey, sectionShowsCard, settingsSectionTitleKey } from '../model/SettingsSection';
 import { DevicesSubPage } from './DevicesSubPage';
+import { PrivacySubPage } from './PrivacySubPage';
 
 const AVATAR_SIZE: number = 64;
 const BACK_ARROW_SIZE: number = 44;
@@ -147,6 +156,17 @@ export struct SettingsPage {
     return list;
   }
 
+  /** SELF-102：卡片副标题预览「最后上线时间」当前档位（未加载时为 unknown）。 */
+  private privacyChoiceOf(key: PrivacySettingKey): PrivacyChoice {
+    const items: readonly PrivacySettingItem[] = this.uiState.privacyItems;
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].key === key) {
+        return items[i].choice;
+      }
+    }
+    return 'unknown';
+  }
+
   build() {
     Stack() {
       Column() {
@@ -174,6 +194,13 @@ export struct SettingsPage {
                 this.SectionTitle(this.t('DEVICES'))
               }
               this.DevicesCardView()
+            }
+
+            if (this.showsCard('privacy')) {
+              if (this.showsSectionTitle()) {
+                this.SectionTitle(this.t('PRIVACY'))
+              }
+              this.PrivacyCardView()
             }
 
             if (this.showsCard('storage')) {
@@ -232,6 +259,16 @@ export struct SettingsPage {
           onDispatch: this.onDispatch,
           onBack: (): void => {
             this.onDispatch(new CloseDevicesPage());
+          }
+        })
+      }
+
+      if (this.uiState.showPrivacyPage) {
+        PrivacySubPage({
+          uiState: this.uiState,
+          onDispatch: this.onDispatch,
+          onBack: (): void => {
+            this.onDispatch(new ClosePrivacyPage());
           }
         })
       }
@@ -517,6 +554,44 @@ export struct SettingsPage {
     .borderRadius(this.getTheme().radius.md)
     .onClick((): void => {
       this.onDispatch(new OpenDevicesPage());
+    })
+  }
+
+  @Builder
+  PrivacyCardView() {
+    Row() {
+      Image($r('app.media.ic_lock'))
+        .width(22)
+        .height(22)
+        .fillColor(this.getTheme().colors.accent)
+        .margin({ right: this.getTheme().spacing.sm })
+
+      Column() {
+        Text(this.t('Privacy & Security'))
+          .fontSize(this.getTheme().typography.body.fontSize)
+          .fontColor(this.getTheme().colors.textPrimary)
+
+        Text(this.uiState.privacyItems.length > 0
+          ? `${this.t('Last Seen')}: ${this.t(privacyChoiceLabel(this.privacyChoiceOf('show_last_seen')))}`
+          : this.t('Tap a row to change who can see it.'))
+          .fontSize(this.getTheme().typography.footnote.fontSize)
+          .fontColor(this.getTheme().colors.textSecondary)
+          .margin({ top: this.getTheme().spacing.xs })
+      }
+      .alignItems(HorizontalAlign.Start)
+      .layoutWeight(1)
+
+      Image($r('app.media.ic_chevron_right'))
+        .width(18)
+        .height(18)
+        .fillColor(this.getTheme().colors.textSecondary)
+    }
+    .width('100%')
+    .padding(this.getTheme().spacing.md)
+    .backgroundColor(this.getTheme().colors.surface)
+    .borderRadius(this.getTheme().radius.md)
+    .onClick((): void => {
+      this.onDispatch(new OpenPrivacyPage());
     })
   }
 

@@ -73,6 +73,7 @@ import {
   SwitchAccount,
   RequestAddAccount,
   CloseDevicesPage,
+  ClosePrivacyPage,
   SectionFocused,
   CloseAccountSwitcher,
   CancelLogout
@@ -323,6 +324,10 @@ struct Index {
     if (this.currentRoute.name === 'settings' || this.currentRoute.name === 'settingsSection') {
       if (this.settingsUiState.showDevicesPage) {
         this.settingsDispatch(new CloseDevicesPage());
+        return true;
+      }
+      if (this.settingsUiState.showPrivacyPage) {
+        this.settingsDispatch(new ClosePrivacyPage());
         return true;
       }
       if (this.settingsUiState.showAccountSwitcher) {

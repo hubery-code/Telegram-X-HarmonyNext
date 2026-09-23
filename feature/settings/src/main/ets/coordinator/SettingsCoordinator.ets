@@ -59,7 +59,14 @@ import {
   TerminateSession,
   encodeTerminateSession,
   TerminateAllOtherSessions,
-  encodeTerminateAllOtherSessions
+  encodeTerminateAllOtherSessions,
+  GetUserPrivacySettingRules,
+  encodeGetUserPrivacySettingRules,
+  SetUserPrivacySettingRules,
+  encodeSetUserPrivacySettingRules,
+  UserPrivacySettingRules,
+  TdUserPrivacySettingRule,
+  decodeUserPrivacySettingRules
 } from '@tgx/core-td-api-generated';
 import { TdPendingRequest, TdWireObject } from '@tgx/td-gateway';
 import { ReducerEnv, ReducerResult } from '@tgx/feature-template';
@@ -72,6 +79,16 @@ import {
   withNotificationsEnabled
 } from '../model/NotificationSettings';
 import { ActiveSessionItem } from '../model/ActiveSessionItem';
+import {
+  choiceFromRules,
+  PrivacyChoice,
+  PrivacySettingItem,
+  PrivacySettingKey,
+  PRIVACY_SETTING_KEYS,
+  privacySettingLabel,
+  rulesForChoice,
+  toUserPrivacySetting
+} from '../model/PrivacySettings';
 import {
   ActiveSessionsLoaded,
   ActiveSessionsLoadFailed,
@@ -86,6 +103,9 @@ import {
   NotificationSettingsUpdated,
   NotificationSettingsUpdateFailed,
   ProfileLoaded,
+  PrivacySettingsLoaded,
+  PrivacySettingUpdated,
+  PrivacySettingUpdateFailed,
   SetAvailableAccounts,
   SetErrorMessage,
   SettingsIntent,
@@ -107,12 +127,23 @@ import {
   ShowToastEffect,
   SwitchAccountEffect,
   TerminateAllOtherSessionsEffect,
-  TerminateSessionEffect
+  TerminateSessionEffect,
+  LoadPrivacySettingsEffect,
+  SetPrivacySettingEffect
 } from '../contract/SettingsEffect';
 import { settingsReducer } from '../reducer/SettingsReducer';
 import { Theme, ThemeManager } from '@tgx/core-design-system';
 
 const TAG: string = 'SettingsCoordinator';
+
+/** 日志用的规则类型串：排查「写进去的和回读回来的不是一条」时唯一可辨识的信息。 */
+function privacyRuleTypesForLog(rules: TdUserPrivacySettingRule[]): string {
+  const types: string[] = [];
+  for (let i = 0; i < rules.length; i++) {
+    types.push(rules[i].type);
+  }
+  return types.join(',');
+}
 
 export type SettingsUiStateListener = (state: SettingsUiState) => void;
 
@@ -351,6 +382,16 @@ export class SettingsCoordinator {
       case 'terminateAllOtherSessions':
         this.handleTerminateAllOtherSessions();
         break;
+
+      case 'loadPrivacySettings':
+        this.handleLoadPrivacySettings();
+        break;
+
+      case 'setPrivacySetting': {
+        const privacyEffect: SetPrivacySettingEffect = effect as SetPrivacySettingEffect;
+        this.handleSetPrivacySetting(privacyEffect.key, privacyEffect.choice);
+        break;
+      }
 
       default:
         break;
@@ -998,5 +1039,194 @@ export class SettingsCoordinator {
       this.logger.logError(TAG, result.error);
       this.dispatch(new SetErrorMessage(result.error.message));
     }
+  }
+
+  // ---- SELF-102 隐私和安全 ----
+
+  /**
+   * 读取 8 项隐私设置。
+   * 串行而不是 Promise.all：TDLib 对同一连接的并发请求会回 too_many_requests，
+   * 通知设置（SET-106）同口径处理，这里保持一致。
+   * 单项失败不整屏报错，只把该项落成 unknown，其余 7 项照常显示。
+   */
+  private handleLoadPrivacySettings(): void {
+    this.loadPrivacySettings();
+  }
+
+  private async loadPrivacySettings(): Promise<void> {
+    try {
+      const items: PrivacySettingItem[] = [];
+      for (let i = 0; i < PRIVACY_SETTING_KEYS.length; i++) {
+        const key: PrivacySettingKey = PRIVACY_SETTING_KEYS[i];
+        const result: Result<PrivacyChoice, AppError> = await this.fetchPrivacyChoice(key);
+        if (result.ok) {
+          items.push(new PrivacySettingItem(key, result.value));
+        }
+        if (result.err) {
+          this.logger.logError(TAG, result.error);
+          items.push(new PrivacySettingItem(key, 'unknown'));
+        }
+      }
+      if (this.destroyed) {
+        return;
+      }
+      this.dispatch(new PrivacySettingsLoaded(items));
+    } catch (e) {
+      if (this.destroyed) {
+        return;
+      }
+      const cause: string = e instanceof Error ? e.name : 'non-error';
+      const error: AppError = AppErrors.unknown(
+        'settings-privacy-load',
+        'Unexpected privacy settings load failure',
+        cause
+      );
+      this.logger.logError(TAG, error);
+      this.dispatch(new PrivacySettingsLoaded([]));
+      this.dispatch(new SetErrorMessage(this.privacyErrorMessage(error, 'load')));
+    }
+  }
+
+  private handleSetPrivacySetting(key: PrivacySettingKey, choice: PrivacyChoice): void {
+    this.setPrivacySetting(key, choice);
+  }
+
+  /**
+   * 写回后回读该项，以服务端返回值驱动界面。
+   * TDLib 会把规则原样存下来，但「写 A 读到 B」才是真问题（例如账号无 Premium
+   * 时写 allowPremiumUsers 会被规范化），所以不能用请求值乐观更新。
+   */
+  private async setPrivacySetting(key: PrivacySettingKey, choice: PrivacyChoice): Promise<void> {
+    try {
+      const writeResult: Result<void, AppError> = await this.writePrivacyRules(key, choice);
+      if (writeResult.err) {
+        if (!this.destroyed) {
+          this.logger.logError(TAG, writeResult.error);
+          this.dispatch(new PrivacySettingUpdateFailed(
+            key,
+            this.privacyErrorMessage(writeResult.error, 'update')
+          ));
+        }
+        return;
+      }
+      const readResult: Result<PrivacyChoice, AppError> = await this.fetchPrivacyChoice(key);
+      if (this.destroyed) {
+        return;
+      }
+      if (readResult.ok) {
+        this.dispatch(new PrivacySettingUpdated(key, readResult.value));
+        return;
+      }
+      if (readResult.err) {
+        this.logger.logError(TAG, readResult.error);
+        this.dispatch(new PrivacySettingUpdateFailed(
+          key,
+          this.privacyErrorMessage(readResult.error, 'update')
+        ));
+      }
+    } catch (e) {
+      if (this.destroyed) {
+        return;
+      }
+      const cause: string = e instanceof Error ? e.name : 'non-error';
+      const error: AppError = AppErrors.unknown(
+        'settings-privacy-update',
+        'Unexpected privacy setting update failure',
+        cause
+      );
+      this.logger.logError(TAG, error);
+      this.dispatch(new PrivacySettingUpdateFailed(key, this.privacyErrorMessage(error, 'update')));
+    }
+  }
+
+  private async fetchPrivacyChoice(key: PrivacySettingKey): Promise<Result<PrivacyChoice, AppError>> {
+    const request: GetUserPrivacySettingRules = new GetUserPrivacySettingRules();
+    request.setting = toUserPrivacySetting(key);
+    const pendingResult: Result<TdPendingRequest, AppError> = this.scope.request(
+      'getUserPrivacySettingRules',
+      encodeGetUserPrivacySettingRules(request) as TdWireObject
+    );
+    if (pendingResult.ok) {
+      const response: Result<TdWireObject, AppError> = await pendingResult.value.promise;
+      if (response.ok) {
+        const rules: UserPrivacySettingRules | null =
+          decodeUserPrivacySettingRules(response.value as TdJsonRaw);
+        if (rules === null) {
+          return err<PrivacyChoice, AppError>(
+            AppErrors.internal(
+              'settings_privacy_decode',
+              `TDLib privacy rules for ${privacySettingLabel(key)} could not be decoded`
+            )
+          );
+        }
+        const choice: PrivacyChoice = choiceFromRules(rules.rules);
+        this.logger.info(
+          TAG,
+          'privacy_rules_read',
+          `${key} -> ${choice},rules=[${privacyRuleTypesForLog(rules.rules)}]`
+        );
+        return ok<PrivacyChoice, AppError>(choice);
+      }
+      if (response.err) {
+        return err<PrivacyChoice, AppError>(response.error);
+      }
+      return err<PrivacyChoice, AppError>(
+        AppErrors.internal('settings_privacy_response', 'TDLib returned no privacy rules result')
+      );
+    }
+    if (pendingResult.err) {
+      return err<PrivacyChoice, AppError>(pendingResult.error);
+    }
+    return err<PrivacyChoice, AppError>(
+      AppErrors.internal('settings_privacy_request', 'TDLib privacy rules request was not created')
+    );
+  }
+
+  private async writePrivacyRules(
+    key: PrivacySettingKey,
+    choice: PrivacyChoice
+  ): Promise<Result<void, AppError>> {
+    const rules: UserPrivacySettingRules = new UserPrivacySettingRules();
+    rules.rules = rulesForChoice(choice);
+    const request: SetUserPrivacySettingRules = new SetUserPrivacySettingRules();
+    request.setting = toUserPrivacySetting(key);
+    request.rules = rules;
+    this.logger.info(
+      TAG,
+      'privacy_rules_write',
+      `${key} <- ${choice},rules=[${privacyRuleTypesForLog(rules.rules)}]`
+    );
+    const pendingResult: Result<TdPendingRequest, AppError> = this.scope.request(
+      'setUserPrivacySettingRules',
+      encodeSetUserPrivacySettingRules(request) as TdWireObject
+    );
+    if (pendingResult.ok) {
+      const response: Result<TdWireObject, AppError> = await pendingResult.value.promise;
+      if (response.ok) {
+        return ok<void, AppError>(undefined);
+      }
+      if (response.err) {
+        return err<void, AppError>(response.error);
+      }
+      return err<void, AppError>(
+        AppErrors.internal('settings_privacy_write_response', 'TDLib returned no privacy write result')
+      );
+    }
+    if (pendingResult.err) {
+      return err<void, AppError>(pendingResult.error);
+    }
+    return err<void, AppError>(
+      AppErrors.internal('settings_privacy_write_request', 'TDLib privacy write request was not created')
+    );
+  }
+
+  private privacyErrorMessage(error: AppError, action: string): string {
+    if (error.kind === 'tdlib' && error.code === 'too_many_requests') {
+      return 'Too many requests. Please wait and try again.';
+    }
+    if (error.kind === 'network') {
+      return `Unable to ${action} privacy settings. Check your connection.`;
+    }
+    return `Unable to ${action} privacy settings. Please try again.`;
   }
 }

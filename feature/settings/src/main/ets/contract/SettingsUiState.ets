@@ -13,6 +13,7 @@ import { LanguagePreference } from '@tgx/core-common';
 import { NotificationScopeKey } from '../model/NotificationSettings';
 import { ActiveSessionItem } from '../model/ActiveSessionItem';
 import { SettingsSectionKey } from '../model/SettingsSection';
+import { PrivacySettingItem, PrivacySettingKey } from '../model/PrivacySettings';
 
 export type SettingsThemeMode = ThemePreference;
 
@@ -51,6 +52,14 @@ export interface SettingsUiStateOptions {
   readonly chatFontSize?: number;
   /** SELF-101：分区直达时的可见分区；缺省 'all' 即完整设置页。 */
   readonly section?: SettingsSectionKey;
+  /** SELF-102：是否展示「隐私和安全」子页。 */
+  readonly showPrivacyPage?: boolean;
+  /** SELF-102：隐私规则列表（TDLib userPrivacySettingRules 的页面投影）。 */
+  readonly privacyItems?: readonly PrivacySettingItem[];
+  /** SELF-102：是否正在读取隐私规则。 */
+  readonly isLoadingPrivacy?: boolean;
+  /** SELF-102：正在写回的隐私项；null 表示空闲。 */
+  readonly updatingPrivacyKey?: PrivacySettingKey | null;
 }
 
 export class SettingsUiState implements UiState {
@@ -91,6 +100,14 @@ export class SettingsUiState implements UiState {
   readonly chatFontSize: number;
   /** SELF-101：分区直达时的可见分区；'all' 为完整设置页。 */
   readonly section: SettingsSectionKey;
+  /** SELF-102：是否展示「隐私和安全」子页。 */
+  readonly showPrivacyPage: boolean;
+  /** SELF-102：隐私规则列表。 */
+  readonly privacyItems: readonly PrivacySettingItem[];
+  /** SELF-102：是否正在读取隐私规则。 */
+  readonly isLoadingPrivacy: boolean;
+  /** SELF-102：正在写回的隐私项。 */
+  readonly updatingPrivacyKey: PrivacySettingKey | null;
 
   constructor(
     userId: number,
@@ -121,7 +138,11 @@ export class SettingsUiState implements UiState {
     activeSessions: readonly ActiveSessionItem[] = [],
     isLoadingSessions: boolean = false,
     chatFontSize: number = CHAT_FONT_SIZE_DEFAULT,
-    section: SettingsSectionKey = 'all'
+    section: SettingsSectionKey = 'all',
+    showPrivacyPage: boolean = false,
+    privacyItems: readonly PrivacySettingItem[] = [],
+    isLoadingPrivacy: boolean = false,
+    updatingPrivacyKey: PrivacySettingKey | null = null
   ) {
     this.userId = userId;
     this.displayName = displayName;
@@ -152,6 +173,10 @@ export class SettingsUiState implements UiState {
     this.isLoadingSessions = isLoadingSessions;
     this.chatFontSize = chatFontSize;
     this.section = section;
+    this.showPrivacyPage = showPrivacyPage;
+    this.privacyItems = privacyItems;
+    this.isLoadingPrivacy = isLoadingPrivacy;
+    this.updatingPrivacyKey = updatingPrivacyKey;
   }
 
   static initial(
@@ -234,7 +259,11 @@ export class SettingsUiState implements UiState {
       options.activeSessions !== undefined ? options.activeSessions : this.activeSessions,
       options.isLoadingSessions !== undefined ? options.isLoadingSessions : this.isLoadingSessions,
       options.chatFontSize !== undefined ? options.chatFontSize : this.chatFontSize,
-      options.section !== undefined ? options.section : this.section
+      options.section !== undefined ? options.section : this.section,
+      options.showPrivacyPage !== undefined ? options.showPrivacyPage : this.showPrivacyPage,
+      options.privacyItems !== undefined ? options.privacyItems : this.privacyItems,
+      options.isLoadingPrivacy !== undefined ? options.isLoadingPrivacy : this.isLoadingPrivacy,
+      options.updatingPrivacyKey !== undefined ? options.updatingPrivacyKey : this.updatingPrivacyKey
     );
   }
 }

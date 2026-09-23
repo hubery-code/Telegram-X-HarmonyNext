@@ -138,7 +138,26 @@ const EN_DICTIONARY: Record<string, string> = {
   'Logging out...': 'Logging out...',
   'English': 'English',
   'Simplified Chinese': 'Simplified Chinese',
-  'Chinese': 'Simplified Chinese'
+  'Chinese': 'Simplified Chinese',
+
+  // Privacy & Security (SELF-102)
+  'PRIVACY': 'PRIVACY',
+  'Privacy & Security': 'Privacy & Security',
+  'Last Seen': 'Last Seen',
+  'Phone Number': 'Phone Number',
+  'Profile Photo': 'Profile Photo',
+  'Bio': 'Bio',
+  'Date of Birth': 'Date of Birth',
+  'Calls': 'Calls',
+  'Group and Channel Invites': 'Group and Channel Invites',
+  'Discoverable by Phone Number': 'Discoverable by Phone Number',
+  'Everybody': 'Everybody',
+  'Premium Users': 'Premium Users',
+  'My Contacts': 'My Contacts',
+  'Nobody': 'Nobody',
+  'Custom': 'Custom',
+  'Unknown': 'Unknown',
+  'Tap a row to change who can see it.': 'Tap a row to change who can see it.'
 };
 
 const ZH_DICTIONARY: Record<string, string> = {

@@ -42,7 +42,14 @@ import {
   ActiveSessionsLoaded,
   ActiveSessionsLoadFailed,
   TerminateSessionIntent,
-  TerminateAllOtherSessionsIntent
+  TerminateAllOtherSessionsIntent,
+  OpenPrivacyPage,
+  ClosePrivacyPage,
+  LoadPrivacySettings,
+  PrivacySettingsLoaded,
+  TogglePrivacySetting,
+  PrivacySettingUpdated,
+  PrivacySettingUpdateFailed
 } from '../contract/SettingsIntent';
 import {
   ClearCacheEffect,
@@ -58,9 +65,18 @@ import {
   SwitchAccountEffect,
   LoadActiveSessionsEffect,
   TerminateSessionEffect,
-  TerminateAllOtherSessionsEffect
+  TerminateAllOtherSessionsEffect,
+  LoadPrivacySettingsEffect,
+  SetPrivacySettingEffect
 } from '../contract/SettingsEffect';
 import { NotificationScopeKey } from '../model/NotificationSettings';
+import {
+  isPrivacyChoiceWritable,
+  nextPrivacyChoice,
+  PrivacyChoice,
+  PrivacySettingItem,
+  PrivacySettingKey
+} from '../model/PrivacySettings';
 
 function notificationScopeEnabled(state: SettingsUiState, scope: NotificationScopeKey): boolean {
   if (scope === 'private') {
@@ -70,6 +86,31 @@ function notificationScopeEnabled(state: SettingsUiState, scope: NotificationSco
     return state.groupNotificationsEnabled;
   }
   return state.channelNotificationsEnabled;
+}
+
+/** 按 key 取行；未加载到该设置时返回 null（调用方据此忽略点击）。 */
+function privacyItemByKey(
+  items: readonly PrivacySettingItem[],
+  key: PrivacySettingKey
+): PrivacySettingItem | null {
+  for (let i = 0; i < items.length; i++) {
+    if (items[i].key === key) {
+      return items[i];
+    }
+  }
+  return null;
+}
+
+function privacyItemsWithUpdated(
+  items: readonly PrivacySettingItem[],
+  key: PrivacySettingKey,
+  choice: PrivacyChoice
+): PrivacySettingItem[] {
+  const next: PrivacySettingItem[] = [];
+  for (let i = 0; i < items.length; i++) {
+    next.push(items[i].key === key ? items[i].withChoice(choice) : items[i]);
+  }
+  return next;
 }
 
 export const settingsReducer: Reducer<SettingsUiState, SettingsIntent, SettingsEffect> = (
@@ -452,6 +493,16 @@ export const settingsReducer: Reducer<SettingsUiState, SettingsIntent, SettingsE
         };
         return reduced(state.copyWith(options), [new LoadActiveSessionsEffect()]);
       }
+      // 'privacy' 同理：SELF-101 的「隐私和安全」行落在整屏 PrivacySubPage。
+      if (focus.section === 'privacy') {
+        const options: SettingsUiStateOptions = {
+          section: 'all',
+          showPrivacyPage: true,
+          isLoadingPrivacy: true,
+          errorMessage: null
+        };
+        return reduced(state.copyWith(options), [new LoadPrivacySettingsEffect()]);
+      }
       const options: SettingsUiStateOptions = {
         section: parseSettingsSection(focus.section)
       };
@@ -490,6 +541,91 @@ export const settingsReducer: Reducer<SettingsUiState, SettingsIntent, SettingsE
 
     case 'terminateAllOtherSessions': {
       return reduced(state, [new TerminateAllOtherSessionsEffect()]);
+    }
+
+    // ---- SELF-102 隐私和安全 ----
+
+    case 'openPrivacyPage': {
+      const options: SettingsUiStateOptions = {
+        showPrivacyPage: true,
+        isLoadingPrivacy: true,
+        errorMessage: null
+      };
+      return reduced(state.copyWith(options), [new LoadPrivacySettingsEffect()]);
+    }
+
+    case 'closePrivacyPage': {
+      if (!state.showPrivacyPage) {
+        return reduced(state);
+      }
+      const options: SettingsUiStateOptions = {
+        showPrivacyPage: false
+      };
+      return reduced(state.copyWith(options));
+    }
+
+    case 'loadPrivacySettings': {
+      const options: SettingsUiStateOptions = {
+        isLoadingPrivacy: true
+      };
+      return reduced(state.copyWith(options), [new LoadPrivacySettingsEffect()]);
+    }
+
+    case 'privacySettingsLoaded': {
+      const loadedIntent: PrivacySettingsLoaded = intent as PrivacySettingsLoaded;
+      const options: SettingsUiStateOptions = {
+        privacyItems: loadedIntent.items,
+        isLoadingPrivacy: false,
+        updatingPrivacyKey: null
+      };
+      return reduced(state.copyWith(options));
+    }
+
+    case 'togglePrivacySetting': {
+      const toggleIntent: TogglePrivacySetting = intent as TogglePrivacySetting;
+      if (state.updatingPrivacyKey !== null) {
+        return reduced(state);
+      }
+      const item: PrivacySettingItem | null =
+        privacyItemByKey(state.privacyItems, toggleIntent.key);
+      // 该项还没读到规则，忽略点击而不是写一个猜出来的默认值。
+      if (item === null) {
+        return reduced(state);
+      }
+      const nextChoice: PrivacyChoice = nextPrivacyChoice(item.choice);
+      // custom / unknown 没有等价的单条规则，写回会把例外名单刷成「没有人」。
+      if (!isPrivacyChoiceWritable(nextChoice)) {
+        return reduced(state);
+      }
+      const options: SettingsUiStateOptions = {
+        updatingPrivacyKey: toggleIntent.key
+      };
+      return reduced(state.copyWith(options), [
+        new SetPrivacySettingEffect(toggleIntent.key, nextChoice)
+      ]);
+    }
+
+    case 'privacySettingUpdated': {
+      const updatedIntent: PrivacySettingUpdated = intent as PrivacySettingUpdated;
+      const options: SettingsUiStateOptions = {
+        privacyItems: privacyItemsWithUpdated(
+          state.privacyItems,
+          updatedIntent.key,
+          updatedIntent.choice
+        ),
+        updatingPrivacyKey: null,
+        errorMessage: null
+      };
+      return reduced(state.copyWith(options));
+    }
+
+    case 'privacySettingUpdateFailed': {
+      const failedIntent: PrivacySettingUpdateFailed = intent as PrivacySettingUpdateFailed;
+      const options: SettingsUiStateOptions = {
+        updatingPrivacyKey: null,
+        errorMessage: failedIntent.errorMessage
+      };
+      return reduced(state.copyWith(options));
     }
 
     default:

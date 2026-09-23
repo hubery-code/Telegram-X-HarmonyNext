@@ -9,6 +9,7 @@
 
 import { Effect } from '@tgx/feature-template';
 import { NotificationScopeKey } from '../model/NotificationSettings';
+import { PrivacyChoice, PrivacySettingKey } from '../model/PrivacySettings';
 
 export class LoadProfileEffect implements Effect {
   readonly kind: 'loadProfile' = 'loadProfile';
@@ -97,6 +98,23 @@ export class TerminateAllOtherSessionsEffect implements Effect {
   readonly kind: 'terminateAllOtherSessions' = 'terminateAllOtherSessions';
 }
 
+/** SELF-102：逐项读取 getUserPrivacySettingRules。 */
+export class LoadPrivacySettingsEffect implements Effect {
+  readonly kind: 'loadPrivacySettings' = 'loadPrivacySettings';
+}
+
+/** SELF-102：写回 setUserPrivacySettingRules 后回读该项。 */
+export class SetPrivacySettingEffect implements Effect {
+  readonly kind: 'setPrivacySetting' = 'setPrivacySetting';
+  readonly key: PrivacySettingKey;
+  readonly choice: PrivacyChoice;
+
+  constructor(key: PrivacySettingKey, choice: PrivacyChoice) {
+    this.key = key;
+    this.choice = choice;
+  }
+}
+
 export type SettingsEffect =
   | LoadProfileEffect
   | LoadNotificationSettingsEffect
@@ -111,4 +129,6 @@ export type SettingsEffect =
   | RequestAddAccountEffect
   | LoadActiveSessionsEffect
   | TerminateSessionEffect
-  | TerminateAllOtherSessionsEffect;
+  | TerminateAllOtherSessionsEffect
+  | LoadPrivacySettingsEffect
+  | SetPrivacySettingEffect;

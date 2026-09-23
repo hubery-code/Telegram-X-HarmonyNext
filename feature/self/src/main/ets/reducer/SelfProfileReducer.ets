@@ -20,7 +20,7 @@ import {
 import { SelfProfileEffect, OpenSettingsSection } from '../contract/SelfProfileEffect';
 
 /** 入口行可落地的设置分区；其余取值（含拼错的外部串）不产生效应。 */
-const SELF_SETTINGS_SECTIONS: string[] = ['devices', 'notifications', 'data_and_storage'];
+const SELF_SETTINGS_SECTIONS: string[] = ['devices', 'notifications', 'data_and_storage', 'privacy'];
 
 export function isSelfSettingsSection(section: string): boolean {
   return SELF_SETTINGS_SECTIONS.indexOf(section) >= 0;

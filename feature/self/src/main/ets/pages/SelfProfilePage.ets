@@ -39,9 +39,9 @@ const AVATAR_PALETTE: string[] = [
 
 /**
  * 设置入口组（SELF-101）：key 与 `settingsSection/{section}` 路由参数一致，
- * 点击经 reducer 出 OpenSettingsSection 效应。只列**已有落点**的三项——
- * 「隐私和安全」在 TGX 是独立页，本页依赖 TDLib getPrivacySettingRules 分区尚未
- * 拆包，先不占位（此前四行都写死副标题且点了没反应）。
+ * 点击经 reducer 出 OpenSettingsSection 效应。只列**已有落点**的项——
+ * 「隐私和安全」是 SELF-102 补上的：TDLib getUserPrivacySettingRules /
+ * setUserPrivacySettingRules 读写闭环已在 feature/settings 的 PrivacySubPage 落地。
  */
 interface SettingsEntry {
   readonly key: string;
@@ -52,6 +52,7 @@ interface SettingsEntry {
 const SETTINGS_ENTRIES: SettingsEntry[] = [
   { key: 'devices', label: '设备', icon: $r('app.media.ic_devices') },
   { key: 'notifications', label: '通知', icon: $r('app.media.ic_notifications') },
+  { key: 'privacy', label: '隐私和安全', icon: $r('app.media.ic_lock') },
   { key: 'data_and_storage', label: '数据和存储', icon: $r('app.media.ic_storage') }
 ];
 

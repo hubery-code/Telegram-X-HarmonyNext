@@ -11,6 +11,7 @@ import { LanguagePreference } from '@tgx/core-common';
 import { SettingsThemeMode } from './SettingsUiState';
 import { NotificationScopeKey } from '../model/NotificationSettings';
 import { ActiveSessionItem } from '../model/ActiveSessionItem';
+import { PrivacyChoice, PrivacySettingItem, PrivacySettingKey } from '../model/PrivacySettings';
 
 export interface UserProfileData {
   readonly userId: number;
@@ -297,6 +298,65 @@ export class TerminateAllOtherSessionsIntent implements Intent {
   readonly kind: 'terminateAllOtherSessions' = 'terminateAllOtherSessions';
 }
 
+/** SELF-102：打开「隐私和安全」子页（同时触发规则读取）。 */
+export class OpenPrivacyPage implements Intent {
+  readonly kind: 'openPrivacyPage' = 'openPrivacyPage';
+}
+
+/** SELF-102：关闭「隐私和安全」子页。 */
+export class ClosePrivacyPage implements Intent {
+  readonly kind: 'closePrivacyPage' = 'closePrivacyPage';
+}
+
+/** SELF-102：读取全部隐私设置规则。 */
+export class LoadPrivacySettings implements Intent {
+  readonly kind: 'loadPrivacySettings' = 'loadPrivacySettings';
+}
+
+/** SELF-102：规则读取完成（未取到的项以 unknown 呈现，不冒充默认值）。 */
+export class PrivacySettingsLoaded implements Intent {
+  readonly kind: 'privacySettingsLoaded' = 'privacySettingsLoaded';
+  readonly items: readonly PrivacySettingItem[];
+
+  constructor(items: readonly PrivacySettingItem[]) {
+    this.items = items;
+  }
+}
+
+/** SELF-102：点某一行，循环到下一个可见范围并写回。 */
+export class TogglePrivacySetting implements Intent {
+  readonly kind: 'togglePrivacySetting' = 'togglePrivacySetting';
+  readonly key: PrivacySettingKey;
+
+  constructor(key: PrivacySettingKey) {
+    this.key = key;
+  }
+}
+
+/** SELF-102：写回成功（以 TDLib 回读值为准）。 */
+export class PrivacySettingUpdated implements Intent {
+  readonly kind: 'privacySettingUpdated' = 'privacySettingUpdated';
+  readonly key: PrivacySettingKey;
+  readonly choice: PrivacyChoice;
+
+  constructor(key: PrivacySettingKey, choice: PrivacyChoice) {
+    this.key = key;
+    this.choice = choice;
+  }
+}
+
+/** SELF-102：写回失败，行内值退回读到的状态。 */
+export class PrivacySettingUpdateFailed implements Intent {
+  readonly kind: 'privacySettingUpdateFailed' = 'privacySettingUpdateFailed';
+  readonly key: PrivacySettingKey;
+  readonly errorMessage: string;
+
+  constructor(key: PrivacySettingKey, errorMessage: string) {
+    this.key = key;
+    this.errorMessage = errorMessage;
+  }
+}
+
 export type SettingsIntent =
   | LoadUserProfile
   | ToggleNotifications
@@ -332,4 +392,11 @@ export type SettingsIntent =
   | ActiveSessionsLoadFailed
   | TerminateSessionIntent
   | TerminateAllOtherSessionsIntent
+  | OpenPrivacyPage
+  | ClosePrivacyPage
+  | LoadPrivacySettings
+  | PrivacySettingsLoaded
+  | TogglePrivacySetting
+  | PrivacySettingUpdated
+  | PrivacySettingUpdateFailed
   | SectionFocused;
