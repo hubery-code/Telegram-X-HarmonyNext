@@ -172,6 +172,18 @@
 > 只有真实渲染才暴露的偏差：`List.divider` 的 2vp 分隔线是**按组**占位的（单条组实测 94vp = 28 标题 + 64 行 + 2 分隔线），
 > 跳转位移旧公式漏了它、越往后偏得越多，补 `groupGap` 后点 `M` 才真正齐顶。遗留三项另立待跟进：
 > 已存联系人副标题应显电话号码（Android `UserView` FLAG_CONTACT）、索引条拖拽 scrub 与当前段气泡、搜索改 `anyWordStartsWith` 词首匹配。
+> **2026-09-24（CHAN-SEND，FEAT-P2-002 频道权限）**：频道**发言权限真实态**交付，补掉 CHANNEL-101 的残留缺陷 ——
+> 底栏旧分支把「频道成员」直接等价成「静音条」（`chatKind === 'channel' && isChannelMember → ChannelMuteBar()`），
+> 结果**自己建的、有发帖权的频道也永远发不了言**。现在对齐 Android `Tdlib.canSendBasicMessage(chat)`
+> （→ `canSendMessage(chat, RightId.SEND_BASIC_MESSAGES)`）读 `chat.permissions.can_send_basic_messages`：
+> 有权限出正常输入栏（顺带修好「频道成员录不到语音便签」，`VoiceRecordingBar` 分支以前被静音条挡死），
+> 只读频道才收成静音条；权限在同一次 `getChat` 里随 chatKind 一起回灌（先权限后 kind，避免底栏闪一下），
+> 并订阅 `updateChatPermissions` 让管理员中途改权限即时生效。**一处刻意的保守方向**：`permissions` 缺失时按「可发言」处理 ——
+> 读不到权限不等于没权限，收成静音条等于把人锁在输入栏外，发不出去自有 TDLib 报错条兜底。
+> 设备实证：唯一真实频道（只读）日志 `can_send=false,permissions=read` 且底栏仍是 `静音`（无回归）、群聊 `can_send=true` 走输入栏；
+> 「有发帖权的频道」账号内不存在，用一次性强制包取证（静音条换成 `[210,2494][892,2634]` 的 TextInput）后删除重建复验。
+> `updateChatPermissions` 推送链只验证到订阅注册无报错（缺可管理频道，无法另一端改权限）。遗留两项：
+> 有发帖权频道的输入栏左侧 🔔 静音位、`ChatPermissions` 其余 16 位驱动附件菜单可用性。
 
 | 功能 ID | 功能名 |
 |---|---|

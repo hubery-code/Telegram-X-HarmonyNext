@@ -67,6 +67,7 @@ import {
   UnpinMessage,
   JoinChannel,
   OnChannelMemberStatusChanged,
+  OnChatSendPermissionsChanged,
   OpenMessageComments,
   ToggleMessageReaction,
   OpenStickerSet,
@@ -1710,6 +1711,31 @@ export default function chatReducerTest() {
         makeEnv()
       );
       expect(noopResult.state === result.state).assertTrue();
+    });
+
+    // CHAN-SEND：发言权回灌驱动频道底栏（有权限=输入栏，明确 false=静音条）。
+    it('onChatSendPermissionsChanged_updatesCanSendMessages', 0, () => {
+      const state: ChatUiState = makeState('', null).copyWith({ chatKind: 'channel', canSendMessages: true });
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        state,
+        new OnChatSendPermissionsChanged(false),
+        makeEnv()
+      );
+      expect(result.state.canSendMessages).assertFalse();
+      expect(result.effects.length).assertEqual(0);
+
+      // 同值回灌不动状态引用（权限没变时不该让整页重算）
+      const noopResult: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        result.state,
+        new OnChatSendPermissionsChanged(false),
+        makeEnv()
+      );
+      expect(noopResult.state === result.state).assertTrue();
+    });
+
+    it('chatUiState_defaultAllowsSendingUntilPermissionsRead', 0, () => {
+      // 读不到权限不等于没权限：初值必须保留输入栏，静音条只在明确 false 时出。
+      expect(ChatUiState.initial().canSendMessages).assertTrue();
     });
 
     it('openMessageComments_emitsOpenCommentsEffect', 0, () => {

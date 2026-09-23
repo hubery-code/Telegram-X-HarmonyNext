@@ -114,6 +114,7 @@ export {
   UnpinMessage,
   JoinChannel,
   OnChannelMemberStatusChanged,
+  OnChatSendPermissionsChanged,
   OpenMessageComments,
   ToggleMessageReaction,
   OpenStickerSet,

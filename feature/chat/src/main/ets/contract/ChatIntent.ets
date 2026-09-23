@@ -633,6 +633,21 @@ export class OnChannelMemberStatusChanged implements Intent {
   }
 }
 
+/**
+ * CHAN-SEND：发言权回灌。来源两条：getChat 响应里的 chat.permissions.can_send_basic_messages
+ * （进入会话时的一次性回读）与 updateChatPermissions 推送（管理员中途改权限会推）。
+ * 驱动频道成员底栏出「输入栏」还是「静音条」—— 只有 TDLib 明确给出 false 才收成静音条，
+ * permissions 缺失时按可发言处理，避免把读不到权限当成没权限而把用户锁在输入栏外。
+ */
+export class OnChatSendPermissionsChanged implements Intent {
+  readonly kind: 'onChatSendPermissionsChanged' = 'onChatSendPermissionsChanged';
+  readonly canSendMessages: boolean;
+
+  constructor(canSendMessages: boolean) {
+    this.canSendMessages = canSendMessages;
+  }
+}
+
 /** CHANNEL-101：用户点击消息评论入口（"N 条评论"）。 */
 export class OpenMessageComments implements Intent {
   readonly kind: 'openMessageComments' = 'openMessageComments';
@@ -727,6 +742,7 @@ export type ChatIntent =
   | UnpinMessage
   | JoinChannel
   | OnChannelMemberStatusChanged
+  | OnChatSendPermissionsChanged
   | OpenMessageComments
   | ToggleMessageReaction
   | OpenStickerSet

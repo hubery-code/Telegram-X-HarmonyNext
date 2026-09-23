@@ -844,15 +844,17 @@ export struct ChatPage {
 
         // 回复/编辑预览条（CHAT-004）：标题 + 摘要 + 取消 X。
         // MSG-106：多选态下不显示输入相关 UI（对齐 Telegram X 的选择态）。
-        // CHANNEL-101：非成员频道模式下不显示输入栏模式条。
-        if (this.uiState.composerMode !== null && !this.uiState.selectionMode && !(this.uiState.chatKind === 'channel' && !this.uiState.isChannelMember)) {
+        // CHANNEL-101 / CHAN-SEND：频道覆盖态（未加入=加入条、只读=静音条）下不出输入栏模式条。
+        if (this.uiState.composerMode !== null && !this.uiState.selectionMode && !this.isChannelOverlayBar()) {
           this.ComposerModeBar(this.uiState.composerMode)
         }
 
         if (!this.uiState.selectionMode) {
           if (this.uiState.chatKind === 'channel' && !this.uiState.isChannelMember) {
             this.JoinChannelBar()
-          } else if (this.uiState.chatKind === 'channel' && this.uiState.isChannelMember) {
+          } else if (this.isChannelReadOnly()) {
+            // CHAN-SEND：只有 TDLib 明确给出 can_send_basic_messages=false 的频道成员才收成静音条；
+            // 有发言权（管理员/可发帖频道）走正常输入栏，静音开关在 ⋮ 菜单与频道资料页。
             this.ChannelMuteBar()
           } else if (this.uiState.isRecordingVoice) {
             this.VoiceRecordingBar()
@@ -861,8 +863,8 @@ export struct ChatPage {
           }
         }
 
-        // EMOJI-101 & STICKER-101：表情与贴纸面板（非多选态且非未加频道态）
-        if (this.uiState.showEmojiBoard && !this.uiState.selectionMode && !(this.uiState.chatKind === 'channel' && !this.uiState.isChannelMember)) {
+        // EMOJI-101 & STICKER-101：表情与贴纸面板（非多选态且非频道覆盖态）
+        if (this.uiState.showEmojiBoard && !this.uiState.selectionMode && !this.isChannelOverlayBar()) {
           EmojiBoard({
             recentEmojis: this.uiState.recentEmojis.slice(),
             recentStickers: this.uiState.recentStickers.slice(),
@@ -4276,6 +4278,23 @@ export struct ChatPage {
     .backgroundColor(this.T.colors.surface)
     .borderWidth({ top: 1 })
     .borderColor(this.T.colors.divider)
+  }
+
+  /**
+   * CHAN-SEND：频道只读态 —— 已是成员但 TDLib 明确给出无发言权（can_send_basic_messages=false）。
+   * 对齐 Android TGX 的 `Tdlib.canSendBasicMessage(chat)` 判定：有权限的成员看到正常输入栏，
+   * 只有真正被限制发言的频道才把底栏收成静音条。
+   */
+  private isChannelReadOnly(): boolean {
+    return this.uiState.chatKind === 'channel' && this.uiState.isChannelMember && !this.uiState.canSendMessages;
+  }
+
+  /**
+   * CHAN-SEND：底栏是否被频道条占据（未加入 → 加入条，只读 → 静音条）。
+   * 这三种输入相关 UI（模式条 / 输入栏 / 表情面板）互斥，统一走这一个谓词，避免各分支各写一份。
+   */
+  private isChannelOverlayBar(): boolean {
+    return this.uiState.chatKind === 'channel' && (!this.uiState.isChannelMember || !this.uiState.canSendMessages);
   }
 
   /** CHANNEL-101：非成员频道底部"加入频道"全宽条 */

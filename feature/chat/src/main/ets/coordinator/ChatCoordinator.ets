@@ -142,6 +142,8 @@ import {
   encodeSetChatNotificationSettings,
   ChatNotificationSettings,
   UpdateChatNotificationSettings,
+  ChatPermissions,
+  UpdateChatPermissions,
   MessagePoll
 } from '@tgx/core-td-api-generated';
 import {
@@ -204,6 +206,7 @@ import {
   ConfirmMenuAction,
   OnPinnedMessageLoaded,
   OnChannelMemberStatusChanged,
+  OnChatSendPermissionsChanged,
   OnStickerSetLoaded,
   OnStickerSetLoadFailed,
   OnStickerSetChanged,
@@ -493,6 +496,8 @@ export class ChatCoordinator {
   private chatNotificationSettings: ChatNotificationSettings | null = null;
   /** SET-106：updateChatNotificationSettings 订阅句柄（destroy 时退订）。 */
   private muteSubscription: TdUpdateSubscription | null = null;
+  /** CHAN-SEND：updateChatPermissions 订阅句柄（destroy 时退订）。 */
+  private permissionsSubscription: TdUpdateSubscription | null = null;
   /** MSG-109：getBasicGroup 是否已发起（防重；失败复位可重试）。 */
   private basicGroupInfoRequested: boolean = false;
   /** MSG-109：getSupergroupFullInfo 是否已发起（防重；失败复位可重试）。 */
@@ -646,6 +651,8 @@ export class ChatCoordinator {
     this.fetchChatKind();
     // SET-106：静音态实时同步（本端改、其它端改都会推 updateChatNotificationSettings）。
     this.subscribeChatNotificationSettings();
+    // CHAN-SEND：发言权实时同步（管理员改权限会推 updateChatPermissions）。
+    this.subscribeChatPermissions();
     // MSG-109：先按已知信息补一次副标题（chatKind 未回前为 no-op），
     // getChat 回包 / 用户状态订阅 / 在线人数订阅到达后各自重算。
     this.buildHeaderSubtitle();
@@ -942,6 +949,11 @@ export class ChatCoordinator {
     if (this.muteSubscription !== null) {
       this.muteSubscription.unsubscribe();
       this.muteSubscription = null;
+    }
+    // CHAN-SEND：退订会话权限推送。
+    if (this.permissionsSubscription !== null) {
+      this.permissionsSubscription.unsubscribe();
+      this.permissionsSubscription = null;
     }
     if (this.recordTimerId !== -1) {
       clearInterval(this.recordTimerId);
@@ -2523,6 +2535,9 @@ export class ChatCoordinator {
             // SET-106：同一次 getChat 响应即带 chat.notification_settings，
             // 直接回读静音态，⋮ 菜单首轮渲染就能出正确文案。
             this.applyChatNotificationSettings(chat.notification_settings);
+            // CHAN-SEND：同一次响应即带 chat.permissions，先回读发言权再回灌 chatKind，
+            // 保证底栏首轮渲染就知道是出输入栏还是静音条（同一同步块内，不存在闪烁）。
+            this.applyChatSendPermissions(chat.permissions);
             // MSG-109：回灌 reducer 驱动头部通话按钮/菜单，并启动副标题计算。
             this.dispatch(new OnChatKindChanged(this.chatKind));
             this.buildHeaderSubtitle();
@@ -2894,6 +2909,45 @@ export class ChatCoordinator {
           return;
         }
         this.applyChatNotificationSettings(muteUpdate.notification_settings);
+      }
+    );
+  }
+
+  /**
+   * CHAN-SEND：把发言权（chat.permissions.can_send_basic_messages）回灌状态。
+   * permissions 为 null（TDLib 没给）时按「可发言」处理 ——
+   * 读不到权限不等于没有权限，收成静音条会把用户彻底锁在输入栏外。
+   */
+  private applyChatSendPermissions(permissions: ChatPermissions | null): void {
+    const canSend: boolean = permissions === null ? true : permissions.can_send_basic_messages;
+    // 每次 getChat / updateChatPermissions 都打一条：真机取证要能直接看到 TDLib 给的值，
+    // 而不是靠「没变化所以没日志」反推。
+    this.logger.info(TAG, 'chat_send_permissions',
+      `can_send=${canSend},permissions=${permissions === null ? 'missing' : 'read'}`);
+    this.dispatch(new OnChatSendPermissionsChanged(canSend));
+  }
+
+  /** CHAN-SEND：订阅 updateChatPermissions（本会话），管理员中途改权限即时生效；destroy 时退订。 */
+  private subscribeChatPermissions(): void {
+    if (this.destroyed || this.permissionsSubscription !== null) {
+      return;
+    }
+    const filter: TdUpdateFilter = {
+      clientId: this.scope.clientId,
+      types: ['updateChatPermissions']
+    };
+    this.permissionsSubscription = this.scope.gatewayInstance.subscribeUpdates(
+      filter,
+      (event: TdRoutedEvent): void => {
+        const update: TdUpdate | null = decodeTdUpdate(event.payload as TdJsonRaw);
+        if (update === null || update.type !== 'updateChatPermissions') {
+          return;
+        }
+        const permUpdate: UpdateChatPermissions = update as UpdateChatPermissions;
+        if (permUpdate.chat_id !== this.currentState.chatId) {
+          return;
+        }
+        this.applyChatSendPermissions(permUpdate.permissions);
       }
     );
   }

@@ -90,6 +90,7 @@ import {
   UnpinMessage,
   JoinChannel,
   OnChannelMemberStatusChanged,
+  OnChatSendPermissionsChanged,
   OpenMessageComments,
   ToggleMessageReaction,
   InsertEmoji,
@@ -1161,6 +1162,16 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
         return reduced(state);
       }
       return reduced(state.copyWith({ isChannelMember: memberIntent.isMember }));
+    }
+
+    // CHAN-SEND：发言权回灌（getChat 的 chat.permissions + updateChatPermissions 推送）；
+    // 值相同不动状态，避免每次推送都让整页重算。
+    case 'onChatSendPermissionsChanged': {
+      const permIntent: OnChatSendPermissionsChanged = intent as OnChatSendPermissionsChanged;
+      if (state.canSendMessages === permIntent.canSendMessages) {
+        return reduced(state);
+      }
+      return reduced(state.copyWith({ canSendMessages: permIntent.canSendMessages }));
     }
 
     case 'openMessageComments': {
