@@ -560,6 +560,10 @@ export class OpenChatProfile implements Intent {
 /**
  * MSG-109：头部 ⋮ 菜单占位动作统一入口（静音/清空历史/删除聊天/举报等）。
  * reducer 不改状态（default 分支），coordinator 只记日志，语义由后续泳道实现。
+ *
+ * MENU-101 实化：破坏性动作（clear_history/delete_chat/report/leave）由 reducer
+ * 弹出确认弹窗（showMenuConfirmDialog + pendingMenuAction），非破坏性动作
+ * （mute/enable_notifications）由 coordinator 直接调用 TDLib。
  */
 export class ChatMenuAction implements Intent {
   readonly kind: 'chatMenuAction' = 'chatMenuAction';
@@ -568,6 +572,16 @@ export class ChatMenuAction implements Intent {
   constructor(action: string) {
     this.action = action;
   }
+}
+
+/** MENU-101：用户确认破坏性操作弹窗 → coordinator 执行 pendingMenuAction 对应的 TDLib 调用。 */
+export class ConfirmMenuAction implements Intent {
+  readonly kind: 'confirmMenuAction' = 'confirmMenuAction';
+}
+
+/** MENU-101：用户取消破坏性操作弹窗 → reducer 清除弹窗状态。 */
+export class DismissMenuConfirmDialog implements Intent {
+  readonly kind: 'dismissMenuConfirmDialog' = 'dismissMenuConfirmDialog';
 }
 
 /** MSG-108：置顶消息加载回灌。 */
@@ -689,6 +703,8 @@ export type ChatIntent =
   | OnChatKindChanged
   | OpenChatProfile
   | ChatMenuAction
+  | ConfirmMenuAction
+  | DismissMenuConfirmDialog
   | OnPinnedMessageLoaded
   | DismissPinnedBar
   | JumpToPinnedMessage

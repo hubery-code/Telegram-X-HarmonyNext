@@ -117,7 +117,8 @@ import {
   PauseVoiceNote,
   VoicePlaybackProgress,
   VoicePlaybackCompleted,
-  VoicePlaybackFailed
+  VoicePlaybackFailed,
+  ChatMenuAction
 } from '../contract/ChatIntent';
 import {
   ChatEffect,
@@ -1571,8 +1572,39 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
       return reduced(state);
     }
 
-    // openChatProfile / chatMenuAction：纯导航/占位意图，reducer 原样透传
-    // （落到 switch 后的 reduced(state)，状态引用不变、无 effect）。
+    // openChatProfile：纯导航意图，reducer 原样透传。
+
+    case 'chatMenuAction': {
+      const menuIntent: ChatMenuAction = intent as ChatMenuAction;
+      const destructiveActions: string[] = ['clear_history', 'delete_chat', 'report', 'leave'];
+      if (destructiveActions.indexOf(menuIntent.action) >= 0) {
+        return reduced(
+          state.copyWith({
+            showMenuConfirmDialog: true,
+            pendingMenuAction: menuIntent.action
+          })
+        );
+      }
+      return reduced(state);
+    }
+
+    case 'confirmMenuAction': {
+      return reduced(
+        state.copyWith({
+          showMenuConfirmDialog: false,
+          pendingMenuAction: ''
+        })
+      );
+    }
+
+    case 'dismissMenuConfirmDialog': {
+      return reduced(
+        state.copyWith({
+          showMenuConfirmDialog: false,
+          pendingMenuAction: ''
+        })
+      );
+    }
   }
 
   return reduced(state);

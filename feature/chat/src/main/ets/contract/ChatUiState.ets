@@ -187,6 +187,10 @@ export interface ChatUiStateOptions {
   readonly recentGifs?: readonly GifItem[];
   /** GIF-101：动图搜索关键词。 */
   readonly gifSearchQuery?: string;
+  /** MENU-101：⋮ 菜单破坏性操作确认弹窗是否可见。 */
+  readonly showMenuConfirmDialog?: boolean;
+  /** MENU-101：待确认的菜单动作（clear_history/delete_chat/report/leave）。 */
+  readonly pendingMenuAction?: string;
 }
 
 export const DEFAULT_RECENT_EMOJIS: readonly string[] = [
@@ -256,6 +260,10 @@ export class ChatUiState implements UiState {
   readonly recentGifs: readonly GifItem[];
   /** GIF-101：动图搜索关键词。 */
   readonly gifSearchQuery: string;
+  /** MENU-101：⋮ 菜单破坏性操作确认弹窗是否可见。 */
+  readonly showMenuConfirmDialog: boolean;
+  /** MENU-101：待确认的菜单动作（clear_history/delete_chat/report/leave）。 */
+  readonly pendingMenuAction: string;
 
   constructor(
     chatId: number,
@@ -294,7 +302,9 @@ export class ChatUiState implements UiState {
     recentEmojis: readonly string[] = DEFAULT_RECENT_EMOJIS,
     recentStickers: readonly StickerSetItem[] = DEFAULT_RECENT_STICKERS,
     recentGifs: readonly GifItem[] = DEFAULT_RECENT_GIFS,
-    gifSearchQuery: string = ''
+    gifSearchQuery: string = '',
+    showMenuConfirmDialog: boolean = false,
+    pendingMenuAction: string = ''
   ) {
     this.chatId = chatId;
     this.chatTitle = chatTitle;
@@ -333,10 +343,12 @@ export class ChatUiState implements UiState {
     this.recentStickers = recentStickers;
     this.recentGifs = recentGifs;
     this.gifSearchQuery = gifSearchQuery;
+    this.showMenuConfirmDialog = showMenuConfirmDialog;
+    this.pendingMenuAction = pendingMenuAction;
   }
 
   static initial(): ChatUiState {
-    return new ChatUiState(0, '', [], false, true, null, '', null, null, -1, [], 0, 0, false, [], false, false, '', [], false, 0, '', 'unknown', null, false, true, false, null, false, 0, null, 0, 0, DEFAULT_RECENT_EMOJIS, DEFAULT_RECENT_STICKERS, DEFAULT_RECENT_GIFS, '');
+    return new ChatUiState(0, '', [], false, true, null, '', null, null, -1, [], 0, 0, false, [], false, false, '', [], false, 0, '', 'unknown', null, false, true, false, null, false, 0, null, 0, 0, DEFAULT_RECENT_EMOJIS, DEFAULT_RECENT_STICKERS, DEFAULT_RECENT_GIFS, '', false, '');
   }
 
   copyWith(options: ChatUiStateOptions): ChatUiState {
@@ -377,7 +389,9 @@ export class ChatUiState implements UiState {
       options.recentEmojis !== undefined ? options.recentEmojis : this.recentEmojis,
       options.recentStickers !== undefined ? options.recentStickers : this.recentStickers,
       options.recentGifs !== undefined ? options.recentGifs : this.recentGifs,
-      options.gifSearchQuery !== undefined ? options.gifSearchQuery : this.gifSearchQuery
+      options.gifSearchQuery !== undefined ? options.gifSearchQuery : this.gifSearchQuery,
+      options.showMenuConfirmDialog !== undefined ? options.showMenuConfirmDialog : this.showMenuConfirmDialog,
+      options.pendingMenuAction !== undefined ? options.pendingMenuAction : this.pendingMenuAction
     );
   }
 }

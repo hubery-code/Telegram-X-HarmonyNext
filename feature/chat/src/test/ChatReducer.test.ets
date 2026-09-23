@@ -92,7 +92,9 @@ import {
   PauseVoiceNote,
   VoicePlaybackProgress,
   VoicePlaybackCompleted,
-  VoicePlaybackFailed
+  VoicePlaybackFailed,
+  ConfirmMenuAction,
+  DismissMenuConfirmDialog
 } from '../main/ets/contract/ChatIntent';
 import { PinnedMessageInfo } from '../main/ets/model/PinnedMessageInfo';
 import { ReactionChip } from '../main/ets/model/ReactionChip';
@@ -2372,6 +2374,92 @@ export default function chatReducerTest() {
       expect(res.state.stickerSetPreview).assertNull();
       expect(res.effects.length).assertEqual(1);
       expect(res.effects[0].kind).assertEqual('sendStickerMessage');
+    });
+  });
+
+  // ── MENU-101：⋮ 菜单破坏性操作确认弹窗 ──────────────────────────────
+  describe('ChatReducer_MENU101', () => {
+    it('chatMenuAction_destructive_opensConfirmDialog', 0, () => {
+      const initial: ChatUiState = makeState('');
+      const res: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        initial,
+        new ChatMenuAction('delete_chat'),
+        makeEnv()
+      );
+      expect(res.state.showMenuConfirmDialog).assertTrue();
+      expect(res.state.pendingMenuAction).assertEqual('delete_chat');
+    });
+
+    it('chatMenuAction_clearHistory_opensConfirmDialog', 0, () => {
+      const initial: ChatUiState = makeState('');
+      const res: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        initial,
+        new ChatMenuAction('clear_history'),
+        makeEnv()
+      );
+      expect(res.state.showMenuConfirmDialog).assertTrue();
+      expect(res.state.pendingMenuAction).assertEqual('clear_history');
+    });
+
+    it('chatMenuAction_report_opensConfirmDialog', 0, () => {
+      const initial: ChatUiState = makeState('');
+      const res: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        initial,
+        new ChatMenuAction('report'),
+        makeEnv()
+      );
+      expect(res.state.showMenuConfirmDialog).assertTrue();
+      expect(res.state.pendingMenuAction).assertEqual('report');
+    });
+
+    it('chatMenuAction_leave_opensConfirmDialog', 0, () => {
+      const initial: ChatUiState = makeState('');
+      const res: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        initial,
+        new ChatMenuAction('leave'),
+        makeEnv()
+      );
+      expect(res.state.showMenuConfirmDialog).assertTrue();
+      expect(res.state.pendingMenuAction).assertEqual('leave');
+    });
+
+    it('chatMenuAction_nonDestructive_noDialog', 0, () => {
+      const initial: ChatUiState = makeState('');
+      const res: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        initial,
+        new ChatMenuAction('mute'),
+        makeEnv()
+      );
+      expect(res.state.showMenuConfirmDialog).assertFalse();
+      expect(res.state).assertEqual(initial);
+    });
+
+    it('confirmMenuAction_clearsDialog', 0, () => {
+      const initial: ChatUiState = makeState('').copyWith({
+        showMenuConfirmDialog: true,
+        pendingMenuAction: 'delete_chat'
+      });
+      const res: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        initial,
+        new ConfirmMenuAction(),
+        makeEnv()
+      );
+      expect(res.state.showMenuConfirmDialog).assertFalse();
+      expect(res.state.pendingMenuAction).assertEqual('');
+    });
+
+    it('dismissMenuConfirmDialog_clearsDialog', 0, () => {
+      const initial: ChatUiState = makeState('').copyWith({
+        showMenuConfirmDialog: true,
+        pendingMenuAction: 'clear_history'
+      });
+      const res: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        initial,
+        new DismissMenuConfirmDialog(),
+        makeEnv()
+      );
+      expect(res.state.showMenuConfirmDialog).assertFalse();
+      expect(res.state.pendingMenuAction).assertEqual('');
     });
   });
 }

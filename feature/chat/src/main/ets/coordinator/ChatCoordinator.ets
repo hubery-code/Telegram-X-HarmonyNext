@@ -127,7 +127,18 @@ import {
   InputSticker,
   InputFileId,
   SendMessage,
-  encodeSendMessage
+  encodeSendMessage,
+  DeleteChat,
+  encodeDeleteChat,
+  DeleteChatHistory,
+  encodeDeleteChatHistory,
+  LeaveChat,
+  encodeLeaveChat,
+  ReportChat,
+  encodeReportChat,
+  SetChatNotificationSettings,
+  encodeSetChatNotificationSettings,
+  ChatNotificationSettings
 } from '@tgx/core-td-api-generated';
 import { FileRegistry, formatFullName, MessageListState, MessageProjection, UserRegistry } from '@tgx/core-domain';
 import { TdPendingRequest, TdRoutedEvent, TdUpdateFilter, TdUpdateSubscription, TdWireObject, TdWireValue } from '@tgx/td-gateway';
@@ -176,6 +187,7 @@ import {
   OnChatKindChanged,
   OpenChatProfile,
   ChatMenuAction,
+  ConfirmMenuAction,
   OnPinnedMessageLoaded,
   OnChannelMemberStatusChanged,
   OnStickerSetLoaded,
@@ -699,6 +711,180 @@ export class ChatCoordinator {
     }
   }
 
+  /**
+   * MENU-101：静音/取消静音会话。
+   * mute=true → mute_for=366天（TDLib 约定超过 366 天视为永久静音）；
+   * mute=false → mute_for=0（立即恢复通知）。其余 use_default_* 均 true，
+   * 保留用户对该类会话的全局默认设置。
+   */
+  private executeMuteChat(mute: boolean): void {
+    const chatId: number = this.currentState.chatId;
+    if (chatId === 0) {
+      return;
+    }
+    const settings: ChatNotificationSettings = new ChatNotificationSettings();
+    settings.use_default_mute_for = false;
+    settings.mute_for = mute ? 366 * 24 * 3600 : 0;
+    settings.use_default_sound = true;
+    settings.use_default_show_preview = true;
+    settings.use_default_mute_stories = true;
+    settings.use_default_story_sound = true;
+    settings.use_default_show_story_poster = true;
+    settings.use_default_disable_pinned_message_notifications = true;
+    settings.use_default_disable_mention_notifications = true;
+    const req: SetChatNotificationSettings = new SetChatNotificationSettings();
+    req.chat_id = chatId;
+    req.notification_settings = settings;
+    const result: Result<TdPendingRequest, AppError> =
+      this.scope.request('setChatNotificationSettings', encodeSetChatNotificationSettings(req) as TdWireObject);
+    if (result.err) {
+      this.logger.logError(TAG, result.error);
+      this.toastPort.showToast(mute ? '静音失败' : '取消静音失败');
+      return;
+    }
+    if (result.ok) {
+      result.value.promise.then((res: Result<TdWireObject, AppError>) => {
+        if (!this.destroyed) {
+          if (res.ok) {
+            this.toastPort.showToast(mute ? '已静音' : '已开启通知');
+          }
+          if (res.err) {
+            this.logger.logError(TAG, res.error);
+            this.toastPort.showToast(mute ? '静音失败' : '取消静音失败');
+          }
+        }
+      });
+    }
+  }
+
+  /** MENU-101：清空聊天历史（deleteChatHistory，remove_from_chat_list=true, revoke=true）。 */
+  private executeClearHistory(): void {
+    const chatId: number = this.currentState.chatId;
+    if (chatId === 0) {
+      return;
+    }
+    const req: DeleteChatHistory = new DeleteChatHistory();
+    req.chat_id = chatId;
+    req.remove_from_chat_list = true;
+    req.revoke = true;
+    const result: Result<TdPendingRequest, AppError> =
+      this.scope.request('deleteChatHistory', encodeDeleteChatHistory(req) as TdWireObject);
+    if (result.err) {
+      this.logger.logError(TAG, result.error);
+      this.toastPort.showToast('清空历史失败');
+      return;
+    }
+    if (result.ok) {
+      result.value.promise.then((res: Result<TdWireObject, AppError>) => {
+        if (!this.destroyed) {
+          if (res.ok) {
+            this.toastPort.showToast('已清空聊天历史');
+            this.onBack();
+          }
+          if (res.err) {
+            this.logger.logError(TAG, res.error);
+            this.toastPort.showToast('清空历史失败');
+          }
+        }
+      });
+    }
+  }
+
+  /** MENU-101：删除聊天（deleteChat，成功后返回会话列表）。 */
+  private executeDeleteChat(): void {
+    const chatId: number = this.currentState.chatId;
+    if (chatId === 0) {
+      return;
+    }
+    const req: DeleteChat = new DeleteChat();
+    req.chat_id = chatId;
+    const result: Result<TdPendingRequest, AppError> =
+      this.scope.request('deleteChat', encodeDeleteChat(req) as TdWireObject);
+    if (result.err) {
+      this.logger.logError(TAG, result.error);
+      this.toastPort.showToast('删除聊天失败');
+      return;
+    }
+    if (result.ok) {
+      result.value.promise.then((res: Result<TdWireObject, AppError>) => {
+        if (!this.destroyed) {
+          if (res.ok) {
+            this.toastPort.showToast('已删除聊天');
+            this.onBack();
+          }
+          if (res.err) {
+            this.logger.logError(TAG, res.error);
+            this.toastPort.showToast('删除聊天失败');
+          }
+        }
+      });
+    }
+  }
+
+  /** MENU-101：举报聊天（reportChat，option_id=spam 通用垃圾举报）。 */
+  private executeReportChat(): void {
+    const chatId: number = this.currentState.chatId;
+    if (chatId === 0) {
+      return;
+    }
+    const req: ReportChat = new ReportChat();
+    req.chat_id = chatId;
+    req.option_id = 'spam';
+    req.message_ids = [];
+    req.text = '';
+    const result: Result<TdPendingRequest, AppError> =
+      this.scope.request('reportChat', encodeReportChat(req) as TdWireObject);
+    if (result.err) {
+      this.logger.logError(TAG, result.error);
+      this.toastPort.showToast('举报失败');
+      return;
+    }
+    if (result.ok) {
+      result.value.promise.then((res: Result<TdWireObject, AppError>) => {
+        if (!this.destroyed) {
+          if (res.ok) {
+            this.toastPort.showToast('已举报');
+          }
+          if (res.err) {
+            this.logger.logError(TAG, res.error);
+            this.toastPort.showToast('举报失败');
+          }
+        }
+      });
+    }
+  }
+
+  /** MENU-101：退出群组/频道（leaveChat，成功后返回会话列表）。 */
+  private executeLeaveChat(): void {
+    const chatId: number = this.currentState.chatId;
+    if (chatId === 0) {
+      return;
+    }
+    const req: LeaveChat = new LeaveChat();
+    req.chat_id = chatId;
+    const result: Result<TdPendingRequest, AppError> =
+      this.scope.request('leaveChat', encodeLeaveChat(req) as TdWireObject);
+    if (result.err) {
+      this.logger.logError(TAG, result.error);
+      this.toastPort.showToast('退出失败');
+      return;
+    }
+    if (result.ok) {
+      result.value.promise.then((res: Result<TdWireObject, AppError>) => {
+        if (!this.destroyed) {
+          if (res.ok) {
+            this.toastPort.showToast('已退出');
+            this.onBack();
+          }
+          if (res.err) {
+            this.logger.logError(TAG, res.error);
+            this.toastPort.showToast('退出失败');
+          }
+        }
+      });
+    }
+  }
+
   destroy(): void {
     this.destroyed = true;
     this.saveDraftNow();
@@ -770,9 +956,28 @@ export class ChatCoordinator {
         this.onOpenChatProfile(chatProfileIntent.chatId);
       }
     } else if (intent.kind === 'chatMenuAction') {
-      // MSG-109：⋮ 菜单占位动作统一入口：只记日志，语义由后续泳道实现。
+      // MENU-101：⋮ 菜单动作实化——非破坏性动作直接调用 TDLib，
+      // 破坏性动作由 reducer 弹出确认弹窗，用户确认后走 confirmMenuAction。
       const menuIntent: ChatMenuAction = intent as ChatMenuAction;
       this.logger.info(TAG, `chat_menu_${menuIntent.action}`);
+      if (menuIntent.action === 'mute') {
+        this.executeMuteChat(true);
+      } else if (menuIntent.action === 'enable_notifications') {
+        this.executeMuteChat(false);
+      }
+    } else if (intent.kind === 'confirmMenuAction') {
+      // MENU-101：用户确认破坏性操作 → 执行 pendingMenuAction 对应的 TDLib 调用。
+      const pendingAction: string = this.currentState.pendingMenuAction;
+      this.logger.info(TAG, `confirm_menu_action_${pendingAction}`);
+      if (pendingAction === 'clear_history') {
+        this.executeClearHistory();
+      } else if (pendingAction === 'delete_chat') {
+        this.executeDeleteChat();
+      } else if (pendingAction === 'report') {
+        this.executeReportChat();
+      } else if (pendingAction === 'leave') {
+        this.executeLeaveChat();
+      }
     }
 
     const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(

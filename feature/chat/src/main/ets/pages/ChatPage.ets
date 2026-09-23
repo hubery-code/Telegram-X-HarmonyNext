@@ -117,6 +117,8 @@ import {
   OpenUserProfile,
   OpenChatProfile,
   ChatMenuAction,
+  ConfirmMenuAction,
+  DismissMenuConfirmDialog,
   DismissPinnedBar,
   JumpToPinnedMessage,
   PinMessage,
@@ -895,6 +897,11 @@ export struct ChatPage {
           }
         })
       }
+
+      // MENU-101：⋮ 菜单破坏性操作确认弹窗（遮罩 + 居中卡片）。
+      if (this.uiState.showMenuConfirmDialog) {
+        this.MenuConfirmDialogOverlay()
+      }
     }
     .width('100%')
     .height('100%')
@@ -1085,6 +1092,98 @@ export struct ChatPage {
         }
       }
     }
+  }
+
+  /**
+   * MENU-101：⋮ 菜单破坏性操作确认弹窗（全屏半透明遮罩 + 居中白色卡片）。
+   * 标题与按钮文案按 pendingMenuAction 分流：
+   * - clear_history → "清空历史记录？" / "清空" / "取消"
+   * - delete_chat → "删除聊天？" / "删除" / "取消"（destructive 色）
+   * - report → "举报此聊天？" / "举报" / "取消"
+   * - leave → "退出群组/频道？" / "退出" / "取消"
+   */
+  @Builder
+  MenuConfirmDialogOverlay() {
+    Stack() {
+      Column()
+        .width('100%')
+        .height('100%')
+        .backgroundColor('#66000000')
+        .onClick(() => {
+          this.onDispatch(new DismissMenuConfirmDialog());
+        })
+
+      Column() {
+        Text(this.menuConfirmTitle())
+          .fontSize(this.T.typography.body.fontSize)
+          .fontWeight(FontWeight.Medium)
+          .fontColor(this.T.colors.textPrimary)
+          .margin({ bottom: this.T.spacing.md })
+
+        Row() {
+          Text('取消')
+            .fontSize(this.T.typography.body.fontSize)
+            .fontColor(this.T.colors.textSecondary)
+            .layoutWeight(1)
+            .textAlign(TextAlign.Center)
+            .padding({ top: this.T.spacing.sm, bottom: this.T.spacing.sm })
+            .onClick(() => {
+              this.onDispatch(new DismissMenuConfirmDialog());
+            })
+
+          Text(this.menuConfirmActionLabel())
+            .fontSize(this.T.typography.body.fontSize)
+            .fontWeight(FontWeight.Medium)
+            .fontColor(this.menuConfirmIsDestructive() ? this.T.colors.destructive : this.T.colors.accent)
+            .layoutWeight(1)
+            .textAlign(TextAlign.Center)
+            .padding({ top: this.T.spacing.sm, bottom: this.T.spacing.sm })
+            .onClick(() => {
+              this.onDispatch(new ConfirmMenuAction());
+            })
+        }
+        .width('100%')
+      }
+      .width('75%')
+      .padding(this.T.spacing.lg)
+      .backgroundColor(this.T.colors.surface)
+      .borderRadius(12)
+    }
+    .width('100%')
+    .height('100%')
+  }
+
+  private menuConfirmTitle(): string {
+    const action: string = this.uiState.pendingMenuAction;
+    if (action === 'clear_history') {
+      return '清空历史记录？';
+    } else if (action === 'delete_chat') {
+      return '删除聊天？';
+    } else if (action === 'report') {
+      return '举报此聊天？';
+    } else if (action === 'leave') {
+      return this.uiState.chatKind === 'channel' ? '退出频道？' : '退出群组？';
+    }
+    return '';
+  }
+
+  private menuConfirmActionLabel(): string {
+    const action: string = this.uiState.pendingMenuAction;
+    if (action === 'clear_history') {
+      return '清空';
+    } else if (action === 'delete_chat') {
+      return '删除';
+    } else if (action === 'report') {
+      return '举报';
+    } else if (action === 'leave') {
+      return '退出';
+    }
+    return '确认';
+  }
+
+  private menuConfirmIsDestructive(): boolean {
+    const action: string = this.uiState.pendingMenuAction;
+    return action === 'delete_chat';
   }
 
   /** MSG-108：会话内置顶消息横条（彩条 + 发送者 + 摘要 + 展开∨ + ✕ 关闭）。 */
