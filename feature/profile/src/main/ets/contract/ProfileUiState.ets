@@ -49,6 +49,10 @@ export interface ProfileUiStateOptions {
   sharedLoadingMore?: boolean;
   /** PROFILE-103：emoji 状态角标（custom_emoji 无法渲染时以 '✨' 占位）。 */
   emojiStatusEmoji?: string;
+  /** 默认 Tab 的首屏共享内容是否已发起过请求（只发一次，避免订阅回灌反复拉取）。 */
+  sharedInitialRequested?: boolean;
+  /** 当前 Tab 的共享内容请求失败（与「确实没有内容」区分开，否则页面在撒谎）。 */
+  sharedLoadFailed?: boolean;
 }
 
 export class ProfileUiState {
@@ -74,6 +78,8 @@ export class ProfileUiState {
   readonly sharedHasMore: boolean;
   readonly sharedLoadingMore: boolean;
   readonly emojiStatusEmoji: string;
+  readonly sharedInitialRequested: boolean;
+  readonly sharedLoadFailed: boolean;
 
   constructor(
     userId: number = 0,
@@ -97,7 +103,9 @@ export class ProfileUiState {
     sharedLoading: boolean = false,
     sharedHasMore: boolean = true,
     sharedLoadingMore: boolean = false,
-    emojiStatusEmoji: string = ''
+    emojiStatusEmoji: string = '',
+    sharedInitialRequested: boolean = false,
+    sharedLoadFailed: boolean = false
   ) {
     this.userId = userId;
     this.displayName = displayName;
@@ -121,6 +129,8 @@ export class ProfileUiState {
     this.sharedHasMore = sharedHasMore;
     this.sharedLoadingMore = sharedLoadingMore;
     this.emojiStatusEmoji = emojiStatusEmoji;
+    this.sharedInitialRequested = sharedInitialRequested;
+    this.sharedLoadFailed = sharedLoadFailed;
   }
 
   static initial(userId: number = 0): ProfileUiState {
@@ -150,7 +160,9 @@ export class ProfileUiState {
       options.sharedLoading !== undefined ? options.sharedLoading : this.sharedLoading,
       options.sharedHasMore !== undefined ? options.sharedHasMore : this.sharedHasMore,
       options.sharedLoadingMore !== undefined ? options.sharedLoadingMore : this.sharedLoadingMore,
-      options.emojiStatusEmoji !== undefined ? options.emojiStatusEmoji : this.emojiStatusEmoji
+      options.emojiStatusEmoji !== undefined ? options.emojiStatusEmoji : this.emojiStatusEmoji,
+      options.sharedInitialRequested !== undefined ? options.sharedInitialRequested : this.sharedInitialRequested,
+      options.sharedLoadFailed !== undefined ? options.sharedLoadFailed : this.sharedLoadFailed
     );
   }
 }

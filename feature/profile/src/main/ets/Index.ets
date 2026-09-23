@@ -13,9 +13,18 @@ export {
   OnSharedTabSelected,
   OnSharedContentLoaded,
   OnSharedGroupsLoaded,
+  OnSharedContentFailed,
+  OpenSharedChatRequested,
   ProfileIntent
 } from './contract/ProfileIntent';
-export { CreatePrivateChatEffect, FetchSharedContent, FetchSharedGroups, ProfileEffect } from './contract/ProfileEffect';
+export {
+  CreatePrivateChatEffect,
+  FetchSharedContent,
+  FetchSharedGroups,
+  FetchMoreSharedContent,
+  OpenSharedChatEffect,
+  ProfileEffect
+} from './contract/ProfileEffect';
 export {
   SharedMediaItem,
   SharedFileItem,

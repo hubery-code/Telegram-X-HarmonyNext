@@ -19,6 +19,8 @@ import {
   LoadMoreSharedContent,
   OnSharedContentLoaded,
   OnSharedGroupsLoaded,
+  OnSharedContentFailed,
+  OpenSharedChatRequested,
   ProfileIntent
 } from '../contract/ProfileIntent';
 import {
@@ -26,11 +28,39 @@ import {
   FetchSharedContent,
   FetchSharedGroups,
   FetchMoreSharedContent,
+  OpenSharedChatEffect,
   ProfileEffect
 } from '../contract/ProfileEffect';
 
 /** 共享内容 Tab 数（媒体/文件/链接/群组）。 */
 const SHARED_TAB_COUNT: number = 4;
+
+/** 该 Tab 当前是否一条都没拉到（用于「失败后点同一 Tab 重试」的判定）。 */
+function isSharedTabEmpty(state: ProfileUiState, tab: number): boolean {
+  if (tab === 0) {
+    return state.sharedMedia.length === 0;
+  }
+  if (tab === 1) {
+    return state.sharedFiles.length === 0;
+  }
+  if (tab === 2) {
+    return state.sharedLinks.length === 0;
+  }
+  return state.sharedGroups.length === 0;
+}
+
+function loadedProfileState(state: ProfileUiState, loaded: OnProfileLoaded): ProfileUiState {
+  return state.copyWith({
+    displayName: loaded.displayName,
+    username: loaded.username,
+    phone: loaded.phone,
+    statusText: loaded.statusText,
+    avatarLetters: loaded.avatarLetters,
+    avatarColorIndex: loaded.avatarColorIndex,
+    isLoading: false,
+    errorMessage: null
+  });
+}
 
 export const profileReducer: Reducer<ProfileUiState, ProfileIntent, ProfileEffect> = (
   state: ProfileUiState,
@@ -48,16 +78,18 @@ export const profileReducer: Reducer<ProfileUiState, ProfileIntent, ProfileEffec
 
     case 'onProfileLoaded': {
       const loaded: OnProfileLoaded = intent as OnProfileLoaded;
-      return reduced(state.copyWith({
-        displayName: loaded.displayName,
-        username: loaded.username,
-        phone: loaded.phone,
-        statusText: loaded.statusText,
-        avatarLetters: loaded.avatarLetters,
-        avatarColorIndex: loaded.avatarColorIndex,
-        isLoading: false,
-        errorMessage: null
-      }));
+      const next: ProfileUiState = loadedProfileState(state, loaded);
+      // 默认 Tab（媒体）在页面打开时一次都没被拉过，直接空数组渲染就是撒谎：
+      // 用户看到的是「暂无媒体文件」，而 TDLib 根本没被问过。首屏回灌后补一发。
+      if (next.sharedInitialRequested) {
+        return reduced(next);
+      }
+      const effect: FetchSharedContent = new FetchSharedContent(next.activeSharedTab);
+      return reduced(next.copyWith({
+        sharedInitialRequested: true,
+        sharedLoading: true,
+        sharedLoadFailed: false
+      }), [effect]);
     }
 
     case 'onBioLoaded': {
@@ -90,26 +122,19 @@ export const profileReducer: Reducer<ProfileUiState, ProfileIntent, ProfileEffec
       if (selected.tab < 0 || selected.tab >= SHARED_TAB_COUNT) {
         return reduced(state);
       }
-      if (selected.tab === state.activeSharedTab) {
-        return reduced(state);
-      }
       // 「未加载过」以该 Tab 条目非空判定（空结果会在下次进入时重试）。
-      let alreadyLoaded: boolean = false;
-      if (selected.tab === 0) {
-        alreadyLoaded = state.sharedMedia.length > 0;
-      } else if (selected.tab === 1) {
-        alreadyLoaded = state.sharedFiles.length > 0;
-      } else if (selected.tab === 2) {
-        alreadyLoaded = state.sharedLinks.length > 0;
-      } else {
-        alreadyLoaded = state.sharedGroups.length > 0;
-      }
-      if (alreadyLoaded) {
-        // 已加载：仅切 Tab，不触发请求也不转圈。
+      const tabIsEmpty: boolean = isSharedTabEmpty(state, selected.tab);
+      if (!tabIsEmpty) {
+        if (selected.tab === state.activeSharedTab) {
+          // 已有内容且就停在这一 Tab：重复点击完全 no-op。
+          return reduced(state);
+        }
+        // 已有内容：仅切 Tab，不触发请求也不转圈。
         return reduced(state.copyWith({
           activeSharedTab: selected.tab,
           sharedLoading: false,
           sharedLoadingMore: false,
+          sharedLoadFailed: false,
           sharedHasMore: true
         }));
       }
@@ -117,6 +142,7 @@ export const profileReducer: Reducer<ProfileUiState, ProfileIntent, ProfileEffec
         activeSharedTab: selected.tab,
         sharedLoading: true,
         sharedLoadingMore: false,
+        sharedLoadFailed: false,
         sharedHasMore: true
       });
       if (selected.tab === 3) {
@@ -148,6 +174,7 @@ export const profileReducer: Reducer<ProfileUiState, ProfileIntent, ProfileEffec
         sharedLinks: loaded.links,
         sharedLoading: false,
         sharedLoadingMore: false,
+        sharedLoadFailed: false,
         sharedHasMore: loaded.hasMore
       }));
     }
@@ -158,8 +185,30 @@ export const profileReducer: Reducer<ProfileUiState, ProfileIntent, ProfileEffec
         sharedGroups: loaded.items,
         sharedLoading: false,
         sharedLoadingMore: false,
+        sharedLoadFailed: false,
         sharedHasMore: loaded.hasMore
       }));
+    }
+
+    case 'onSharedContentFailed': {
+      const failed: OnSharedContentFailed = intent as OnSharedContentFailed;
+      if (failed.tab !== state.activeSharedTab) {
+        return reduced(state);
+      }
+      return reduced(state.copyWith({
+        sharedLoading: false,
+        sharedLoadingMore: false,
+        sharedLoadFailed: true
+      }));
+    }
+
+    case 'openSharedChatRequested': {
+      const open: OpenSharedChatRequested = intent as OpenSharedChatRequested;
+      if (open.chatId === 0) {
+        return reduced(state);
+      }
+      const effect: OpenSharedChatEffect = new OpenSharedChatEffect(open.chatId);
+      return reduced(state, [effect]);
     }
 
     default:

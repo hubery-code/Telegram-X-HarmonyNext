@@ -145,6 +145,29 @@ export class OnSharedGroupsLoaded implements Intent {
   }
 }
 
+/**
+ * PROFILE-103：某个共享内容 Tab 拉取失败。必须与「确实没有内容」分开，
+ * 否则请求挂了页面照样显示「暂无媒体文件」，用户无从知道是没内容还是没拉到。
+ */
+export class OnSharedContentFailed implements Intent {
+  readonly kind: 'onSharedContentFailed' = 'onSharedContentFailed';
+  readonly tab: number;
+
+  constructor(tab: number) {
+    this.tab = tab;
+  }
+}
+
+/** PROFILE-103：点共同群组行，跳转进该会话。 */
+export class OpenSharedChatRequested implements Intent {
+  readonly kind: 'openSharedChatRequested' = 'openSharedChatRequested';
+  readonly chatId: number;
+
+  constructor(chatId: number) {
+    this.chatId = chatId;
+  }
+}
+
 export type ProfileIntent =
   | MessageUserRequested
   | OnProfileLoaded
@@ -156,4 +179,6 @@ export type ProfileIntent =
   | OnSharedTabSelected
   | LoadMoreSharedContent
   | OnSharedContentLoaded
-  | OnSharedGroupsLoaded;
+  | OnSharedGroupsLoaded
+  | OnSharedContentFailed
+  | OpenSharedChatRequested;

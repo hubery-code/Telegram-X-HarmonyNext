@@ -69,14 +69,17 @@ import {
   OnBirthdayLoaded,
   OnEmojiStatusLoaded,
   OnSharedContentLoaded,
-  OnSharedGroupsLoaded
+  OnSharedGroupsLoaded,
+  OnSharedContentFailed,
+  OpenSharedChatRequested
 } from '../contract/ProfileIntent';
 import {
   ProfileEffect,
   CreatePrivateChatEffect,
   FetchSharedContent,
   FetchSharedGroups,
-  FetchMoreSharedContent
+  FetchMoreSharedContent,
+  OpenSharedChatEffect
 } from '../contract/ProfileEffect';
 import { SharedMediaItem, SharedFileItem, SharedLinkItem, SharedGroupItem } from '../contract/SharedContentItems';
 import { profileReducer } from '../reducer/ProfileReducer';
@@ -554,6 +557,13 @@ export class ProfileCoordinator {
         break;
       }
 
+      case 'openSharedChat': {
+        const open: OpenSharedChatEffect = effect as OpenSharedChatEffect;
+        this.logger.info(TAG, 'open_shared_chat', `chatId=${open.chatId}`);
+        this.onOpenChat(open.chatId);
+        break;
+      }
+
       default:
         break;
     }
@@ -593,16 +603,17 @@ export class ProfileCoordinator {
         }
         if (out.err) {
           this.logger.logError(TAG, out.error);
-          this.stopSharedContentLoading(tab);
+          this.failSharedContent(tab);
           return;
         }
         if (out.ok) {
           const chat: Chat | null = decodeChat(out.value as TdJsonRaw);
           if (chat === null) {
-            this.stopSharedContentLoading(tab);
+            this.failSharedContent(tab);
             return;
           }
           this.cachedPrivateChatId = chat.id;
+          this.logger.info(TAG, 'shared_private_chat_ready', `tab=${tab},chatId=${chat.id}`);
           this.searchSharedContent(tab, chat.id, isLoadMore);
         }
       }).catch((): void => {
@@ -610,7 +621,7 @@ export class ProfileCoordinator {
     }
     if (res.err) {
       this.logger.logError(TAG, res.error);
-      this.stopSharedContentLoading(tab);
+      this.failSharedContent(tab);
     }
   }
 
@@ -635,6 +646,8 @@ export class ProfileCoordinator {
     }
     const res: Result<TdPendingRequest, AppError> =
       this.scope.request('searchChatMessages', encodeSearchChatMessages(req) as TdWireObject);
+    this.logger.info(TAG, 'search_shared_content',
+      `tab=${tab},chatId=${chatId},fromMessageId=${req.from_message_id},accepted=${res.ok}`);
     if (res.ok) {
       res.value.promise.then((out: Result<TdWireObject, AppError>): void => {
         if (this.destroyed) {
@@ -642,13 +655,13 @@ export class ProfileCoordinator {
         }
         if (out.err) {
           this.logger.logError(TAG, out.error);
-          this.stopSharedContentLoading(tab);
+          this.failSharedContent(tab);
           return;
         }
         if (out.ok) {
           const found: FoundChatMessages | null = decodeFoundChatMessages(out.value as TdJsonRaw);
           if (found === null) {
-            this.stopSharedContentLoading(tab);
+            this.failSharedContent(tab);
             return;
           }
           this.handleSharedMessages(tab, found, isLoadMore);
@@ -658,7 +671,7 @@ export class ProfileCoordinator {
     }
     if (res.err) {
       this.logger.logError(TAG, res.error);
-      this.stopSharedContentLoading(tab);
+      this.failSharedContent(tab);
     }
   }
 
@@ -807,7 +820,7 @@ export class ProfileCoordinator {
         }
         if (out.err) {
           this.logger.logError(TAG, out.error);
-          this.stopSharedGroupsLoading();
+          this.failSharedGroups();
           return;
         }
         if (out.ok) {
@@ -826,7 +839,7 @@ export class ProfileCoordinator {
     }
     if (res.err) {
       this.logger.logError(TAG, res.error);
-      this.stopSharedGroupsLoading();
+      this.failSharedGroups();
     }
   }
 
@@ -903,18 +916,15 @@ export class ProfileCoordinator {
     return new SharedGroupItem(chat.id, chat.title, subtitle);
   }
 
-  /** 失败仅复位 sharedLoading：用当前数组回灌，不改变已展示数据。 */
-  private stopSharedContentLoading(tab: number): void {
-    this.dispatch(new OnSharedContentLoaded(
-      tab,
-      this.currentState.sharedMedia,
-      this.currentState.sharedFiles,
-      this.currentState.sharedLinks,
-      this.currentState.sharedHasMore
-    ));
+  /**
+   * 拉取失败：出 `OnSharedContentFailed`，让页面把「没内容」和「没拉到」分开。
+   * 旧实现用当前（空）数组回灌 loaded 意图，请求挂了页面照样显示「暂无媒体文件」。
+   */
+  private failSharedContent(tab: number): void {
+    this.dispatch(new OnSharedContentFailed(tab));
   }
 
-  private stopSharedGroupsLoading(): void {
-    this.dispatch(new OnSharedGroupsLoaded(this.currentState.sharedGroups, this.currentState.sharedHasMore));
+  private failSharedGroups(): void {
+    this.dispatch(new OnSharedContentFailed(3));
   }
 }

@@ -39,4 +39,15 @@ export class FetchMoreSharedContent implements Effect {
   }
 }
 
-export type ProfileEffect = CreatePrivateChatEffect | FetchSharedContent | FetchSharedGroups | FetchMoreSharedContent;
+/** PROFILE-103：打开共同群组会话（chatId 已在列表里，无需再 createPrivateChat）。 */
+export class OpenSharedChatEffect implements Effect {
+  readonly kind: 'openSharedChat' = 'openSharedChat';
+  readonly chatId: number;
+
+  constructor(chatId: number) {
+    this.chatId = chatId;
+  }
+}
+
+export type ProfileEffect = CreatePrivateChatEffect | FetchSharedContent | FetchSharedGroups |
+  FetchMoreSharedContent | OpenSharedChatEffect;

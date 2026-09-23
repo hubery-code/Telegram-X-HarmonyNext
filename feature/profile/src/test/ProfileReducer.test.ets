@@ -17,14 +17,17 @@ import {
   OnSharedTabSelected,
   LoadMoreSharedContent,
   OnSharedContentLoaded,
-  OnSharedGroupsLoaded
+  OnSharedGroupsLoaded,
+  OnSharedContentFailed,
+  OpenSharedChatRequested
 } from '../main/ets/contract/ProfileIntent';
 import {
   ProfileEffect,
   CreatePrivateChatEffect,
   FetchSharedContent,
   FetchSharedGroups,
-  FetchMoreSharedContent
+  FetchMoreSharedContent,
+  OpenSharedChatEffect
 } from '../main/ets/contract/ProfileEffect';
 import {
   SharedMediaItem,
@@ -88,6 +91,115 @@ export default function profileReducerTest(): void {
       expect(result.state.statusText).assertEqual('online');
       expect(result.state.avatarLetters).assertEqual('TU');
       expect(result.state.avatarColorIndex).assertEqual(3);
+      // PROFILE-103 收尾：默认 Tab（媒体）必须在首屏回灌后真的去问 TDLib，
+      // 否则页面直接显示「暂无媒体文件」是在替一个从未发出的请求撒谎。
+      expect(result.effects.length).assertEqual(1);
+      expect(result.effects[0].kind).assertEqual('fetchSharedContent');
+      expect((result.effects[0] as FetchSharedContent).tab).assertEqual(0);
+      expect(result.state.sharedLoading).assertTrue();
+      expect(result.state.sharedInitialRequested).assertTrue();
+    });
+
+    it('onProfileLoaded_secondDeliveryDoesNotRefetch', 0, () => {
+      const first: ReducerResult<ProfileUiState, ProfileEffect> = profileReducer(
+        makeState(42),
+        new OnProfileLoaded('Test User', 'testuser', '+123456', 'online', 'TU', 3),
+        makeEnv()
+      );
+      const second: ReducerResult<ProfileUiState, ProfileEffect> = profileReducer(
+        first.state,
+        new OnProfileLoaded('Test User', 'testuser', '+123456', 'last seen recently', 'TU', 3),
+        makeEnv()
+      );
+      // 订阅会反复回灌资料，共享内容只允许拉一次。
+      expect(second.effects.length).assertEqual(0);
+      expect(second.state.statusText).assertEqual('last seen recently');
+    });
+
+    it('onSharedTabSelected_sameEmptyTabRefetchesAsRetry', 0, () => {
+      const failed: ProfileUiState = makeState(42).copyWith({
+        sharedInitialRequested: true,
+        sharedLoadFailed: true,
+        sharedLoading: false
+      });
+      const result: ReducerResult<ProfileUiState, ProfileEffect> = profileReducer(
+        failed,
+        new OnSharedTabSelected(0),
+        makeEnv()
+      );
+      expect(result.effects.length).assertEqual(1);
+      expect((result.effects[0] as FetchSharedContent).tab).assertEqual(0);
+      expect(result.state.sharedLoading).assertTrue();
+      expect(result.state.sharedLoadFailed).assertFalse();
+    });
+
+    it('onSharedTabSelected_sameLoadedTabIsNoOp', 0, () => {
+      const loaded: ProfileUiState = makeState(42).copyWith({
+        sharedInitialRequested: true,
+        sharedMedia: [new SharedMediaItem(7, null, true)]
+      });
+      const result: ReducerResult<ProfileUiState, ProfileEffect> = profileReducer(
+        loaded,
+        new OnSharedTabSelected(0),
+        makeEnv()
+      );
+      expect(result.state === loaded).assertTrue();
+      expect(result.effects.length).assertEqual(0);
+    });
+
+    it('onSharedContentFailed_marksFailureAndStopsLoading', 0, () => {
+      const state: ProfileUiState = makeState(42).copyWith({ sharedLoading: true });
+      const result: ReducerResult<ProfileUiState, ProfileEffect> = profileReducer(
+        state,
+        new OnSharedContentFailed(0),
+        makeEnv()
+      );
+      expect(result.state.sharedLoading).assertFalse();
+      expect(result.state.sharedLoadFailed).assertTrue();
+    });
+
+    it('onSharedContentFailed_forOtherTab_isNoOp', 0, () => {
+      const state: ProfileUiState = makeState(42).copyWith({ activeSharedTab: 2 });
+      const result: ReducerResult<ProfileUiState, ProfileEffect> = profileReducer(
+        state,
+        new OnSharedContentFailed(0),
+        makeEnv()
+      );
+      expect(result.state === state).assertTrue();
+    });
+
+    it('onSharedContentLoaded_clearsFailure', 0, () => {
+      const state: ProfileUiState = makeState(42).copyWith({
+        sharedLoadFailed: true,
+        sharedLoading: true
+      });
+      const result: ReducerResult<ProfileUiState, ProfileEffect> = profileReducer(
+        state,
+        new OnSharedContentLoaded(0, [new SharedMediaItem(1, null, true)], [], [], false),
+        makeEnv()
+      );
+      expect(result.state.sharedLoadFailed).assertFalse();
+      expect(result.state.sharedMedia.length).assertEqual(1);
+    });
+
+    it('openSharedChatRequested_emitsOpenSharedChatEffect', 0, () => {
+      const state: ProfileUiState = makeState(42);
+      const result: ReducerResult<ProfileUiState, ProfileEffect> = profileReducer(
+        state,
+        new OpenSharedChatRequested(-1001785291444),
+        makeEnv()
+      );
+      expect(result.effects.length).assertEqual(1);
+      expect(result.effects[0].kind).assertEqual('openSharedChat');
+      expect((result.effects[0] as OpenSharedChatEffect).chatId).assertEqual(-1001785291444);
+    });
+
+    it('openSharedChatRequested_withZeroChatId_isNoOp', 0, () => {
+      const result: ReducerResult<ProfileUiState, ProfileEffect> = profileReducer(
+        makeState(42),
+        new OpenSharedChatRequested(0),
+        makeEnv()
+      );
       expect(result.effects.length).assertEqual(0);
     });
 
@@ -175,17 +287,6 @@ export default function profileReducerTest(): void {
       );
       expect(result.state.activeSharedTab).assertEqual(1);
       expect(result.state.sharedLoading).assertFalse();
-      expect(result.effects.length).assertEqual(0);
-    });
-
-    it('onSharedTabSelected_sameTabIsNoOp', 0, () => {
-      const state: ProfileUiState = makeState(42);
-      const result: ReducerResult<ProfileUiState, ProfileEffect> = profileReducer(
-        state,
-        new OnSharedTabSelected(0),
-        makeEnv()
-      );
-      expect(result.state === state).assertTrue();
       expect(result.effects.length).assertEqual(0);
     });
 

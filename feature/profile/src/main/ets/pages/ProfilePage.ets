@@ -14,7 +14,7 @@ import { getAvatarColorIndex } from '@tgx/core-domain';
 import { fileUri } from '@kit.CoreFileKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { ProfileUiState } from '../contract/ProfileUiState';
-import { ProfileIntent, MessageUserRequested, OnSharedTabSelected, LoadMoreSharedContent } from '../contract/ProfileIntent';
+import { ProfileIntent, MessageUserRequested, OnSharedTabSelected, LoadMoreSharedContent, OpenSharedChatRequested } from '../contract/ProfileIntent';
 import { SharedMediaItem, SharedFileItem, SharedLinkItem, SharedGroupItem } from '../contract/SharedContentItems';
 
 
@@ -308,10 +308,33 @@ export struct ProfilePage {
     .alignItems(HorizontalAlign.Center)
   }
 
+  /** 拉取失败与「确实没有内容」分开显示，否则请求挂了页面照样报「暂无」。 */
+  @Builder
+  SharedLoadFailed() {
+    Column() {
+      Text('加载失败')
+        .fontSize(this.T.typography.subheadline.fontSize)
+        .fontColor(this.T.colors.textPrimary)
+        .textAlign(TextAlign.Center)
+      Text('点击顶部对应页签重试。')
+        .fontSize(this.T.typography.footnote.fontSize)
+        .fontColor(this.T.colors.textSecondary)
+        .textAlign(TextAlign.Center)
+        .margin({ top: this.T.spacing.xs })
+    }
+    .width('100%')
+    .padding({ top: this.T.spacing.lg, bottom: this.T.spacing.lg, left: this.T.spacing.lg, right: this.T.spacing.lg })
+    .alignItems(HorizontalAlign.Center)
+  }
+
   @Builder
   SharedMediaGrid() {
     if (this.uiState.sharedMedia.length === 0) {
-      this.SharedEmpty('暂无媒体文件', '在此聊天中分享图片和视频，并在您所有的设备上访问。')
+      if (this.uiState.sharedLoadFailed) {
+        this.SharedLoadFailed()
+      } else {
+        this.SharedEmpty('暂无媒体文件', '在此聊天中分享图片和视频，并在您所有的设备上访问。')
+      }
     } else {
       Flex({ wrap: FlexWrap.Wrap }) {
         ForEach(this.uiState.sharedMedia.slice(), (item: SharedMediaItem, index: number) => {
@@ -323,7 +346,7 @@ export struct ProfilePage {
                 .objectFit(ImageFit.Cover)
             } else {
               Column() {
-                Image(item.isPhoto ? $r('app.media.ic_photo') : $r('app.media.ic_file'))
+                Image(item.isPhoto ? $r('app.media.ic_photo') : $r('app.media.ic_video'))
                   .width(24)
                   .height(24)
                   .fillColor(this.T.colors.textSecondary)
@@ -345,7 +368,11 @@ export struct ProfilePage {
   @Builder
   SharedFileList() {
     if (this.uiState.sharedFiles.length === 0) {
-      this.SharedEmpty('暂无文件', '在此聊天中分享文件，并在您所有的设备上访问。')
+      if (this.uiState.sharedLoadFailed) {
+        this.SharedLoadFailed()
+      } else {
+        this.SharedEmpty('暂无文件', '在此聊天中分享文件，并在您所有的设备上访问。')
+      }
     } else {
       Column() {
         ForEach(this.uiState.sharedFiles.slice(), (item: SharedFileItem, index: number) => {
@@ -388,7 +415,11 @@ export struct ProfilePage {
   @Builder
   SharedLinkList() {
     if (this.uiState.sharedLinks.length === 0) {
-      this.SharedEmpty('暂无链接', '在此聊天中分享链接，并在您所有的设备上访问。')
+      if (this.uiState.sharedLoadFailed) {
+        this.SharedLoadFailed()
+      } else {
+        this.SharedEmpty('暂无链接', '在此聊天中分享链接，并在您所有的设备上访问。')
+      }
     } else {
       Column({ space: this.T.spacing.sm }) {
         ForEach(this.uiState.sharedLinks.slice(), (item: SharedLinkItem, index: number) => {
@@ -439,7 +470,11 @@ export struct ProfilePage {
   @Builder
   SharedGroupList() {
     if (this.uiState.sharedGroups.length === 0) {
-      this.SharedEmpty('暂无共同群组', '你们所在的共同群组会显示在这里。')
+      if (this.uiState.sharedLoadFailed) {
+        this.SharedLoadFailed()
+      } else {
+        this.SharedEmpty('暂无共同群组', '你们所在的共同群组会显示在这里。')
+      }
     } else {
       Column() {
         ForEach(this.uiState.sharedGroups.slice(), (item: SharedGroupItem, index: number) => {
@@ -480,7 +515,7 @@ export struct ProfilePage {
             bottom: this.T.spacing.sm
           })
           .onClick(() => {
-            hilog.info(DOMAIN, PAGE_TAG, 'profile_shared_group_click chatId=%{public}d', item.chatId);
+            this.onDispatch(new OpenSharedChatRequested(item.chatId));
           })
         }, (item: SharedGroupItem, index: number) => `${item.chatId}_${index}`)
       }
