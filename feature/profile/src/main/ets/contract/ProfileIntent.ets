@@ -51,6 +51,16 @@ export class OnBioLoaded implements Intent {
   }
 }
 
+/** PROFILE-103：emoji 状态回灌（有 emoji status 时为 '✨'，否则空串）。 */
+export class OnEmojiStatusLoaded implements Intent {
+  readonly kind: 'onEmojiStatusLoaded' = 'onEmojiStatusLoaded';
+  readonly emoji: string;
+
+  constructor(emoji: string) {
+    this.emoji = emoji;
+  }
+}
+
 /** 头像文件下载完成/本地路径就绪。 */
 export class OnAvatarFileLoaded implements Intent {
   readonly kind: 'onAvatarFileLoaded' = 'onAvatarFileLoaded';
@@ -139,6 +149,7 @@ export type ProfileIntent =
   | MessageUserRequested
   | OnProfileLoaded
   | OnBioLoaded
+  | OnEmojiStatusLoaded
   | OnAvatarFileLoaded
   | OnProfileFailed
   | OnBirthdayLoaded

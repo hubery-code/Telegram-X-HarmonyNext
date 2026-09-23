@@ -11,6 +11,7 @@ import {
   MessageUserRequested,
   OnProfileLoaded,
   OnBioLoaded,
+  OnEmojiStatusLoaded,
   OnAvatarFileLoaded,
   OnProfileFailed,
   OnBirthdayLoaded,
@@ -62,6 +63,11 @@ export const profileReducer: Reducer<ProfileUiState, ProfileIntent, ProfileEffec
     case 'onBioLoaded': {
       const bio: OnBioLoaded = intent as OnBioLoaded;
       return reduced(state.copyWith({ bio: bio.bio }));
+    }
+
+    case 'onEmojiStatusLoaded': {
+      const es: OnEmojiStatusLoaded = intent as OnEmojiStatusLoaded;
+      return reduced(state.copyWith({ emojiStatusEmoji: es.emoji }));
     }
 
     case 'onAvatarFileLoaded': {

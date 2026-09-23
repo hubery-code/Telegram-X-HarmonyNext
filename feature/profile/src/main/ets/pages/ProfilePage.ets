@@ -539,6 +539,12 @@ export struct ProfilePage {
                 .margin({ top: this.T.spacing.md })
                 .textAlign(TextAlign.Center)
 
+              if (this.uiState.emojiStatusEmoji.length > 0) {
+                Text(this.uiState.emojiStatusEmoji)
+                  .fontSize(this.T.typography.subheadline.fontSize)
+                  .margin({ top: this.T.spacing.hairline })
+              }
+
               if (this.uiState.statusText.length > 0) {
                 Text(this.uiState.statusText)
                   .fontSize(this.T.typography.subheadline.fontSize)
@@ -551,6 +557,45 @@ export struct ProfilePage {
             .width('100%')
             .alignItems(HorizontalAlign.Center)
             .padding({ top: this.T.spacing.lg, bottom: this.T.spacing.md })
+
+            Row({ space: this.T.spacing.lg }) {
+              Column() {
+                Image($r('app.media.ic_call'))
+                  .width(22)
+                  .height(22)
+                  .fillColor(this.T.colors.textSecondary)
+              }
+              .width(48)
+              .height(48)
+              .borderRadius(this.T.radius.full)
+              .backgroundColor(this.T.colors.surfaceVariant)
+              .justifyContent(FlexAlign.Center)
+              .alignItems(HorizontalAlign.Center)
+              Text('通话')
+                .fontSize(this.T.typography.caption.fontSize)
+                .fontColor(this.T.colors.textSecondary)
+                .margin({ top: this.T.spacing.xs })
+
+              Column() {
+                Image($r('app.media.ic_video'))
+                  .width(22)
+                  .height(22)
+                  .fillColor(this.T.colors.textSecondary)
+              }
+              .width(48)
+              .height(48)
+              .borderRadius(this.T.radius.full)
+              .backgroundColor(this.T.colors.surfaceVariant)
+              .justifyContent(FlexAlign.Center)
+              .alignItems(HorizontalAlign.Center)
+              Text('视频')
+                .fontSize(this.T.typography.caption.fontSize)
+                .fontColor(this.T.colors.textSecondary)
+                .margin({ top: this.T.spacing.xs })
+            }
+            .width('100%')
+            .justifyContent(FlexAlign.Center)
+            .padding({ bottom: this.T.spacing.md })
 
             Divider()
               .color(this.T.colors.divider)

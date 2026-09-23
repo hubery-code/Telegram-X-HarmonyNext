@@ -47,6 +47,8 @@ export interface ProfileUiStateOptions {
   sharedHasMore?: boolean;
   /** 共享内容加载更多中（滚动或点击加载更多后为 true）。 */
   sharedLoadingMore?: boolean;
+  /** PROFILE-103：emoji 状态角标（custom_emoji 无法渲染时以 '✨' 占位）。 */
+  emojiStatusEmoji?: string;
 }
 
 export class ProfileUiState {
@@ -71,6 +73,7 @@ export class ProfileUiState {
   readonly sharedLoading: boolean;
   readonly sharedHasMore: boolean;
   readonly sharedLoadingMore: boolean;
+  readonly emojiStatusEmoji: string;
 
   constructor(
     userId: number = 0,
@@ -93,7 +96,8 @@ export class ProfileUiState {
     sharedGroups: SharedGroupItem[] = [],
     sharedLoading: boolean = false,
     sharedHasMore: boolean = true,
-    sharedLoadingMore: boolean = false
+    sharedLoadingMore: boolean = false,
+    emojiStatusEmoji: string = ''
   ) {
     this.userId = userId;
     this.displayName = displayName;
@@ -116,6 +120,7 @@ export class ProfileUiState {
     this.sharedLoading = sharedLoading;
     this.sharedHasMore = sharedHasMore;
     this.sharedLoadingMore = sharedLoadingMore;
+    this.emojiStatusEmoji = emojiStatusEmoji;
   }
 
   static initial(userId: number = 0): ProfileUiState {
@@ -144,7 +149,8 @@ export class ProfileUiState {
       options.sharedGroups !== undefined ? options.sharedGroups : this.sharedGroups,
       options.sharedLoading !== undefined ? options.sharedLoading : this.sharedLoading,
       options.sharedHasMore !== undefined ? options.sharedHasMore : this.sharedHasMore,
-      options.sharedLoadingMore !== undefined ? options.sharedLoadingMore : this.sharedLoadingMore
+      options.sharedLoadingMore !== undefined ? options.sharedLoadingMore : this.sharedLoadingMore,
+      options.emojiStatusEmoji !== undefined ? options.emojiStatusEmoji : this.emojiStatusEmoji
     );
   }
 }

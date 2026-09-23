@@ -67,6 +67,7 @@ import {
   OnAvatarFileLoaded,
   OnProfileFailed,
   OnBirthdayLoaded,
+  OnEmojiStatusLoaded,
   OnSharedContentLoaded,
   OnSharedGroupsLoaded
 } from '../contract/ProfileIntent';
@@ -331,6 +332,14 @@ function bioTextOf(info: UserFullInfo): string {
   return bio.text;
 }
 
+/** PROFILE-103：有 emoji_status 时返回 '✨' 角标，否则空串。 */
+function emojiStatusIndicator(user: User): string {
+  if (user.emoji_status !== null && user.emoji_status !== undefined) {
+    return '✨';
+  }
+  return '';
+}
+
 export class ProfileCoordinator {
   private readonly scope: AccountScope;
   private readonly userId: number;
@@ -459,6 +468,7 @@ export class ProfileCoordinator {
       getAvatarLetters(user),
       getAvatarColorIndex(user.id)
     ));
+    this.dispatch(new OnEmojiStatusLoaded(emojiStatusIndicator(user)));
     this.resolveAvatarFile(user);
   }
 
