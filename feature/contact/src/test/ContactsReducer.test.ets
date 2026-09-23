@@ -30,9 +30,10 @@ function makeItem(
   userId: number,
   displayName: string,
   username: string = '',
-  statusText: string = ''
+  statusText: string = '',
+  phoneNumber: string = ''
 ): ContactsItem {
-  return new ContactsItem(userId, displayName, username, null, '', 0, statusText);
+  return new ContactsItem(userId, displayName, username, null, '', 0, statusText, phoneNumber);
 }
 
 function makeLoadedState(): ContactsUiState {
@@ -232,13 +233,45 @@ export default function contactsReducerTest(): void {
       const items: ContactsItem[] = [makeItem(1, 'Alpha'), makeItem(2, 'Beta')];
       const out: ContactsItem[] = filterContactsItems(items, '   ');
       expect(out.length).assertEqual(2);
+      // 空查询走「原样返回引用」，不新建数组（避免每次输入都整表重排）。
+      expect(out === items).assertTrue();
     });
 
     it('matchesDisplayNameAndUsername', 0, () => {
       const items: ContactsItem[] = [makeItem(1, 'Alpha', 'alpha_user'), makeItem(2, 'Beta')];
       expect(filterContactsItems(items, 'alp').length).assertEqual(1);
-      expect(filterContactsItems(items, 'USER').length).assertEqual(1);
       expect(filterContactsItems(items, 'gamma').length).assertEqual(0);
+    });
+
+    /**
+     * CONTACT-102 的行为变更：过滤从子串匹配改成 Android 的**词首前缀**匹配，
+     * 所以用户名中间的片段不再命中（'USER' 找不到 'alpha_user'）。
+     * 号码同理不参与匹配 —— Android 联系人页只比展示名与用户名。
+     */
+    it('wordPrefixOnly_midWordFragmentDoesNotMatch', 0, () => {
+      const items: ContactsItem[] = [makeItem(1, 'Alpha', 'alpha_user'), makeItem(2, 'Beta')];
+      expect(filterContactsItems(items, 'USER').length).assertEqual(0);
+      expect(filterContactsItems(items, 'lph').length).assertEqual(0);
+      expect(filterContactsItems(items, 'alpha_').length).assertEqual(1);
+    });
+
+    it('wordPrefix_matchesAnyWordOfDisplayName', 0, () => {
+      const items: ContactsItem[] = [makeItem(1, 'Alice Anderson'), makeItem(2, 'Bob Brown')];
+      expect(filterContactsItems(items, 'and').length).assertEqual(1);
+      // 整个 query 作为**一个**前缀参与比较：'Alice A' 是展示名的整体前缀
+      expect(filterContactsItems(items, 'Alice A').length).assertEqual(1);
+      // 'A b' 既不是整体前缀，也不是任何词的词首（词首比较同样带整个前缀，含空格）
+      expect(filterContactsItems(items, 'A b').length).assertEqual(0);
+    });
+
+    it('onContactsLoaded_keepsPhoneNumberOnItems', 0, () => {
+      const items: ContactsItem[] = [makeItem(7, 'be hu', 'hu_bery', 'last seen recently', '+447741417158')];
+      const state: ContactsUiState = contactsReducer(
+        ContactsUiState.initial(),
+        new OnContactsLoaded(items),
+        makeEnv()
+      ).state;
+      expect(state.items[0].phoneNumber).assertEqual('+447741417158');
     });
   });
 }

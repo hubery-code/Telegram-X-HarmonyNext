@@ -148,3 +148,52 @@ export function activeSectionIndex(offsets: number[], yOffset: number): number {
 export function indexBarVisible(sections: ContactsSection[]): boolean {
   return sections.length > 1;
 }
+
+/**
+ * 拖拽索引条时的一次换算结果：落到的分组下标 + 该字母在索引条里的中心位移。
+ * 中心位移用来摆当前段气泡（气泡跟着手指走，而不是跟着列表滚动走）。
+ */
+export class IndexScrubHit {
+  readonly index: number;
+  readonly centerY: number;
+
+  constructor(index: number = -1, centerY: number = 0) {
+    this.index = index;
+    this.centerY = centerY;
+  }
+}
+
+/**
+ * 手指落在索引条的哪个字母上（CONTACT-102 拖拽 scrub）。
+ *
+ * 索引条是 `Column({justifyContent: Center})` + 每个字母固定 `letterHeight`、无间距，
+ * 所以整条的排版是纯几何的，不必测真实布局：
+ * - 内容高 `contentHeight = letterCount * letterHeight`；
+ * - 上下留白 `topPad = max(0, (barHeight - contentHeight) / 2)`；
+ * - 手指 `localY`（组件内坐标，vp）落在 `floor((localY - topPad) / letterHeight)`。
+ *
+ * 手指拖出索引条上下沿时**夹到首/尾段**而不是取消：Android 的 thumb 同样是拖到底
+ * 就停在最后一段，做出「拖出即失效」反而让长列表末尾够不到。
+ *
+ * `barHeight <= 0`（还没量到）或没有字母时返回 `index = -1`，调用方据此不动状态。
+ */
+export function indexScrubAt(
+  barHeight: number,
+  letterCount: number,
+  localY: number,
+  letterHeight: number
+): IndexScrubHit {
+  if (barHeight <= 0 || letterCount <= 0 || letterHeight <= 0) {
+    return new IndexScrubHit(-1, 0);
+  }
+  const contentHeight: number = letterCount * letterHeight;
+  const topPad: number = barHeight > contentHeight ? (barHeight - contentHeight) / 2 : 0;
+  let index: number = Math.floor((localY - topPad) / letterHeight);
+  if (index < 0) {
+    index = 0;
+  }
+  if (index > letterCount - 1) {
+    index = letterCount - 1;
+  }
+  return new IndexScrubHit(index, topPad + index * letterHeight + letterHeight / 2);
+}

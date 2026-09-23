@@ -22,6 +22,12 @@ export class ContactsItem {
   readonly colorIndex: number;
   /** 在线状态简文案：'online' / 'last seen ...' / ''。 */
   readonly statusText: string;
+  /**
+   * 展示用电话号码（已走 `model/ContactPhone.formatContactPhone`，形如 `+447741417158`）；
+   * 无号码则空串。联系人行的副标题优先级是 电话 → @username → 状态，
+   * 对齐 Android `TGUser.updateStatus()` 的 `FLAG_CONTACT` 分支。
+   */
+  readonly phoneNumber: string;
 
   constructor(
     userId: number = 0,
@@ -30,7 +36,8 @@ export class ContactsItem {
     avatarPath: string | null = null,
     avatarLetters: string = '',
     colorIndex: number = 0,
-    statusText: string = ''
+    statusText: string = '',
+    phoneNumber: string = ''
   ) {
     this.userId = userId;
     this.displayName = displayName;
@@ -39,6 +46,7 @@ export class ContactsItem {
     this.avatarLetters = avatarLetters;
     this.colorIndex = colorIndex;
     this.statusText = statusText;
+    this.phoneNumber = phoneNumber;
   }
 }
 

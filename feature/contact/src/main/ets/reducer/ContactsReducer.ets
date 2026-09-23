@@ -9,6 +9,7 @@
 import { Reducer, ReducerEnv, ReducerResult, reduced } from '@tgx/feature-template';
 import { ContactsItem, ContactsUiState, ContactsUiStateOptions } from '../contract/ContactsUiState';
 import { buildContactsSections } from '../model/ContactsSections';
+import { contactMatchesQuery } from '../model/ContactsFilter';
 import {
   QueryChanged,
   OnContactsLoaded,
@@ -19,23 +20,18 @@ import {
 import { OpenUserProfile, ContactsEffect } from '../contract/ContactsEffect';
 
 /**
- * 查询过滤：大小写不敏感子串匹配 displayName / username；
- * query 归一（trim + lowercase），空查询原样返回全量。
+ * 查询过滤：交给 `model/ContactsFilter.contactMatchesQuery` —— **词首前缀**匹配展示名，
+ * 或前缀匹配用户名（对齐 Android `ContactsController.sortUsers()` :901）。
+ * 空查询原样返回全量引用，避免每次输入都新建数组触发整表重排。
  */
 export function filterContactsItems(items: ContactsItem[], query: string): ContactsItem[] {
-  const normalized: string = query.trim().toLowerCase();
-  if (normalized.length === 0) {
+  if (query.trim().length === 0) {
     return items;
   }
   const out: ContactsItem[] = [];
   for (let i: number = 0; i < items.length; i++) {
-    const item: ContactsItem = items[i];
-    if (item.displayName.toLowerCase().indexOf(normalized) >= 0) {
-      out.push(item);
-      continue;
-    }
-    if (item.username.length > 0 && item.username.toLowerCase().indexOf(normalized) >= 0) {
-      out.push(item);
+    if (contactMatchesQuery(items[i], query)) {
+      out.push(items[i]);
     }
   }
   return out;

@@ -47,6 +47,7 @@ import {
 import { ContactsEffect, FetchContacts, OpenUserProfile } from '../contract/ContactsEffect';
 import { contactsReducer } from '../reducer/ContactsReducer';
 import { compareContacts } from '../model/ContactsSections';
+import { formatContactPhone } from '../model/ContactPhone';
 
 const TAG: string = 'ContactsCoordinator';
 
@@ -280,7 +281,10 @@ export class ContactsCoordinator {
       avatarPath,
       getAvatarLetters(user),
       getAvatarColorIndex(user.id),
-      formatUserStatusText(user)
+      formatUserStatusText(user),
+      // 联系人行副标题显电话号码（Android TGUser 的 FLAG_CONTACT 分支）；
+      // getContacts 回包里的都是联系人，所以这里无条件取号码，有就显。
+      formatContactPhone(user.phone_number)
     );
   }
 

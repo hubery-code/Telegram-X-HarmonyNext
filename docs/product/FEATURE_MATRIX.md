@@ -170,8 +170,18 @@
 > 首码点大写）推出，分段随 `items` 一起进 `ContactsUiState.sections`，`ForEach` key 带上段起点，修掉「同一字母分两段时 key 撞车、
 > 非拉丁名字塌进 `'#'`」两个缺陷；索引条按真实分组出字母、点一下跳到该段、当前段随滚动高亮。设备实测（模拟器）还校准出一处
 > 只有真实渲染才暴露的偏差：`List.divider` 的 2vp 分隔线是**按组**占位的（单条组实测 94vp = 28 标题 + 64 行 + 2 分隔线），
-> 跳转位移旧公式漏了它、越往后偏得越多，补 `groupGap` 后点 `M` 才真正齐顶。遗留三项另立待跟进：
-> 已存联系人副标题应显电话号码（Android `UserView` FLAG_CONTACT）、索引条拖拽 scrub 与当前段气泡、搜索改 `anyWordStartsWith` 词首匹配。
+> 跳转位移旧公式漏了它、越往后偏得越多，补 `groupGap` 后点 `M` 才真正齐顶。
+> **2026-09-24（CONTACT-102，FEAT-P2-001 联系人页收尾）**：CONTACT-101 的遗留三项全部交付 ——
+> ① 行副标题改显**电话号码**（对齐 Android `TGUser.updateStatus()` 的 `FLAG_CONTACT` 分支：联系人先显
+> `Strings.formatPhone(phone_number)`，再才是 `@username` / last seen；号码格式只移植「留数字 + 补 `+`」，
+> `TGPhoneFormat` 国家分组表刻意不移植），实测 `be hu` 副标题由 `@hu_bery` 变 `+447741417158`；
+> ② 搜索从子串匹配改 Android 的**词首前缀**匹配（`Strings.anyWordStartsWith` + 用户名前缀，
+> `ContactsController.java:901`），`e h` 不再命中 `be hu`（旧实现会命中）、`hu` 仍命中；
+> ③ 索引条支持**按住上下拖连续换段**，并在条左侧浮出当前段字母气泡（`PanGesture` + `fingerList[0].localY`
+> 走纯函数 `indexScrubAt` 换算；拖出上下沿夹到首/尾段；拖拽中不做补间动画才跟手；索引条高度改为「字母数 × 行高」
+> 由 `Stack` 的 `Alignment.End` 居中，省掉留白换算也避免气泡把条挤偏）。
+> 设备取证：真实账号只有 1 个联系人（索引条按规则不出现），故临时注入 26 字母合成分组取证拖拽与气泡后删除重建复验。
+> `feature_contact` 43/43 PASS。遗留：号码未分组；`findUsernameByPrefix` 本端只比主用户名（`ContactsItem` 只存一个）。
 > **2026-09-24（CHAN-SEND，FEAT-P2-002 频道权限）**：频道**发言权限真实态**交付，补掉 CHANNEL-101 的残留缺陷 ——
 > 底栏旧分支把「频道成员」直接等价成「静音条」（`chatKind === 'channel' && isChannelMember → ChannelMuteBar()`），
 > 结果**自己建的、有发帖权的频道也永远发不了言**。现在对齐 Android `Tdlib.canSendBasicMessage(chat)`

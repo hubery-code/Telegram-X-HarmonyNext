@@ -15,7 +15,9 @@ import {
   buildContactsSections,
   sectionScrollOffsets,
   activeSectionIndex,
-  indexBarVisible
+  indexBarVisible,
+  indexScrubAt,
+  IndexScrubHit
 } from '../main/ets/model/ContactsSections';
 
 function item(userId: number, displayName: string): ContactsItem {
@@ -140,6 +142,40 @@ export default function contactsSectionsTest(): void {
     it('indexBarVisible_needsMoreThanOneSection', 0, () => {
       expect(indexBarVisible(buildContactsSections(sortedItems(['only one'])))).assertFalse();
       expect(indexBarVisible(buildContactsSections(sortedItems(['Alice', 'be hu'])))).assertTrue();
+    });
+
+    // 页面把索引条高度做成「字母数 × 行高」，所以 topPad 恒为 0；这里两种形状都覆盖。
+    it('indexScrub_pageShapedBarMapsLocalYDirectlyToLetter', 0, () => {
+      const hit0: IndexScrubHit = indexScrubAt(48, 3, 0, 16);
+      expect(hit0.index).assertEqual(0);
+      expect(hit0.centerY).assertEqual(8);
+      const hit1: IndexScrubHit = indexScrubAt(48, 3, 20, 16);
+      expect(hit1.index).assertEqual(1);
+      expect(hit1.centerY).assertEqual(24);
+      const hitLast: IndexScrubHit = indexScrubAt(48, 3, 47, 16);
+      expect(hitLast.index).assertEqual(2);
+      expect(hitLast.centerY).assertEqual(40);
+    });
+
+    it('indexScrub_centeredBarSubtractsTopPadding', 0, () => {
+      // 内容高 48、条高 100 → 上下各留 26
+      const hit: IndexScrubHit = indexScrubAt(100, 3, 42, 16);
+      expect(hit.index).assertEqual(1);
+      expect(hit.centerY).assertEqual(50);
+      expect(indexScrubAt(100, 3, 25, 16).index).assertEqual(0);
+      expect(indexScrubAt(100, 3, 27, 16).index).assertEqual(0);
+    });
+
+    /** 拖出上下沿夹到首/尾段：Android 的 thumb 拖到底也是停在最后一段，而不是失效。 */
+    it('indexScrub_clampsOutsideBar', 0, () => {
+      expect(indexScrubAt(100, 3, -50, 16).index).assertEqual(0);
+      expect(indexScrubAt(100, 3, 999, 16).index).assertEqual(2);
+    });
+
+    it('indexScrub_degenerateInputsReturnNoHit', 0, () => {
+      expect(indexScrubAt(0, 3, 10, 16).index).assertEqual(-1);
+      expect(indexScrubAt(100, 0, 10, 16).index).assertEqual(-1);
+      expect(indexScrubAt(100, 3, 10, 0).index).assertEqual(-1);
     });
   });
 }
