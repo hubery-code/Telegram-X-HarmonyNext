@@ -683,15 +683,20 @@ export class ProfileCoordinator {
 
     if (tab === 0) {
       const media: SharedMediaItem[] = [];
+      let placeholders: number = 0;
       for (let i = 0; i < found.messages.length; i++) {
         const msg: Message = found.messages[i];
         const item: SharedMediaItem | null = this.mediaItemOf(msg.content);
         if (item !== null) {
+          if (item.fileId === 0) {
+            placeholders++;
+          }
           media.push(item);
         }
       }
       const combined: SharedMediaItem[] = isLoadMore ? [...this.currentState.sharedMedia, ...media] : media;
-      this.logger.info(TAG, 'shared_media_ok', `count=${combined.length},hasMore=${hasMore}`);
+      this.logger.info(TAG, 'shared_media_ok',
+        `page=${found.messages.length},kept=${media.length},placeholder=${placeholders},count=${combined.length},hasMore=${hasMore}`);
       this.dispatch(new OnSharedContentLoaded(0, combined, this.currentState.sharedFiles, this.currentState.sharedLinks, hasMore));
       return;
     }
@@ -722,7 +727,10 @@ export class ProfileCoordinator {
     this.dispatch(new OnSharedContentLoaded(2, this.currentState.sharedMedia, this.currentState.sharedFiles, combined, hasMore));
   }
 
-  /** messagePhoto/messageVideo → SharedMediaItem；缩略图未就绪则触发下载订阅（局部回灌）。 */
+  /**
+   * messagePhoto/messageVideo → SharedMediaItem；缩略图未就绪时给占位条目（fileId=0），
+   * 保证「消息数 = 网格数」——否则翻页回来的条目会被静默丢掉，加载更多按钮也会提前消失。
+   */
   private mediaItemOf(content: TdMessageContent | null): SharedMediaItem | null {
     if (content === null) {
       return null;
@@ -734,7 +742,7 @@ export class ProfileCoordinator {
       }
       const size: PhotoSize | null = pickThumbPhotoSize(photo.photo.sizes);
       if (size === null || size.photo === null) {
-        return null;
+        return new SharedMediaItem(0, null, true);
       }
       return this.sharedMediaItemOfFile(size.photo, true);
     }
@@ -752,7 +760,7 @@ export class ProfileCoordinator {
         videoMsg.video.thumbnail.file !== null) {
         return this.sharedMediaItemOfFile(videoMsg.video.thumbnail.file, false);
       }
-      return null;
+      return new SharedMediaItem(0, null, false);
     }
     return null;
   }

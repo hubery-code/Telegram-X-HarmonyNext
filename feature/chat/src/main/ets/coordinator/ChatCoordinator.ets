@@ -55,6 +55,8 @@ import {
   BasicGroup,
   Chat,
   ChatTypeBasicGroup,
+  ChatTypePrivate,
+  ChatTypeSecret,
   ChatTypeSupergroup,
   decodeBasicGroup,
   decodeChat,
@@ -474,6 +476,8 @@ export class ChatCoordinator {
   private supergroupId: number = 0;
   /** MSG-109：基本群 id（getChat 解析缓存，供头部成员数查询）。 */
   private basicGroupId: number = 0;
+  /** PROF-ENTRY-001：私聊/密聊对方 user_id（getChat 解析，头部标题直达用户资料页）。 */
+  private privatePeerUserId: number = 0;
   /**
    * SET-106：本会话当前通知设置（getChat 回读 + updateChatNotificationSettings 推送维护）。
    * 既是 ⋮ 菜单「静音/取消静音」的判定依据，也是写请求的底本——TDLib 的
@@ -976,8 +980,16 @@ export class ChatCoordinator {
       // 群/频道标题点不动；合法条件是"非 0"。
       const chatProfileIntent: OpenChatProfile = intent as OpenChatProfile;
       if (chatProfileIntent.chatId !== 0) {
-        this.logger.info(TAG, 'open_chat_profile', `chatId=${chatProfileIntent.chatId}`);
-        this.onOpenChatProfile(chatProfileIntent.chatId);
+        // PROF-ENTRY-001：私聊没有「群资料页」可去，头部标题直达对方用户资料页。
+        // 取 getChat 回包里的 type_.user_id 而不是拿 chatId 顶替——密聊 chatId ≠ user_id。
+        if (this.privatePeerUserId > 0) {
+          this.logger.info(TAG, 'open_user_profile_from_private_header',
+            `chatId=${chatProfileIntent.chatId},userId=${this.privatePeerUserId}`);
+          this.onOpenUserProfile(this.privatePeerUserId);
+        } else {
+          this.logger.info(TAG, 'open_chat_profile', `chatId=${chatProfileIntent.chatId}`);
+          this.onOpenChatProfile(chatProfileIntent.chatId);
+        }
       }
     } else if (intent.kind === 'chatMenuAction') {
       // MENU-101：⋮ 菜单动作实化——非破坏性动作直接调用 TDLib，
@@ -2494,6 +2506,10 @@ export class ChatCoordinator {
                 this.fetchSupergroupMemberStatus();
               } else if (chat.type_.type === 'chatTypeBasicGroup') {
                 this.basicGroupId = (chat.type_ as ChatTypeBasicGroup).basic_group_id;
+              } else if (chat.type_.type === 'chatTypePrivate') {
+                this.privatePeerUserId = (chat.type_ as ChatTypePrivate).user_id;
+              } else if (chat.type_.type === 'chatTypeSecret') {
+                this.privatePeerUserId = (chat.type_ as ChatTypeSecret).user_id;
               }
             }
             this.logger.info(TAG, 'chat_kind_resolved', `kind=${this.chatKind}`);
