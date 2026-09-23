@@ -5,10 +5,15 @@
  *
  * MSG-108 新增 actionMenu：长按会话行的操作菜单状态（可见项与文案已在
  * reducer 内按权限/当前状态算好），null = 不显示。
+ *
+ * DRAWER-101 新增 drawer：抽屉账号头状态。此前账号信息由装配层用一套
+ * 页外 @State 直接喂给抽屉（绕过 reducer、无法单测），现收敛进本状态，
+ * 抽屉渲染只依赖 uiState.drawer。
  */
 
 import { UiState } from '@tgx/feature-template';
 import { ChatListItem } from '../model/ChatListItem';
+import { DrawerState } from './DrawerState';
 
 export type ChatListKind = 'main' | 'archive';
 
@@ -86,6 +91,7 @@ export interface ChatListUiStateOptions {
   readonly archiveChatCount?: number;
   readonly selectedFolderId?: string;
   readonly folders?: readonly ChatFolderTab[];
+  readonly drawer?: DrawerState;
 }
 
 export class ChatListUiState implements UiState {
@@ -98,6 +104,8 @@ export class ChatListUiState implements UiState {
   readonly archiveChatCount: number;
   readonly selectedFolderId: string;
   readonly folders: readonly ChatFolderTab[];
+  /** DRAWER-101：抽屉账号头状态（getMe + 头像下载回灌）。 */
+  readonly drawer: DrawerState;
 
   constructor(
     items: readonly ChatListItem[],
@@ -108,7 +116,8 @@ export class ChatListUiState implements UiState {
     archiveUnreadCount: number = 0,
     archiveChatCount: number = 0,
     selectedFolderId: string = 'all',
-    folders: readonly ChatFolderTab[] = DEFAULT_CHAT_FOLDERS
+    folders: readonly ChatFolderTab[] = DEFAULT_CHAT_FOLDERS,
+    drawer: DrawerState = DrawerState.empty()
   ) {
     this.items = items;
     this.isLoading = isLoading;
@@ -119,10 +128,12 @@ export class ChatListUiState implements UiState {
     this.archiveChatCount = archiveChatCount;
     this.selectedFolderId = selectedFolderId;
     this.folders = folders;
+    this.drawer = drawer;
   }
 
   static initial(): ChatListUiState {
-    return new ChatListUiState([], false, null, null, 'main', 0, 0, 'all', DEFAULT_CHAT_FOLDERS);
+    return new ChatListUiState([], false, null, null, 'main', 0, 0, 'all', DEFAULT_CHAT_FOLDERS,
+      DrawerState.empty());
   }
 
   copyWith(options: ChatListUiStateOptions): ChatListUiState {
@@ -135,7 +146,8 @@ export class ChatListUiState implements UiState {
       options.archiveUnreadCount !== undefined ? options.archiveUnreadCount : this.archiveUnreadCount,
       options.archiveChatCount !== undefined ? options.archiveChatCount : this.archiveChatCount,
       options.selectedFolderId !== undefined ? options.selectedFolderId : this.selectedFolderId,
-      options.folders !== undefined ? options.folders : this.folders
+      options.folders !== undefined ? options.folders : this.folders,
+      options.drawer !== undefined ? options.drawer : this.drawer
     );
   }
 }

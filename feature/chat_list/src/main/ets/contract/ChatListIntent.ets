@@ -10,11 +10,16 @@
  * ToggleChatPinned / ToggleChatMarkedUnread（点选）→ SetChatPinned /
  * SetChatReadState effect → OnChatActionFailed 把失败回灌 errorMessage。
  * DismissChatActionMenu 关闭菜单（点遮罩 / 返回键）。
+ *
+ * DRAWER-101 新增抽屉流：DrawerAccountRequested（点 ≡ / 首屏预热）→ FetchDrawerAccount；
+ * DrawerItemClicked / DrawerAccountClicked 把菜单项转成导航意图；
+ * OnDrawerAccountLoaded / OnDrawerAvatarLoaded 回灌账号头。
  */
 
 import { Intent } from '@tgx/feature-template';
 import { AppError } from '@tgx/core-common';
 import { ChatListItem } from '../model/ChatListItem';
+import { DrawerItemKey } from './DrawerState';
 import { ChatFolderTab, DEFAULT_CHAT_FOLDERS } from './ChatListUiState';
 
 export class LoadChats implements Intent {
@@ -119,6 +124,69 @@ export class OnChatActionFailed implements Intent {
   }
 }
 
+/**
+ * DRAWER-101：确保抽屉账号头有数据。点 ≡ 与首屏 start() 各派发一次，
+ * reducer 用 accountUserId 做幂等守卫，重复派发不再产生请求。
+ */
+export class DrawerAccountRequested implements Intent {
+  readonly kind: 'drawerAccountRequested' = 'drawerAccountRequested';
+}
+
+/** DRAWER-101：点击抽屉菜单项。'calls'/'invite'/'help' 尚无落地页，reducer 不产出 effect。 */
+export class DrawerItemClicked implements Intent {
+  readonly kind: 'drawerItemClicked' = 'drawerItemClicked';
+  readonly item: DrawerItemKey;
+
+  constructor(item: DrawerItemKey) {
+    this.item = item;
+  }
+}
+
+/** DRAWER-101：点击抽屉账号头 → 我的资料（对齐 TGX 点头像进自己资料页）。 */
+export class DrawerAccountClicked implements Intent {
+  readonly kind: 'drawerAccountClicked' = 'drawerAccountClicked';
+}
+
+/** DRAWER-101：getMe 回灌（头像路径由 OnDrawerAvatarLoaded 单独回灌，下载是异步的）。 */
+export class OnDrawerAccountLoaded implements Intent {
+  readonly kind: 'onDrawerAccountLoaded' = 'onDrawerAccountLoaded';
+  readonly userId: number;
+  readonly name: string;
+  readonly phone: string;
+  readonly avatarLetters: string;
+
+  constructor(userId: number, name: string, phone: string, avatarLetters: string) {
+    this.userId = userId;
+    this.name = name;
+    this.phone = phone;
+    this.avatarLetters = avatarLetters;
+  }
+}
+
+/**
+ * DRAWER-101：账号头像本地文件下载完成后回灌（FileRegistry.subscribeFile）。
+ * 夜间模式开关的真实偏好在装配层 ThemeManager，切换后回灌本意图，
+ * 让抽屉渲染只依赖 uiState.drawer（不再由装配层另建一份 DrawerState）。
+ */
+export class OnDrawerAvatarLoaded implements Intent {
+  readonly kind: 'onDrawerAvatarLoaded' = 'onDrawerAvatarLoaded';
+  readonly avatarPath: string;
+
+  constructor(avatarPath: string) {
+    this.avatarPath = avatarPath;
+  }
+}
+
+/** DRAWER-101：夜间模式开关状态回灌。 */
+export class DrawerNightModeSet implements Intent {
+  readonly kind: 'drawerNightModeSet' = 'drawerNightModeSet';
+  readonly on: boolean;
+
+  constructor(on: boolean) {
+    this.on = on;
+  }
+}
+
 export type ChatListIntent =
   | LoadChats
   | RefreshChats
@@ -133,4 +201,10 @@ export type ChatListIntent =
   | ToggleChatMarkedUnread
   | ToggleChatArchived
   | DismissChatActionMenu
-  | OnChatActionFailed;
+  | OnChatActionFailed
+  | DrawerAccountRequested
+  | DrawerItemClicked
+  | DrawerAccountClicked
+  | OnDrawerAccountLoaded
+  | OnDrawerAvatarLoaded
+  | DrawerNightModeSet;

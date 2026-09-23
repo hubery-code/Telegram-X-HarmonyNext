@@ -7,11 +7,12 @@
  *   头部 = 账号区（accent 色底）：圆形大头像（有路径用 Image + toSandboxUri，
  *          无则字母色底）、姓名（title）、手机（body）、右下 ⌄ 账号切换；
  *   菜单 = 联系人 / 通话 / 我的收藏 / 设置 / 邀请朋友 / 帮助
- *          （联系人、设置可用 textPrimary；其余 TGX 尚未接线，先按 disabled 色）；
+ *          （通话、邀请、帮助在 TGX 侧对应页面尚未迁移，先按 disabled 色）；
  *   底部 = 🌙 夜间模式开关（Toggle，checked=state.nightMode）。
  *
- * 纯 UI 组件：所有交互经回调上抛（onItem / onNightModeChanged /
- * onSwitchAccount），不经 reducer；状态只读 @Prop state。
+ * 纯 UI 组件：所有交互经回调上抛（onItem / onAccountClicked /
+ * onNightModeChanged / onSwitchAccount），由 ChatListPage 转成 intent；
+ * 状态只读 @Prop state（来自 uiState.drawer）。
  */
 
 import { LightTheme, Theme } from '@tgx/core-design-system';
@@ -62,17 +63,19 @@ export struct DrawerMenu {
   @StorageProp('activeTheme') T: Theme = LightTheme;
   @Prop state: DrawerState = DrawerState.empty();
 
-  onItem: (item: string) => void = () => {};
+  onItem: (item: DrawerItemKey) => void = () => {};
   onNightModeChanged: (on: boolean) => void = () => {};
   /** 由父级 scrim 消费（点击遮罩关闭抽屉）；面板自身不直接调用。 */
   onClose: () => void = () => {};
   onSwitchAccount: () => void = () => {};
+  /** 点击账号头（头像/姓名区）→ 我的资料，对齐 TGX 点头像进自己资料页。 */
+  onAccountClicked: () => void = () => {};
 
   /** 菜单项与顺序对齐 TGX DrawerController（enabled=false 先按 disabled 色展示）。 */
   private menuRows: DrawerMenuRow[] = [
     new DrawerMenuRow('contacts', $r('app.media.ic_contacts'), 'Contacts', true),
     new DrawerMenuRow('calls', $r('app.media.ic_call'), 'Calls', false),
-    new DrawerMenuRow('saved', $r('app.media.ic_bookmark'), 'Saved Messages', false),
+    new DrawerMenuRow('saved', $r('app.media.ic_bookmark'), 'Saved Messages', true),
     new DrawerMenuRow('settings', $r('app.media.ic_settings'), 'Settings', true),
     new DrawerMenuRow('invite', $r('app.media.ic_person_add'), 'Invite Friends', false),
     new DrawerMenuRow('help', $r('app.media.ic_help'), 'Help', false)
@@ -146,6 +149,10 @@ export struct DrawerMenu {
         right: this.T.spacing.screenInset,
         top: this.T.spacing.lg,
         bottom: this.T.spacing.md
+      })
+      // DRAWER-101：点账号头进"我的资料"（⌄ 是子节点，命中仍在它自己身上）。
+      .onClick(() => {
+        this.onAccountClicked();
       })
 
       // ===== 菜单区 =====

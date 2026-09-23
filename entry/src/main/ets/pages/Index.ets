@@ -48,7 +48,7 @@ import {
   ChatListIntent,
   ChatListCoordinator,
   ChatListItem,
-  DrawerState
+  DrawerNavTarget
 } from '@tgx/feature-chat-list';
 import {
   ChatPage,
@@ -105,8 +105,6 @@ import {
   SelfProfileIntent,
   SelfProfileCoordinator
 } from '@tgx/feature-self';
-import { formatFullName, getAvatarLetters } from '@tgx/core-domain';
-import { GetMe, encodeGetMe, decodeUser, TdJsonRaw } from '@tgx/core-td-api-generated';
 import type { TdPendingRequest, TdWireObject } from '@tgx/td-gateway';
 import { ChatRegistry } from '@tgx/core-domain';
 import { BootstrapResult } from '../Bootstrap';
@@ -203,11 +201,6 @@ struct Index {
   };
   private commentsCoordinator: CommentsCoordinator | null = null;
   private unsubscribeCommentsFn: (() => void) | null = null;
-  @State drawerAccountName: string = '';
-  @State drawerAccountPhone: string = '';
-  @State drawerAccountLetters: string = '';
-  private drawerAccountLoaded: boolean = false;
-  @State isNightMode: boolean = false;
   /**
    * SET-105 / FEAT-UI-002：聊天字号的落盘通道。
    *
@@ -261,10 +254,8 @@ struct Index {
     this.chatFontSizeReady = true;
 
     const initialTheme: Theme = ThemeManager.getInstance().getTheme();
-    this.isNightMode = initialTheme.mode === 'dark';
     AppStorage.setOrCreate<Theme>('activeTheme', initialTheme);
     this.unsubscribeThemeFn = ThemeManager.getInstance().subscribe((theme: Theme): void => {
-      this.isNightMode = theme.mode === 'dark';
       AppStorage.setOrCreate<Theme>('activeTheme', theme);
     });
 
@@ -275,7 +266,6 @@ struct Index {
 
     this.initAuthCoordinatorSubscription(result.scope);
     this.updateAvailableAccounts();
-    this.fetchDrawerAccount();
   }
 
   /**
@@ -679,32 +669,6 @@ struct Index {
     }
   }
 
-  /** DRAWER-101：拉一次当前账号信息（getMe）注入抽屉头部；MVP 不含头像下载。 */
-  private fetchDrawerAccount(): void {
-    if (this.accountScope === null || this.drawerAccountLoaded) {
-      return;
-    }
-    const req: GetMe = new GetMe();
-    const res: Result<TdPendingRequest, AppError> =
-      this.accountScope.request('getMe', encodeGetMe(req) as TdWireObject);
-    if (res.ok) {
-      res.value.promise.then((out: Result<TdWireObject, AppError>): void => {
-        if (out.ok) {
-          const me = decodeUser(out.value as TdJsonRaw);
-          if (me !== null) {
-            this.drawerAccountLoaded = true;
-            this.drawerAccountName = formatFullName(me);
-            this.drawerAccountPhone = me.phone_number !== null && me.phone_number !== undefined
-              ? me.phone_number
-              : '';
-            this.drawerAccountLetters = getAvatarLetters(me);
-          }
-        }
-      }).catch((): void => {
-      });
-    }
-  }
-
   /**
    * 搜索结果 → 会话。通过 navController 压栈，保持 search 还在返回栈中。
    * SEARCH-102：消息类结果附带 messageId，经路由带给会话页做滚动定位
@@ -822,7 +786,16 @@ struct Index {
       (chatId: number, _chatTitle: string) => {
         this.navController.navigateTo({ name: 'chat', chatId: chatId });
       },
-      this.logger
+      this.logger,
+      (target: DrawerNavTarget) => {
+        if (target === 'contacts') {
+          this.navController.navigateTo({ name: 'contacts' });
+        } else if (target === 'settings') {
+          this.navController.navigateTo({ name: 'settings' });
+        } else {
+          this.navController.navigateTo({ name: 'selfProfile' });
+        }
+      }
     );
     this.chatListCoordinator.start();
     this.unsubscribeChatListFn = this.chatListCoordinator.subscribe((uiState: ChatListUiState) => {
@@ -1295,25 +1268,9 @@ struct Index {
           onCompose: () => {
             this.navController.navigateTo({ name: 'contacts' });
           },
-          // DRAWER-101：抽屉（账号头 getMe 注入；菜单项路由；夜间模式/账号切换占位）。
-          drawerState: new DrawerState(
-            this.drawerAccountName,
-            this.drawerAccountPhone,
-            null,
-            this.drawerAccountLetters,
-            this.isNightMode
-          ),
-          onDrawerItem: (item: string): void => {
-            if (item === 'settings') {
-              this.navController.navigateTo({ name: 'settings' });
-            } else if (item === 'contacts') {
-              this.navController.navigateTo({ name: 'contacts' });
-            } else {
-              hilog.info(DOMAIN, TAG, 'drawer item placeholder: %{public}s', item);
-            }
-          },
+          // DRAWER-101：账号头（getMe + 头像）与菜单去向都由 chat_list 的
+          // reducer/coordinator 决定；装配层只执行夜间模式切换与账号切换占位。
           onDrawerNightModeChanged: (on: boolean): void => {
-            this.isNightMode = on;
             ThemeManager.getInstance().setPreference(on ? 'dark' : 'light');
             hilog.info(DOMAIN, TAG, 'drawer night mode changed: %{public}s', `${on}`);
           },

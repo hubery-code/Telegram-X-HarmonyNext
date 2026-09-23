@@ -6,6 +6,7 @@
 
 import { Effect } from '@tgx/feature-template';
 import { ChatListKind } from './ChatListUiState';
+import { DrawerNavTarget } from './DrawerState';
 
 export class FetchChatList implements Effect {
   readonly kind: 'fetchChatList' = 'fetchChatList';
@@ -76,10 +77,40 @@ export class SetChatArchived implements Effect {
   }
 }
 
+/**
+ * DRAWER-101：拉当前账号信息（getMe）填充抽屉账号头，并顺带发起头像下载。
+ * 幂等由 reducer 保证（accountUserId > 0 后不再产出本 effect）。
+ */
+export class FetchDrawerAccount implements Effect {
+  readonly kind: 'fetchDrawerAccount' = 'fetchDrawerAccount';
+}
+
+/** DRAWER-101：抽屉菜单项 / 账号头的纯导航意图，路由由装配层执行。 */
+export class DrawerNavigate implements Effect {
+  readonly kind: 'drawerNavigate' = 'drawerNavigate';
+  readonly target: DrawerNavTarget;
+
+  constructor(target: DrawerNavTarget) {
+    this.target = target;
+  }
+}
+
+/**
+ * DRAWER-101：打开"我的收藏"。TGX 里它是与自己的私聊，TDLib 侧对应
+ * createPrivateChat(user_id = my_id)；chatId 由 coordinator 解析后回灌成
+ * ChatSelected，导航继续沿用既有的 navigateToChat 链路。
+ */
+export class OpenSavedMessages implements Effect {
+  readonly kind: 'openSavedMessages' = 'openSavedMessages';
+}
+
 export type ChatListEffect =
   | FetchChatList
   | NavigateToChat
   | ShowToast
   | SetChatPinned
   | SetChatReadState
-  | SetChatArchived;
+  | SetChatArchived
+  | FetchDrawerAccount
+  | DrawerNavigate
+  | OpenSavedMessages;

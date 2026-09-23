@@ -14,10 +14,17 @@
  *   即"菜单显示 Mark as read 时执行读、显示 Mark as unread 时执行标未读"；
  * - 两个动作都顺手收起菜单（点击即离场，不等异步回执）；
  * - onChatActionFailed → errorMessage 细条。
+ *
+ * DRAWER-101 新增抽屉流：
+ * - drawerOpened → FetchDrawerAccount（accountUserId>0 后不再重复请求）；
+ * - drawerItemClicked → 按 key 分流：contacts/settings 纯导航，saved 走
+ *   OpenSavedMessages（createPrivateChat 解析自己的私聊），未落地项不产 effect；
+ * - drawerAccountClicked → DrawerNavigate('selfProfile')。
  */
 
 import { Reducer, ReducerEnv, ReducerResult, reduced } from '@tgx/feature-template';
 import { ChatListUiState, ChatActionMenuState } from '../contract/ChatListUiState';
+import { DrawerItemKey, DrawerState, isDrawerAccountLoaded } from '../contract/DrawerState';
 import { ChatListItem } from '../model/ChatListItem';
 import {
   ChatListIntent,
@@ -26,7 +33,11 @@ import {
   OnChatsLoadFailed,
   ChatActionRequested,
   OnChatActionFailed,
-  SelectChatFolder
+  SelectChatFolder,
+  DrawerItemClicked,
+  OnDrawerAccountLoaded,
+  OnDrawerAvatarLoaded,
+  DrawerNightModeSet
 } from '../contract/ChatListIntent';
 import {
   ChatListEffect,
@@ -35,7 +46,10 @@ import {
   ShowToast,
   SetChatArchived,
   SetChatPinned,
-  SetChatReadState
+  SetChatReadState,
+  FetchDrawerAccount,
+  DrawerNavigate,
+  OpenSavedMessages
 } from '../contract/ChatListEffect';
 
 export const CHAT_LIST_PAGE_SIZE: number = 20;
@@ -206,6 +220,67 @@ export const chatListReducer: Reducer<ChatListUiState, ChatListIntent, ChatListE
         errorMessage: failed.error.message
       });
       return reduced(nextState);
+    }
+
+    // ---- DRAWER-101 抽屉账号头 / 菜单项 ----
+
+    case 'drawerAccountRequested': {
+      // 幂等：账号头已回灌过就不再请求（≡ 反复开合、start() 预热共用一条路径）。
+      if (isDrawerAccountLoaded(state.drawer)) {
+        return reduced(state);
+      }
+      return reduced(state, [new FetchDrawerAccount()]);
+    }
+
+    case 'onDrawerAccountLoaded': {
+      const loaded: OnDrawerAccountLoaded = intent as OnDrawerAccountLoaded;
+      const drawer: DrawerState = state.drawer.copyWith({
+        accountUserId: loaded.userId,
+        accountName: loaded.name,
+        accountPhone: loaded.phone,
+        accountAvatarLetters: loaded.avatarLetters
+      });
+      return reduced(state.copyWith({ drawer: drawer }));
+    }
+
+    case 'onDrawerAvatarLoaded': {
+      const avatar: OnDrawerAvatarLoaded = intent as OnDrawerAvatarLoaded;
+      if (state.drawer.accountAvatarPath === avatar.avatarPath) {
+        return reduced(state);
+      }
+      return reduced(state.copyWith({
+        drawer: state.drawer.copyWith({ accountAvatarPath: avatar.avatarPath })
+      }));
+    }
+
+    case 'drawerItemClicked': {
+      const clicked: DrawerItemClicked = intent as DrawerItemClicked;
+      const item: DrawerItemKey = clicked.item;
+      if (item === 'contacts') {
+        return reduced(state, [new DrawerNavigate('contacts')]);
+      }
+      if (item === 'settings') {
+        return reduced(state, [new DrawerNavigate('settings')]);
+      }
+      if (item === 'saved') {
+        return reduced(state, [new OpenSavedMessages()]);
+      }
+      // 'calls' / 'invite' / 'help'：TGX 侧对应页面尚未迁移，点击不产生副作用。
+      return reduced(state);
+    }
+
+    case 'drawerAccountClicked': {
+      return reduced(state, [new DrawerNavigate('selfProfile')]);
+    }
+
+    case 'drawerNightModeSet': {
+      const set: DrawerNightModeSet = intent as DrawerNightModeSet;
+      if (state.drawer.nightMode === set.on) {
+        return reduced(state);
+      }
+      return reduced(state.copyWith({
+        drawer: state.drawer.copyWith({ nightMode: set.on })
+      }));
     }
   }
 

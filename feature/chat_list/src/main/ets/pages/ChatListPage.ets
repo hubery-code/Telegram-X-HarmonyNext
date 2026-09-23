@@ -18,7 +18,7 @@
 import { LightTheme, Theme } from '@tgx/core-design-system';
 import { ChatListItem } from '../model/ChatListItem';
 import { ChatListUiState, ChatActionMenuState, ChatFolderTab, filterChatsByFolder } from '../contract/ChatListUiState';
-import { DrawerState } from '../contract/DrawerState';
+import { DrawerItemKey } from '../contract/DrawerState';
 import { DrawerMenu } from './DrawerMenu';
 import {
   LoadChats,
@@ -31,7 +31,11 @@ import {
   OpenArchivedChats,
   CloseArchivedChats,
   DismissChatActionMenu,
-  SelectChatFolder
+  SelectChatFolder,
+  DrawerAccountRequested,
+  DrawerItemClicked,
+  DrawerAccountClicked,
+  DrawerNightModeSet
 } from '../contract/ChatListIntent';
 
 
@@ -158,13 +162,10 @@ export struct ChatListPage {
   /** 打开新会话/撰写页（纯导航回调，由装配层接线）。 */
   onCompose: () => void = () => {};
 
-  /** DRAWER-101：抽屉状态（账号头 + 夜间模式），由装配层注入。 */
-  drawerState: DrawerState = DrawerState.empty();
-
-  /** DRAWER-101：抽屉菜单项点击（纯导航回调，'settings' 由装配层路由）。 */
-  onDrawerItem: (item: string) => void = () => {};
-
-  /** DRAWER-101：夜间模式开关变更（真实切换逻辑由装配层实现）。 */
+  /**
+   * DRAWER-101：夜间模式开关变更（真实切换逻辑在装配层 ThemeManager）。
+   * 本页只负责派发 DrawerNightModeSet 让抽屉状态与主题保持一致。
+   */
   onDrawerNightModeChanged: (on: boolean) => void = () => {};
 
   /** DRAWER-101：账号切换（装配层弹账号选择器）。 */
@@ -188,6 +189,9 @@ export struct ChatListPage {
     if (this.uiState.items.length === 0 && !this.uiState.isLoading && this.uiState.errorMessage === null) {
       this.onDispatch(new LoadChats());
     }
+    // DRAWER-101：夜间模式初值取自当前主题（ThemeManager 才是主题权威，
+    // 抽屉里的开关只是它的投影），否则冷启动后开关与真实主题相反。
+    this.onDispatch(new DrawerNightModeSet(this.T.mode === 'dark'));
   }
 
   onUiStateChanged(): void {
@@ -223,13 +227,18 @@ export struct ChatListPage {
   }
 
   /**
-   * DRAWER-101：抽屉菜单项点击——先收起抽屉再上报（对齐 TGX 点项即收）。
-   * 'settings' 与顶栏 ⚙ 的 onOpenSettings 并存：抽屉项统一走 onDrawerItem
-   * 由装配层路由，⚙ 直进设置保留不动，两套入口互不耦合。
+   * DRAWER-101：抽屉菜单项点击——先收起抽屉再派发 intent（对齐 TGX 点项即收）。
+   * 去向由 reducer 判定并经装配层执行，本页不再持有路由知识。
    */
-  private handleDrawerItem(item: string): void {
+  private handleDrawerItem(item: DrawerItemKey): void {
     this.showDrawer = false;
-    this.onDrawerItem(item);
+    this.onDispatch(new DrawerItemClicked(item));
+  }
+
+  /** DRAWER-101：点账号头 → 我的资料。 */
+  private handleDrawerAccountClicked(): void {
+    this.showDrawer = false;
+    this.onDispatch(new DrawerAccountClicked());
   }
 
   build() {
@@ -279,6 +288,8 @@ export struct ChatListPage {
               .margin({ right: this.T.spacing.sm })
               .onClick(() => {
                 this.showDrawer = true;
+                // DRAWER-101：开抽屉时确保账号头有数据（reducer 幂等）。
+                this.onDispatch(new DrawerAccountRequested());
               })
 
             Text('Chats')
@@ -454,15 +465,19 @@ export struct ChatListPage {
             })
 
           DrawerMenu({
-            state: this.drawerState,
-            onItem: (item: string): void => {
+            state: this.uiState.drawer,
+            onItem: (item: DrawerItemKey): void => {
               this.handleDrawerItem(item);
             },
             onNightModeChanged: (on: boolean): void => {
+              this.onDispatch(new DrawerNightModeSet(on));
               this.onDrawerNightModeChanged(on);
             },
             onClose: (): void => {
               this.showDrawer = false;
+            },
+            onAccountClicked: (): void => {
+              this.handleDrawerAccountClicked();
             },
             onSwitchAccount: (): void => {
               this.onDrawerSwitchAccount();
