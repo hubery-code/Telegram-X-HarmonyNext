@@ -65,7 +65,7 @@
 | NOTIF-101 | AGC 配置 | Push Kit token → RegisterDevice 闭环（FEAT-PUSH-001；AGC/签名配置需用户确认） |
 | NOTIF-102 | NOTIF-101 | 通知聚合 + 点击路由直达聊天（FEAT-PUSH-002） |
 
-> 📌 待拆包缺口（2026-09-23 主会话更新）：`FEATURE_MATRIX.md` 的 P1 已全部认领——**FEAT-SET-003 通知设置入口**、**FEAT-SET-004 存储与缓存**于本轮 `Accepted`；`FEAT-MEDIA-002` 处于 `Verifying`（MEDIA-105/106）；剩余 `FEAT-PUSH-001/002` 被 AGC 签名配置阻塞（见 ADR-003）。下一批候选按 TGX 对标盘点：CONTACT-101（A–Z 索引条）、SELF-102（隐私和安全分区，需先扩 TDLib scheme + codegen）。。SET-003 尚未按计划 §9.6 拆成工作包（无编号），需要时再由计划侧下发。
+> 📌 待拆包缺口（2026-09-23 主会话更新）：`FEATURE_MATRIX.md` 的 P1 已全部认领——**FEAT-SET-003 通知设置入口**、**FEAT-SET-004 存储与缓存**于本轮 `Accepted`；`FEAT-MEDIA-002` 处于 `Verifying`（MEDIA-105/106）；剩余 `FEAT-PUSH-001/002` 被 AGC 签名配置阻塞（见 ADR-003）。下一批候选按 TGX 对标盘点：CONTACT-101（A–Z 索引条）、SELF-102（隐私和安全分区，需先扩 TDLib scheme + codegen）。
 
 > ⚠️ 行清理（2026-09-21 DSH）：原表内 **SEARCH-103**（全局搜索健壮性）已交付——commit `1fd1ada3 fix(search): surface failures and throttle global queries`（2026-09-16，已在主线，`feature/search/SearchCoordinator` 的 `SearchFailed` 意图 + 750ms 节流 + 142 行单测），从「待认领」移除。
 
