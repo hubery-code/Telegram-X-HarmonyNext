@@ -2,7 +2,12 @@
  * feature/contact — 模块统一导出入口（CONTACT-101：联系人页）。
  */
 
-export { ContactsItem, ContactsUiStateOptions, ContactsUiState } from './contract/ContactsUiState';
+export {
+  ContactsItem,
+  ContactsSection,
+  ContactsUiStateOptions,
+  ContactsUiState
+} from './contract/ContactsUiState';
 export {
   QueryChanged,
   OnContactsLoaded,

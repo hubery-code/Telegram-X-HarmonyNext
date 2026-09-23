@@ -8,7 +8,7 @@
 import { describe, it, expect } from '@ohos/hypium';
 import { ManualClock, SequentialIdGenerator, AppErrors } from '@tgx/core-common';
 import { ReducerEnv, ReducerResult } from '@tgx/feature-template';
-import { ContactsItem, ContactsUiState } from '../main/ets/contract/ContactsUiState';
+import { ContactsItem, ContactsSection, ContactsUiState } from '../main/ets/contract/ContactsUiState';
 import {
   ContactsIntent,
   QueryChanged,
@@ -86,6 +86,71 @@ export default function contactsReducerTest(): void {
       expect(result.state.allItems.length).assertEqual(2);
       expect(result.state.items.length).assertEqual(1);
       expect(result.state.items[0].displayName).assertEqual('Alice Smith');
+    });
+
+    // 索引条与分组列表都渲染 state.sections：分段必须在 reducer 里跟 items 一起算出，
+    // 页面再算一份会和跳转位移对不上（且页面无法单测）。
+    // 输入按 coordinator 排序后的顺序给出：reducer 只负责按相邻同字母归段，不排序。
+    it('onContactsLoaded_buildsLetterSectionsAlongsideItems', 0, () => {
+      const items: ContactsItem[] = [
+        makeItem(7, 'Alice Anderson', 'alice'),
+        makeItem(13, 'Anna Cross', ''),
+        makeItem(9, 'Bob Brown', 'bob'),
+        makeItem(11, 'Carol Clark', '')
+      ];
+      const result: ReducerResult<ContactsUiState, ContactsEffect> = contactsReducer(
+        ContactsUiState.initial(),
+        new OnContactsLoaded(items),
+        makeEnv()
+      );
+      const sections: ContactsSection[] = result.state.sections;
+
+      expect(sections.length).assertEqual(3);
+      expect(sections[0].letter).assertEqual('A');
+      expect(sections[0].items.length).assertEqual(2);
+      expect(sections[0].startIndex).assertEqual(0);
+      expect(sections[1].letter).assertEqual('B');
+      expect(sections[1].startIndex).assertEqual(2);
+      expect(sections[2].letter).assertEqual('C');
+      expect(sections[2].startIndex).assertEqual(3);
+
+      // 分段必须平铺出整份展示列表，不能漏条目也不能重复。
+      let flat: number = 0;
+      for (let i: number = 0; i < sections.length; i++) {
+        flat += sections[i].items.length;
+      }
+      expect(flat).assertEqual(result.state.items.length);
+    });
+
+    it('queryChanged_rebuildsSectionsFromFilteredList', 0, () => {
+      const filtered: ContactsUiState = contactsReducer(
+        makeLoadedState(),
+        new QueryChanged('alice'),
+        makeEnv()
+      ).state;
+      expect(filtered.items.length).assertEqual(1);
+      expect(filtered.sections.length).assertEqual(1);
+      expect(filtered.sections[0].letter).assertEqual('A');
+      expect(filtered.sections[0].items.length).assertEqual(1);
+
+      const restored: ContactsUiState = contactsReducer(
+        filtered,
+        new QueryChanged(''),
+        makeEnv()
+      ).state;
+      expect(restored.sections.length).assertEqual(3);
+      expect(restored.sections[2].letter).assertEqual('C');
+    });
+
+    it('onContactsFailed_keepsSectionsUntouched', 0, () => {
+      const loaded: ContactsUiState = makeLoadedState();
+      const result: ReducerResult<ContactsUiState, ContactsEffect> = contactsReducer(
+        loaded,
+        new OnContactsFailed(AppErrors.network('unknown', 'socket failed', true)),
+        makeEnv()
+      );
+      expect(result.state.sections.length).assertEqual(3);
+      expect(result.state.errorMessage).assertEqual('socket failed');
     });
 
     it('onContactsFailed_setsErrorAndStopsLoading', 0, () => {

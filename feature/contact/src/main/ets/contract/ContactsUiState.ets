@@ -10,7 +10,7 @@
 /** 联系人列表行纯数据（纯数据类，跨 reducer/coordinator/page 传递）。 */
 export class ContactsItem {
   readonly userId: number;
-  /** 展示名：first + last 拼接（已按 localeCompare 排序）。 */
+  /** 展示名：first + last 拼接（排序见 model/ContactsSections 的 contactSortKey）。 */
   readonly displayName: string;
   /** 用户名（不含 '@'）；无则空串。 */
   readonly username: string;
@@ -42,6 +42,24 @@ export class ContactsItem {
   }
 }
 
+/**
+ * 字母分组：由**已排序**的展示列表按相邻同字母归段（见 model/ContactsSections）。
+ * 段数据进 state 而不是页面里现算：索引条的字母、跳转位移、`ForEach` 的唯一 key
+ * 全都依赖同一份分段结果。
+ */
+export class ContactsSection {
+  readonly letter: string;
+  readonly items: ContactsItem[];
+  /** 段首在扁平 items 里的下标（只作 ForEach key 的一部分，保证字母重复时 key 仍唯一）。 */
+  readonly startIndex: number;
+
+  constructor(letter: string = '', items: ContactsItem[] = [], startIndex: number = 0) {
+    this.letter = letter;
+    this.items = items;
+    this.startIndex = startIndex;
+  }
+}
+
 export interface ContactsUiStateOptions {
   isLoading?: boolean;
   errorMessage?: string | null;
@@ -51,6 +69,8 @@ export interface ContactsUiStateOptions {
   allItems?: ContactsItem[];
   /** 按 query 过滤后的展示列表（page 直接渲染本字段）。 */
   items?: ContactsItem[];
+  /** items 的字母分段（索引条与分组列表都渲染本字段）。 */
+  sections?: ContactsSection[];
 }
 
 export class ContactsUiState {
@@ -59,19 +79,22 @@ export class ContactsUiState {
   readonly query: string;
   readonly allItems: ContactsItem[];
   readonly items: ContactsItem[];
+  readonly sections: ContactsSection[];
 
   constructor(
     isLoading: boolean = true,
     errorMessage: string | null = null,
     query: string = '',
     allItems: ContactsItem[] = [],
-    items: ContactsItem[] = []
+    items: ContactsItem[] = [],
+    sections: ContactsSection[] = []
   ) {
     this.isLoading = isLoading;
     this.errorMessage = errorMessage;
     this.query = query;
     this.allItems = allItems;
     this.items = items;
+    this.sections = sections;
   }
 
   static initial(): ContactsUiState {
@@ -84,7 +107,8 @@ export class ContactsUiState {
       options.errorMessage !== undefined ? options.errorMessage : this.errorMessage,
       options.query !== undefined ? options.query : this.query,
       options.allItems !== undefined ? options.allItems : this.allItems,
-      options.items !== undefined ? options.items : this.items
+      options.items !== undefined ? options.items : this.items,
+      options.sections !== undefined ? options.sections : this.sections
     );
   }
 }

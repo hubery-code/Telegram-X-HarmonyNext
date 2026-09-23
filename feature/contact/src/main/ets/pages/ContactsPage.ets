@@ -4,8 +4,11 @@
  * 界面组成（对齐 Android ContactsController 的信息面，MVP 裁剪）：
  * - 顶栏：‹ 返回（prop onBack）+ 'Contacts' 标题 + 搜索输入框（onChange → QueryChanged）；
  * - 内容：isLoading 转圈 / errorMessage 错误态 / 空态 'No contacts' / 过滤后分组 List
- *   （字母标题行 + 行：彩色字母底圆头像或 Image(toSandboxUri) + displayName +
- *   副标题 @username 优先、否则 statusText）；
+ *   （字母标题行 sticky + 行：彩色字母底圆头像或 Image(toSandboxUri) + displayName +
+ *   副标题 @username 优先、否则 statusText）；分组数据取 `uiState.sections`
+ *   （reducer 里由 model/ContactsSections 算出，与排序同一套规则）；
+ * - 右侧 A–Z 索引条：字母来自真实存在的分组，点一个字母滚到该段，当前段高亮；
+ *   只有一个分组时不出现；
  * - 行 onClick → dispatch ContactTapped(item.userId)。
  *
  * 行点击双回调接线约定（对齐 SearchPage 的协调器/降级双路径，二者默认均为 no-op）：
@@ -20,7 +23,12 @@
 
 import { LightTheme, Theme } from '@tgx/core-design-system';
 import { fileUri } from '@kit.CoreFileKit';
-import { ContactsItem, ContactsUiState } from '../contract/ContactsUiState';
+import { ContactsItem, ContactsSection, ContactsUiState } from '../contract/ContactsUiState';
+import {
+  activeSectionIndex,
+  indexBarVisible,
+  sectionScrollOffsets
+} from '../model/ContactsSections';
 import { ContactsIntent, QueryChanged, ContactTapped } from '../contract/ContactsIntent';
 
 
@@ -28,6 +36,10 @@ const BACK_ARROW_SIZE: number = 44;
 const ROW_AVATAR_SIZE: number = 44;
 const ROW_HEIGHT: number = 64;
 const SECTION_HEADER_HEIGHT: number = 28;
+/** 索引条：字母列宽与贴右边距（Android SectionedRecyclerView 的 thumb 也是贴边 9dp）。 */
+const INDEX_BAR_WIDTH: number = 24;
+const INDEX_BAR_MARGIN: number = 4;
+const INDEX_LETTER_HEIGHT: number = 16;
 
 /** 本地沙箱绝对路径 → 可渲染 uri（与 feature/profile 的同名助手一致）。 */
 function toSandboxUri(path: string | null): string {
@@ -51,29 +63,6 @@ const AVATAR_PALETTE: string[] = [
   '#FF309EBA', '#FF368AD1', '#FFC7508B'
 ];
 
-/** 分组字母段：items 已按 displayName 排序，连续同字母归一段。 */
-interface ContactsSection {
-  letter: string;
-  items: ContactsItem[];
-}
-
-function buildContactsSections(items: ContactsItem[]): ContactsSection[] {
-  const sections: ContactsSection[] = [];
-  for (let i: number = 0; i < items.length; i++) {
-    const item: ContactsItem = items[i];
-    const first: string = item.displayName.length > 0 ? item.displayName.charAt(0).toUpperCase() : '#';
-    const letter: string = first >= 'A' && first <= 'Z' ? first : '#';
-    const last: ContactsSection | null = sections.length > 0 ? sections[sections.length - 1] : null;
-    if (last !== null && last.letter === letter) {
-      last.items.push(item);
-    } else {
-      const section: ContactsSection = { letter: letter, items: [item] };
-      sections.push(section);
-    }
-  }
-  return sections;
-}
-
 @Component
 export struct ContactsPage {
   /**
@@ -89,6 +78,46 @@ export struct ContactsPage {
   onBack: () => void = (): void => {};
   onOpenUserProfile: (userId: number) => void = (): void => {};
   onAddContact: () => void = (): void => {};
+
+  /**
+   * 索引条当前高亮段。onDidScroll 每帧都会来，这里只在**真的换段**时写 @State，
+   * 否则整页每帧重排（与资料页封面收起态同一套取舍）。
+   */
+  @State private activeIndex: number = 0;
+  private scroller: Scroller = new Scroller();
+
+  /**
+   * 各分组的滚动位移（vp）：行高/标题高固定，故纯算得出，不需要量真实布局。
+   * `spacing.hairline` 是 List.divider 在每个分组边界上多占的 2vp，漏了会逐组累计偏差。
+   */
+  private sectionOffsets(): number[] {
+    return sectionScrollOffsets(
+      this.uiState.sections,
+      SECTION_HEADER_HEIGHT,
+      ROW_HEIGHT,
+      this.T.spacing.hairline
+    );
+  }
+
+  private scrollToSection(index: number): void {
+    const offsets: number[] = this.sectionOffsets();
+    if (index < 0 || index >= offsets.length) {
+      return;
+    }
+    this.activeIndex = index;
+    this.scroller.scrollTo({
+      xOffset: 0,
+      yOffset: offsets[index],
+      animation: { duration: this.T.motion.durationNormal }
+    });
+  }
+
+  private syncActiveSection(): void {
+    const next: number = activeSectionIndex(this.sectionOffsets(), this.scroller.currentOffset().yOffset);
+    if (next !== this.activeIndex) {
+      this.activeIndex = next;
+    }
+  }
 
   private avatarColor(index: number): string {
     if (index < 0 || index >= AVATAR_PALETTE.length) {
@@ -184,6 +213,33 @@ export struct ContactsPage {
     .backgroundColor(this.T.colors.background)
   }
 
+  /**
+   * 右侧 A–Z 索引条：字母来自**真实存在**的分组（不是固定 26 格），点一个字母跳到
+   * 该段。Android 侧对应 `SectionedRecyclerView` 贴边的比例 thumb + 当前段字母，
+   * 这里做成可点跳转的字母列。
+   */
+  @Builder
+  IndexBar() {
+    Column() {
+      ForEach(this.uiState.sections.slice(), (section: ContactsSection, index: number) => {
+        Text(section.letter)
+          .width(INDEX_BAR_WIDTH)
+          .height(INDEX_LETTER_HEIGHT)
+          .fontSize(this.T.typography.caption.fontSize)
+          .fontColor(index === this.activeIndex ? this.T.colors.accent : this.T.colors.textSecondary)
+          .fontWeight(index === this.activeIndex ? FontWeight.Bold : FontWeight.Normal)
+          .textAlign(TextAlign.Center)
+          .onClick(() => {
+            this.scrollToSection(index);
+          })
+      }, (section: ContactsSection, index: number): string => `${section.letter}#${section.startIndex}`)
+    }
+    .width(INDEX_BAR_WIDTH)
+    .height('100%')
+    .justifyContent(FlexAlign.Center)
+    .margin({ right: INDEX_BAR_MARGIN })
+  }
+
   @Builder
   ContactRow(item: ContactsItem) {
     Row() {
@@ -275,26 +331,39 @@ export struct ContactsPage {
         .justifyContent(FlexAlign.Center)
         .alignItems(HorizontalAlign.Center)
       } else {
-        List() {
-          ForEach(buildContactsSections(this.uiState.items).slice(), (section: ContactsSection) => {
-            ListItemGroup({ header: this.SectionHeader(section.letter) }) {
-              ForEach(section.items.slice(), (item: ContactsItem) => {
-                ListItem() {
-                  this.ContactRow(item)
-                }
-              }, (item: ContactsItem): string => `${item.userId}`)
-            }
-          }, (section: ContactsSection): string => section.letter)
+        Stack({ alignContent: Alignment.TopEnd }) {
+          List({ scroller: this.scroller }) {
+            ForEach(this.uiState.sections.slice(), (section: ContactsSection) => {
+              ListItemGroup({ header: this.SectionHeader(section.letter) }) {
+                ForEach(section.items.slice(), (item: ContactsItem) => {
+                  ListItem() {
+                    this.ContactRow(item)
+                  }
+                }, (item: ContactsItem): string => `${item.userId}`)
+              }
+              // key 带段起点：同一字母被分成两段时（列表极短或数据未排序）key 仍唯一，
+              // 否则 ArkUI 复用同一 key 的节点会让两组内容互相覆盖。
+            }, (section: ContactsSection): string => `${section.letter}#${section.startIndex}`)
+          }
+          .width('100%')
+          .height('100%')
+          .sticky(StickyStyle.Header)
+          .divider({
+            strokeWidth: this.T.spacing.hairline,
+            color: this.T.colors.divider,
+            startMargin: this.T.spacing.screenInset + ROW_AVATAR_SIZE + this.T.spacing.md
+          })
+          .scrollBar(BarState.Off)
+          .onDidScroll(() => {
+            this.syncActiveSection();
+          })
+
+          if (indexBarVisible(this.uiState.sections)) {
+            this.IndexBar()
+          }
         }
         .width('100%')
         .layoutWeight(1)
-        .sticky(StickyStyle.Header)
-        .divider({
-          strokeWidth: this.T.spacing.hairline,
-          color: this.T.colors.divider,
-          startMargin: this.T.spacing.screenInset + ROW_AVATAR_SIZE + this.T.spacing.md
-        })
-        .scrollBar(BarState.Off)
       }
     }
     .width('100%')

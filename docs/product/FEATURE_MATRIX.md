@@ -165,6 +165,13 @@
 > 为此新增语义 token **`colors.textOnScrim`**（两主题恒白）—— 深色主题 `textOnAccent` 是黑色，压在照片上直接不可读，不能复用。
 > 真机取证顺带抓出两个只有渲染才暴露的问题：`Scroll.align` 默认 `Alignment.Center` 把不足一屏的整页垂直居中（封面顶部空出白带、
 > 白色工具条图标消失在白底），而第一版用 `constraintSize({minHeight:'100%'})` 修反而把封面压扁、页面失去滚动，正解是 `.align(Alignment.TopStart)`。
+> **2026-09-24（CONTACT-101，FEAT-P2-001 联系人页）**：字母序 + 分组 + **右侧 A–Z 索引条**交付 —— 排序键与分段字母改由同一套
+> 纯函数（`feature/contact/model/ContactsSections.ets`，对齐 Android `ContactsController.sortUsers()` 的 `Strings.clean` + 码元序 +
+> 首码点大写）推出，分段随 `items` 一起进 `ContactsUiState.sections`，`ForEach` key 带上段起点，修掉「同一字母分两段时 key 撞车、
+> 非拉丁名字塌进 `'#'`」两个缺陷；索引条按真实分组出字母、点一下跳到该段、当前段随滚动高亮。设备实测（模拟器）还校准出一处
+> 只有真实渲染才暴露的偏差：`List.divider` 的 2vp 分隔线是**按组**占位的（单条组实测 94vp = 28 标题 + 64 行 + 2 分隔线），
+> 跳转位移旧公式漏了它、越往后偏得越多，补 `groupGap` 后点 `M` 才真正齐顶。遗留三项另立待跟进：
+> 已存联系人副标题应显电话号码（Android `UserView` FLAG_CONTACT）、索引条拖拽 scrub 与当前段气泡、搜索改 `anyWordStartsWith` 词首匹配。
 
 | 功能 ID | 功能名 |
 |---|---|

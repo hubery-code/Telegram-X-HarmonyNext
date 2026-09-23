@@ -7,7 +7,9 @@
  *   补拉；updateUser/updateUserStatus 订阅驱动全量重建），只收 userTypeRegular；
  * - 头像小图（profile_photo.small）：FileRegistry 本地路径命中即用，未命中
  *   downloadFile(priority 2) 并订阅 updateFile，落盘后随下次全量重建回灌路径；
- * - 排序：按 displayName localeCompare（与 Android sortUsers 的 sortingKey 同思路）；
+ * - 排序：`compareContacts`（Android `ContactsController.sortUsers` 同规则：键为
+ *   `Strings.clean(firstName + ' ' + lastName)`，按 UTF-16 码元序比较），
+ *   与页面分组字母出自同一套规则，段不会被打断；
  * - 行点击：ContactTapped → reducer 出 OpenUserProfile 效应 → options.onOpenUserProfile
  *   交给装配层导航到用户资料页。
  *
@@ -44,6 +46,7 @@ import {
 } from '../contract/ContactsIntent';
 import { ContactsEffect, FetchContacts, OpenUserProfile } from '../contract/ContactsEffect';
 import { contactsReducer } from '../reducer/ContactsReducer';
+import { compareContacts } from '../model/ContactsSections';
 
 const TAG: string = 'ContactsCoordinator';
 
@@ -261,7 +264,7 @@ export class ContactsCoordinator {
       }
       items.push(this.buildItem(user));
     }
-    items.sort((a: ContactsItem, b: ContactsItem): number => a.displayName.localeCompare(b.displayName));
+    items.sort(compareContacts);
     this.dispatch(new OnContactsLoaded(items));
   }
 

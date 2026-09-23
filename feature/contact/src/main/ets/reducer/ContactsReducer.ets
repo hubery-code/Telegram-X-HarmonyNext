@@ -7,7 +7,8 @@
  */
 
 import { Reducer, ReducerEnv, ReducerResult, reduced } from '@tgx/feature-template';
-import { ContactsItem, ContactsUiState } from '../contract/ContactsUiState';
+import { ContactsItem, ContactsUiState, ContactsUiStateOptions } from '../contract/ContactsUiState';
+import { buildContactsSections } from '../model/ContactsSections';
 import {
   QueryChanged,
   OnContactsLoaded,
@@ -40,6 +41,15 @@ export function filterContactsItems(items: ContactsItem[], query: string): Conta
   return out;
 }
 
+/** 过滤视图与其字母分段一起出：两者必须由同一份 items 推出，否则索引条会对不上列表。 */
+function toView(items: ContactsItem[], query: string): ContactsUiStateOptions {
+  const filtered: ContactsItem[] = filterContactsItems(items, query);
+  return {
+    items: filtered,
+    sections: buildContactsSections(filtered)
+  };
+}
+
 export const contactsReducer: Reducer<ContactsUiState, ContactsIntent, ContactsEffect> = (
   state: ContactsUiState,
   intent: ContactsIntent,
@@ -48,17 +58,21 @@ export const contactsReducer: Reducer<ContactsUiState, ContactsIntent, ContactsE
   switch (intent.kind) {
     case 'queryChanged': {
       const changed: QueryChanged = intent as QueryChanged;
+      const view: ContactsUiStateOptions = toView(state.allItems, changed.query);
       return reduced(state.copyWith({
         query: changed.query,
-        items: filterContactsItems(state.allItems, changed.query)
+        items: view.items,
+        sections: view.sections
       }));
     }
 
     case 'onContactsLoaded': {
       const loaded: OnContactsLoaded = intent as OnContactsLoaded;
+      const view: ContactsUiStateOptions = toView(loaded.items, state.query);
       return reduced(state.copyWith({
         allItems: loaded.items,
-        items: filterContactsItems(loaded.items, state.query),
+        items: view.items,
+        sections: view.sections,
         isLoading: false,
         errorMessage: null
       }));
