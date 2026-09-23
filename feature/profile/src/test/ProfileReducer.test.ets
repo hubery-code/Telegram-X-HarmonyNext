@@ -22,7 +22,12 @@ import {
   OpenSharedChatRequested,
   NotificationRowTapped,
   OnChatNotificationLoaded,
-  OnChatNotificationFailed
+  OnChatNotificationFailed,
+  ProfileMenuAction,
+  PROFILE_MENU_SECRET_CHAT,
+  PROFILE_MENU_TOGGLE_BLOCK,
+  OnPeerBlockLoaded,
+  OnPeerBlockFailed
 } from '../main/ets/contract/ProfileIntent';
 import {
   ProfileEffect,
@@ -31,7 +36,9 @@ import {
   FetchSharedGroups,
   FetchMoreSharedContent,
   OpenSharedChatEffect,
-  SetChatNotification
+  SetChatNotification,
+  CreateSecretChatEffect,
+  SetPeerBlock
 } from '../main/ets/contract/ProfileEffect';
 import {
   SharedMediaItem,
@@ -499,6 +506,112 @@ export default function profileReducerTest(): void {
       );
       expect(result.state.sharedLoadingMore).assertFalse();
       expect(result.state.sharedHasMore).assertFalse();
+    });
+
+    it('profileMenuAction_secretChat_emitsCreateSecretChat', 0, () => {
+      const result: ReducerResult<ProfileUiState, ProfileEffect> = profileReducer(
+        makeState(42),
+        new ProfileMenuAction(PROFILE_MENU_SECRET_CHAT),
+        makeEnv()
+      );
+      expect(result.effects.length).assertEqual(1);
+      expect(result.effects[0].kind).assertEqual('createSecretChat');
+      const effect: CreateSecretChatEffect = result.effects[0] as CreateSecretChatEffect;
+      expect(effect.kind).assertEqual('createSecretChat');
+    });
+
+    it('profileMenuAction_toggleBlock_beforeReadBack_isNoOp', 0, () => {
+      const result: ReducerResult<ProfileUiState, ProfileEffect> = profileReducer(
+        makeState(42),
+        new ProfileMenuAction(PROFILE_MENU_TOGGLE_BLOCK),
+        makeEnv()
+      );
+      // 真值未读到就翻，等于凭默认值把人写进黑名单。
+      expect(result.effects.length).assertEqual(0);
+      expect(result.state.peerBlockUpdating).assertFalse();
+    });
+
+    it('profileMenuAction_toggleBlock_whenReady_emitsOpposite', 0, () => {
+      const unmuted: ProfileUiState = makeState(42).copyWith({
+        peerBlocked: false,
+        peerBlockReady: true
+      });
+      const blockResult: ReducerResult<ProfileUiState, ProfileEffect> = profileReducer(
+        unmuted,
+        new ProfileMenuAction(PROFILE_MENU_TOGGLE_BLOCK),
+        makeEnv()
+      );
+      expect(blockResult.effects.length).assertEqual(1);
+      expect(blockResult.effects[0].kind).assertEqual('setPeerBlock');
+      expect((blockResult.effects[0] as SetPeerBlock).blocked).assertTrue();
+      expect(blockResult.state.peerBlockUpdating).assertTrue();
+      expect(blockResult.state.peerBlocked).assertFalse();
+
+      const blocked: ProfileUiState = makeState(42).copyWith({
+        peerBlocked: true,
+        peerBlockReady: true
+      });
+      const unblockResult: ReducerResult<ProfileUiState, ProfileEffect> = profileReducer(
+        blocked,
+        new ProfileMenuAction(PROFILE_MENU_TOGGLE_BLOCK),
+        makeEnv()
+      );
+      expect((unblockResult.effects[0] as SetPeerBlock).blocked).assertFalse();
+    });
+
+    it('profileMenuAction_toggleBlock_whileUpdating_isNoOp', 0, () => {
+      const state: ProfileUiState = makeState(42).copyWith({
+        peerBlocked: false,
+        peerBlockReady: true,
+        peerBlockUpdating: true
+      });
+      const result: ReducerResult<ProfileUiState, ProfileEffect> = profileReducer(
+        state,
+        new ProfileMenuAction(PROFILE_MENU_TOGGLE_BLOCK),
+        makeEnv()
+      );
+      expect(result.effects.length).assertEqual(0);
+    });
+
+    it('profileMenuAction_withUnknownAction_isNoOp', 0, () => {
+      const state: ProfileUiState = makeState(42).copyWith({
+        peerBlocked: true,
+        peerBlockReady: true
+      });
+      const result: ReducerResult<ProfileUiState, ProfileEffect> = profileReducer(
+        state,
+        new ProfileMenuAction('delete_contact'),
+        makeEnv()
+      );
+      expect(result.effects.length).assertEqual(0);
+      expect(result.state === state).assertTrue();
+    });
+
+    it('onPeerBlockLoaded_recordsTruthAndClearsUpdating', 0, () => {
+      const state: ProfileUiState = makeState(42).copyWith({ peerBlockUpdating: true });
+      const result: ReducerResult<ProfileUiState, ProfileEffect> = profileReducer(
+        state,
+        new OnPeerBlockLoaded(true),
+        makeEnv()
+      );
+      expect(result.state.peerBlocked).assertTrue();
+      expect(result.state.peerBlockReady).assertTrue();
+      expect(result.state.peerBlockUpdating).assertFalse();
+    });
+
+    it('onPeerBlockFailed_clearsReadySoMenuShowsUnknown', 0, () => {
+      const state: ProfileUiState = makeState(42).copyWith({
+        peerBlocked: true,
+        peerBlockReady: true,
+        peerBlockUpdating: true
+      });
+      const result: ReducerResult<ProfileUiState, ProfileEffect> = profileReducer(
+        state,
+        new OnPeerBlockFailed(),
+        makeEnv()
+      );
+      expect(result.state.peerBlockReady).assertFalse();
+      expect(result.state.peerBlockUpdating).assertFalse();
     });
   });
 }

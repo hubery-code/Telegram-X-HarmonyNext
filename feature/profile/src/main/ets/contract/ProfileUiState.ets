@@ -59,6 +59,12 @@ export interface ProfileUiStateOptions {
   notificationUpdating?: boolean;
   /** 首屏是否已发起过通知态读取（只发一次，订阅晚到的 profile 回灌不重复触发）。 */
   notificationRequested?: boolean;
+  /** PROFILE-103 收尾：对端是否已被屏蔽（真值来自 getChat.block_list / updateChatBlockList）。 */
+  peerBlocked?: boolean;
+  /** 屏蔽态是否已回读到真值；未就绪时菜单项标注「未读取」且点击 no-op。 */
+  peerBlockReady?: boolean;
+  /** 屏蔽写请求在途，期间重复点击 no-op。 */
+  peerBlockUpdating?: boolean;
 }
 
 export class ProfileUiState {
@@ -89,6 +95,12 @@ export class ProfileUiState {
   readonly notificationReady: boolean;
   readonly notificationUpdating: boolean;
   readonly notificationRequested: boolean;
+  /** PROFILE-103 收尾：对端是否已被屏蔽（真值来自 getChat.block_list / updateChatBlockList）。 */
+  readonly peerBlocked: boolean;
+  /** 屏蔽态是否已回读到真值；未就绪时菜单项标注「未读取」且点击 no-op。 */
+  readonly peerBlockReady: boolean;
+  /** 屏蔽写请求在途，期间重复点击 no-op。 */
+  readonly peerBlockUpdating: boolean;
 
   constructor(
     userId: number = 0,
@@ -117,7 +129,10 @@ export class ProfileUiState {
     notificationMuted: boolean = false,
     notificationReady: boolean = false,
     notificationUpdating: boolean = false,
-    notificationRequested: boolean = false
+    notificationRequested: boolean = false,
+    peerBlocked: boolean = false,
+    peerBlockReady: boolean = false,
+    peerBlockUpdating: boolean = false
   ) {
     this.userId = userId;
     this.displayName = displayName;
@@ -146,6 +161,9 @@ export class ProfileUiState {
     this.notificationReady = notificationReady;
     this.notificationUpdating = notificationUpdating;
     this.notificationRequested = notificationRequested;
+    this.peerBlocked = peerBlocked;
+    this.peerBlockReady = peerBlockReady;
+    this.peerBlockUpdating = peerBlockUpdating;
   }
 
   static initial(userId: number = 0): ProfileUiState {
@@ -180,7 +198,10 @@ export class ProfileUiState {
       options.notificationMuted !== undefined ? options.notificationMuted : this.notificationMuted,
       options.notificationReady !== undefined ? options.notificationReady : this.notificationReady,
       options.notificationUpdating !== undefined ? options.notificationUpdating : this.notificationUpdating,
-      options.notificationRequested !== undefined ? options.notificationRequested : this.notificationRequested
+      options.notificationRequested !== undefined ? options.notificationRequested : this.notificationRequested,
+      options.peerBlocked !== undefined ? options.peerBlocked : this.peerBlocked,
+      options.peerBlockReady !== undefined ? options.peerBlockReady : this.peerBlockReady,
+      options.peerBlockUpdating !== undefined ? options.peerBlockUpdating : this.peerBlockUpdating
     );
   }
 }

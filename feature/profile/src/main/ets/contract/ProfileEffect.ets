@@ -67,5 +67,21 @@ export class SetChatNotification implements Effect {
   }
 }
 
+/** PROFILE-103 收尾：createNewSecretChat 开密聊，成功后由协调器把密聊 chatId 交给装配层导航。 */
+export class CreateSecretChatEffect implements Effect {
+  readonly kind: 'createSecretChat' = 'createSecretChat';
+}
+
+/** PROFILE-103 收尾：写对端屏蔽态（setMessageSenderBlockList，blocked=true 进主黑名单、false 解除）。 */
+export class SetPeerBlock implements Effect {
+  readonly kind: 'setPeerBlock' = 'setPeerBlock';
+  readonly blocked: boolean;
+
+  constructor(blocked: boolean) {
+    this.blocked = blocked;
+  }
+}
+
 export type ProfileEffect = CreatePrivateChatEffect | FetchSharedContent | FetchSharedGroups |
-  FetchMoreSharedContent | OpenSharedChatEffect | FetchChatNotification | SetChatNotification;
+  FetchMoreSharedContent | OpenSharedChatEffect | FetchChatNotification | SetChatNotification |
+  CreateSecretChatEffect | SetPeerBlock;

@@ -12,7 +12,6 @@
 import { LightTheme, Theme } from '@tgx/core-design-system';
 import { getAvatarColorIndex } from '@tgx/core-domain';
 import { fileUri } from '@kit.CoreFileKit';
-import { hilog } from '@kit.PerformanceAnalysisKit';
 import { ProfileUiState } from '../contract/ProfileUiState';
 import {
   ProfileIntent,
@@ -20,7 +19,10 @@ import {
   OnSharedTabSelected,
   LoadMoreSharedContent,
   OpenSharedChatRequested,
-  NotificationRowTapped
+  NotificationRowTapped,
+  ProfileMenuAction,
+  PROFILE_MENU_SECRET_CHAT,
+  PROFILE_MENU_TOGGLE_BLOCK
 } from '../contract/ProfileIntent';
 import { SharedMediaItem, SharedFileItem, SharedLinkItem, SharedGroupItem } from '../contract/SharedContentItems';
 
@@ -64,23 +66,11 @@ const SHARED_TABS: SharedTabSpec[] = [
   { icon: $r('app.media.ic_group'), label: '群组' }
 ];
 
-/** ⋮ 菜单占位项：仅 hilog 记录 profile_menu_<key>，无其它动作。 */
-interface ProfileMenuEntry {
-  key: string;
-  label: string;
-}
-
-const PLACEHOLDER_MENU: ProfileMenuEntry[] = [
-  { key: 'share_contact', label: '分享联系人信息' },
-  { key: 'block', label: '屏蔽用户' },
-  { key: 'privacy_exception', label: '隐私例外' },
-  { key: 'rename', label: '重命名联系人' },
-  { key: 'delete', label: '删除联系人' }
-];
-
-const DOMAIN: number = 0x0000;
-const PAGE_TAG: string = 'ProfilePage';
-
+/**
+ * ⋮ 菜单只保留真实动作（见 menuElements）。此前这里的「分享联系人 / 隐私例外 /
+ * 重命名联系人 / 删除联系人」都是只打 hilog 的假入口（TDLib 侧没有对应写路径），
+ * 留着等于在真菜单里挂死按钮，故整体删除。
+ */
 @Component
 export struct ProfilePage {
   /**
@@ -102,24 +92,36 @@ export struct ProfilePage {
     return AVATAR_PALETTE[index];
   }
 
-  /** ⋮ 菜单：首项「开始私密聊天」真实派发，其余占位 hilog。 */
+  /**
+   * ⋮ 菜单：三项全部落到 TDLib。
+   * 屏蔽项文案跟着真值走；真值未读到时标「未读取」，点击由 reducer no-op。
+   */
   private menuElements(): MenuElement[] {
     const items: MenuElement[] = [];
     items.push({
-      value: '开始私密聊天',
+      value: '发送消息',
       action: (): void => {
         this.onDispatch(new MessageUserRequested());
       }
     });
-    for (let i = 0; i < PLACEHOLDER_MENU.length; i++) {
-      const entry: ProfileMenuEntry = PLACEHOLDER_MENU[i];
-      items.push({
-        value: entry.label,
-        action: (): void => {
-          hilog.info(DOMAIN, PAGE_TAG, 'profile_menu_%{public}s', entry.key);
-        }
-      });
+    items.push({
+      value: '开启密聊',
+      action: (): void => {
+        this.onDispatch(new ProfileMenuAction(PROFILE_MENU_SECRET_CHAT));
+      }
+    });
+    let blockLabel: string = '屏蔽用户';
+    if (!this.uiState.peerBlockReady) {
+      blockLabel = '屏蔽用户（未读取）';
+    } else if (this.uiState.peerBlocked) {
+      blockLabel = '取消屏蔽';
     }
+    items.push({
+      value: blockLabel,
+      action: (): void => {
+        this.onDispatch(new ProfileMenuAction(PROFILE_MENU_TOGGLE_BLOCK));
+      }
+    });
     return items;
   }
 

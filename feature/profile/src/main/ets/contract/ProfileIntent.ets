@@ -195,6 +195,38 @@ export class OnChatNotificationFailed implements Intent {
   readonly kind: 'onChatNotificationFailed' = 'onChatNotificationFailed';
 }
 
+/**
+ * PROFILE-103 收尾：⋮ 头部菜单动作。
+ * action 走白名单（'secretChat' / 'toggleBlock'），页面只按当前真值出反向动作，
+ * reducer 对白名单外的值一律 no-op —— 菜单里不留只做 hilog 的假入口。
+ */
+export const PROFILE_MENU_SECRET_CHAT: string = 'secretChat';
+export const PROFILE_MENU_TOGGLE_BLOCK: string = 'toggleBlock';
+
+export class ProfileMenuAction implements Intent {
+  readonly kind: 'profileMenuAction' = 'profileMenuAction';
+  readonly action: string;
+
+  constructor(action: string) {
+    this.action = action;
+  }
+}
+
+/** getChat.block_list / updateChatBlockList 回灌真实屏蔽态。 */
+export class OnPeerBlockLoaded implements Intent {
+  readonly kind: 'onPeerBlockLoaded' = 'onPeerBlockLoaded';
+  readonly blocked: boolean;
+
+  constructor(blocked: boolean) {
+    this.blocked = blocked;
+  }
+}
+
+/** 屏蔽态读不到/写失败：菜单项退回「未读取」，不能拿默认值冒充真值。 */
+export class OnPeerBlockFailed implements Intent {
+  readonly kind: 'onPeerBlockFailed' = 'onPeerBlockFailed';
+}
+
 export type ProfileIntent =
   | MessageUserRequested
   | OnProfileLoaded
@@ -211,4 +243,7 @@ export type ProfileIntent =
   | OpenSharedChatRequested
   | NotificationRowTapped
   | OnChatNotificationLoaded
-  | OnChatNotificationFailed;
+  | OnChatNotificationFailed
+  | ProfileMenuAction
+  | OnPeerBlockLoaded
+  | OnPeerBlockFailed;

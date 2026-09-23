@@ -59,6 +59,16 @@ import {
   SetChatNotificationSettings,
   encodeSetChatNotificationSettings,
   UpdateChatNotificationSettings,
+  CreateNewSecretChat,
+  encodeCreateNewSecretChat,
+  SecretChat,
+  decodeSecretChat,
+  SetMessageSenderBlockList,
+  encodeSetMessageSenderBlockList,
+  MessageSenderUser,
+  BlockListMain,
+  TdBlockList,
+  UpdateChatBlockList,
   TdUpdate,
   decodeTdUpdate,
   TdJsonRaw
@@ -71,7 +81,7 @@ import {
   TdWireObject
 } from '@tgx/td-gateway';
 import { Logger } from '@tgx/observability';
-import { Subscription } from '@tgx/platform-ports';
+import { Subscription, ToastPort, FakeToast } from '@tgx/platform-ports';
 import { ReducerEnv, ReducerResult } from '@tgx/feature-template';
 import { ProfileUiState } from '../contract/ProfileUiState';
 import {
@@ -87,7 +97,9 @@ import {
   OnSharedContentFailed,
   OpenSharedChatRequested,
   OnChatNotificationLoaded,
-  OnChatNotificationFailed
+  OnChatNotificationFailed,
+  OnPeerBlockLoaded,
+  OnPeerBlockFailed
 } from '../contract/ProfileIntent';
 import {
   ProfileEffect,
@@ -97,7 +109,9 @@ import {
   FetchMoreSharedContent,
   OpenSharedChatEffect,
   FetchChatNotification,
-  SetChatNotification
+  SetChatNotification,
+  CreateSecretChatEffect,
+  SetPeerBlock
 } from '../contract/ProfileEffect';
 import { SharedMediaItem, SharedFileItem, SharedLinkItem, SharedGroupItem } from '../contract/SharedContentItems';
 import { profileReducer } from '../reducer/ProfileReducer';
@@ -304,6 +318,8 @@ export interface ProfileCoordinatorOptions {
   /** 私聊创建成功后交给装配层导航（缺省 no-op）。 */
   readonly onOpenChat?: (chatId: number) => void;
   readonly logger?: Logger;
+  /** ⋮ 菜单动作的结果提示（屏蔽写失败、对方不支持密聊等），缺省 FakeToast。 */
+  readonly toastPort?: ToastPort;
 }
 
 export type ProfileUiStateListener = (uiState: ProfileUiState) => void;
@@ -378,6 +394,7 @@ export class ProfileCoordinator {
   private readonly userRegistry: UserRegistry;
   private readonly fileRegistry: FileRegistry;
   private readonly onOpenChat: (chatId: number) => void;
+  private readonly toastPort: ToastPort;
   private readonly logger: Logger;
   private readonly env: ReducerEnv;
   private currentState: ProfileUiState;
@@ -410,6 +427,9 @@ export class ProfileCoordinator {
     this.onOpenChat = options !== undefined && options.onOpenChat !== undefined
       ? options.onOpenChat
       : (chatId: number): void => {};
+    this.toastPort = options !== undefined && options.toastPort !== undefined
+      ? options.toastPort
+      : new FakeToast();
     this.logger = options !== undefined && options.logger !== undefined
       ? options.logger
       : new Logger();
@@ -614,6 +634,17 @@ export class ProfileCoordinator {
       case 'setChatNotification': {
         const set: SetChatNotification = effect as SetChatNotification;
         this.executeSetChatNotification(set.muted);
+        break;
+      }
+
+      case 'createSecretChat': {
+        this.executeCreateSecretChat();
+        break;
+      }
+
+      case 'setPeerBlock': {
+        const block: SetPeerBlock = effect as SetPeerBlock;
+        this.executeSetPeerBlock(block.blocked);
         break;
       }
 
@@ -918,15 +949,20 @@ export class ProfileCoordinator {
     this.withPrivateChatId(
       'notification',
       (chatId: number): void => {
-        this.readChatNotification(chatId);
+        this.readChatState(chatId);
       },
       (): void => {
         this.dispatch(new OnChatNotificationFailed());
+        this.dispatch(new OnPeerBlockFailed());
       }
     );
   }
 
-  private readChatNotification(chatId: number): void {
+  /**
+   * 一次 getChat 同时喂两行真值（notification_settings / block_list），读不到就
+   * 两路各自退回「未知」——菜单不能拿默认值冒充真值，也不留在「写请求在途」。
+   */
+  private readChatState(chatId: number): void {
     const req: GetChat = new GetChat();
     req.chat_id = chatId;
     const res: Result<TdPendingRequest, AppError> =
@@ -938,18 +974,19 @@ export class ProfileCoordinator {
         }
         if (out.err) {
           this.logger.logError(TAG, out.error);
-          this.dispatch(new OnChatNotificationFailed());
+          this.failChatState();
           return;
         }
         if (out.ok) {
           const chat: Chat | null = decodeChat(out.value as TdJsonRaw);
           if (chat === null) {
-            this.dispatch(new OnChatNotificationFailed());
+            this.failChatState();
             return;
           }
-          // 同一次回读顺手订上推送：本端/它端改静音都能实时翻回来。
-          this.subscribeChatNotification(chatId);
+          // 同一次回读顺手订上推送：本端/它端改静音、屏蔽都能实时翻回来。
+          this.subscribeChatState(chatId);
           this.applyChatNotificationSettings(chat.notification_settings);
+          this.applyPeerBlock(chat.block_list);
         }
       }).catch((): void => {
       });
@@ -958,7 +995,12 @@ export class ProfileCoordinator {
     if (res.err) {
       this.logger.logError(TAG, res.error);
     }
+    this.failChatState();
+  }
+
+  private failChatState(): void {
     this.dispatch(new OnChatNotificationFailed());
+    this.dispatch(new OnPeerBlockFailed());
   }
 
   /** null（TDLib 没给设置）时不猜「未静音」，退回「未知」态。 */
@@ -1000,7 +1042,7 @@ export class ProfileCoordinator {
           return;
         }
         this.logger.info(TAG, 'chat_notification_written', `chatId=${chatId},mute=${muted}`);
-        this.readChatNotification(chatId);
+        this.readChatState(chatId);
       }).catch((): void => {
       });
       return;
@@ -1011,7 +1053,7 @@ export class ProfileCoordinator {
     this.dispatch(new OnChatNotificationFailed());
   }
 
-  private subscribeChatNotification(chatId: number): void {
+  private subscribeChatState(chatId: number): void {
     if (this.destroyed || this.notificationChatId === chatId) {
       return;
     }
@@ -1021,23 +1063,141 @@ export class ProfileCoordinator {
     }
     const filter: TdUpdateFilter = {
       clientId: this.scope.clientId,
-      types: ['updateChatNotificationSettings']
+      types: ['updateChatNotificationSettings', 'updateChatBlockList']
     };
     this.notificationSubscription = this.scope.gatewayInstance.subscribeUpdates(
       filter,
       (event: TdRoutedEvent): void => {
         const update: TdUpdate | null = decodeTdUpdate(event.payload as TdJsonRaw);
-        if (update === null || update.type !== 'updateChatNotificationSettings') {
+        if (update === null || this.destroyed) {
           return;
         }
-        const changed: UpdateChatNotificationSettings = update as UpdateChatNotificationSettings;
-        if (changed.chat_id !== chatId || this.destroyed) {
+        if (update.type === 'updateChatNotificationSettings') {
+          const changed: UpdateChatNotificationSettings = update as UpdateChatNotificationSettings;
+          if (changed.chat_id !== chatId) {
+            return;
+          }
+          this.applyChatNotificationSettings(changed.notification_settings);
           return;
         }
-        this.applyChatNotificationSettings(changed.notification_settings);
+        if (update.type === 'updateChatBlockList') {
+          const changedBlock: UpdateChatBlockList = update as UpdateChatBlockList;
+          if (changedBlock.chat_id !== chatId) {
+            return;
+          }
+          this.applyPeerBlock(changedBlock.block_list);
+        }
       }
     );
     this.notificationChatId = chatId;
+  }
+
+  // ------------------------------------------------------------------
+  // PROFILE-103 收尾：⋮ 头部菜单真实动作（密聊 createNewSecretChat / 屏蔽 setMessageSenderBlockList）
+  // ------------------------------------------------------------------
+
+  /**
+   * 屏蔽真值同样来自那一次 getChat：chat.block_list 为 null 表示该会话不在任何
+   * 黑名单里。本 schema 没有 blockUser/unblockUser，只有按 messageSender 改黑名单。
+   */
+  private applyPeerBlock(blockList: TdBlockList | null): void {
+    const blocked: boolean = blockList !== null;
+    this.logger.info(TAG, 'peer_block_state', `userId=${this.userId},blocked=${blocked}`);
+    this.dispatch(new OnPeerBlockLoaded(blocked));
+  }
+
+  /**
+   * 密聊：createNewSecretChat 回执即 secretChat，其 id 同时是 chat.id（type 为
+   * chatTypeSecret），所以直接复用装配层的 onOpenChat 导航，无需新路由。
+   * 对方客户端不支持/已关闭密聊时 TDLib 报错，只提示不静默。
+   */
+  private executeCreateSecretChat(): void {
+    const req: CreateNewSecretChat = new CreateNewSecretChat();
+    req.user_id = this.userId;
+    const res: Result<TdPendingRequest, AppError> =
+      this.scope.request('createNewSecretChat', encodeCreateNewSecretChat(req) as TdWireObject);
+    if (res.ok) {
+      res.value.promise.then((out: Result<TdWireObject, AppError>): void => {
+        if (this.destroyed) {
+          return;
+        }
+        if (out.err) {
+          this.logger.logError(TAG, out.error);
+          this.toastPort.showToast('无法开启密聊');
+          return;
+        }
+        if (out.ok) {
+          const secretChat: SecretChat | null = decodeSecretChat(out.value as TdJsonRaw);
+          if (secretChat === null || secretChat.id === 0) {
+            this.toastPort.showToast('无法开启密聊');
+            return;
+          }
+          this.logger.info(TAG, 'secret_chat_created',
+            `userId=${this.userId},secretChatId=${secretChat.id},layer=${secretChat.layer}`);
+          this.onOpenChat(secretChat.id);
+        }
+      }).catch((): void => {
+      });
+      return;
+    }
+    if (res.err) {
+      this.logger.logError(TAG, res.error);
+    }
+    this.toastPort.showToast('无法开启密聊');
+  }
+
+  /**
+   * 屏蔽/取消屏蔽：blocked=true 写入 blockListMain，false 传 null（TDLib 语义即解除）。
+   * 不乐观改写，写成功后 getChat 复核真值。
+   */
+  private executeSetPeerBlock(blocked: boolean): void {
+    this.withPrivateChatId(
+      'peer_block',
+      (chatId: number): void => {
+        this.writePeerBlock(chatId, blocked);
+      },
+      (): void => {
+        this.toastPort.showToast('操作失败，请稍后重试');
+        this.dispatch(new OnPeerBlockFailed());
+      }
+    );
+  }
+
+  private writePeerBlock(chatId: number, blocked: boolean): void {
+    const sender: MessageSenderUser = new MessageSenderUser();
+    sender.user_id = this.userId;
+    const req: SetMessageSenderBlockList = new SetMessageSenderBlockList();
+    req.sender_id = sender;
+    if (blocked) {
+      const list: BlockListMain = new BlockListMain();
+      req.block_list = list;
+    } else {
+      req.block_list = null;
+    }
+    const res: Result<TdPendingRequest, AppError> =
+      this.scope.request('setMessageSenderBlockList', encodeSetMessageSenderBlockList(req) as TdWireObject);
+    if (res.ok) {
+      res.value.promise.then((out: Result<TdWireObject, AppError>): void => {
+        if (this.destroyed) {
+          return;
+        }
+        if (out.err) {
+          this.logger.logError(TAG, out.error);
+          this.toastPort.showToast('操作失败，请稍后重试');
+          this.dispatch(new OnPeerBlockFailed());
+          return;
+        }
+        this.logger.info(TAG, 'peer_block_written', `chatId=${chatId},blocked=${blocked}`);
+        this.readChatState(chatId);
+      }).catch((): void => {
+      });
+      return;
+    }
+    if (res.err) {
+      this.logger.logError(TAG, res.error);
+    }
+    this.toastPort.showToast('操作失败，请稍后重试');
+    this.dispatch(new OnPeerBlockFailed());
   }
 
   /** Tab 3：getGroupsInCommon → 逐 id getChat 解析标题/副标题，全部回灌。 */

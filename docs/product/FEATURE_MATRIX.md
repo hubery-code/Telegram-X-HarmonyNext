@@ -151,7 +151,13 @@
 > 现在读 `getChat.notification_settings` 真值（TDLib 没给则显示 `—` 而不是猜「未静音」），点按经 `setChatNotificationSettings`
 > 以回读快照为底本反向写入、写后 `getChat` 复核（无乐观更新），并订阅 `updateChatNotificationSettings` 实时同步；
 > 静音纯模型 `isChatMuted / withChatMuteFor` 由 `feature/chat` 下沉到 `core/domain`，聊天 ⋮ 菜单与资料页通知行从此同源
-> （实测两处对同一会话分别渲染为「静音」与「取消静音」）。该包剩余：⋮ 头部菜单 / 封面大图头部。
+> （实测两处对同一会话分别渲染为「静音」与「取消静音」）。
+> **同日追加（PROFILE-MENU）**：⋮ 头部菜单**实化**交付 —— 原先六项里五项（分享联系人/屏蔽用户/隐私例外/重命名联系人/删除联系人）
+> 是只打 hilog 的假入口，且「开始私密聊天」与页面底部 Message 按钮重复。现在只留三项真实动作：**发送消息**（`createPrivateChat` → 导航）、
+> **开启密聊**（`createNewSecretChat`，回执 `secretChat.id` 即 `chat.id`，复用同一条 `onOpenChat` 导航，无需新路由）、
+> **屏蔽用户 / 取消屏蔽**（本 schema 无 `blockUser`，走 `setMessageSenderBlockList`：屏蔽写 `blockListMain`、解除传 `null`；
+> 真值取自那一次 `getChat` 的 `block_list`，读不到时菜单标「未读取」且点击 no-op，写后 `getChat` 复核，并订阅 `updateChatBlockList`）。
+> 设备实证见 `PROGRESS.md`「已完成」表。该包剩余：封面大图头部。
 
 | 功能 ID | 功能名 |
 |---|---|

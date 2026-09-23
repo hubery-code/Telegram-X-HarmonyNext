@@ -523,8 +523,10 @@ struct Index {
       userId,
       {
         logger: this.logger,
+        toastPort: this.toastAdapter,
         onOpenChat: (chatId: number): void => {
           // 「发消息」：私聊压栈到资料页之上，返回仍落回资料页。
+          // 密聊走同一条导航：secretChat.id 即 chat.id（type 为 chatTypeSecret）。
           this.navController.navigateTo({ name: 'chat', chatId: chatId });
         }
       }

@@ -23,6 +23,11 @@ import {
   OpenSharedChatRequested,
   OnChatNotificationLoaded,
   OnChatNotificationFailed,
+  ProfileMenuAction,
+  PROFILE_MENU_SECRET_CHAT,
+  PROFILE_MENU_TOGGLE_BLOCK,
+  OnPeerBlockLoaded,
+  OnPeerBlockFailed,
   ProfileIntent
 } from '../contract/ProfileIntent';
 import {
@@ -33,6 +38,8 @@ import {
   OpenSharedChatEffect,
   FetchChatNotification,
   SetChatNotification,
+  CreateSecretChatEffect,
+  SetPeerBlock,
   ProfileEffect
 } from '../contract/ProfileEffect';
 
@@ -129,6 +136,38 @@ export const profileReducer: Reducer<ProfileUiState, ProfileIntent, ProfileEffec
       return reduced(state.copyWith({
         notificationReady: false,
         notificationUpdating: false
+      }));
+    }
+
+    case 'profileMenuAction': {
+      const menu: ProfileMenuAction = intent as ProfileMenuAction;
+      if (menu.action === PROFILE_MENU_SECRET_CHAT) {
+        return reduced(state, [new CreateSecretChatEffect()]);
+      }
+      if (menu.action === PROFILE_MENU_TOGGLE_BLOCK) {
+        // 屏蔽态未知时不响应：点一下会把「未知」翻成一个凭空的黑名单条目。
+        if (!state.peerBlockReady || state.peerBlockUpdating) {
+          return reduced(state);
+        }
+        const effect: SetPeerBlock = new SetPeerBlock(!state.peerBlocked);
+        return reduced(state.copyWith({ peerBlockUpdating: true }), [effect]);
+      }
+      return reduced(state);
+    }
+
+    case 'onPeerBlockLoaded': {
+      const loaded: OnPeerBlockLoaded = intent as OnPeerBlockLoaded;
+      return reduced(state.copyWith({
+        peerBlocked: loaded.blocked,
+        peerBlockReady: true,
+        peerBlockUpdating: false
+      }));
+    }
+
+    case 'onPeerBlockFailed': {
+      return reduced(state.copyWith({
+        peerBlockReady: false,
+        peerBlockUpdating: false
       }));
     }
 

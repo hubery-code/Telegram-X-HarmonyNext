@@ -18,6 +18,11 @@ export {
   NotificationRowTapped,
   OnChatNotificationLoaded,
   OnChatNotificationFailed,
+  ProfileMenuAction,
+  PROFILE_MENU_SECRET_CHAT,
+  PROFILE_MENU_TOGGLE_BLOCK,
+  OnPeerBlockLoaded,
+  OnPeerBlockFailed,
   ProfileIntent
 } from './contract/ProfileIntent';
 export {
@@ -28,6 +33,8 @@ export {
   OpenSharedChatEffect,
   FetchChatNotification,
   SetChatNotification,
+  CreateSecretChatEffect,
+  SetPeerBlock,
   ProfileEffect
 } from './contract/ProfileEffect';
 export {
