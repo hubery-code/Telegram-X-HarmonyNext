@@ -410,6 +410,31 @@ export default function fileRegistryTest(): void {
       registry.stop();
     });
 
+    it('should fall back to the message file seed only while the cache is cold', 0, (): void => {
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const scope: AccountScope = createScope(bridge);
+      const registry: FileRegistry = new FileRegistry(scope);
+
+      // SET-104：注册表随会话页创建，冷启动时缓存为空，此时采信消息体自带的 local。
+      const seedDone: File = createSampleFile(711, 1000, 1000, '/seed/711', true, false, 1000);
+      expect(registry.isDownloaded(711)).assertFalse();
+      expect(registry.isDownloaded(711, seedDone)).assertTrue();
+      expect(registry.getLocalPath(711, seedDone)).assertEqual('/seed/711');
+
+      // 未完成的 seed 不得采信，避免把半成品文件当成本地可用。
+      const seedPartial: File = createSampleFile(712, 1000, 1000, '/seed/712', false, true, 300);
+      expect(registry.isDownloaded(712, seedPartial)).assertFalse();
+      expect(registry.getLocalPath(712, seedPartial)).assertNull();
+
+      // 注册表已收录时以注册表为准：清理缓存后过期的 seed 不得翻案。
+      registry.putFile(createSampleFile(713, 1000, 1000, '', false, false, 0));
+      const staleSeed: File = createSampleFile(713, 1000, 1000, '/seed/713', true, false, 1000);
+      expect(registry.isDownloaded(713, staleSeed)).assertFalse();
+      expect(registry.getLocalPath(713, staleSeed)).assertNull();
+
+      registry.stop();
+    });
+
     it('should correctly parse getLocalPath', 0, (): void => {
       const bridge: TestNativeBridge = new TestNativeBridge();
       const scope: AccountScope = createScope(bridge);

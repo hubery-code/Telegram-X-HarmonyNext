@@ -942,6 +942,8 @@ export class ChatCoordinator {
       this.handleOpenMediaViewer(openIntent.messageId, openIntent.targetFileId);
     } else if (intent.kind === 'requestMediaDownload') {
       const reqIntent: RequestMediaDownload = intent as RequestMediaDownload;
+      this.logger.info(TAG, 'request_media_download',
+        `fileId=${reqIntent.fileId},downloaded=${this.fileRegistry.isDownloaded(reqIntent.fileId)}`);
       this.requestMediaDownload(reqIntent.fileId, 32);
     } else if (intent.kind === 'openUserProfile') {
       // PROFILE-101：纯导航意图——reducer 原样透传（default 分支），这里转给装配层路由。
@@ -1240,6 +1242,7 @@ export class ChatCoordinator {
       return;
     }
     if (this.requestedFileIds.has(fileId)) {
+      this.logger.info(TAG, 'media_download_skip_requested', `fileId=${fileId}`);
       return;
     }
     this.requestedFileIds.add(fileId);
@@ -1248,18 +1251,30 @@ export class ChatCoordinator {
       const sub: Subscription = this.fileRegistry.subscribeFile(fileId, (file: File) => {
         if (!this.destroyed) {
           if (file.local !== null && file.local.is_downloading_completed) {
+            this.logger.info(TAG, 'media_download_completed', `fileId=${fileId}`);
+            this.requestedFileIds.delete(fileId);
             this.scheduleSyncFromProjection();
             if (file.local.path.length > 0) {
               this.dispatch(new OnStickerPreviewFileUpdated(fileId, file.local.path));
             }
           } else {
+            // SET-104：TDLib 停止下载（清理缓存把文件重置 / 下载失败）时释放去重闩，
+            // 否则同一次会话内该 fileId 永远无法再次发起下载。下载中保持闩住，避免
+            // 投影每帧重复请求。
+            if (file.local === null || !file.local.is_downloading_active) {
+              this.requestedFileIds.delete(fileId);
+            }
             this.scheduleThrottledSync();
           }
         }
       });
       this.fileSubscriptions.set(fileId, sub);
     }
-    this.fileRegistry.downloadFile(fileId, priority);
+    const result: Result<TdPendingRequest, AppError> = this.fileRegistry.downloadFile(fileId, priority);
+    if (result.err) {
+      this.requestedFileIds.delete(fileId);
+      this.logger.logError(TAG, result.error);
+    }
   }
 
   private chooseDisplaySize(sizes: PhotoSize[]): PhotoSize {
@@ -1297,8 +1312,8 @@ export class ChatCoordinator {
       }
 
       const fileId: number = targetFile.id;
-      const localPath: string | null = this.fileRegistry.getLocalPath(fileId);
-      const isDownloaded: boolean = this.fileRegistry.isDownloaded(fileId);
+      const localPath: string | null = this.fileRegistry.getLocalPath(fileId, targetFile);
+      const isDownloaded: boolean = this.fileRegistry.isDownloaded(fileId, targetFile);
       const progress: number = this.fileRegistry.getDownloadProgress(fileId);
       const latestFile: File | null = this.fileRegistry.getFile(fileId);
       const isDownloading: boolean = latestFile !== null && latestFile.local !== null
@@ -1368,8 +1383,8 @@ export class ChatCoordinator {
       }
 
       const fileId: number = targetFile.id;
-      const localPath: string | null = this.fileRegistry.getLocalPath(fileId);
-      const isDownloaded: boolean = this.fileRegistry.isDownloaded(fileId);
+      const localPath: string | null = this.fileRegistry.getLocalPath(fileId, targetFile);
+      const isDownloaded: boolean = this.fileRegistry.isDownloaded(fileId, targetFile);
       const progress: number = this.fileRegistry.getDownloadProgress(fileId);
       const latestFile: File | null = this.fileRegistry.getFile(fileId);
       const isDownloading: boolean = latestFile !== null && latestFile.local !== null
@@ -1420,13 +1435,13 @@ export class ChatCoordinator {
       }
 
       const fileId: number = targetFile.id;
-      let localPath: string | null = this.fileRegistry.getLocalPath(fileId);
+      let localPath: string | null = this.fileRegistry.getLocalPath(fileId, targetFile);
       // 出站视频：TDLib 回灌的本地路径即我们自己送进去的沙箱文件，
       // 注册表尚未收录时直接取 file.local.path，保证气泡立刻有本地源可渲染。
       if (localPath === null && targetFile.local !== null && targetFile.local.path.length > 0) {
         localPath = targetFile.local.path;
       }
-      const isDownloaded: boolean = this.fileRegistry.isDownloaded(fileId);
+      const isDownloaded: boolean = this.fileRegistry.isDownloaded(fileId, targetFile);
       const progress: number = this.fileRegistry.getDownloadProgress(fileId);
       const latestFile: File | null = this.fileRegistry.getFile(fileId);
       const isDownloading: boolean = latestFile !== null && latestFile.local !== null
@@ -1510,8 +1525,8 @@ export class ChatCoordinator {
       }
 
       const fileId: number = targetFile.id;
-      const localPath: string | null = this.fileRegistry.getLocalPath(fileId);
-      const isDownloaded: boolean = this.fileRegistry.isDownloaded(fileId);
+      const localPath: string | null = this.fileRegistry.getLocalPath(fileId, targetFile);
+      const isDownloaded: boolean = this.fileRegistry.isDownloaded(fileId, targetFile);
       const progress: number = this.fileRegistry.getDownloadProgress(fileId);
       const latestFile: File | null = this.fileRegistry.getFile(fileId);
       const isDownloading: boolean = latestFile !== null && latestFile.local !== null
@@ -1559,8 +1574,8 @@ export class ChatCoordinator {
       }
 
       const fileId: number = targetFile.id;
-      const localPath: string | null = this.fileRegistry.getLocalPath(fileId);
-      const isDownloaded: boolean = this.fileRegistry.isDownloaded(fileId);
+      const localPath: string | null = this.fileRegistry.getLocalPath(fileId, targetFile);
+      const isDownloaded: boolean = this.fileRegistry.isDownloaded(fileId, targetFile);
       const progress: number = this.fileRegistry.getDownloadProgress(fileId);
       const latestFile: File | null = this.fileRegistry.getFile(fileId);
       const isDownloading: boolean = latestFile !== null && latestFile.local !== null
@@ -1618,8 +1633,8 @@ export class ChatCoordinator {
       }
 
       const fileId: number = targetFile.id;
-      const localPath: string | null = this.fileRegistry.getLocalPath(fileId);
-      const isDownloaded: boolean = this.fileRegistry.isDownloaded(fileId);
+      const localPath: string | null = this.fileRegistry.getLocalPath(fileId, targetFile);
+      const isDownloaded: boolean = this.fileRegistry.isDownloaded(fileId, targetFile);
       const progress: number = this.fileRegistry.getDownloadProgress(fileId);
       const latestFile: File | null = this.fileRegistry.getFile(fileId);
       const isDownloading: boolean = latestFile !== null && latestFile.local !== null
@@ -1688,8 +1703,8 @@ export class ChatCoordinator {
       }
 
       const fileId: number = targetFile.id;
-      const localPath: string | null = this.fileRegistry.getLocalPath(fileId);
-      const isDownloaded: boolean = this.fileRegistry.isDownloaded(fileId);
+      const localPath: string | null = this.fileRegistry.getLocalPath(fileId, targetFile);
+      const isDownloaded: boolean = this.fileRegistry.isDownloaded(fileId, targetFile);
       const progress: number = this.fileRegistry.getDownloadProgress(fileId);
       const latestFile: File | null = this.fileRegistry.getFile(fileId);
       const isDownloading: boolean = latestFile !== null && latestFile.local !== null
@@ -1755,8 +1770,8 @@ export class ChatCoordinator {
       }
 
       const fileId: number = targetFile.id;
-      const localPath: string | null = this.fileRegistry.getLocalPath(fileId);
-      const isDownloaded: boolean = this.fileRegistry.isDownloaded(fileId);
+      const localPath: string | null = this.fileRegistry.getLocalPath(fileId, targetFile);
+      const isDownloaded: boolean = this.fileRegistry.isDownloaded(fileId, targetFile);
       const progress: number = this.fileRegistry.getDownloadProgress(fileId);
       const latestFile: File | null = this.fileRegistry.getFile(fileId);
       const isDownloading: boolean = latestFile !== null && latestFile.local !== null

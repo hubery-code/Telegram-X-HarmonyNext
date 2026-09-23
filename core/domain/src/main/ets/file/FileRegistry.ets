@@ -140,21 +140,36 @@ export class FileRegistry {
     });
   }
 
-  isDownloaded(fileId: number): boolean {
-    const file: File | undefined = this.files.get(fileId);
-    if (file === undefined || file.local === null) {
-      return false;
-    }
-    return file.local.is_downloading_completed;
+  isDownloaded(fileId: number, seed?: File | null): boolean {
+    const local: LocalFile | null = this.resolveLocal(fileId, seed);
+    return local !== null && local.is_downloading_completed;
   }
 
-  getLocalPath(fileId: number): string | null {
-    const file: File | undefined = this.files.get(fileId);
-    if (file === undefined || file.local === null) {
+  getLocalPath(fileId: number, seed?: File | null): string | null {
+    const local: LocalFile | null = this.resolveLocal(fileId, seed);
+    if (local === null) {
       return null;
     }
-    const path: string = file.local.path;
+    const path: string = local.path;
     return path.length > 0 ? path : null;
+  }
+
+  /**
+   * 取文件的本地状态：注册表已收录该文件时一律以注册表为准（updateFile 是最新事实），
+   * 只有注册表尚未收录（会话页刚打开、缓存冷启动）时才采信 seed——即 TDLib 消息体
+   * 自带的 file.local，且必须已声明下载完成，避免把半成品文件当成本地可用。
+   * SET-104：没有这层兜底，磁盘上已存在的媒体会在重进会话后被误判成「未下载」，
+   * 清理缓存后重下的完成态也就看不见。
+   */
+  private resolveLocal(fileId: number, seed?: File | null): LocalFile | null {
+    const cached: File | undefined = this.files.get(fileId);
+    if (cached !== undefined) {
+      return cached.local;
+    }
+    if (seed === undefined || seed === null || seed.local === null) {
+      return null;
+    }
+    return seed.local.is_downloading_completed ? seed.local : null;
   }
 
   getDownloadProgress(fileId: number): number {

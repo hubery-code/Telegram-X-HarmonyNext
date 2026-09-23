@@ -2725,6 +2725,9 @@ export struct ChatPage {
         .alignItems(VerticalAlign.Bottom)
         .justifyContent(FlexAlign.End)
         .padding(8)
+        // SET-104：角标层后于下载钮声明，默认会吃掉整颗气泡的点击，导致
+        // 「清理缓存后点下载没反应」；纯装饰层必须让出命中测试。
+        .hitTestBehavior(HitTestMode.None)
       }
     }
     .width(this.mediaCardWidth(media))
