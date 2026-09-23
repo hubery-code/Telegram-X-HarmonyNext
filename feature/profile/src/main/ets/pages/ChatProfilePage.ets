@@ -10,35 +10,21 @@
  */
 
 import { LightTheme, Theme } from '@tgx/core-design-system';
-import { fileUri } from '@kit.CoreFileKit';
 import { ChatProfileUiState, ChatMemberUiItem } from '../contract/ChatProfileUiState';
 import {
   ChatProfileIntent,
   SelectChatMember,
   CopyInviteLinkRequested,
-  BackRequested
+  BackRequested,
+  OnSharedTabSelected,
+  LoadMoreSharedContent
 } from '../contract/ChatProfileIntent';
-
-
-function toSandboxUri(path: string | null): string {
-  if (path === null || path.length === 0) {
-    return '';
-  }
-  if (path.startsWith('file://')) {
-    return path;
-  }
-  const normalized: string = path.startsWith('/') ? path : '/' + path;
-  try {
-    return fileUri.getUriFromPath(normalized);
-  } catch (_e) {
-    return 'file://org.telegram.x.harmony' + normalized;
-  }
-}
-
-const AVATAR_PALETTE: string[] = [
-  '#FFCC5049', '#FFD67722', '#FF955CDB', '#FF40A920',
-  '#FF309EBA', '#FF368AD1', '#FFC7508B'
-];
+import {
+  sandboxFileUri,
+  SharedContentSection,
+  SharedContentViewData
+} from '../components/SharedContentSection';
+import { avatarColorOf } from '../model/SharedContentFormat';
 
 const BACK_ARROW_SIZE: number = 44;
 const AVATAR_SIZE: number = 96;
@@ -58,11 +44,23 @@ export struct ChatProfilePage {
   onDispatch: (intent: ChatProfileIntent) => void = (): void => {};
   onBack: () => void = (): void => {};
 
-  private avatarColor(index: number): string {
-    if (index < 0 || index >= AVATAR_PALETTE.length) {
-      return AVATAR_PALETTE[0];
-    }
-    return AVATAR_PALETTE[index];
+  /**
+   * 共享内容分区视图数据：本页只有媒体/文件/链接三 Tab —— 「共同群组」是私聊
+   * 概念（getGroupsInCommon），群组/频道资料页没有它。
+   */
+  private sharedView(): SharedContentViewData {
+    const s: ChatProfileUiState = this.uiState;
+    return new SharedContentViewData({
+      activeTab: s.activeSharedTab,
+      loading: s.sharedLoading,
+      loadingMore: s.sharedLoadingMore,
+      hasMore: s.sharedHasMore,
+      loadFailed: s.sharedLoadFailed,
+      media: s.sharedMedia,
+      files: s.sharedFiles,
+      links: s.sharedLinks,
+      showGroupsTab: false
+    });
   }
 
   @Builder
@@ -97,7 +95,7 @@ export struct ChatProfilePage {
   ChatHero() {
     Column() {
       if (this.uiState.photoPath !== null && this.uiState.photoPath.length > 0) {
-        Image(toSandboxUri(this.uiState.photoPath))
+        Image(sandboxFileUri(this.uiState.photoPath))
           .width(AVATAR_SIZE)
           .height(AVATAR_SIZE)
           .borderRadius(this.T.radius.full)
@@ -107,7 +105,7 @@ export struct ChatProfilePage {
           .width(AVATAR_SIZE)
           .height(AVATAR_SIZE)
           .borderRadius(this.T.radius.full)
-          .backgroundColor(this.avatarColor(this.uiState.avatarColorIndex))
+          .backgroundColor(avatarColorOf(this.uiState.avatarColorIndex))
           .fontSize(36)
           .fontWeight(FontWeight.Bold)
           .fontColor('#FFFFFFFF')
@@ -211,7 +209,7 @@ export struct ChatProfilePage {
   MemberRow(member: ChatMemberUiItem) {
     Row() {
       if (member.avatarPath !== null && member.avatarPath.length > 0) {
-        Image(toSandboxUri(member.avatarPath))
+        Image(sandboxFileUri(member.avatarPath))
           .width(MEMBER_AVATAR_SIZE)
           .height(MEMBER_AVATAR_SIZE)
           .borderRadius(this.T.radius.full)
@@ -221,7 +219,7 @@ export struct ChatProfilePage {
           .width(MEMBER_AVATAR_SIZE)
           .height(MEMBER_AVATAR_SIZE)
           .borderRadius(this.T.radius.full)
-          .backgroundColor(this.avatarColor(member.avatarColorIndex))
+          .backgroundColor(avatarColorOf(member.avatarColorIndex))
           .fontSize(16)
           .fontWeight(FontWeight.Medium)
           .fontColor('#FFFFFFFF')
@@ -313,12 +311,33 @@ export struct ChatProfilePage {
           if (this.uiState.members.length > 0) {
             this.MembersSection()
           }
+
+          Divider()
+            .color(this.T.colors.divider)
+            .margin({ left: this.T.spacing.screenInset, right: this.T.spacing.screenInset })
+
+          SharedContentSection({
+            view: this.sharedView(),
+            onSelectTab: (tab: number): void => {
+              this.onDispatch(new OnSharedTabSelected(tab));
+            },
+            onLoadMore: (): void => {
+              this.onDispatch(new LoadMoreSharedContent(this.uiState.activeSharedTab));
+            }
+          })
         }
         .width('100%')
       }
       .layoutWeight(1)
       .width('100%')
+      .align(Alignment.TopStart)
       .scrollBar(BarState.Off)
+      .onScrollEdge((side: Edge) => {
+        const v: SharedContentViewData = this.sharedView();
+        if (side === Edge.Bottom && v.hasMore && !v.loadingMore && !v.loading) {
+          this.onDispatch(new LoadMoreSharedContent(v.activeTab));
+        }
+      })
     }
     .width('100%')
     .height('100%')

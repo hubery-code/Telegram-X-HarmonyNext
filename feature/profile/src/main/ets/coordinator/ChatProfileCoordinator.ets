@@ -42,6 +42,13 @@ import { Logger } from '@tgx/observability';
 import { ReducerResult, ReducerEnv } from '@tgx/feature-template';
 import { ChatProfileUiState, ChatMemberUiItem } from '../contract/ChatProfileUiState';
 import {
+  SharedFileItem,
+  SharedLinkItem,
+  SharedMediaItem
+} from '../contract/SharedContentItems';
+import { withSharedMediaPath } from '../model/SharedContentFormat';
+import { SharedContentPage, SharedContentSearcher } from '../model/SharedContentSearch';
+import {
   ChatProfileIntent,
   OpenChatProfile,
   OnChatLoaded,
@@ -49,16 +56,25 @@ import {
   OnSupergroupFullInfoLoaded,
   OnChatMembersLoaded,
   OnChatAvatarLoaded,
-  OnChatProfileError
+  OnChatProfileError,
+  OnSharedContentLoaded,
+  OnSharedContentFailed
 } from '../contract/ChatProfileIntent';
 import {
   ChatProfileEffect,
   FetchChatDetailsEffect,
+  FetchSharedContentEffect,
+  FetchMoreSharedContentEffect,
   NavigateToUserProfileEffect,
   CopyInviteLinkEffect,
   NavigateBackEffect
 } from '../contract/ChatProfileEffect';
 import { chatProfileReducer } from '../reducer/ChatProfileReducer';
+
+const TAG: string = 'ChatProfileCoordinator';
+
+/** 共享媒体缩略图下载优先级（与用户资料页一致：预览级，不抢播放器带宽）。 */
+const SHARED_THUMB_DOWNLOAD_PRIORITY: number = 2;
 
 export interface ChatProfileCoordinatorOptions {
   readonly onNavigateToUserProfile?: (userId: number) => void;
@@ -81,6 +97,11 @@ export class ChatProfileCoordinator {
   private onStateChangedListener: ((state: ChatProfileUiState) => void) | null = null;
   private activeChatId: number = 0;
   private subscriptions: Subscription[] = [];
+  /** 共享内容媒体/文件/链接的分页拉取（与用户资料页共用 model/SharedContentSearch）。 */
+  private readonly sharedSearcher: SharedContentSearcher;
+  /** 已登记缩略图订阅的 fileId，防重复订阅。 */
+  private readonly subscribedSharedFileIds: Set<number> = new Set();
+  private destroyed: boolean = false;
 
   constructor(
     scope: AccountScope,
@@ -106,6 +127,14 @@ export class ChatProfileCoordinator {
       clock: new ManualClock(1000, 500),
       ids: new SequentialIdGenerator('chat-profile-')
     };
+    const self: ChatProfileCoordinator = this;
+    this.sharedSearcher = new SharedContentSearcher({
+      request: (name: string, payload: TdWireObject): Result<TdPendingRequest, AppError> =>
+        this.scope.request(name, payload),
+      localPathOf: (fileId: number): string | null => self.sharedLocalPathOf(fileId),
+      logger: this.logger,
+      tag: TAG
+    });
   }
 
   getState(): ChatProfileUiState {
@@ -118,10 +147,15 @@ export class ChatProfileCoordinator {
 
   start(chatId: number): void {
     this.activeChatId = chatId;
+    // 每个页面有自己的 coordinator，但游标防御性清一次：换 chatId 复用实例时
+    // 旧会话的 next_from_message_id 对新会话毫无意义。
+    this.sharedSearcher.resetOffsets();
     this.dispatch(new OpenChatProfile(chatId));
   }
 
   destroy(): void {
+    this.destroyed = true;
+    this.sharedSearcher.destroy();
     for (let i = 0; i < this.subscriptions.length; i++) {
       this.subscriptions[i].unsubscribe();
     }
@@ -146,6 +180,16 @@ export class ChatProfileCoordinator {
       case 'fetchChatDetailsEffect': {
         const fetchEffect: FetchChatDetailsEffect = effect as FetchChatDetailsEffect;
         this.loadChatDetails(fetchEffect.chatId);
+        break;
+      }
+      case 'fetchSharedContentEffect': {
+        const fetch: FetchSharedContentEffect = effect as FetchSharedContentEffect;
+        this.fetchSharedContent(fetch.tab, false);
+        break;
+      }
+      case 'fetchMoreSharedContentEffect': {
+        const fetchMore: FetchMoreSharedContentEffect = effect as FetchMoreSharedContentEffect;
+        this.fetchSharedContent(fetchMore.tab, true);
         break;
       }
       case 'navigateToUserProfileEffect': {
@@ -352,5 +396,86 @@ export class ChatProfileCoordinator {
     }
 
     this.dispatch(new OnChatMembersLoaded(items));
+  }
+
+  // ------------------------------------------------------------------
+  // CHATPROF-SHARED：共享内容（媒体/文件/链接），与用户资料页共用 model/SharedContentSearch
+  // ------------------------------------------------------------------
+
+  /** 本页的 chatId 由入口给出，不像私聊页还要先 createPrivateChat 解析。 */
+  private fetchSharedContent(tab: number, isLoadMore: boolean): void {
+    // 0 = 还没回读到 chat；超级群组/频道的 chatId 是负数，不能按「>0 才有效」判。
+    const chatId: number = this.state.chatId;
+    if (chatId === 0) {
+      this.dispatch(new OnSharedContentFailed(tab));
+      return;
+    }
+    this.logger.info(TAG, 'fetch_shared_content', `chatId=${chatId},tab=${tab},isLoadMore=${isLoadMore}`);
+    this.sharedSearcher.search(tab, chatId, isLoadMore, (page: SharedContentPage): void => {
+      this.applySharedPage(page, isLoadMore);
+    });
+  }
+
+  /** 一页回包 + 当前状态 → 回灌；只覆盖本次拉取的 Tab 数组，其余透传。 */
+  private applySharedPage(page: SharedContentPage, isLoadMore: boolean): void {
+    if (this.destroyed) {
+      return;
+    }
+    if (!page.loaded) {
+      this.dispatch(new OnSharedContentFailed(page.tab));
+      return;
+    }
+    const s: ChatProfileUiState = this.state;
+    if (page.tab === 0) {
+      const combined: SharedMediaItem[] = isLoadMore ? [...s.sharedMedia, ...page.media] : page.media;
+      this.dispatch(new OnSharedContentLoaded(0, combined, s.sharedFiles, s.sharedLinks, page.hasMore));
+      return;
+    }
+    if (page.tab === 1) {
+      const combined: SharedFileItem[] = isLoadMore ? [...s.sharedFiles, ...page.files] : page.files;
+      this.dispatch(new OnSharedContentLoaded(1, s.sharedMedia, combined, s.sharedLinks, page.hasMore));
+      return;
+    }
+    const combined: SharedLinkItem[] = isLoadMore ? [...s.sharedLinks, ...page.links] : page.links;
+    this.dispatch(new OnSharedContentLoaded(2, s.sharedMedia, s.sharedFiles, combined, page.hasMore));
+  }
+
+  /** 本地路径未就绪时顺手登记 updateFile 订阅，落盘后局部重写网格里该条目的 localPath。 */
+  private sharedLocalPathOf(fileId: number): string | null {
+    const cached: string | null = this.fileRegistry.getLocalPath(fileId);
+    return cached !== null ? cached : this.resolveSharedMediaFile(fileId);
+  }
+
+  /** 缩略图本地路径未就绪：订阅 updateFile，落盘后局部重写 media 数组中该条目的 localPath。 */
+  private resolveSharedMediaFile(fileId: number): string | null {
+    if (this.subscribedSharedFileIds.has(fileId)) {
+      return null;
+    }
+    this.subscribedSharedFileIds.add(fileId);
+    this.subscriptions.push(this.fileRegistry.subscribeFile(fileId, (file: File): void => {
+      if (this.destroyed) {
+        return;
+      }
+      const path: string | null = this.fileRegistry.getLocalPath(file.id);
+      if (path === null || path.length === 0) {
+        return;
+      }
+      const updated: SharedMediaItem[] | null = withSharedMediaPath(this.state.sharedMedia, file.id, path);
+      if (updated !== null) {
+        this.dispatch(new OnSharedContentLoaded(
+          0,
+          updated,
+          this.state.sharedFiles,
+          this.state.sharedLinks,
+          this.state.sharedHasMore
+        ));
+      }
+    }));
+    const res: Result<TdPendingRequest, AppError> =
+      this.fileRegistry.downloadFile(fileId, SHARED_THUMB_DOWNLOAD_PRIORITY);
+    if (res.err) {
+      this.logger.logError(TAG, res.error);
+    }
+    return null;
   }
 }

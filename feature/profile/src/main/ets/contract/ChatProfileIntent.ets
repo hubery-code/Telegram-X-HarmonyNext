@@ -1,10 +1,11 @@
 /**
- * feature/profile — 群组/频道资料页意图（PROFILE-102）。
+ * feature/profile — 群组/频道资料页意图（PROFILE-102；CHATPROF-SHARED 扩展共享内容）。
  */
 
 import { AppError } from '@tgx/core-common';
 import { Chat, BasicGroupFullInfo, SupergroupFullInfo } from '@tgx/core-td-api-generated';
 import { ChatMemberUiItem } from './ChatProfileUiState';
+import { SharedFileItem, SharedLinkItem, SharedMediaItem } from './SharedContentItems';
 
 export class OpenChatProfile {
   readonly type: 'openChatProfile' = 'openChatProfile';
@@ -86,6 +87,56 @@ export class BackRequested {
   readonly type: 'backRequested' = 'backRequested';
 }
 
+export class OnSharedTabSelected {
+  readonly type: 'onSharedTabSelected' = 'onSharedTabSelected';
+  readonly tab: number;
+
+  constructor(tab: number) {
+    this.tab = tab;
+  }
+}
+
+export class LoadMoreSharedContent {
+  readonly type: 'loadMoreSharedContent' = 'loadMoreSharedContent';
+  readonly tab: number;
+
+  constructor(tab: number) {
+    this.tab = tab;
+  }
+}
+
+export class OnSharedContentLoaded {
+  readonly type: 'onSharedContentLoaded' = 'onSharedContentLoaded';
+  readonly tab: number;
+  readonly media: SharedMediaItem[];
+  readonly files: SharedFileItem[];
+  readonly links: SharedLinkItem[];
+  readonly hasMore: boolean;
+
+  constructor(
+    tab: number,
+    media: SharedMediaItem[],
+    files: SharedFileItem[],
+    links: SharedLinkItem[],
+    hasMore: boolean = false
+  ) {
+    this.tab = tab;
+    this.media = media;
+    this.files = files;
+    this.links = links;
+    this.hasMore = hasMore;
+  }
+}
+
+export class OnSharedContentFailed {
+  readonly type: 'onSharedContentFailed' = 'onSharedContentFailed';
+  readonly tab: number;
+
+  constructor(tab: number) {
+    this.tab = tab;
+  }
+}
+
 export type ChatProfileIntent =
   | OpenChatProfile
   | OnChatLoaded
@@ -94,6 +145,10 @@ export type ChatProfileIntent =
   | OnChatMembersLoaded
   | OnChatAvatarLoaded
   | OnChatProfileError
+  | OnSharedTabSelected
+  | LoadMoreSharedContent
+  | OnSharedContentLoaded
+  | OnSharedContentFailed
   | SelectChatMember
   | CopyInviteLinkRequested
   | BackRequested;

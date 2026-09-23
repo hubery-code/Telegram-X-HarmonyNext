@@ -184,6 +184,18 @@
 > 「有发帖权的频道」账号内不存在，用一次性强制包取证（静音条换成 `[210,2494][892,2634]` 的 TextInput）后删除重建复验。
 > `updateChatPermissions` 推送链只验证到订阅注册无报错（缺可管理频道，无法另一端改权限）。遗留两项：
 > 有发帖权频道的输入栏左侧 🔔 静音位、`ChatPermissions` 其余 16 位驱动附件菜单可用性。
+> **2026-09-24（CHATPROF-SHARED，FEAT-P2-002 群/频道资料页共享内容）**：共享内容分区**抽成组件并复用**到群/频道资料页 ——
+> PROFILE-103 的四 Tab 原先以 `@Builder` 内联在 `ProfilePage`，PROFILE-102 要同一块内容，改成
+> `feature/profile/components/SharedContentSection.ets`（`@Prop view` + 三个回调，`showGroupsTab` 决定三/四 Tab；
+> 「共同群组」是私聊概念 `getGroupsInCommon`，群组/频道没有它），纯格式化助手与分页/过滤分别落
+> `model/SharedContentFormat.ets`、`model/SharedContentSearch.ets`，两个资料页从此共用一份渲染。
+> 真机取证抓出一个**只测逻辑测不出来的缺陷**：群资料页共享内容恒「加载失败」，根因是守卫写成 `chatId <= 0` /
+> `next.chatId > 0`，把 TDLib 超级群组与频道的**负数规范 id**（实测 `-1001948393032`）判成非法会话；
+> 修法统一为「未设置只看 0」，与 `feature/chat` 既有约定一致，并补 `coordinator_negativeSupergroupChatId_stillSearches` 回归用例。
+> 设备实证：真实超级群组媒体首屏 20 条 + 触底自动连翻三页（游标递减）、文件 20 条带真实名与大小、链接 11 条站点卡片，
+> 切 Tab 与返回后选中态和数据均保留不重复请求；私聊页四 Tab 与空态无回归。`feature_profile` 81/81 PASS。
+> 遗留：群/频道页共享内容无按日期分组头；`shared_media_ok` 日志的 `placeholder=` 统计 `fileId === 0` 而非
+> `localPath === null`，「下载中且缩略图未落盘」在日志上不可见。
 
 | 功能 ID | 功能名 |
 |---|---|

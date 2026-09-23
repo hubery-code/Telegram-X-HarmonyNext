@@ -79,7 +79,11 @@ export default function chatProfileReducerTest(): void {
       expect(res.state.isChannel).assertFalse();
       expect(res.state.avatarLetters).assertEqual('HD');
       expect(res.state.isLoading).assertFalse();
-      expect(res.effects.length).assertEqual(0);
+      // chatId 已知即拉默认 Tab（媒体）：不主动拉，用户看到的空网格是在撒谎。
+      expect(res.effects.length).assertEqual(1);
+      expect(res.effects[0].type).assertEqual('fetchSharedContentEffect');
+      expect(res.state.sharedInitialRequested).assertTrue();
+      expect(res.state.sharedLoading).assertTrue();
     });
 
     it('onChatLoaded resolves channel properties', 0, (): void => {
@@ -100,6 +104,25 @@ export default function chatProfileReducerTest(): void {
       expect(res.state.isGroup).assertFalse();
       expect(res.state.isChannel).assertTrue();
       expect(res.state.avatarLetters).assertEqual('NC');
+      expect(res.effects.length).assertEqual(1);
+      expect(res.effects[0].type).assertEqual('fetchSharedContentEffect');
+    });
+
+    it('onChatLoaded_does_not_refetch_shared_content_when_already_requested', 0, (): void => {
+      // 晚到的回灌帧（full info / 成员）会再次触发 onChatLoaded：不闩住就反复重发首屏。
+      const opt: ChatProfileUiStateOptions = { chatId: 23456, sharedInitialRequested: true };
+      const state: ChatProfileUiState = ChatProfileUiState.initial().copyWith(opt);
+      const chat: Chat = new Chat();
+      chat.id = 23456;
+      chat.title = 'News Channel';
+      const sgType: ChatTypeSupergroup = new ChatTypeSupergroup();
+      sgType.supergroup_id = 888;
+      sgType.is_channel = true;
+      chat.type_ = sgType;
+
+      const res: ReducerResult<ChatProfileUiState, ChatProfileEffect> =
+        chatProfileReducer(state, new OnChatLoaded(chat), makeEnv());
+
       expect(res.effects.length).assertEqual(0);
     });
 

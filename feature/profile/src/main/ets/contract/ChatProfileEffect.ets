@@ -1,5 +1,5 @@
 /**
- * feature/profile — 群组/频道资料页副作用（PROFILE-102）。
+ * feature/profile — 群组/频道资料页副作用（PROFILE-102；CHATPROF-SHARED 扩展共享内容分页）。
  */
 
 export class FetchChatDetailsEffect {
@@ -29,6 +29,25 @@ export class CopyInviteLinkEffect {
   }
 }
 
+export class FetchSharedContentEffect {
+  readonly type: 'fetchSharedContentEffect' = 'fetchSharedContentEffect';
+  readonly tab: number;
+
+  constructor(tab: number) {
+    this.tab = tab;
+  }
+}
+
+/** 同一 Tab 的下一页：与首屏同为 searchChatMessages，区别只在游标与是否清空列表。 */
+export class FetchMoreSharedContentEffect {
+  readonly type: 'fetchMoreSharedContentEffect' = 'fetchMoreSharedContentEffect';
+  readonly tab: number;
+
+  constructor(tab: number) {
+    this.tab = tab;
+  }
+}
+
 export class NavigateBackEffect {
   readonly type: 'navigateBackEffect' = 'navigateBackEffect';
 }
@@ -37,4 +56,6 @@ export type ChatProfileEffect =
   | FetchChatDetailsEffect
   | NavigateToUserProfileEffect
   | CopyInviteLinkEffect
+  | FetchSharedContentEffect
+  | FetchMoreSharedContentEffect
   | NavigateBackEffect;

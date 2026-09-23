@@ -10,8 +10,6 @@
  */
 
 import { LightTheme, Theme } from '@tgx/core-design-system';
-import { getAvatarColorIndex } from '@tgx/core-domain';
-import { fileUri } from '@kit.CoreFileKit';
 import { ProfileUiState } from '../contract/ProfileUiState';
 import {
   ProfileIntent,
@@ -24,30 +22,12 @@ import {
   PROFILE_MENU_SECRET_CHAT,
   PROFILE_MENU_TOGGLE_BLOCK
 } from '../contract/ProfileIntent';
-import { SharedMediaItem, SharedFileItem, SharedLinkItem, SharedGroupItem } from '../contract/SharedContentItems';
-
-
-/** 本地沙箱绝对路径 → 可渲染 uri（与 feature/chat、feature/chat_list 的同名助手一致）。 */
-function toSandboxUri(path: string | null): string {
-  if (path === null || path.length === 0) {
-    return '';
-  }
-  if (path.startsWith('file://')) {
-    return path;
-  }
-  const normalized: string = path.startsWith('/') ? path : '/' + path;
-  try {
-    return fileUri.getUriFromPath(normalized);
-  } catch (_e) {
-    return 'file://org.telegram.x.harmony' + normalized;
-  }
-}
-
-/** Telegram 经典头像调色板（0..6），与 feature/chat 的 AVATAR_PALETTE 同色值。 */
-const AVATAR_PALETTE: string[] = [
-  '#FFCC5049', '#FFD67722', '#FF955CDB', '#FF40A920',
-  '#FF309EBA', '#FF368AD1', '#FFC7508B'
-];
+import {
+  sandboxFileUri,
+  SharedContentSection,
+  SharedContentViewData
+} from '../components/SharedContentSection';
+import { avatarColorOf } from '../model/SharedContentFormat';
 
 /**
  * 封面头部尺寸，对齐 Android ProfileController/Size.java：
@@ -57,19 +37,6 @@ const TOOLBAR_HEIGHT: number = 56;
 const COVER_HEIGHT: number = 234;
 const COVER_LETTER_SIZE: number = 90;
 const MESSAGE_BUTTON_HEIGHT: number = 44;
-
-/** 共享内容 Tab 描述（图标 + 文案）。 */
-interface SharedTabSpec {
-  icon: Resource;
-  label: string;
-}
-
-const SHARED_TABS: SharedTabSpec[] = [
-  { icon: $r('app.media.ic_photo'), label: '媒体' },
-  { icon: $r('app.media.ic_file'), label: '文件' },
-  { icon: $r('app.media.ic_link'), label: '链接' },
-  { icon: $r('app.media.ic_group'), label: '群组' }
-];
 
 /**
  * ⋮ 菜单只保留真实动作（见 menuElements）。此前这里的「分享联系人 / 隐私例外 /
@@ -125,11 +92,21 @@ export struct ProfilePage {
     return !this.coverScrolled && !this.isPlaceholderScreen();
   }
 
-  private avatarColor(index: number): string {
-    if (index < 0 || index >= AVATAR_PALETTE.length) {
-      return AVATAR_PALETTE[0];
-    }
-    return AVATAR_PALETTE[index];
+  /** 本页 UiState → 共享内容分区视图数据（分区组件不认 ProfileUiState）。 */
+  private sharedView(): SharedContentViewData {
+    const s: ProfileUiState = this.uiState;
+    return new SharedContentViewData({
+      activeTab: s.activeSharedTab,
+      loading: s.sharedLoading,
+      loadingMore: s.sharedLoadingMore,
+      hasMore: s.sharedHasMore,
+      loadFailed: s.sharedLoadFailed,
+      media: s.sharedMedia,
+      files: s.sharedFiles,
+      links: s.sharedLinks,
+      groups: s.sharedGroups,
+      showGroupsTab: true
+    });
   }
 
   /**
@@ -163,34 +140,6 @@ export struct ProfilePage {
       }
     });
     return items;
-  }
-
-  private groupLetters(title: string): string {
-    if (title.length === 0) {
-      return '?';
-    }
-    const first: string = title.trim();
-    if (first.length === 0) {
-      return '?';
-    }
-    const codePoint: number | undefined = first.codePointAt(0);
-    if (codePoint === undefined) {
-      return '?';
-    }
-    return String.fromCodePoint(codePoint).toUpperCase();
-  }
-
-  private hasSharedItems(): boolean {
-    if (this.uiState.activeSharedTab === 0) {
-      return this.uiState.sharedMedia.length > 0;
-    }
-    if (this.uiState.activeSharedTab === 1) {
-      return this.uiState.sharedFiles.length > 0;
-    }
-    if (this.uiState.activeSharedTab === 2) {
-      return this.uiState.sharedLinks.length > 0;
-    }
-    return this.uiState.sharedGroups.length > 0;
   }
 
   @Builder
@@ -241,7 +190,7 @@ export struct ProfilePage {
   Cover() {
     Stack({ alignContent: Alignment.BottomStart }) {
       if (this.hasCover()) {
-        Image(toSandboxUri(this.uiState.avatarPath))
+        Image(sandboxFileUri(this.uiState.avatarPath))
           .width('100%')
           .height(COVER_HEIGHT)
           .objectFit(ImageFit.Cover)
@@ -270,7 +219,7 @@ export struct ProfilePage {
         }
         .width('100%')
         .height(COVER_HEIGHT)
-        .backgroundColor(this.avatarColor(this.uiState.avatarColorIndex))
+        .backgroundColor(avatarColorOf(this.uiState.avatarColorIndex))
         .justifyContent(FlexAlign.Center)
         .alignItems(HorizontalAlign.Center)
       }
@@ -383,287 +332,6 @@ export struct ProfilePage {
     })
   }
 
-  /** PROFILE-103：共享内容 Tab 栏（选中 accent + 下划线）。 */
-  @Builder
-  SharedTabBar() {
-    Row() {
-      ForEach(SHARED_TABS.slice(), (tab: SharedTabSpec, index: number) => {
-        Column({ space: this.T.spacing.xs }) {
-          Image(tab.icon)
-            .width(20)
-            .height(20)
-            .fillColor(this.uiState.activeSharedTab === index
-              ? this.T.colors.accent
-              : this.T.colors.textSecondary)
-          Text(tab.label)
-            .fontSize(this.T.typography.footnote.fontSize)
-            .fontColor(this.uiState.activeSharedTab === index
-              ? this.T.colors.accent
-              : this.T.colors.textSecondary)
-          Blank()
-            .width(24)
-            .height(2)
-            .backgroundColor(this.uiState.activeSharedTab === index
-              ? this.T.colors.accent
-              : this.T.colors.background)
-        }
-        .layoutWeight(1)
-        .onClick(() => {
-          this.onDispatch(new OnSharedTabSelected(index));
-        })
-      }, (tab: SharedTabSpec, index: number) => `${index}`)
-    }
-    .width('100%')
-    .padding({ top: this.T.spacing.sm, bottom: this.T.spacing.sm })
-  }
-
-  /** PROFILE-103：内容区空态（对齐 TGX 文案）。 */
-  @Builder
-  SharedEmpty(title: string, subtitle: string) {
-    Column() {
-      Text(title)
-        .fontSize(this.T.typography.subheadline.fontSize)
-        .fontColor(this.T.colors.textPrimary)
-        .textAlign(TextAlign.Center)
-      Text(subtitle)
-        .fontSize(this.T.typography.footnote.fontSize)
-        .fontColor(this.T.colors.textSecondary)
-        .textAlign(TextAlign.Center)
-        .margin({ top: this.T.spacing.xs })
-    }
-    .width('100%')
-    .padding({ top: this.T.spacing.lg, bottom: this.T.spacing.lg, left: this.T.spacing.lg, right: this.T.spacing.lg })
-    .alignItems(HorizontalAlign.Center)
-  }
-
-  /** 拉取失败与「确实没有内容」分开显示，否则请求挂了页面照样报「暂无」。 */
-  @Builder
-  SharedLoadFailed() {
-    Column() {
-      Text('加载失败')
-        .fontSize(this.T.typography.subheadline.fontSize)
-        .fontColor(this.T.colors.textPrimary)
-        .textAlign(TextAlign.Center)
-      Text('点击顶部对应页签重试。')
-        .fontSize(this.T.typography.footnote.fontSize)
-        .fontColor(this.T.colors.textSecondary)
-        .textAlign(TextAlign.Center)
-        .margin({ top: this.T.spacing.xs })
-    }
-    .width('100%')
-    .padding({ top: this.T.spacing.lg, bottom: this.T.spacing.lg, left: this.T.spacing.lg, right: this.T.spacing.lg })
-    .alignItems(HorizontalAlign.Center)
-  }
-
-  @Builder
-  SharedMediaGrid() {
-    if (this.uiState.sharedMedia.length === 0) {
-      if (this.uiState.sharedLoadFailed) {
-        this.SharedLoadFailed()
-      } else {
-        this.SharedEmpty('暂无媒体文件', '在此聊天中分享图片和视频，并在您所有的设备上访问。')
-      }
-    } else {
-      Flex({ wrap: FlexWrap.Wrap }) {
-        ForEach(this.uiState.sharedMedia.slice(), (item: SharedMediaItem, index: number) => {
-          Column() {
-            if (item.localPath !== null && item.localPath.length > 0) {
-              Image(toSandboxUri(item.localPath))
-                .width('100%')
-                .aspectRatio(1)
-                .objectFit(ImageFit.Cover)
-            } else {
-              Column() {
-                Image(item.isPhoto ? $r('app.media.ic_photo') : $r('app.media.ic_video'))
-                  .width(24)
-                  .height(24)
-                  .fillColor(this.T.colors.textSecondary)
-              }
-              .width('100%')
-              .aspectRatio(1)
-              .justifyContent(FlexAlign.Center)
-              .backgroundColor(this.T.colors.surfaceVariant)
-            }
-          }
-          .width('33.33%')
-          .padding(this.T.spacing.hairline)
-        }, (item: SharedMediaItem, index: number) => `${item.fileId}_${index}`)
-      }
-      .width('100%')
-    }
-  }
-
-  @Builder
-  SharedFileList() {
-    if (this.uiState.sharedFiles.length === 0) {
-      if (this.uiState.sharedLoadFailed) {
-        this.SharedLoadFailed()
-      } else {
-        this.SharedEmpty('暂无文件', '在此聊天中分享文件，并在您所有的设备上访问。')
-      }
-    } else {
-      Column() {
-        ForEach(this.uiState.sharedFiles.slice(), (item: SharedFileItem, index: number) => {
-          Row() {
-            Image($r('app.media.ic_file'))
-              .width(28)
-              .height(28)
-              .fillColor(this.T.colors.accent)
-            Column() {
-              Text(item.fileName)
-                .fontSize(this.T.typography.body.fontSize)
-                .fontColor(this.T.colors.textPrimary)
-                .maxLines(1)
-                .textOverflow({ overflow: TextOverflow.Ellipsis })
-              Text(item.fileSizeText.length > 0 && item.dateText.length > 0
-                ? `${item.fileSizeText} · ${item.dateText}`
-                : (item.fileSizeText.length > 0 ? item.fileSizeText : item.dateText))
-                .fontSize(this.T.typography.footnote.fontSize)
-                .fontColor(this.T.colors.textSecondary)
-                .margin({ top: this.T.spacing.hairline })
-            }
-            .margin({ left: this.T.spacing.sm })
-            .layoutWeight(1)
-            .alignItems(HorizontalAlign.Start)
-          }
-          .width('100%')
-          .alignItems(VerticalAlign.Center)
-          .padding({
-            left: this.T.spacing.screenInset,
-            right: this.T.spacing.screenInset,
-            top: this.T.spacing.sm,
-            bottom: this.T.spacing.sm
-          })
-        }, (item: SharedFileItem, index: number) => `${index}`)
-      }
-      .width('100%')
-    }
-  }
-
-  @Builder
-  SharedLinkList() {
-    if (this.uiState.sharedLinks.length === 0) {
-      if (this.uiState.sharedLoadFailed) {
-        this.SharedLoadFailed()
-      } else {
-        this.SharedEmpty('暂无链接', '在此聊天中分享链接，并在您所有的设备上访问。')
-      }
-    } else {
-      Column({ space: this.T.spacing.sm }) {
-        ForEach(this.uiState.sharedLinks.slice(), (item: SharedLinkItem, index: number) => {
-          Column() {
-            if (item.siteName.length > 0) {
-              Text(item.siteName)
-                .fontSize(this.T.typography.body.fontSize)
-                .fontWeight(FontWeight.Medium)
-                .fontColor(this.T.colors.textPrimary)
-                .maxLines(1)
-                .textOverflow({ overflow: TextOverflow.Ellipsis })
-                .width('100%')
-            }
-            if (item.description.length > 0) {
-              Text(item.description)
-                .fontSize(this.T.typography.subheadline.fontSize)
-                .fontColor(this.T.colors.textSecondary)
-                .maxLines(2)
-                .textOverflow({ overflow: TextOverflow.Ellipsis })
-                .width('100%')
-                .margin({ top: item.siteName.length > 0 ? this.T.spacing.hairline : 0 })
-            }
-            Text(item.url)
-              .fontSize(this.T.typography.footnote.fontSize)
-              .fontColor(this.T.colors.link)
-              .maxLines(1)
-              .textOverflow({ overflow: TextOverflow.Ellipsis })
-              .width('100%')
-              .margin({ top: this.T.spacing.xs })
-          }
-          .width('100%')
-          .padding(this.T.spacing.md)
-          .backgroundColor(this.T.colors.surfaceVariant)
-          .borderRadius(this.T.radius.md)
-          .alignItems(HorizontalAlign.Start)
-        }, (item: SharedLinkItem, index: number) => `${index}`)
-      }
-      .width('100%')
-      .padding({
-        left: this.T.spacing.screenInset,
-        right: this.T.spacing.screenInset,
-        top: this.T.spacing.sm,
-        bottom: this.T.spacing.sm
-      })
-    }
-  }
-
-  @Builder
-  SharedGroupList() {
-    if (this.uiState.sharedGroups.length === 0) {
-      if (this.uiState.sharedLoadFailed) {
-        this.SharedLoadFailed()
-      } else {
-        this.SharedEmpty('暂无共同群组', '你们所在的共同群组会显示在这里。')
-      }
-    } else {
-      Column() {
-        ForEach(this.uiState.sharedGroups.slice(), (item: SharedGroupItem, index: number) => {
-          Row() {
-            Text(this.groupLetters(item.title))
-              .width(40)
-              .height(40)
-              .borderRadius(this.T.radius.full)
-              .backgroundColor(this.avatarColor(getAvatarColorIndex(item.chatId)))
-              .fontColor(this.T.colors.textOnAccent)
-              .fontSize(16)
-              .textAlign(TextAlign.Center)
-            Column() {
-              Text(item.title)
-                .fontSize(this.T.typography.body.fontSize)
-                .fontColor(this.T.colors.textPrimary)
-                .maxLines(1)
-                .textOverflow({ overflow: TextOverflow.Ellipsis })
-              if (item.subtitle.length > 0) {
-                Text(item.subtitle)
-                  .fontSize(this.T.typography.subheadline.fontSize)
-                  .fontColor(this.T.colors.textSecondary)
-                  .maxLines(1)
-                  .textOverflow({ overflow: TextOverflow.Ellipsis })
-                  .margin({ top: this.T.spacing.hairline })
-              }
-            }
-            .margin({ left: this.T.spacing.sm })
-            .layoutWeight(1)
-            .alignItems(HorizontalAlign.Start)
-          }
-          .width('100%')
-          .alignItems(VerticalAlign.Center)
-          .padding({
-            left: this.T.spacing.screenInset,
-            right: this.T.spacing.screenInset,
-            top: this.T.spacing.sm,
-            bottom: this.T.spacing.sm
-          })
-          .onClick(() => {
-            this.onDispatch(new OpenSharedChatRequested(item.chatId));
-          })
-        }, (item: SharedGroupItem, index: number) => `${item.chatId}_${index}`)
-      }
-      .width('100%')
-    }
-  }
-
-  @Builder
-  SharedContent() {
-    if (this.uiState.activeSharedTab === 0) {
-      this.SharedMediaGrid()
-    } else if (this.uiState.activeSharedTab === 1) {
-      this.SharedFileList()
-    } else if (this.uiState.activeSharedTab === 2) {
-      this.SharedLinkList()
-    } else {
-      this.SharedGroupList()
-    }
-  }
-
   build() {
     Stack({ alignContent: Alignment.TopStart }) {
       Column() {
@@ -756,51 +424,18 @@ export struct ProfilePage {
                 .color(this.T.colors.divider)
                 .margin({ left: this.T.spacing.screenInset, right: this.T.spacing.screenInset })
 
-              this.SharedTabBar()
-
-              if (this.uiState.sharedLoading) {
-                Column() {
-                  LoadingProgress()
-                    .width(32)
-                    .height(32)
-                    .color(this.T.colors.accent)
+              SharedContentSection({
+                view: this.sharedView(),
+                onSelectTab: (tab: number): void => {
+                  this.onDispatch(new OnSharedTabSelected(tab));
+                },
+                onLoadMore: (): void => {
+                  this.onDispatch(new LoadMoreSharedContent(this.uiState.activeSharedTab));
+                },
+                onOpenGroup: (chatId: number): void => {
+                  this.onDispatch(new OpenSharedChatRequested(chatId));
                 }
-                .width('100%')
-                .padding({ top: this.T.spacing.lg, bottom: this.T.spacing.lg })
-                .justifyContent(FlexAlign.Center)
-                .alignItems(HorizontalAlign.Center)
-              } else {
-                this.SharedContent()
-
-                if (this.hasSharedItems()) {
-                  if (this.uiState.sharedLoadingMore) {
-                    Row({ space: this.T.spacing.xs }) {
-                      LoadingProgress()
-                        .width(20)
-                        .height(20)
-                        .color(this.T.colors.accent)
-                      Text('正在加载更多...')
-                        .fontSize(this.T.typography.footnote.fontSize)
-                        .fontColor(this.T.colors.textSecondary)
-                    }
-                    .width('100%')
-                    .justifyContent(FlexAlign.Center)
-                    .padding({ top: this.T.spacing.md, bottom: this.T.spacing.md })
-                  } else if (this.uiState.sharedHasMore) {
-                    Row() {
-                      Text('加载更多')
-                        .fontSize(this.T.typography.subheadline.fontSize)
-                        .fontColor(this.T.colors.accent)
-                    }
-                    .width('100%')
-                    .justifyContent(FlexAlign.Center)
-                    .padding({ top: this.T.spacing.sm, bottom: this.T.spacing.md })
-                    .onClick(() => {
-                      this.onDispatch(new LoadMoreSharedContent(this.uiState.activeSharedTab));
-                    })
-                  }
-                }
-              }
+              })
             }
             .width('100%')
           }
@@ -816,8 +451,9 @@ export struct ProfilePage {
             }
           })
           .onScrollEdge((side: Edge) => {
-            if (side === Edge.Bottom && this.uiState.sharedHasMore && !this.uiState.sharedLoadingMore && !this.uiState.sharedLoading) {
-              this.onDispatch(new LoadMoreSharedContent(this.uiState.activeSharedTab));
+            const v: SharedContentViewData = this.sharedView();
+            if (side === Edge.Bottom && v.hasMore && !v.loadingMore && !v.loading) {
+              this.onDispatch(new LoadMoreSharedContent(v.activeTab));
             }
           })
 
