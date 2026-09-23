@@ -82,6 +82,7 @@ import {
   OnJumpToMessageReady,
   OnHeaderSubtitleChanged,
   OnChatKindChanged,
+  OnChatMuteStateChanged,
   OnPinnedMessageLoaded,
   DismissPinnedBar,
   JumpToPinnedMessage,
@@ -1112,6 +1113,16 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
         return reduced(state);
       }
       return reduced(state.copyWith({ chatKind: kindIntent.chatKind }));
+    }
+
+    // SET-106：会话静音态回灌（getChat 回读 + updateChatNotificationSettings 推送）；
+    // 值相同不动状态，避免每次推送都让整页重算。
+    case 'onChatMuteStateChanged': {
+      const muteIntent: OnChatMuteStateChanged = intent as OnChatMuteStateChanged;
+      if (state.isMuted === muteIntent.isMuted) {
+        return reduced(state);
+      }
+      return reduced(state.copyWith({ isMuted: muteIntent.isMuted }));
     }
 
     // ---- MSG-108 置顶消息横条 ----

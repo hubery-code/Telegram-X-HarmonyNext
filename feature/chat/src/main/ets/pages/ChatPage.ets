@@ -1105,9 +1105,9 @@ export struct ChatPage {
           this.onDispatch(new OpenChatSearch());
         })
       if (this.uiState.chatKind === 'private') {
-        MenuItem({ content: '静音' })
+        MenuItem({ content: this.muteMenuLabel() })
           .onClick(() => {
-            this.onDispatch(new ChatMenuAction('mute'));
+            this.onDispatch(new ChatMenuAction(this.muteMenuAction()));
           })
         MenuItem({ content: '清空历史记录' })
           .onClick(() => {
@@ -1119,9 +1119,9 @@ export struct ChatPage {
             this.onDispatch(new ChatMenuAction('delete_chat'));
           })
       } else if (this.uiState.chatKind === 'group' || this.uiState.chatKind === 'channel') {
-        MenuItem({ content: '开启通知' })
+        MenuItem({ content: this.muteMenuLabel() })
           .onClick(() => {
-            this.onDispatch(new ChatMenuAction('enable_notifications'));
+            this.onDispatch(new ChatMenuAction(this.muteMenuAction()));
           })
         MenuItem({ content: '举报' })
           .onClick(() => {
@@ -4276,13 +4276,13 @@ export struct ChatPage {
   ChannelMuteBar() {
     Row() {
       Row() {
-        Image($r('app.media.ic_mute'))
+        Image(this.uiState.isMuted ? $r('app.media.ic_notifications') : $r('app.media.ic_mute'))
           .width(20)
           .height(20)
           .fillColor(this.T.colors.accent)
           .margin({ right: this.T.spacing.sm })
 
-        Text('静音')
+        Text(this.uiState.isMuted ? '开启通知' : '静音')
           .fontSize(this.T.typography.headline.fontSize)
           .fontWeight(FontWeight.Medium)
           .fontColor(this.T.colors.accent)
@@ -4294,7 +4294,7 @@ export struct ChatPage {
       .backgroundColor(this.T.colors.surfaceVariant)
       .borderRadius(this.T.radius.md)
       .onClick(() => {
-        this.onDispatch(new ChatMenuAction('mute'));
+        this.onDispatch(new ChatMenuAction(this.muteMenuAction()));
       })
     }
     .width('100%')
@@ -4306,6 +4306,18 @@ export struct ChatPage {
     })
     .borderWidth({ top: 1 })
     .borderColor(this.T.colors.divider)
+  }
+
+  /**
+   * SET-106：静音菜单项文案与动作随会话静音态切换。
+   * 读 this.uiState 而非入参，保证 @Builder 内的 @Prop 变更能驱动重渲染。
+   */
+  private muteMenuLabel(): string {
+    return this.uiState.isMuted ? '取消静音' : '静音';
+  }
+
+  private muteMenuAction(): string {
+    return this.uiState.isMuted ? 'enable_notifications' : 'mute';
   }
 
   private canSend(): boolean {

@@ -545,6 +545,20 @@ export class OnChatKindChanged implements Intent {
 }
 
 /**
+ * SET-106：会话静音态回灌。来源有两条：getChat 响应里的 chat.notification_settings
+ * （进入会话时的一次性回读）与 updateChatNotificationSettings 推送（本端改设置、
+ * 其它端改设置都会推）。驱动 ⋮ 菜单与频道静音条出「静音」还是「取消静音」。
+ */
+export class OnChatMuteStateChanged implements Intent {
+  readonly kind: 'onChatMuteStateChanged' = 'onChatMuteStateChanged';
+  readonly isMuted: boolean;
+
+  constructor(isMuted: boolean) {
+    this.isMuted = isMuted;
+  }
+}
+
+/**
  * MSG-109：点击头部标题 → 打开会话资料页。
  * 纯导航意图：reducer 不改状态（default 分支），由 coordinator 转给装配层路由。
  */
@@ -701,6 +715,7 @@ export type ChatIntent =
   | OpenUserProfile
   | OnHeaderSubtitleChanged
   | OnChatKindChanged
+  | OnChatMuteStateChanged
   | OpenChatProfile
   | ChatMenuAction
   | ConfirmMenuAction

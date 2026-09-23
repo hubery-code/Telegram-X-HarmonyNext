@@ -194,6 +194,8 @@ export interface ChatUiStateOptions {
   readonly pendingMenuAction?: string;
   /** POLL-101：发起投票面板编辑态（null=面板关闭）。 */
   readonly pollComposer?: PollComposerState | null;
+  /** SET-106：本会话是否已静音（TDLib chat.notification_settings.mute_for > 0）。 */
+  readonly isMuted?: boolean;
 }
 
 export const DEFAULT_RECENT_EMOJIS: readonly string[] = [
@@ -269,6 +271,8 @@ export class ChatUiState implements UiState {
   readonly pendingMenuAction: string;
   /** POLL-101：发起投票面板编辑态（null=面板关闭）。 */
   readonly pollComposer: PollComposerState | null;
+  /** SET-106：本会话是否已静音（驱动 ⋮ 菜单与频道静音条的「静音/取消静音」）。 */
+  readonly isMuted: boolean;
 
   constructor(
     chatId: number,
@@ -310,7 +314,8 @@ export class ChatUiState implements UiState {
     gifSearchQuery: string = '',
     showMenuConfirmDialog: boolean = false,
     pendingMenuAction: string = '',
-    pollComposer: PollComposerState | null = null
+    pollComposer: PollComposerState | null = null,
+    isMuted: boolean = false
   ) {
     this.chatId = chatId;
     this.chatTitle = chatTitle;
@@ -352,6 +357,7 @@ export class ChatUiState implements UiState {
     this.showMenuConfirmDialog = showMenuConfirmDialog;
     this.pendingMenuAction = pendingMenuAction;
     this.pollComposer = pollComposer;
+    this.isMuted = isMuted;
   }
 
   static initial(): ChatUiState {
@@ -399,7 +405,8 @@ export class ChatUiState implements UiState {
       options.gifSearchQuery !== undefined ? options.gifSearchQuery : this.gifSearchQuery,
       options.showMenuConfirmDialog !== undefined ? options.showMenuConfirmDialog : this.showMenuConfirmDialog,
       options.pendingMenuAction !== undefined ? options.pendingMenuAction : this.pendingMenuAction,
-      options.pollComposer !== undefined ? options.pollComposer : this.pollComposer
+      options.pollComposer !== undefined ? options.pollComposer : this.pollComposer,
+      options.isMuted !== undefined ? options.isMuted : this.isMuted
     );
   }
 }

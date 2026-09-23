@@ -139,6 +139,7 @@ import {
   SetChatNotificationSettings,
   encodeSetChatNotificationSettings,
   ChatNotificationSettings,
+  UpdateChatNotificationSettings,
   MessagePoll
 } from '@tgx/core-td-api-generated';
 import { FileRegistry, formatFullName, MessageListState, MessageProjection, UserRegistry } from '@tgx/core-domain';
@@ -153,6 +154,7 @@ import { MediaAttachment, decodeWaveform, encodeWaveform } from '../model/MediaA
 import { LinkPreviewInfo } from '../model/LinkPreviewInfo';
 import { ChatSearchResultItem } from '../model/ChatSearchResultItem';
 import { PinnedMessageInfo } from '../model/PinnedMessageInfo';
+import { isChatMuted, withChatMuteFor } from '../model/ChatMute';
 import { parseFormattedText } from '../model/FormattedTextParser';
 import { pollViewOf, PollView } from '../model/PollView';
 import {
@@ -187,6 +189,7 @@ import {
   OpenUserProfile,
   OnHeaderSubtitleChanged,
   OnChatKindChanged,
+  OnChatMuteStateChanged,
   OpenChatProfile,
   ChatMenuAction,
   ConfirmMenuAction,
@@ -471,6 +474,14 @@ export class ChatCoordinator {
   private supergroupId: number = 0;
   /** MSG-109：基本群 id（getChat 解析缓存，供头部成员数查询）。 */
   private basicGroupId: number = 0;
+  /**
+   * SET-106：本会话当前通知设置（getChat 回读 + updateChatNotificationSettings 推送维护）。
+   * 既是 ⋮ 菜单「静音/取消静音」的判定依据，也是写请求的底本——TDLib 的
+   * chatNotificationSettings.sound_id 是 int64，缺省空串会被直接拒（bad_request）。
+   */
+  private chatNotificationSettings: ChatNotificationSettings | null = null;
+  /** SET-106：updateChatNotificationSettings 订阅句柄（destroy 时退订）。 */
+  private muteSubscription: TdUpdateSubscription | null = null;
   /** MSG-109：getBasicGroup 是否已发起（防重；失败复位可重试）。 */
   private basicGroupInfoRequested: boolean = false;
   /** MSG-109：getSupergroupFullInfo 是否已发起（防重；失败复位可重试）。 */
@@ -617,6 +628,8 @@ export class ChatCoordinator {
       this.dispatch(new RestoreDraft(parsed.text, parsed.replyToId));
     }
     this.fetchChatKind();
+    // SET-106：静音态实时同步（本端改、其它端改都会推 updateChatNotificationSettings）。
+    this.subscribeChatNotificationSettings();
     // MSG-109：先按已知信息补一次副标题（chatKind 未回前为 no-op），
     // getChat 回包 / 用户状态订阅 / 在线人数订阅到达后各自重算。
     this.buildHeaderSubtitle();
@@ -716,26 +729,19 @@ export class ChatCoordinator {
   }
 
   /**
-   * MENU-101：静音/取消静音会话。
-   * mute=true → mute_for=366天（TDLib 约定超过 366 天视为永久静音）；
-   * mute=false → mute_for=0（立即恢复通知）。其余 use_default_* 均 true，
-   * 保留用户对该类会话的全局默认设置。
+   * SET-106 / MENU-101：静音/取消静音会话。
+   * 以当前设置（getChat 回读或最近一次 updateChatNotificationSettings）为底本，
+   * 只改 mute_for —— TDLib 的 sound_id/story_sound_id 是 int64，写空串会被
+   * 直接判 bad_request（MENU-101 首版即因此静音从未能生效）。
+   * 成功后的状态回灌走 updateChatNotificationSettings 订阅，不做乐观改写，
+   * 避免本地标签与 TDLib 真值分叉。
    */
   private executeMuteChat(mute: boolean): void {
     const chatId: number = this.currentState.chatId;
     if (chatId === 0) {
       return;
     }
-    const settings: ChatNotificationSettings = new ChatNotificationSettings();
-    settings.use_default_mute_for = false;
-    settings.mute_for = mute ? 366 * 24 * 3600 : 0;
-    settings.use_default_sound = true;
-    settings.use_default_show_preview = true;
-    settings.use_default_mute_stories = true;
-    settings.use_default_story_sound = true;
-    settings.use_default_show_story_poster = true;
-    settings.use_default_disable_pinned_message_notifications = true;
-    settings.use_default_disable_mention_notifications = true;
+    const settings: ChatNotificationSettings = withChatMuteFor(this.chatNotificationSettings, mute);
     const req: SetChatNotificationSettings = new SetChatNotificationSettings();
     req.chat_id = chatId;
     req.notification_settings = settings;
@@ -750,6 +756,7 @@ export class ChatCoordinator {
       result.value.promise.then((res: Result<TdWireObject, AppError>) => {
         if (!this.destroyed) {
           if (res.ok) {
+            this.logger.info(TAG, 'chat_mute_applied', `chatId=${chatId},mute=${mute}`);
             this.toastPort.showToast(mute ? '已静音' : '已开启通知');
           }
           if (res.err) {
@@ -757,7 +764,7 @@ export class ChatCoordinator {
             this.toastPort.showToast(mute ? '静音失败' : '取消静音失败');
           }
         }
-      });
+      }).catch(() => {});
     }
   }
 
@@ -913,6 +920,11 @@ export class ChatCoordinator {
     if (this.headerUserSubscription !== null) {
       this.headerUserSubscription.unsubscribe();
       this.headerUserSubscription = null;
+    }
+    // SET-106：退订会话静音推送。
+    if (this.muteSubscription !== null) {
+      this.muteSubscription.unsubscribe();
+      this.muteSubscription = null;
     }
     if (this.recordTimerId !== -1) {
       clearInterval(this.recordTimerId);
@@ -2455,6 +2467,9 @@ export class ChatCoordinator {
               }
             }
             this.logger.info(TAG, 'chat_kind_resolved', `kind=${this.chatKind}`);
+            // SET-106：同一次 getChat 响应即带 chat.notification_settings，
+            // 直接回读静音态，⋮ 菜单首轮渲染就能出正确文案。
+            this.applyChatNotificationSettings(chat.notification_settings);
             // MSG-109：回灌 reducer 驱动头部通话按钮/菜单，并启动副标题计算。
             this.dispatch(new OnChatKindChanged(this.chatKind));
             this.buildHeaderSubtitle();
@@ -2785,6 +2800,47 @@ export class ChatCoordinator {
         }
         this.onlineMemberCount = online.online_member_count;
         this.updateGroupHeaderSubtitle();
+      }
+    );
+  }
+
+  /**
+   * SET-106：把会话通知设置落到本地快照并回灌静音态。
+   * null（TDLib 未给）时保持原快照不动，避免把「未知」渲染成「未静音」。
+   */
+  private applyChatNotificationSettings(settings: ChatNotificationSettings | null): void {
+    if (settings === null) {
+      return;
+    }
+    this.chatNotificationSettings = settings;
+    const muted: boolean = isChatMuted(settings);
+    if (muted !== this.currentState.isMuted) {
+      this.logger.info(TAG, 'chat_mute_state', `muted=${muted},mute_for=${settings.mute_for}`);
+    }
+    this.dispatch(new OnChatMuteStateChanged(muted));
+  }
+
+  /** SET-106：订阅 updateChatNotificationSettings（本会话），destroy 时退订。 */
+  private subscribeChatNotificationSettings(): void {
+    if (this.destroyed || this.muteSubscription !== null) {
+      return;
+    }
+    const filter: TdUpdateFilter = {
+      clientId: this.scope.clientId,
+      types: ['updateChatNotificationSettings']
+    };
+    this.muteSubscription = this.scope.gatewayInstance.subscribeUpdates(
+      filter,
+      (event: TdRoutedEvent): void => {
+        const update: TdUpdate | null = decodeTdUpdate(event.payload as TdJsonRaw);
+        if (update === null || update.type !== 'updateChatNotificationSettings') {
+          return;
+        }
+        const muteUpdate: UpdateChatNotificationSettings = update as UpdateChatNotificationSettings;
+        if (muteUpdate.chat_id !== this.currentState.chatId) {
+          return;
+        }
+        this.applyChatNotificationSettings(muteUpdate.notification_settings);
       }
     );
   }

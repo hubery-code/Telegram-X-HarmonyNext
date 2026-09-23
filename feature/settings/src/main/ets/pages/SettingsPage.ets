@@ -436,9 +436,9 @@ export struct SettingsPage {
         .color(this.getTheme().colors.divider)
         .margin({ top: this.getTheme().spacing.sm, bottom: this.getTheme().spacing.xs })
 
-      this.NotificationScopeRow('Private Chats', 'private', this.uiState.privateNotificationsEnabled)
-      this.NotificationScopeRow('Group Chats', 'group', this.uiState.groupNotificationsEnabled)
-      this.NotificationScopeRow('Channels', 'channel', this.uiState.channelNotificationsEnabled)
+      this.NotificationScopeRow('Private Chats', 'private')
+      this.NotificationScopeRow('Group Chats', 'group')
+      this.NotificationScopeRow('Channels', 'channel')
     }
     .width('100%')
     .padding(this.getTheme().spacing.md)
@@ -446,18 +446,33 @@ export struct SettingsPage {
     .borderRadius(this.getTheme().radius.md)
   }
 
+  /**
+   * 分区开关是否开启。
+   * 必须在 builder 内部读 this.uiState：@Builder 的按值入参不参与状态观察，
+   * 开关点完后行内文案与 Toggle 不会重渲染（SET-106 首版即因此显示恒为关闭）。
+   */
+  private scopeNotificationsEnabled(scope: NotificationScopeKey): boolean {
+    if (scope === 'private') {
+      return this.uiState.privateNotificationsEnabled;
+    }
+    if (scope === 'group') {
+      return this.uiState.groupNotificationsEnabled;
+    }
+    return this.uiState.channelNotificationsEnabled;
+  }
+
   @Builder
-  NotificationScopeRow(labelKey: string, scope: NotificationScopeKey, enabled: boolean) {
+  NotificationScopeRow(labelKey: string, scope: NotificationScopeKey) {
     Row() {
       Text(this.t(labelKey))
         .fontSize(this.getTheme().typography.subheadline.fontSize)
         .fontColor(this.getTheme().colors.textPrimary)
         .layoutWeight(1)
 
-      Toggle({ type: ToggleType.Switch, isOn: enabled })
+      Toggle({ type: ToggleType.Switch, isOn: this.scopeNotificationsEnabled(scope) })
         .enabled(!this.uiState.isUpdatingNotifications && this.uiState.updatingNotificationScope === null)
         .onChange((isOn: boolean): void => {
-          if (isOn !== enabled) {
+          if (isOn !== this.scopeNotificationsEnabled(scope)) {
             this.onDispatch(new ToggleNotificationScope(scope));
           }
         })

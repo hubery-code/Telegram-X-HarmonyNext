@@ -14,6 +14,7 @@ import linkPreviewTest from './LinkPreview.test';
 import chatSearchJumpTest from './ChatSearchJump.test';
 import commentsCoordinatorTest from './CommentsCoordinator.test';
 import mediaRedownloadTest from './MediaRedownload.test';
+import chatMuteStateTest from './ChatMuteState.test';
 
 export default function testsuite(): void {
   chatReducerTest();
@@ -32,5 +33,6 @@ export default function testsuite(): void {
   chatSearchJumpTest();
   commentsCoordinatorTest();
   mediaRedownloadTest();
+  chatMuteStateTest();
 }
 
