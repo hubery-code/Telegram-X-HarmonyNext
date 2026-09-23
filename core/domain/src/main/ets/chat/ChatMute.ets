@@ -1,5 +1,5 @@
 /**
- * feature/chat — 会话级通知静音的纯函数模型（SET-106）。
+ * core/domain — 会话级通知静音的纯函数模型（SET-106，2026-09-24 由 feature/chat 下沉）。
  *
  * TDLib 的 chatNotificationSettings 用「剩余静音秒数」表达静音：mute_for 超过 366 天
  * 即视为永久静音，因此这里统一写 Int32 最大值（与 feature/settings 的
@@ -8,6 +8,9 @@
  * 关键约束：sound_id / story_sound_id 是 int64（本项目建模为 string），空串会被
  * TDLib JSON 解析拒绝（bad_request）。写请求必须携带可解析的值，故一律以当前设置
  * 为底本、只改 mute_for，其余字段原样回传。
+ *
+ * 下沉原因：feature/chat 的 ⋮ 菜单与 feature/profile 的通知行要表达同一个静音态，
+ * feature 之间不可互引，而这条 int64 约束一旦复制就会分叉。
  */
 
 import { ChatNotificationSettings } from '@tgx/core-td-api-generated';

@@ -147,6 +147,11 @@
 > 证据见 `PROGRESS.md`「已完成」表；该包的 ⋮ 头部菜单 / 通知行 / 封面大图头部仍未做。
 > **同日追加（PROF-ENTRY-001）**：私聊头部标题直达「用户资料页」（peer `user_id` 取自 `getChat.type_.user_id`，非 chatId 顶替），
 > 由此首次取到共享内容**非空条目**的设备证据，并修掉「缩略图未缓存时媒体条目被静默丢掉」的缺陷（改为占位瓦片）。
+> **同日追加（PROFILE-NOTIF）**：通知行**真实态**交付 —— 原先 `notificationText` 是 state 里写死的 `'开启'`、行也不可点；
+> 现在读 `getChat.notification_settings` 真值（TDLib 没给则显示 `—` 而不是猜「未静音」），点按经 `setChatNotificationSettings`
+> 以回读快照为底本反向写入、写后 `getChat` 复核（无乐观更新），并订阅 `updateChatNotificationSettings` 实时同步；
+> 静音纯模型 `isChatMuted / withChatMuteFor` 由 `feature/chat` 下沉到 `core/domain`，聊天 ⋮ 菜单与资料页通知行从此同源
+> （实测两处对同一会话分别渲染为「静音」与「取消静音」）。该包剩余：⋮ 头部菜单 / 封面大图头部。
 
 | 功能 ID | 功能名 |
 |---|---|

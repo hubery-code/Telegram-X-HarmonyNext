@@ -1,11 +1,10 @@
 /**
- * feature/chat — 会话静音态单元测试（SET-106 / FEAT-SET-003）。
+ * feature/chat — 会话静音态协调器/状态机单元测试（SET-106 / FEAT-SET-003）。
  *
- * 守住的三条真实回归：
- * 1. 写请求不得把 int64（sound_id / story_sound_id）写成空串 —— TDLib 直接判 bad_request，
- *    MENU-101 首版的静音因此从未能生效；
- * 2. 静音写请求以回读快照为底本，只覆盖 mute_for，其余用户设置原样带回；
- * 3. 静音态必须由 updateChatNotificationSettings 回灌，且只认本会话的推送。
+ * 守住的回归：静音写请求以回读快照为底本、只覆盖 mute_for（int64 sound_id 不得写空串，
+ * MENU-101 首版因此从未能生效），且静音态必须由 updateChatNotificationSettings 回灌
+ * 并只认本会话的推送。纯函数模型本身（isChatMuted / withChatMuteFor）的用例已随模型
+ * 下沉迁到 core/domain（`src/test/chat/ChatMute.test.ets`）。
  */
 
 import { describe, it, expect } from '@ohos/hypium';
@@ -16,6 +15,7 @@ import { FakeAppFiles } from '@tgx/platform-ports';
 import {
   ChatNotificationSettings
 } from '@tgx/core-td-api-generated';
+import { CHAT_MUTE_FOREVER_SECONDS } from '@tgx/core-domain';
 import {
   TdNativeBridgeLike,
   TdNativeBridgeMetrics,
@@ -30,7 +30,6 @@ import { ChatIntent } from '../main/ets/contract/ChatIntent';
 import { ChatUiState } from '../main/ets/contract/ChatUiState';
 import { ChatEffect } from '../main/ets/contract/ChatEffect';
 import { chatReducer } from '../main/ets/reducer/ChatReducer';
-import { CHAT_MUTE_FOREVER_SECONDS, isChatMuted, withChatMuteFor } from '../main/ets/model/ChatMute';
 
 class TestNativeBridge implements TdNativeBridgeLike {
   version: string = '1.8.67-test';
@@ -189,36 +188,6 @@ function settle(): Promise<void> {
 
 export default function chatMuteStateTest(): void {
   describe('ChatMuteStateTest', () => {
-
-    it('isChatMuted_readsMuteForAndHonoursUseDefaultFlag', 0, () => {
-      expect(isChatMuted(null)).assertFalse();
-      expect(isChatMuted(settingsOf(0))).assertFalse();
-      expect(isChatMuted(settingsOf(CHAT_MUTE_FOREVER_SECONDS))).assertTrue();
-      expect(isChatMuted(settingsOf(3600, true))).assertFalse();
-    });
-
-    it('withChatMuteFor_keepsInt64SoundFieldsParseable', 0, () => {
-      const muted: ChatNotificationSettings = withChatMuteFor(null, true);
-      expect(muted.mute_for).assertEqual(CHAT_MUTE_FOREVER_SECONDS);
-      expect(muted.use_default_mute_for).assertFalse();
-      // 回归点：空串会让 TDLib 直接判 bad_request，int64 字段必须可解析。
-      expect(muted.sound_id).assertEqual('0');
-      expect(muted.story_sound_id).assertEqual('0');
-    });
-
-    it('withChatMuteFor_overridesOnlyMuteForOnSnapshot', 0, () => {
-      const source: ChatNotificationSettings = settingsOf(0);
-      source.use_default_show_preview = false;
-      source.show_preview = false;
-      source.disable_mention_notifications = true;
-      const next: ChatNotificationSettings = withChatMuteFor(source, true);
-      expect(next.mute_for).assertEqual(CHAT_MUTE_FOREVER_SECONDS);
-      expect(next.show_preview).assertFalse();
-      expect(next.disable_mention_notifications).assertTrue();
-      const unmuted: ChatNotificationSettings = withChatMuteFor(source, false);
-      expect(unmuted.mute_for).assertEqual(0);
-      expect(unmuted.use_default_mute_for).assertFalse();
-    });
 
     it('onChatMuteStateChanged_updatesMuteFlag', 0, () => {
       const result: ReducerResult<ChatUiState, ChatEffect> =

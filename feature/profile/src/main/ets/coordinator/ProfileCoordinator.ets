@@ -19,7 +19,9 @@ import {
   FileRegistry,
   formatFullName,
   getAvatarLetters,
-  getAvatarColorIndex
+  getAvatarColorIndex,
+  isChatMuted,
+  withChatMuteFor
 } from '@tgx/core-domain';
 import {
   User,
@@ -53,9 +55,21 @@ import {
   LinkPreview,
   TdChatType,
   ChatTypeSupergroup,
+  ChatNotificationSettings,
+  SetChatNotificationSettings,
+  encodeSetChatNotificationSettings,
+  UpdateChatNotificationSettings,
+  TdUpdate,
+  decodeTdUpdate,
   TdJsonRaw
 } from '@tgx/core-td-api-generated';
-import { TdPendingRequest, TdWireObject } from '@tgx/td-gateway';
+import {
+  TdPendingRequest,
+  TdRoutedEvent,
+  TdUpdateFilter,
+  TdUpdateSubscription,
+  TdWireObject
+} from '@tgx/td-gateway';
 import { Logger } from '@tgx/observability';
 import { Subscription } from '@tgx/platform-ports';
 import { ReducerEnv, ReducerResult } from '@tgx/feature-template';
@@ -71,7 +85,9 @@ import {
   OnSharedContentLoaded,
   OnSharedGroupsLoaded,
   OnSharedContentFailed,
-  OpenSharedChatRequested
+  OpenSharedChatRequested,
+  OnChatNotificationLoaded,
+  OnChatNotificationFailed
 } from '../contract/ProfileIntent';
 import {
   ProfileEffect,
@@ -79,7 +95,9 @@ import {
   FetchSharedContent,
   FetchSharedGroups,
   FetchMoreSharedContent,
-  OpenSharedChatEffect
+  OpenSharedChatEffect,
+  FetchChatNotification,
+  SetChatNotification
 } from '../contract/ProfileEffect';
 import { SharedMediaItem, SharedFileItem, SharedLinkItem, SharedGroupItem } from '../contract/SharedContentItems';
 import { profileReducer } from '../reducer/ProfileReducer';
@@ -343,6 +361,17 @@ function emojiStatusIndicator(user: User): string {
   return '';
 }
 
+/** createPrivateChat 在途期间的一个等待方。 */
+class PrivateChatWaiter {
+  readonly onReady: (chatId: number) => void;
+  readonly onFailed: () => void;
+
+  constructor(onReady: (chatId: number) => void, onFailed: () => void) {
+    this.onReady = onReady;
+    this.onFailed = onFailed;
+  }
+}
+
 export class ProfileCoordinator {
   private readonly scope: AccountScope;
   private readonly userId: number;
@@ -362,6 +391,15 @@ export class ProfileCoordinator {
   private readonly nextOffsets: Map<number, number> = new Map();
   /** 缓存目标用户的 private chatId，避免重复调用 createPrivateChat。 */
   private cachedPrivateChatId: number = 0;
+  /** createPrivateChat 在途时挂起的消费者，回包后统一放行。 */
+  private privateChatWaiters: PrivateChatWaiter[] = [];
+  private privateChatPending: boolean = false;
+  /** PROFILE-103 收尾：会话通知设置快照（getChat 回读 / update 推送维护），写请求以它为底本。 */
+  private chatNotificationSettings: ChatNotificationSettings | null = null;
+  /** PROFILE-103 收尾：updateChatNotificationSettings 订阅句柄（destroy 时退订）。 */
+  private notificationSubscription: TdUpdateSubscription | null = null;
+  /** 已订阅通知推送的 chatId，避免每次回读都重订一份。 */
+  private notificationChatId: number = 0;
   private destroyed: boolean = false;
 
   constructor(scope: AccountScope, userId: number, options?: ProfileCoordinatorOptions) {
@@ -457,6 +495,10 @@ export class ProfileCoordinator {
     }
     this.subscriptions.length = 0;
     this.listeners.length = 0;
+    if (this.notificationSubscription !== null) {
+      this.notificationSubscription.unsubscribe();
+      this.notificationSubscription = null;
+    }
     this.fileRegistry.stop();
     this.userRegistry.stop();
   }
@@ -564,6 +606,17 @@ export class ProfileCoordinator {
         break;
       }
 
+      case 'fetchChatNotification': {
+        this.fetchChatNotification();
+        break;
+      }
+
+      case 'setChatNotification': {
+        const set: SetChatNotification = effect as SetChatNotification;
+        this.executeSetChatNotification(set.muted);
+        break;
+      }
+
       default:
         break;
     }
@@ -588,10 +641,36 @@ export class ProfileCoordinator {
    */
   private fetchSharedContent(tab: number, isLoadMore: boolean = false): void {
     this.logger.info(TAG, 'fetch_shared_content', `userId=${this.userId},tab=${tab},isLoadMore=${isLoadMore}`);
+    this.withPrivateChatId(
+      `shared_tab=${tab}`,
+      (chatId: number): void => {
+        this.searchSharedContent(tab, chatId, isLoadMore);
+      },
+      (): void => {
+        this.failSharedContent(tab);
+      }
+    );
+  }
+
+  /**
+   * 私聊 chatId 是本页多项数据的公共前置（共享内容、会话通知设置）。
+   * 命中缓存直接回调；在途则排队，只发一条 createPrivateChat —— 首屏两路数据
+   * 同时开局，各发一份会白花一次往返。
+   */
+  private withPrivateChatId(
+    source: string,
+    onReady: (chatId: number) => void,
+    onFailed: () => void
+  ): void {
     if (this.cachedPrivateChatId > 0) {
-      this.searchSharedContent(tab, this.cachedPrivateChatId, isLoadMore);
+      onReady(this.cachedPrivateChatId);
       return;
     }
+    this.privateChatWaiters.push(new PrivateChatWaiter(onReady, onFailed));
+    if (this.privateChatPending) {
+      return;
+    }
+    this.privateChatPending = true;
     const req: CreatePrivateChat = new CreatePrivateChat();
     req.user_id = this.userId;
     const res: Result<TdPendingRequest, AppError> =
@@ -603,25 +682,44 @@ export class ProfileCoordinator {
         }
         if (out.err) {
           this.logger.logError(TAG, out.error);
-          this.failSharedContent(tab);
+          this.failPrivateChatWaiters();
           return;
         }
         if (out.ok) {
           const chat: Chat | null = decodeChat(out.value as TdJsonRaw);
           if (chat === null) {
-            this.failSharedContent(tab);
+            this.failPrivateChatWaiters();
             return;
           }
           this.cachedPrivateChatId = chat.id;
-          this.logger.info(TAG, 'shared_private_chat_ready', `tab=${tab},chatId=${chat.id}`);
-          this.searchSharedContent(tab, chat.id, isLoadMore);
+          this.logger.info(TAG, 'private_chat_ready', `source=${source},chatId=${chat.id}`);
+          this.releasePrivateChatWaiters(chat.id);
         }
       }).catch((): void => {
       });
+      return;
     }
     if (res.err) {
       this.logger.logError(TAG, res.error);
-      this.failSharedContent(tab);
+    }
+    this.failPrivateChatWaiters();
+  }
+
+  private releasePrivateChatWaiters(chatId: number): void {
+    const waiters: PrivateChatWaiter[] = this.privateChatWaiters;
+    this.privateChatWaiters = [];
+    this.privateChatPending = false;
+    for (let i = 0; i < waiters.length; i++) {
+      waiters[i].onReady(chatId);
+    }
+  }
+
+  private failPrivateChatWaiters(): void {
+    const waiters: PrivateChatWaiter[] = this.privateChatWaiters;
+    this.privateChatWaiters = [];
+    this.privateChatPending = false;
+    for (let i = 0; i < waiters.length; i++) {
+      waiters[i].onFailed();
     }
   }
 
@@ -809,6 +907,137 @@ export class ProfileCoordinator {
       }
     }
     return null;
+  }
+
+  // ------------------------------------------------------------------
+  // PROFILE-103 收尾：通知行真实态（读 getChat.notification_settings，写 setChatNotificationSettings）
+  // ------------------------------------------------------------------
+
+  private fetchChatNotification(): void {
+    this.logger.info(TAG, 'fetch_chat_notification', `userId=${this.userId}`);
+    this.withPrivateChatId(
+      'notification',
+      (chatId: number): void => {
+        this.readChatNotification(chatId);
+      },
+      (): void => {
+        this.dispatch(new OnChatNotificationFailed());
+      }
+    );
+  }
+
+  private readChatNotification(chatId: number): void {
+    const req: GetChat = new GetChat();
+    req.chat_id = chatId;
+    const res: Result<TdPendingRequest, AppError> =
+      this.scope.request('getChat', encodeGetChat(req) as TdWireObject);
+    if (res.ok) {
+      res.value.promise.then((out: Result<TdWireObject, AppError>): void => {
+        if (this.destroyed) {
+          return;
+        }
+        if (out.err) {
+          this.logger.logError(TAG, out.error);
+          this.dispatch(new OnChatNotificationFailed());
+          return;
+        }
+        if (out.ok) {
+          const chat: Chat | null = decodeChat(out.value as TdJsonRaw);
+          if (chat === null) {
+            this.dispatch(new OnChatNotificationFailed());
+            return;
+          }
+          // 同一次回读顺手订上推送：本端/它端改静音都能实时翻回来。
+          this.subscribeChatNotification(chatId);
+          this.applyChatNotificationSettings(chat.notification_settings);
+        }
+      }).catch((): void => {
+      });
+      return;
+    }
+    if (res.err) {
+      this.logger.logError(TAG, res.error);
+    }
+    this.dispatch(new OnChatNotificationFailed());
+  }
+
+  /** null（TDLib 没给设置）时不猜「未静音」，退回「未知」态。 */
+  private applyChatNotificationSettings(settings: ChatNotificationSettings | null): void {
+    if (settings === null) {
+      this.dispatch(new OnChatNotificationFailed());
+      return;
+    }
+    this.chatNotificationSettings = settings;
+    const muted: boolean = isChatMuted(settings);
+    this.logger.info(TAG, 'chat_notification_state', `muted=${muted},mute_for=${settings.mute_for}`);
+    this.dispatch(new OnChatNotificationLoaded(muted));
+  }
+
+  /**
+   * 静音/取消静音。以回读快照为底本、只改 mute_for —— TDLib 的 sound_id/story_sound_id
+   * 是 int64，写空串会被直接判 bad_request（见 core/domain ChatMute）。
+   * 不做乐观改写：写成功后再 getChat 复核一遍真值。
+   */
+  private executeSetChatNotification(muted: boolean): void {
+    const chatId: number = this.cachedPrivateChatId;
+    if (chatId === 0) {
+      this.dispatch(new OnChatNotificationFailed());
+      return;
+    }
+    const req: SetChatNotificationSettings = new SetChatNotificationSettings();
+    req.chat_id = chatId;
+    req.notification_settings = withChatMuteFor(this.chatNotificationSettings, muted);
+    const res: Result<TdPendingRequest, AppError> =
+      this.scope.request('setChatNotificationSettings', encodeSetChatNotificationSettings(req) as TdWireObject);
+    if (res.ok) {
+      res.value.promise.then((out: Result<TdWireObject, AppError>): void => {
+        if (this.destroyed) {
+          return;
+        }
+        if (out.err) {
+          this.logger.logError(TAG, out.error);
+          this.dispatch(new OnChatNotificationFailed());
+          return;
+        }
+        this.logger.info(TAG, 'chat_notification_written', `chatId=${chatId},mute=${muted}`);
+        this.readChatNotification(chatId);
+      }).catch((): void => {
+      });
+      return;
+    }
+    if (res.err) {
+      this.logger.logError(TAG, res.error);
+    }
+    this.dispatch(new OnChatNotificationFailed());
+  }
+
+  private subscribeChatNotification(chatId: number): void {
+    if (this.destroyed || this.notificationChatId === chatId) {
+      return;
+    }
+    if (this.notificationSubscription !== null) {
+      this.notificationSubscription.unsubscribe();
+      this.notificationSubscription = null;
+    }
+    const filter: TdUpdateFilter = {
+      clientId: this.scope.clientId,
+      types: ['updateChatNotificationSettings']
+    };
+    this.notificationSubscription = this.scope.gatewayInstance.subscribeUpdates(
+      filter,
+      (event: TdRoutedEvent): void => {
+        const update: TdUpdate | null = decodeTdUpdate(event.payload as TdJsonRaw);
+        if (update === null || update.type !== 'updateChatNotificationSettings') {
+          return;
+        }
+        const changed: UpdateChatNotificationSettings = update as UpdateChatNotificationSettings;
+        if (changed.chat_id !== chatId || this.destroyed) {
+          return;
+        }
+        this.applyChatNotificationSettings(changed.notification_settings);
+      }
+    );
+    this.notificationChatId = chatId;
   }
 
   /** Tab 3：getGroupsInCommon → 逐 id getChat 解析标题/副标题，全部回灌。 */

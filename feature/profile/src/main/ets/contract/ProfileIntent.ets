@@ -168,6 +168,33 @@ export class OpenSharedChatRequested implements Intent {
   }
 }
 
+/**
+ * PROFILE-103 收尾：通知行真实态。点行切换该私聊会话的静音态；
+ * reducer 在「未回读到真值」或「写请求在途」时判 no-op，
+ * 因此这一击的落点永远是 TDLib 的当前值，不是本地猜的值。
+ */
+export class NotificationRowTapped implements Intent {
+  readonly kind: 'notificationRowTapped' = 'notificationRowTapped';
+}
+
+/**
+ * getChat.notification_settings / updateChatNotificationSettings 回灌真实静音态。
+ * muted 为本会话是否静音（use_default_mute_for=true 视为未静音，与 feature/chat 同口径）。
+ */
+export class OnChatNotificationLoaded implements Intent {
+  readonly kind: 'onChatNotificationLoaded' = 'onChatNotificationLoaded';
+  readonly muted: boolean;
+
+  constructor(muted: boolean) {
+    this.muted = muted;
+  }
+}
+
+/** 通知态读不到/写失败：行必须退回「未知」，不能继续显示上一个真值。 */
+export class OnChatNotificationFailed implements Intent {
+  readonly kind: 'onChatNotificationFailed' = 'onChatNotificationFailed';
+}
+
 export type ProfileIntent =
   | MessageUserRequested
   | OnProfileLoaded
@@ -181,4 +208,7 @@ export type ProfileIntent =
   | OnSharedContentLoaded
   | OnSharedGroupsLoaded
   | OnSharedContentFailed
-  | OpenSharedChatRequested;
+  | OpenSharedChatRequested
+  | NotificationRowTapped
+  | OnChatNotificationLoaded
+  | OnChatNotificationFailed;

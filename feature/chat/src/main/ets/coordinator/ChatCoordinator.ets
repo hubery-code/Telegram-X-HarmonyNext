@@ -144,7 +144,15 @@ import {
   UpdateChatNotificationSettings,
   MessagePoll
 } from '@tgx/core-td-api-generated';
-import { FileRegistry, formatFullName, MessageListState, MessageProjection, UserRegistry } from '@tgx/core-domain';
+import {
+  FileRegistry,
+  formatFullName,
+  isChatMuted,
+  MessageListState,
+  MessageProjection,
+  UserRegistry,
+  withChatMuteFor
+} from '@tgx/core-domain';
 import { TdPendingRequest, TdRoutedEvent, TdUpdateFilter, TdUpdateSubscription, TdWireObject, TdWireValue } from '@tgx/td-gateway';
 import { Subscription } from '@tgx/platform-ports';
 import { Result } from '@tgx/core-common';
@@ -156,7 +164,6 @@ import { MediaAttachment, decodeWaveform, encodeWaveform } from '../model/MediaA
 import { LinkPreviewInfo } from '../model/LinkPreviewInfo';
 import { ChatSearchResultItem } from '../model/ChatSearchResultItem';
 import { PinnedMessageInfo } from '../model/PinnedMessageInfo';
-import { isChatMuted, withChatMuteFor } from '../model/ChatMute';
 import { parseFormattedText } from '../model/FormattedTextParser';
 import { pollViewOf, PollView } from '../model/PollView';
 import {

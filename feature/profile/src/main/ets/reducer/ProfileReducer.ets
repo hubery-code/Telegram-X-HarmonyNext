@@ -21,6 +21,8 @@ import {
   OnSharedGroupsLoaded,
   OnSharedContentFailed,
   OpenSharedChatRequested,
+  OnChatNotificationLoaded,
+  OnChatNotificationFailed,
   ProfileIntent
 } from '../contract/ProfileIntent';
 import {
@@ -29,6 +31,8 @@ import {
   FetchSharedGroups,
   FetchMoreSharedContent,
   OpenSharedChatEffect,
+  FetchChatNotification,
+  SetChatNotification,
   ProfileEffect
 } from '../contract/ProfileEffect';
 
@@ -79,17 +83,53 @@ export const profileReducer: Reducer<ProfileUiState, ProfileIntent, ProfileEffec
     case 'onProfileLoaded': {
       const loaded: OnProfileLoaded = intent as OnProfileLoaded;
       const next: ProfileUiState = loadedProfileState(state, loaded);
-      // 默认 Tab（媒体）在页面打开时一次都没被拉过，直接空数组渲染就是撒谎：
-      // 用户看到的是「暂无媒体文件」，而 TDLib 根本没被问过。首屏回灌后补一发。
-      if (next.sharedInitialRequested) {
+      // 默认 Tab（媒体）与通知态都是页面打开即要问 TDLib 的东西：
+      // 不主动拉，用户看到的空网格和写死的「开启」都是在撒谎。各自只发一次
+      // （updateUser 订阅晚到还会再回灌一次 profile，不闩住会反复重发）。
+      const effects: ProfileEffect[] = [];
+      let staged: ProfileUiState = next;
+      if (!next.sharedInitialRequested) {
+        effects.push(new FetchSharedContent(next.activeSharedTab));
+        staged = staged.copyWith({
+          sharedInitialRequested: true,
+          sharedLoading: true,
+          sharedLoadFailed: false
+        });
+      }
+      if (!next.notificationRequested) {
+        effects.push(new FetchChatNotification());
+        staged = staged.copyWith({ notificationRequested: true });
+      }
+      if (effects.length === 0) {
         return reduced(next);
       }
-      const effect: FetchSharedContent = new FetchSharedContent(next.activeSharedTab);
-      return reduced(next.copyWith({
-        sharedInitialRequested: true,
-        sharedLoading: true,
-        sharedLoadFailed: false
-      }), [effect]);
+      return reduced(staged, effects);
+    }
+
+    case 'notificationRowTapped': {
+      // 未回读到真值前不响应：此时点一下会把「未知」翻成一个凭空的静音态。
+      if (!state.notificationReady || state.notificationUpdating) {
+        return reduced(state);
+      }
+      const effect: SetChatNotification = new SetChatNotification(!state.notificationMuted);
+      return reduced(state.copyWith({ notificationUpdating: true }), [effect]);
+    }
+
+    case 'onChatNotificationLoaded': {
+      const loaded: OnChatNotificationLoaded = intent as OnChatNotificationLoaded;
+      return reduced(state.copyWith({
+        notificationMuted: loaded.muted,
+        notificationReady: true,
+        notificationUpdating: false
+      }));
+    }
+
+    case 'onChatNotificationFailed': {
+      // 读不到就退回「未知」，继续显示上一个真值同样是撒谎。
+      return reduced(state.copyWith({
+        notificationReady: false,
+        notificationUpdating: false
+      }));
     }
 
     case 'onBioLoaded': {

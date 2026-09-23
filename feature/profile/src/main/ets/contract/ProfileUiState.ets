@@ -29,8 +29,6 @@ export interface ProfileUiStateOptions {
   errorMessage?: string | null;
   /** 生日文案：'YYYY年M月D日 (N 岁)'；无生日为空串。 */
   birthdayText?: string;
-  /** 通知状态文案（占位，默认 '开启'）。 */
-  notificationText?: string;
   /** 共享内容当前选中 Tab：0 媒体 / 1 文件 / 2 链接 / 3 群组。 */
   activeSharedTab?: number;
   /** 共享媒体条目（已加载的缓存页）。 */
@@ -53,6 +51,14 @@ export interface ProfileUiStateOptions {
   sharedInitialRequested?: boolean;
   /** 当前 Tab 的共享内容请求失败（与「确实没有内容」区分开，否则页面在撒谎）。 */
   sharedLoadFailed?: boolean;
+  /** PROFILE-103 收尾：该私聊会话是否处于静音态（真值来自 getChat/update 推送）。 */
+  notificationMuted?: boolean;
+  /** 通知态是否已回读到真值；未就绪时页面显示 '—'，且点击无效（不拿默认值充当真值）。 */
+  notificationReady?: boolean;
+  /** 写请求在途，期间重复点击 no-op，避免两次 setChatNotificationSettings 交叉回灌。 */
+  notificationUpdating?: boolean;
+  /** 首屏是否已发起过通知态读取（只发一次，订阅晚到的 profile 回灌不重复触发）。 */
+  notificationRequested?: boolean;
 }
 
 export class ProfileUiState {
@@ -68,7 +74,6 @@ export class ProfileUiState {
   readonly isLoading: boolean;
   readonly errorMessage: string | null;
   readonly birthdayText: string;
-  readonly notificationText: string;
   readonly activeSharedTab: number;
   readonly sharedMedia: SharedMediaItem[];
   readonly sharedFiles: SharedFileItem[];
@@ -80,6 +85,10 @@ export class ProfileUiState {
   readonly emojiStatusEmoji: string;
   readonly sharedInitialRequested: boolean;
   readonly sharedLoadFailed: boolean;
+  readonly notificationMuted: boolean;
+  readonly notificationReady: boolean;
+  readonly notificationUpdating: boolean;
+  readonly notificationRequested: boolean;
 
   constructor(
     userId: number = 0,
@@ -94,7 +103,6 @@ export class ProfileUiState {
     isLoading: boolean = true,
     errorMessage: string | null = null,
     birthdayText: string = '',
-    notificationText: string = '开启',
     activeSharedTab: number = 0,
     sharedMedia: SharedMediaItem[] = [],
     sharedFiles: SharedFileItem[] = [],
@@ -105,7 +113,11 @@ export class ProfileUiState {
     sharedLoadingMore: boolean = false,
     emojiStatusEmoji: string = '',
     sharedInitialRequested: boolean = false,
-    sharedLoadFailed: boolean = false
+    sharedLoadFailed: boolean = false,
+    notificationMuted: boolean = false,
+    notificationReady: boolean = false,
+    notificationUpdating: boolean = false,
+    notificationRequested: boolean = false
   ) {
     this.userId = userId;
     this.displayName = displayName;
@@ -119,7 +131,6 @@ export class ProfileUiState {
     this.isLoading = isLoading;
     this.errorMessage = errorMessage;
     this.birthdayText = birthdayText;
-    this.notificationText = notificationText;
     this.activeSharedTab = activeSharedTab;
     this.sharedMedia = sharedMedia;
     this.sharedFiles = sharedFiles;
@@ -131,6 +142,10 @@ export class ProfileUiState {
     this.emojiStatusEmoji = emojiStatusEmoji;
     this.sharedInitialRequested = sharedInitialRequested;
     this.sharedLoadFailed = sharedLoadFailed;
+    this.notificationMuted = notificationMuted;
+    this.notificationReady = notificationReady;
+    this.notificationUpdating = notificationUpdating;
+    this.notificationRequested = notificationRequested;
   }
 
   static initial(userId: number = 0): ProfileUiState {
@@ -151,7 +166,6 @@ export class ProfileUiState {
       options.isLoading !== undefined ? options.isLoading : this.isLoading,
       options.errorMessage !== undefined ? options.errorMessage : this.errorMessage,
       options.birthdayText !== undefined ? options.birthdayText : this.birthdayText,
-      options.notificationText !== undefined ? options.notificationText : this.notificationText,
       options.activeSharedTab !== undefined ? options.activeSharedTab : this.activeSharedTab,
       options.sharedMedia !== undefined ? options.sharedMedia : this.sharedMedia,
       options.sharedFiles !== undefined ? options.sharedFiles : this.sharedFiles,
@@ -162,7 +176,11 @@ export class ProfileUiState {
       options.sharedLoadingMore !== undefined ? options.sharedLoadingMore : this.sharedLoadingMore,
       options.emojiStatusEmoji !== undefined ? options.emojiStatusEmoji : this.emojiStatusEmoji,
       options.sharedInitialRequested !== undefined ? options.sharedInitialRequested : this.sharedInitialRequested,
-      options.sharedLoadFailed !== undefined ? options.sharedLoadFailed : this.sharedLoadFailed
+      options.sharedLoadFailed !== undefined ? options.sharedLoadFailed : this.sharedLoadFailed,
+      options.notificationMuted !== undefined ? options.notificationMuted : this.notificationMuted,
+      options.notificationReady !== undefined ? options.notificationReady : this.notificationReady,
+      options.notificationUpdating !== undefined ? options.notificationUpdating : this.notificationUpdating,
+      options.notificationRequested !== undefined ? options.notificationRequested : this.notificationRequested
     );
   }
 }

@@ -14,7 +14,14 @@ import { getAvatarColorIndex } from '@tgx/core-domain';
 import { fileUri } from '@kit.CoreFileKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { ProfileUiState } from '../contract/ProfileUiState';
-import { ProfileIntent, MessageUserRequested, OnSharedTabSelected, LoadMoreSharedContent, OpenSharedChatRequested } from '../contract/ProfileIntent';
+import {
+  ProfileIntent,
+  MessageUserRequested,
+  OnSharedTabSelected,
+  LoadMoreSharedContent,
+  OpenSharedChatRequested,
+  NotificationRowTapped
+} from '../contract/ProfileIntent';
 import { SharedMediaItem, SharedFileItem, SharedLinkItem, SharedGroupItem } from '../contract/SharedContentItems';
 
 
@@ -228,7 +235,18 @@ export struct ProfilePage {
     })
   }
 
-  /** PROFILE-103：通知行（🔔 通知 / 开启）。 */
+  /** 通知行文案：真值未回读前不写死「开启」，写请求在途时显示省略号。 */
+  private notificationLabel(): string {
+    if (this.uiState.notificationUpdating) {
+      return '…';
+    }
+    if (!this.uiState.notificationReady) {
+      return '—';
+    }
+    return this.uiState.notificationMuted ? '静音' : '开启';
+  }
+
+  /** PROFILE-103 收尾：通知行（🔔 通知 / 真实静音态，点按切换）。 */
   @Builder
   NotificationRow() {
     Row() {
@@ -241,7 +259,7 @@ export struct ProfilePage {
         .fontColor(this.T.colors.textPrimary)
         .margin({ left: this.T.spacing.sm })
         .layoutWeight(1)
-      Text(this.uiState.notificationText)
+      Text(this.notificationLabel())
         .fontSize(this.T.typography.subheadline.fontSize)
         .fontColor(this.T.colors.textSecondary)
     }
@@ -252,6 +270,9 @@ export struct ProfilePage {
       right: this.T.spacing.screenInset,
       top: this.T.spacing.sm,
       bottom: this.T.spacing.sm
+    })
+    .onClick(() => {
+      this.onDispatch(new NotificationRowTapped());
     })
   }
 

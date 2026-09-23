@@ -49,5 +49,23 @@ export class OpenSharedChatEffect implements Effect {
   }
 }
 
+/**
+ * PROFILE-103 收尾：读该私聊会话的通知设置（createPrivateChat → getChat）。
+ * 首屏与「写成功后复核」共用这一条 effect —— 通知行不做乐观更新。
+ */
+export class FetchChatNotification implements Effect {
+  readonly kind: 'fetchChatNotification' = 'fetchChatNotification';
+}
+
+/** PROFILE-103 收尾：写会话静音态（setChatNotificationSettings，以回读快照为底本只改 mute_for）。 */
+export class SetChatNotification implements Effect {
+  readonly kind: 'setChatNotification' = 'setChatNotification';
+  readonly muted: boolean;
+
+  constructor(muted: boolean) {
+    this.muted = muted;
+  }
+}
+
 export type ProfileEffect = CreatePrivateChatEffect | FetchSharedContent | FetchSharedGroups |
-  FetchMoreSharedContent | OpenSharedChatEffect;
+  FetchMoreSharedContent | OpenSharedChatEffect | FetchChatNotification | SetChatNotification;

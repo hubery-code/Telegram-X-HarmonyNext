@@ -15,6 +15,9 @@ export {
   OnSharedGroupsLoaded,
   OnSharedContentFailed,
   OpenSharedChatRequested,
+  NotificationRowTapped,
+  OnChatNotificationLoaded,
+  OnChatNotificationFailed,
   ProfileIntent
 } from './contract/ProfileIntent';
 export {
@@ -23,6 +26,8 @@ export {
   FetchSharedGroups,
   FetchMoreSharedContent,
   OpenSharedChatEffect,
+  FetchChatNotification,
+  SetChatNotification,
   ProfileEffect
 } from './contract/ProfileEffect';
 export {

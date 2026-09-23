@@ -19,7 +19,10 @@ import {
   OnSharedContentLoaded,
   OnSharedGroupsLoaded,
   OnSharedContentFailed,
-  OpenSharedChatRequested
+  OpenSharedChatRequested,
+  NotificationRowTapped,
+  OnChatNotificationLoaded,
+  OnChatNotificationFailed
 } from '../main/ets/contract/ProfileIntent';
 import {
   ProfileEffect,
@@ -27,7 +30,8 @@ import {
   FetchSharedContent,
   FetchSharedGroups,
   FetchMoreSharedContent,
-  OpenSharedChatEffect
+  OpenSharedChatEffect,
+  SetChatNotification
 } from '../main/ets/contract/ProfileEffect';
 import {
   SharedMediaItem,
@@ -91,13 +95,83 @@ export default function profileReducerTest(): void {
       expect(result.state.statusText).assertEqual('online');
       expect(result.state.avatarLetters).assertEqual('TU');
       expect(result.state.avatarColorIndex).assertEqual(3);
-      // PROFILE-103 收尾：默认 Tab（媒体）必须在首屏回灌后真的去问 TDLib，
-      // 否则页面直接显示「暂无媒体文件」是在替一个从未发出的请求撒谎。
-      expect(result.effects.length).assertEqual(1);
+      // PROFILE-103 收尾：默认 Tab（媒体）与通知态必须在首屏回灌后真的去问 TDLib，
+      // 否则页面直接显示「暂无媒体文件」和写死的「开启」是在替两个从未发出的请求撒谎。
+      expect(result.effects.length).assertEqual(2);
       expect(result.effects[0].kind).assertEqual('fetchSharedContent');
       expect((result.effects[0] as FetchSharedContent).tab).assertEqual(0);
+      expect(result.effects[1].kind).assertEqual('fetchChatNotification');
       expect(result.state.sharedLoading).assertTrue();
       expect(result.state.sharedInitialRequested).assertTrue();
+      expect(result.state.notificationRequested).assertTrue();
+      // 未回读到真值前，通知行既不许显示「开启」也不许被点成静音。
+      expect(result.state.notificationReady).assertFalse();
+    });
+
+    it('notificationRowTapped_beforeReady_isNoOp', 0, () => {
+      const result: ReducerResult<ProfileUiState, ProfileEffect> = profileReducer(
+        makeState(42),
+        new NotificationRowTapped(),
+        makeEnv()
+      );
+      expect(result.effects.length).assertEqual(0);
+      expect(result.state.notificationUpdating).assertFalse();
+    });
+
+    it('notificationRowTapped_whenReady_emitsOppositeOfReadValue', 0, () => {
+      const ready: ProfileUiState = makeState(42).copyWith({
+        notificationMuted: false,
+        notificationReady: true
+      });
+      const toMute: ReducerResult<ProfileUiState, ProfileEffect> = profileReducer(
+        ready, new NotificationRowTapped(), makeEnv()
+      );
+      expect(toMute.effects.length).assertEqual(1);
+      expect(toMute.effects[0].kind).assertEqual('setChatNotification');
+      expect((toMute.effects[0] as SetChatNotification).muted).assertTrue();
+      expect(toMute.state.notificationUpdating).assertTrue();
+
+      const muted: ProfileUiState = ready.copyWith({ notificationMuted: true });
+      const toUnmute: ReducerResult<ProfileUiState, ProfileEffect> = profileReducer(
+        muted, new NotificationRowTapped(), makeEnv()
+      );
+      expect((toUnmute.effects[0] as SetChatNotification).muted).assertFalse();
+    });
+
+    it('notificationRowTapped_whileUpdating_isSerialized', 0, () => {
+      const busy: ProfileUiState = makeState(42).copyWith({
+        notificationMuted: false,
+        notificationReady: true,
+        notificationUpdating: true
+      });
+      const result: ReducerResult<ProfileUiState, ProfileEffect> = profileReducer(
+        busy, new NotificationRowTapped(), makeEnv()
+      );
+      // 两次点击会打出两条 setChatNotificationSettings，回灌顺序不确定 → 必须串行。
+      expect(result.effects.length).assertEqual(0);
+    });
+
+    it('onChatNotificationLoaded_setsRealValueAndClearsUpdating', 0, () => {
+      const busy: ProfileUiState = makeState(42).copyWith({ notificationUpdating: true });
+      const result: ReducerResult<ProfileUiState, ProfileEffect> = profileReducer(
+        busy, new OnChatNotificationLoaded(true), makeEnv()
+      );
+      expect(result.state.notificationMuted).assertTrue();
+      expect(result.state.notificationReady).assertTrue();
+      expect(result.state.notificationUpdating).assertFalse();
+    });
+
+    /** 读不到/写失败必须退回「未知」，继续显示上一个真值同样是撒谎。 */
+    it('onChatNotificationFailed_hidesStaleValue', 0, () => {
+      const shown: ProfileUiState = makeState(42).copyWith({
+        notificationMuted: true,
+        notificationReady: true
+      });
+      const result: ReducerResult<ProfileUiState, ProfileEffect> = profileReducer(
+        shown, new OnChatNotificationFailed(), makeEnv()
+      );
+      expect(result.state.notificationReady).assertFalse();
+      expect(result.state.notificationUpdating).assertFalse();
     });
 
     it('onProfileLoaded_secondDeliveryDoesNotRefetch', 0, () => {
