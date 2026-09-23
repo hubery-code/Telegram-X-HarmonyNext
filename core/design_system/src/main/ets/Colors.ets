@@ -12,6 +12,7 @@
  *   textSecondary         metadata, timestamps
  *   textTertiary          disabled / least-important text
  *   textOnAccent          text on accent-colored fills
+ *   textOnScrim           text/icons painted over a photo cover or scrim
  *   accent                links, primary buttons, toggles
  *   accentPressed         accent pressed/highlighted state
  *   destructive           delete, leave, report
@@ -37,6 +38,7 @@ export interface ColorTokens extends Record<string, string> {
   textSecondary: string;
   textTertiary: string;
   textOnAccent: string;
+  textOnScrim: string;
   accent: string;
   accentPressed: string;
   destructive: string;
@@ -60,6 +62,7 @@ export const LightColors: ColorTokens = {
   textSecondary: '#FF8E8E93',
   textTertiary: '#FFC4C4C6',
   textOnAccent: '#FFFFFFFF',
+  textOnScrim: '#FFFFFFFF',
   accent: '#FF2481CC',
   accentPressed: '#FF1B6BAF',
   destructive: '#FFFF3B30',
@@ -83,6 +86,7 @@ export const DarkColors: ColorTokens = {
   textSecondary: '#FF98989F',
   textTertiary: '#FF636366',
   textOnAccent: '#FF000000',
+  textOnScrim: '#FFFFFFFF',
   accent: '#FF30A3F0',
   accentPressed: '#FF58B7F4',
   destructive: '#FFFF453A',
@@ -107,6 +111,7 @@ export const COLOR_TOKEN_NAMES: string[] = [
   'textSecondary',
   'textTertiary',
   'textOnAccent',
+  'textOnScrim',
   'accent',
   'accentPressed',
   'destructive',

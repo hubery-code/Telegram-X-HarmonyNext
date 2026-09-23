@@ -157,7 +157,14 @@
 > **开启密聊**（`createNewSecretChat`，回执 `secretChat.id` 即 `chat.id`，复用同一条 `onOpenChat` 导航，无需新路由）、
 > **屏蔽用户 / 取消屏蔽**（本 schema 无 `blockUser`，走 `setMessageSenderBlockList`：屏蔽写 `blockListMain`、解除传 `null`；
 > 真值取自那一次 `getChat` 的 `block_list`，读不到时菜单标「未读取」且点击 no-op，写后 `getChat` 复核，并订阅 `updateChatBlockList`）。
-> 设备实证见 `PROGRESS.md`「已完成」表。该包剩余：封面大图头部。
+> 设备实证见 `PROGRESS.md`「已完成」表。
+> **同日追加（PROFILE-COVER）**：**封面大图头部**交付，PROFILE-103 至此**全量完成** —— 头部不再是 56vp 小圆头像，而是对齐 Android
+> `ProfileController.getHeaderHeight()`（56dp 收起 ↔ 234dp 展开）与 `ComplexHeaderView` 的 **`profile_photo.big` 全出血封面**：
+> 无照片时落调色板纯色 + 大字母，上下两道遮罩**只在拿到真照片时才画**（同 Android `topShadow 0x77000000` / `bottomShadow 0x66000000`），
+> 姓名/emoji 状态/在线态画在遮罩上，滚过 178vp 临界点后工具条转实心底、标题显形、图标由封面白切回主题 `icon` 色。
+> 为此新增语义 token **`colors.textOnScrim`**（两主题恒白）—— 深色主题 `textOnAccent` 是黑色，压在照片上直接不可读，不能复用。
+> 真机取证顺带抓出两个只有渲染才暴露的问题：`Scroll.align` 默认 `Alignment.Center` 把不足一屏的整页垂直居中（封面顶部空出白带、
+> 白色工具条图标消失在白底），而第一版用 `constraintSize({minHeight:'100%'})` 修反而把封面压扁、页面失去滚动，正解是 `.align(Alignment.TopStart)`。
 
 | 功能 ID | 功能名 |
 |---|---|

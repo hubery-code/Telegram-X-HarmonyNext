@@ -79,5 +79,14 @@ export default function colorsTest() {
       expect(contrastRatio(LightColors.textOnAccent, LightColors.accent) >= 3.0).assertTrue();
       expect(contrastRatio(DarkColors.textOnAccent, DarkColors.accent) >= 3.0).assertTrue();
     });
+
+    // textOnScrim 存在的理由：深色主题下 textOnAccent 是黑色，压在照片封面上直接不可读。
+    it('textOnScrim_staysWhiteOverScrim', 0, () => {
+      expect(LightColors.textOnScrim).assertEqual('#FFFFFFFF');
+      expect(DarkColors.textOnScrim).assertEqual('#FFFFFFFF');
+      expect(DarkColors.textOnScrim !== DarkColors.textOnAccent).assertTrue();
+      expect(contrastRatio(LightColors.textOnScrim, LightColors.scrim) >= 4.5).assertTrue();
+      expect(contrastRatio(DarkColors.textOnScrim, DarkColors.scrim) >= 4.5).assertTrue();
+    });
   });
 }

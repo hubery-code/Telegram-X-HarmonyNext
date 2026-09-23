@@ -53,10 +53,11 @@ const gap = resolveToken(theme, 'spacing.md');   // 12；未知名返回 undefin
 
 ## 测试
 
-`./hvigorw test --mode module -p module=core_design_system@default -p product=default --no-daemon` —— 25 用例（Colors 7 / FontScale 7 / Tokens 5 / Theme 6），覆盖：深浅色映射完整且互不相同、WCAG 对比度（正文 4.5 / 次级 3.0 / 气泡与 accent 上文字 3.0）、fontScale 边界 0.85/1.0/1.15/1.3/2.0 与 clamp、最小可读字号、间距/圆角/动画 token 存在性与有序性、`resolveToken` 五命名空间与未知名返回 undefined。
+`./hvigorw test --mode module -p module=core_design_system@default -p product=default --no-daemon` —— 54 用例（Colors 8 / FontScale 7 / Tokens 5 / Theme 6 / ChatFontSize 15 / ThemeManager 13），覆盖：深浅色映射完整且互不相同、WCAG 对比度（正文 4.5 / 次级 3.0 / 气泡与 accent 上文字 3.0 / 遮罩上文字 4.5）、fontScale 边界 0.85/1.0/1.15/1.3/2.0 与 clamp、最小可读字号、间距/圆角/动画 token 存在性与有序性、`resolveToken` 五命名空间与未知名返回 undefined。
 
 ## 交接说明
 
 - 深浅色色板取自 Android 参考工程的语义概念（深底浅字 / 浅底深字、accent 深浅色不同、气泡双色），非逐值拷贝。
 - 深色 `textOnAccent` 为黑色：深色 accent 较亮（#30A3F0），白字对比度仅 2.75 不达 WCAG 3.0，黑字约 7.6。
+- 正因如此另立 `textOnScrim`（深浅色**都白**）：压在照片封面/scrim 上的文字不能复用 `textOnAccent`，否则深色主题会给出黑字，照片上直接不可读。
 - 下一步（非本工作包）：UI-002 typed navigation 之后，entry 装配 sample 页做深浅色 + 大字体真机截图验收。

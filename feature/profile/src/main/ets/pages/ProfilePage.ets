@@ -2,8 +2,8 @@
  * feature/profile — 用户资料页（PROFILE-101；PROFILE-103 增强）。
  *
  * 对齐 Android ProfileController 的信息面：
- * 大头像 + 展示名 + 在线状态 + @username + 手机号 + 简介 + 生日 + 通知 +
- * ⋮ 动作菜单 + 下半页共享内容四 Tab（媒体/文件/链接/群组）。
+ * 封面大图头部（头像全出血 + 遮罩上的展示名/在线状态）+ @username + 手机号 +
+ * 简介 + 生日 + 通知 + ⋮ 动作菜单 + 下半页共享内容四 Tab（媒体/文件/链接/群组）。
  *
  * 集成契约保持三 prop：uiState / onDispatch / onBack（entry 装配不变）。
  * 全部颜色/间距/字号走 design tokens（core-design-system）。
@@ -49,8 +49,13 @@ const AVATAR_PALETTE: string[] = [
   '#FF309EBA', '#FF368AD1', '#FFC7508B'
 ];
 
-const BACK_ARROW_SIZE: number = 44;
-const AVATAR_SIZE: number = 96;
+/**
+ * 封面头部尺寸，对齐 Android ProfileController/Size.java：
+ * 展开态头部 234dp（头像铺满），收起态只剩 56dp 工具条。
+ */
+const TOOLBAR_HEIGHT: number = 56;
+const COVER_HEIGHT: number = 234;
+const COVER_LETTER_SIZE: number = 90;
 const MESSAGE_BUTTON_HEIGHT: number = 44;
 
 /** 共享内容 Tab 描述（图标 + 文案）。 */
@@ -84,6 +89,41 @@ export struct ProfilePage {
   @Prop uiState: ProfileUiState = ProfileUiState.initial();
   onDispatch: (intent: ProfileIntent) => void = (): void => {};
   onBack: () => void = (): void => {};
+
+  /**
+   * 封面是否已滚过工具条。工具条压在封面之上（Android 同款全出血头部），
+   * 滚过临界点后换成实心底 + 主题色图标。只在布尔值真的变化时写 @State，
+   * 避免 onDidScroll 每帧触发整页重排。
+   */
+  @State private coverScrolled: boolean = false;
+  private scroller: Scroller = new Scroller();
+
+  /** 封面底图：profile_photo.big 落地路径可用才画照片，否则画调色板纯色+字母。 */
+  private hasCover(): boolean {
+    return this.uiState.avatarPath !== null && this.uiState.avatarPath.length > 0;
+  }
+
+  /** 封面滚过临界点的位移量：照片高度减去工具条高度。 */
+  private coverCollapseOffset(): number {
+    return COVER_HEIGHT - TOOLBAR_HEIGHT;
+  }
+
+  private headerIconColor(): string {
+    return this.headerOverCover() ? this.T.colors.textOnScrim : this.T.colors.icon;
+  }
+
+  /**
+   * 工具条是否压在封面上。加载/错误占位页没有封面，此时工具条必须回到实心底 +
+   * 主题色图标，否则白色图标会消失在白底上。
+   */
+  private isPlaceholderScreen(): boolean {
+    return this.uiState.displayName.length === 0
+      && (this.uiState.isLoading || this.uiState.errorMessage !== null);
+  }
+
+  private headerOverCover(): boolean {
+    return !this.coverScrolled && !this.isPlaceholderScreen();
+  }
 
   private avatarColor(index: number): string {
     if (index < 0 || index >= AVATAR_PALETTE.length) {
@@ -159,51 +199,116 @@ export struct ProfilePage {
       Image($r('app.media.ic_back'))
         .width(24)
         .height(24)
-        .fillColor(this.T.colors.accent)
+        .fillColor(this.headerIconColor())
         .margin({ left: this.T.spacing.xs, right: this.T.spacing.md })
         .onClick(() => {
           this.onBack();
         })
 
-      Text('User Info')
+      Text(this.uiState.displayName.length > 0 ? this.uiState.displayName : 'User Info')
         .fontSize(this.T.typography.title.fontSize)
         .fontWeight(this.T.typography.title.fontWeight)
         .fontColor(this.T.colors.textPrimary)
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
         .layoutWeight(1)
+        .opacity(this.headerOverCover() ? 0 : 1)
 
       Image($r('app.media.ic_more_vert'))
         .width(24)
         .height(24)
-        .fillColor(this.T.colors.textPrimary)
+        .fillColor(this.headerIconColor())
         .margin({ right: this.T.spacing.xs })
         .bindMenu(this.menuElements())
     }
     .width('100%')
-    .height(56)
+    .height(TOOLBAR_HEIGHT)
     .alignItems(VerticalAlign.Center)
     .padding({ left: this.T.spacing.sm, right: this.T.spacing.sm })
-    .backgroundColor(this.T.colors.background)
+    .backgroundColor(this.headerOverCover() ? Color.Transparent : this.T.colors.background)
+    .animation({ duration: this.T.motion.durationFast })
   }
 
+  /**
+   * 封面大图头部（PROFILE-103 收尾项）。
+   *
+   * Android 侧的「封面」并不是独立壁纸图，而是把头像放大到全出血（ProfileController
+   * setHeaderPhoto → AvatarReceiver.requestPhoto(profilePhoto.big)）：
+   * 有照片时照片铺满 + 底部黑色渐变遮罩，名字/状态压在遮罩上（白色）；
+   * 无照片时按 Telegram 惯例用调色板纯色底 + 大号字母，不加遮罩。
+   */
   @Builder
-  Avatar() {
-    if (this.uiState.avatarPath !== null && this.uiState.avatarPath.length > 0) {
-      Image(toSandboxUri(this.uiState.avatarPath))
-        .width(AVATAR_SIZE)
-        .height(AVATAR_SIZE)
-        .borderRadius(this.T.radius.full)
-        .objectFit(ImageFit.Cover)
-    } else {
-      Text(this.uiState.avatarLetters.length > 0 ? this.uiState.avatarLetters : '?')
-        .width(AVATAR_SIZE)
-        .height(AVATAR_SIZE)
-        .borderRadius(this.T.radius.full)
+  Cover() {
+    Stack({ alignContent: Alignment.BottomStart }) {
+      if (this.hasCover()) {
+        Image(toSandboxUri(this.uiState.avatarPath))
+          .width('100%')
+          .height(COVER_HEIGHT)
+          .objectFit(ImageFit.Cover)
+
+        // 上下两道遮罩合成一层：Android ComplexHeaderView 只在拿到真照片时画
+        // topShadow(0x77000000) + bottomShadow(0x66000000)。顶部那道是为了让工具条的
+        // 白色返回/⋮ 图标压在浅色照片上仍然可读。
+        Column()
+          .width('100%')
+          .height(COVER_HEIGHT)
+          .linearGradient({
+            angle: 180,
+            colors: [
+              [this.T.colors.scrim, 0],
+              [Color.Transparent, 0.45],
+              [Color.Transparent, 0.6],
+              [this.T.colors.scrim, 1]
+            ]
+          })
+      } else {
+        Column() {
+          Text(this.uiState.avatarLetters.length > 0 ? this.uiState.avatarLetters : '?')
+            .fontSize(COVER_LETTER_SIZE)
+            .fontWeight(FontWeight.Medium)
+            .fontColor(this.T.colors.textOnScrim)
+        }
+        .width('100%')
+        .height(COVER_HEIGHT)
         .backgroundColor(this.avatarColor(this.uiState.avatarColorIndex))
-        .fontColor(this.T.colors.textOnAccent)
-        .fontSize(36)
-        .fontWeight(FontWeight.Medium)
-        .textAlign(TextAlign.Center)
+        .justifyContent(FlexAlign.Center)
+        .alignItems(HorizontalAlign.Center)
+      }
+
+      Column() {
+        Text(this.uiState.displayName.length > 0 ? this.uiState.displayName : 'Unknown')
+          .fontSize(this.T.typography.largeTitle.fontSize)
+          .fontWeight(FontWeight.Medium)
+          .fontColor(this.T.colors.textOnScrim)
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+
+        if (this.uiState.emojiStatusEmoji.length > 0) {
+          Text(this.uiState.emojiStatusEmoji)
+            .fontSize(this.T.typography.subheadline.fontSize)
+            .margin({ top: this.T.spacing.hairline })
+        }
+
+        if (this.uiState.statusText.length > 0) {
+          Text(this.uiState.statusText)
+            .fontSize(this.T.typography.subheadline.fontSize)
+            .fontColor(this.uiState.statusText === 'online'
+              ? this.T.colors.accent
+              : this.T.colors.textOnScrim)
+            .opacity(this.uiState.statusText === 'online' ? 1 : 0.85)
+            .margin({ top: this.T.spacing.hairline })
+        }
+      }
+      .width('100%')
+      .alignItems(HorizontalAlign.Start)
+      .padding({
+        left: this.T.spacing.screenInset,
+        right: this.T.spacing.screenInset,
+        bottom: this.T.spacing.md
+      })
     }
+    .width('100%')
+    .height(COVER_HEIGHT)
   }
 
   @Builder
@@ -560,212 +665,200 @@ export struct ProfilePage {
   }
 
   build() {
-    Column() {
-      this.Header()
-
-      if (this.uiState.isLoading && this.uiState.displayName.length === 0) {
-        Column() {
-          LoadingProgress()
-            .width(40)
-            .height(40)
-            .color(this.T.colors.accent)
-        }
-        .width('100%')
-        .layoutWeight(1)
-        .justifyContent(FlexAlign.Center)
-        .alignItems(HorizontalAlign.Center)
-      } else if (this.uiState.errorMessage !== null && this.uiState.displayName.length === 0) {
-        Column() {
-          Text(this.uiState.errorMessage)
-            .fontSize(this.T.typography.body.fontSize)
-            .fontColor(this.T.colors.textSecondary)
-        }
-        .width('100%')
-        .layoutWeight(1)
-        .justifyContent(FlexAlign.Center)
-        .alignItems(HorizontalAlign.Center)
-      } else {
-        Scroll() {
+    Stack({ alignContent: Alignment.TopStart }) {
+      Column() {
+        if (this.uiState.isLoading && this.uiState.displayName.length === 0) {
           Column() {
+            LoadingProgress()
+              .width(40)
+              .height(40)
+              .color(this.T.colors.accent)
+          }
+          .width('100%')
+          .layoutWeight(1)
+          .padding({ top: TOOLBAR_HEIGHT })
+          .justifyContent(FlexAlign.Center)
+          .alignItems(HorizontalAlign.Center)
+        } else if (this.uiState.errorMessage !== null && this.uiState.displayName.length === 0) {
+          Column() {
+            Text(this.uiState.errorMessage)
+              .fontSize(this.T.typography.body.fontSize)
+              .fontColor(this.T.colors.textSecondary)
+          }
+          .width('100%')
+          .layoutWeight(1)
+          .padding({ top: TOOLBAR_HEIGHT })
+          .justifyContent(FlexAlign.Center)
+          .alignItems(HorizontalAlign.Center)
+        } else {
+          Scroll(this.scroller) {
             Column() {
-              this.Avatar()
+              this.Cover()
 
-              Text(this.uiState.displayName.length > 0 ? this.uiState.displayName : 'Unknown')
-                .fontSize(this.T.typography.largeTitle.fontSize)
-                .fontWeight(FontWeight.Medium)
-                .fontColor(this.T.colors.textPrimary)
-                .margin({ top: this.T.spacing.md })
-                .textAlign(TextAlign.Center)
+              Row({ space: this.T.spacing.lg }) {
+                Column() {
+                  Image($r('app.media.ic_call'))
+                    .width(22)
+                    .height(22)
+                    .fillColor(this.T.colors.textSecondary)
+                }
+                .width(48)
+                .height(48)
+                .borderRadius(this.T.radius.full)
+                .backgroundColor(this.T.colors.surfaceVariant)
+                .justifyContent(FlexAlign.Center)
+                .alignItems(HorizontalAlign.Center)
+                Text('通话')
+                  .fontSize(this.T.typography.caption.fontSize)
+                  .fontColor(this.T.colors.textSecondary)
+                  .margin({ top: this.T.spacing.xs })
 
-              if (this.uiState.emojiStatusEmoji.length > 0) {
-                Text(this.uiState.emojiStatusEmoji)
-                  .fontSize(this.T.typography.subheadline.fontSize)
-                  .margin({ top: this.T.spacing.hairline })
-              }
-
-              if (this.uiState.statusText.length > 0) {
-                Text(this.uiState.statusText)
-                  .fontSize(this.T.typography.subheadline.fontSize)
-                  .fontColor(this.uiState.statusText === 'online'
-                    ? this.T.colors.accent
-                    : this.T.colors.textSecondary)
+                Column() {
+                  Image($r('app.media.ic_video'))
+                    .width(22)
+                    .height(22)
+                    .fillColor(this.T.colors.textSecondary)
+                }
+                .width(48)
+                .height(48)
+                .borderRadius(this.T.radius.full)
+                .backgroundColor(this.T.colors.surfaceVariant)
+                .justifyContent(FlexAlign.Center)
+                .alignItems(HorizontalAlign.Center)
+                Text('视频')
+                  .fontSize(this.T.typography.caption.fontSize)
+                  .fontColor(this.T.colors.textSecondary)
                   .margin({ top: this.T.spacing.xs })
               }
-            }
-            .width('100%')
-            .alignItems(HorizontalAlign.Center)
-            .padding({ top: this.T.spacing.lg, bottom: this.T.spacing.md })
-
-            Row({ space: this.T.spacing.lg }) {
-              Column() {
-                Image($r('app.media.ic_call'))
-                  .width(22)
-                  .height(22)
-                  .fillColor(this.T.colors.textSecondary)
-              }
-              .width(48)
-              .height(48)
-              .borderRadius(this.T.radius.full)
-              .backgroundColor(this.T.colors.surfaceVariant)
-              .justifyContent(FlexAlign.Center)
-              .alignItems(HorizontalAlign.Center)
-              Text('通话')
-                .fontSize(this.T.typography.caption.fontSize)
-                .fontColor(this.T.colors.textSecondary)
-                .margin({ top: this.T.spacing.xs })
-
-              Column() {
-                Image($r('app.media.ic_video'))
-                  .width(22)
-                  .height(22)
-                  .fillColor(this.T.colors.textSecondary)
-              }
-              .width(48)
-              .height(48)
-              .borderRadius(this.T.radius.full)
-              .backgroundColor(this.T.colors.surfaceVariant)
-              .justifyContent(FlexAlign.Center)
-              .alignItems(HorizontalAlign.Center)
-              Text('视频')
-                .fontSize(this.T.typography.caption.fontSize)
-                .fontColor(this.T.colors.textSecondary)
-                .margin({ top: this.T.spacing.xs })
-            }
-            .width('100%')
-            .justifyContent(FlexAlign.Center)
-            .padding({ bottom: this.T.spacing.md })
-
-            Divider()
-              .color(this.T.colors.divider)
-              .margin({ left: this.T.spacing.screenInset, right: this.T.spacing.screenInset })
-
-            if (this.uiState.username.length > 0) {
-              this.InfoRow($r('app.media.ic_username'), 'Username', `@${this.uiState.username}`)
-            }
-            if (this.uiState.phone.length > 0) {
-              this.InfoRow($r('app.media.ic_call'), 'Phone', this.uiState.phone)
-            }
-            if (this.uiState.bio.length > 0) {
-              this.InfoRow($r('app.media.ic_info'), 'Bio', this.uiState.bio)
-            }
-            if (this.uiState.birthdayText.length > 0) {
-              this.InfoRow($r('app.media.ic_cake'), '生日', this.uiState.birthdayText)
-            }
-            this.NotificationRow()
-
-            Divider()
-              .color(this.T.colors.divider)
-              .margin({ left: this.T.spacing.screenInset, right: this.T.spacing.screenInset })
-
-            this.SharedTabBar()
-
-            if (this.uiState.sharedLoading) {
-              Column() {
-                LoadingProgress()
-                  .width(32)
-                  .height(32)
-                  .color(this.T.colors.accent)
-              }
               .width('100%')
-              .padding({ top: this.T.spacing.lg, bottom: this.T.spacing.lg })
               .justifyContent(FlexAlign.Center)
-              .alignItems(HorizontalAlign.Center)
-            } else {
-              this.SharedContent()
+              .padding({ top: this.T.spacing.sm, bottom: this.T.spacing.md })
 
-              if (this.hasSharedItems()) {
-                if (this.uiState.sharedLoadingMore) {
-                  Row({ space: this.T.spacing.xs }) {
-                    LoadingProgress()
-                      .width(20)
-                      .height(20)
-                      .color(this.T.colors.accent)
-                    Text('正在加载更多...')
-                      .fontSize(this.T.typography.footnote.fontSize)
-                      .fontColor(this.T.colors.textSecondary)
+              Divider()
+                .color(this.T.colors.divider)
+                .margin({ left: this.T.spacing.screenInset, right: this.T.spacing.screenInset })
+
+              if (this.uiState.username.length > 0) {
+                this.InfoRow($r('app.media.ic_username'), 'Username', `@${this.uiState.username}`)
+              }
+              if (this.uiState.phone.length > 0) {
+                this.InfoRow($r('app.media.ic_call'), 'Phone', this.uiState.phone)
+              }
+              if (this.uiState.bio.length > 0) {
+                this.InfoRow($r('app.media.ic_info'), 'Bio', this.uiState.bio)
+              }
+              if (this.uiState.birthdayText.length > 0) {
+                this.InfoRow($r('app.media.ic_cake'), '生日', this.uiState.birthdayText)
+              }
+              this.NotificationRow()
+
+              Divider()
+                .color(this.T.colors.divider)
+                .margin({ left: this.T.spacing.screenInset, right: this.T.spacing.screenInset })
+
+              this.SharedTabBar()
+
+              if (this.uiState.sharedLoading) {
+                Column() {
+                  LoadingProgress()
+                    .width(32)
+                    .height(32)
+                    .color(this.T.colors.accent)
+                }
+                .width('100%')
+                .padding({ top: this.T.spacing.lg, bottom: this.T.spacing.lg })
+                .justifyContent(FlexAlign.Center)
+                .alignItems(HorizontalAlign.Center)
+              } else {
+                this.SharedContent()
+
+                if (this.hasSharedItems()) {
+                  if (this.uiState.sharedLoadingMore) {
+                    Row({ space: this.T.spacing.xs }) {
+                      LoadingProgress()
+                        .width(20)
+                        .height(20)
+                        .color(this.T.colors.accent)
+                      Text('正在加载更多...')
+                        .fontSize(this.T.typography.footnote.fontSize)
+                        .fontColor(this.T.colors.textSecondary)
+                    }
+                    .width('100%')
+                    .justifyContent(FlexAlign.Center)
+                    .padding({ top: this.T.spacing.md, bottom: this.T.spacing.md })
+                  } else if (this.uiState.sharedHasMore) {
+                    Row() {
+                      Text('加载更多')
+                        .fontSize(this.T.typography.subheadline.fontSize)
+                        .fontColor(this.T.colors.accent)
+                    }
+                    .width('100%')
+                    .justifyContent(FlexAlign.Center)
+                    .padding({ top: this.T.spacing.sm, bottom: this.T.spacing.md })
+                    .onClick(() => {
+                      this.onDispatch(new LoadMoreSharedContent(this.uiState.activeSharedTab));
+                    })
                   }
-                  .width('100%')
-                  .justifyContent(FlexAlign.Center)
-                  .padding({ top: this.T.spacing.md, bottom: this.T.spacing.md })
-                } else if (this.uiState.sharedHasMore) {
-                  Row() {
-                    Text('加载更多')
-                      .fontSize(this.T.typography.subheadline.fontSize)
-                      .fontColor(this.T.colors.accent)
-                  }
-                  .width('100%')
-                  .justifyContent(FlexAlign.Center)
-                  .padding({ top: this.T.spacing.sm, bottom: this.T.spacing.md })
-                  .onClick(() => {
-                    this.onDispatch(new LoadMoreSharedContent(this.uiState.activeSharedTab));
-                  })
                 }
               }
             }
+            .width('100%')
+          }
+          .layoutWeight(1)
+          // Scroll 的 align 默认是 Center：内容不足一屏时整页会被垂直居中，全出血封面
+          // 顶部会空出一条白带、工具条的白色图标压在白底上直接消失。锁回顶部。
+          .align(Alignment.TopStart)
+          .scrollBar(BarState.Off)
+          .onDidScroll(() => {
+            const scrolled: boolean = this.scroller.currentOffset().yOffset >= this.coverCollapseOffset();
+            if (scrolled !== this.coverScrolled) {
+              this.coverScrolled = scrolled;
+            }
+          })
+          .onScrollEdge((side: Edge) => {
+            if (side === Edge.Bottom && this.uiState.sharedHasMore && !this.uiState.sharedLoadingMore && !this.uiState.sharedLoading) {
+              this.onDispatch(new LoadMoreSharedContent(this.uiState.activeSharedTab));
+            }
+          })
+
+          Button() {
+            Row() {
+              Image($r('app.media.ic_comments'))
+                .width(20)
+                .height(20)
+                .fillColor(this.T.colors.textOnAccent)
+                .margin({ right: this.T.spacing.xs })
+
+              Text('Message')
+                .fontSize(this.T.typography.body.fontSize)
+                .fontWeight(FontWeight.Medium)
+                .fontColor(this.T.colors.textOnAccent)
+            }
+            .justifyContent(FlexAlign.Center)
+            .alignItems(VerticalAlign.Center)
           }
           .width('100%')
+          .height(MESSAGE_BUTTON_HEIGHT)
+          .backgroundColor(this.T.colors.accent)
+          .borderRadius(this.T.radius.md)
+          .margin({
+            left: this.T.spacing.screenInset,
+            right: this.T.spacing.screenInset,
+            top: this.T.spacing.sm,
+            bottom: this.T.spacing.md
+          })
+          .onClick(() => {
+            this.onDispatch(new MessageUserRequested());
+          })
         }
-        .layoutWeight(1)
-        .scrollBar(BarState.Off)
-        .onScrollEdge((side: Edge) => {
-          if (side === Edge.Bottom && this.uiState.sharedHasMore && !this.uiState.sharedLoadingMore && !this.uiState.sharedLoading) {
-            this.onDispatch(new LoadMoreSharedContent(this.uiState.activeSharedTab));
-          }
-        })
-
-        Button() {
-          Row() {
-            Image($r('app.media.ic_comments'))
-              .width(20)
-              .height(20)
-              .fillColor(this.T.colors.textOnAccent)
-              .margin({ right: this.T.spacing.xs })
-
-            Text('Message')
-              .fontSize(this.T.typography.body.fontSize)
-              .fontWeight(FontWeight.Medium)
-              .fontColor(this.T.colors.textOnAccent)
-          }
-          .justifyContent(FlexAlign.Center)
-          .alignItems(VerticalAlign.Center)
-        }
-        .width('100%')
-        .height(MESSAGE_BUTTON_HEIGHT)
-        .backgroundColor(this.T.colors.accent)
-        .borderRadius(this.T.radius.md)
-        .margin({
-          left: this.T.spacing.screenInset,
-          right: this.T.spacing.screenInset,
-          top: this.T.spacing.sm,
-          bottom: this.T.spacing.md
-        })
-        .onClick(() => {
-          this.onDispatch(new MessageUserRequested());
-        })
       }
+      .width('100%')
+      .height('100%')
+      .backgroundColor(this.T.colors.background)
+
+      this.Header()
     }
     .width('100%')
     .height('100%')
-    .backgroundColor(this.T.colors.background)
   }
 }
