@@ -254,7 +254,9 @@ function messageRowKey(
     const m: MediaAttachment = item.media;
     const path: string = m.localPath !== null ? m.localPath : '';
     const thumb: string = m.thumbnailPath !== null ? m.thumbnailPath : '';
-    mediaSig = `${m.kind}|${m.fileId}|${path}|${thumb}|${m.isDownloaded}|${m.isDownloading}|${Math.round(m.progress * 10)}|${m.isUploading}|${Math.round(m.uploadProgress * 10)}|${m.fileName}`;
+    // MEDIA-107：进度按 1% 分桶入签名（原先 10%），否则环上的百分比文字会在
+    // 两次重绘之间跳一大截；失败态同样要参与签名，不然错误标画不出来。
+    mediaSig = `${m.kind}|${m.fileId}|${path}|${thumb}|${m.isDownloaded}|${m.isDownloading}|${Math.round(m.progress * 100)}|${m.isUploading}|${Math.round(m.uploadProgress * 100)}|${m.fileName}|${m.isDownloadFailed}`;
   }
   const replySig: string =
     `${item.replyToMessageId}|${item.replySenderName}|${item.replySenderColorIndex}|` +
@@ -2456,6 +2458,9 @@ export struct ChatPage {
               .height('100%')
               .objectFit(ImageFit.Cover)
               .borderRadius(this.T.radius.md)
+              // MEDIA-107：上传进度按 1% 分桶会让整行节点反复重建，异步解码的封面
+              // 每帧都来不及上屏（表现为封面整段消失），故上传期间同步加载。
+              .syncLoad(media.isUploading)
           } else {
             Video({
               src: toSandboxUri(media.localPath)
@@ -2482,6 +2487,8 @@ export struct ChatPage {
           .height('100%')
           .objectFit(ImageFit.Cover)
           .borderRadius(this.T.radius.md)
+          // MEDIA-107：同上，下载进度 1% 分桶重建整行时封面必须同步加载才不会被刷白。
+          .syncLoad(media.isDownloading)
       } else {
         Column() {
           if (media.kind === 'video') {
@@ -2662,15 +2669,43 @@ export struct ChatPage {
           .onClick(() => {
             this.onDispatch(new CancelMediaUpload(messageId));
           })
+        } else if (!media.isDownloaded && media.isDownloadFailed) {
+          // MEDIA-107：下载失败要出错误态与重试入口。原先 TDLib 回了错误只打日志，
+          // 气泡静默退回下载按钮，用户分不清「没下」和「下挂了」。
+          Column() {
+            Image($r('app.media.ic_warning'))
+              .width(22)
+              .height(22)
+              .fillColor(Color.White)
+            Text('重试')
+              .fontSize(11)
+              .fontColor(Color.White)
+              .margin({ top: 2 })
+          }
+          .width(56)
+          .height(56)
+          .borderRadius(this.T.radius.full)
+          .backgroundColor(this.T.colors.scrim)
+          .justifyContent(FlexAlign.Center)
+          .alignItems(HorizontalAlign.Center)
+          .onClick(() => {
+            this.onDispatch(new RequestMediaDownload(media.fileId));
+          })
         } else if (!media.isDownloaded && media.isDownloading) {
           Column() {
             LoadingProgress()
               .width(36)
               .height(36)
               .color(Color.White)
+            // MEDIA-107：下载进度要可读 —— 一条 20 秒的视频只转圈等于没有进度，
+            // 与上传环对齐出百分比。
+            Text(`${Math.round(media.progress * 100)}%`)
+              .fontSize(11)
+              .fontColor(Color.White)
+              .margin({ top: 4 })
           }
-          .width(48)
-          .height(48)
+          .width(56)
+          .height(56)
           .borderRadius(this.T.radius.full)
           .backgroundColor(this.T.colors.scrim)
           .justifyContent(FlexAlign.Center)

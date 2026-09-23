@@ -407,5 +407,39 @@ export default function mediaAttachmentTest() {
       }
     });
 
+    it('withDownloadFailed_marksFailure_andKeepsEveryOtherField', 0, () => {
+      const video: MediaAttachment = new MediaAttachment(
+        'video',
+        3100,
+        '/data/local/tmp/v.mp4',
+        '/data/local/tmp/v_thumb.jpg',
+        1280,
+        720,
+        7,
+        false,
+        false,
+        0.37,
+        'clip',
+        [],
+        false,
+        false,
+        0.5,
+        'v.mp4',
+        1024
+      );
+      expect(video.isDownloadFailed).assertFalse();
+
+      const failed: MediaAttachment = video.withDownloadFailed(true);
+      expect(failed.isDownloadFailed).assertTrue();
+      // 失败态不得吞掉缩略图/进度/时长 —— 气泡要照常出缩略图 + 重试入口。
+      expect(failed.thumbnailPath).assertEqual('/data/local/tmp/v_thumb.jpg');
+      expect(failed.progress).assertEqual(0.37);
+      expect(failed.duration).assertEqual(7);
+      expect(failed.fileName).assertEqual('v.mp4');
+      expect(failed.isDownloaded).assertFalse();
+      // 同值返回自身，避免每次映射都新建对象。
+      expect(video.withDownloadFailed(false) === video).assertTrue();
+    });
+
   });
 }

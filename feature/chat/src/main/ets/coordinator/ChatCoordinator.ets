@@ -504,6 +504,11 @@ export class ChatCoordinator {
   /** 已下发过 downloadFile 的文件 id 集合，防重复请求风暴。 */
   private readonly requestedFileIds: Set<number> = new Set();
   /**
+   * MEDIA-107：TDLib 明确回了错误的文件 id。下载失败原先只打日志，UI 静默退回
+   * 下载按钮 —— 用户既不知道失败了，也没有区别于「首次下载」的重试入口。
+   */
+  private readonly failedFileIds: Set<number> = new Set();
+  /**
    * MEDIA-105：待发送视频的**本地缩略图**缓存，key = 送进 TDLib 的视频沙箱物理路径。
    *
    * 为什么需要它：出站消息在服务端生成缩略图之前，回灌的 `messageVideo.video.thumbnail`
@@ -912,6 +917,7 @@ export class ChatCoordinator {
     });
     this.fileSubscriptions.clear();
     this.requestedFileIds.clear();
+    this.failedFileIds.clear();
     // MSG-109：退订头部新增的在线人数/私聊用户订阅。
     if (this.onlineCountSubscription !== null) {
       this.onlineCountSubscription.unsubscribe();
@@ -1253,6 +1259,8 @@ export class ChatCoordinator {
     if (this.fileRegistry.isDownloaded(fileId)) {
       return;
     }
+    // 用户再次点下载即视为重试：先撤掉失败标，失败态才能退出。
+    this.failedFileIds.delete(fileId);
     if (this.requestedFileIds.has(fileId)) {
       this.logger.info(TAG, 'media_download_skip_requested', `fileId=${fileId}`);
       return;
@@ -1265,6 +1273,7 @@ export class ChatCoordinator {
           if (file.local !== null && file.local.is_downloading_completed) {
             this.logger.info(TAG, 'media_download_completed', `fileId=${fileId}`);
             this.requestedFileIds.delete(fileId);
+            this.failedFileIds.delete(fileId);
             this.scheduleSyncFromProjection();
             if (file.local.path.length > 0) {
               this.dispatch(new OnStickerPreviewFileUpdated(fileId, file.local.path));
@@ -1284,9 +1293,30 @@ export class ChatCoordinator {
     }
     const result: Result<TdPendingRequest, AppError> = this.fileRegistry.downloadFile(fileId, priority);
     if (result.err) {
-      this.requestedFileIds.delete(fileId);
-      this.logger.logError(TAG, result.error);
+      this.markFileDownloadFailed(fileId, result.error);
+      return;
     }
+    if (result.ok) {
+      result.value.promise.then((res: Result<TdWireObject, AppError>) => {
+        if (this.destroyed) {
+          return;
+        }
+        // TDLib 对 downloadFile 的错误回包（网络不可用 / 文件不可得）是唯一的失败信号，
+        // updateFile 只会把 is_downloading_active 置回 false，不带原因。
+        if (res.err) {
+          this.markFileDownloadFailed(fileId, res.error);
+        }
+      }).catch(() => {});
+    }
+  }
+
+  /** MEDIA-107：记下下载失败并放行去重闩，让重试按钮能立刻再发起。 */
+  private markFileDownloadFailed(fileId: number, error: AppError): void {
+    this.logger.logError(TAG, error);
+    this.logger.info(TAG, 'media_download_failed', `fileId=${fileId},kind=${error.kind}`);
+    this.failedFileIds.add(fileId);
+    this.requestedFileIds.delete(fileId);
+    this.scheduleThrottledSync();
   }
 
   private chooseDisplaySize(sizes: PhotoSize[]): PhotoSize {
@@ -1522,7 +1552,7 @@ export class ChatCoordinator {
         videoContent.has_spoiler,
         isUploading,
         uploadProgress
-      );
+      ).withDownloadFailed(this.failedFileIds.has(fileId));
     }
 
     if (message.content.type === 'messageVideoNote') {

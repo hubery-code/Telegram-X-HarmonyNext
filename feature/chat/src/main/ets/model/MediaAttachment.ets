@@ -36,6 +36,12 @@ export class MediaAttachment {
   readonly audioPerformer: string;
   readonly isListened: boolean;
   readonly stickerSetId: string;
+  /**
+   * MEDIA-107：本文件最近一次下载是否失败（TDLib 明确回了错误）。
+   * 只表示「下载失败」，不与 isDownloading/isDownloaded 混用 —— 失败后仍是
+   * 未下载态，但气泡要出错误标与重试入口，而不是静默退回下载按钮。
+   */
+  readonly isDownloadFailed: boolean;
 
   constructor(
     kind: MediaKind,
@@ -60,7 +66,8 @@ export class MediaAttachment {
     audioTitle: string = '',
     audioPerformer: string = '',
     isListened: boolean = false,
-    stickerSetId: string = ''
+    stickerSetId: string = '',
+    isDownloadFailed: boolean = false
   ) {
     this.kind = kind;
     this.fileId = fileId;
@@ -85,6 +92,7 @@ export class MediaAttachment {
     this.audioPerformer = audioPerformer;
     this.isListened = isListened;
     this.stickerSetId = stickerSetId;
+    this.isDownloadFailed = isDownloadFailed;
   }
 
   copyWith(
@@ -102,7 +110,8 @@ export class MediaAttachment {
     audioTitle?: string,
     audioPerformer?: string,
     isListened?: boolean,
-    stickerSetId?: string
+    stickerSetId?: string,
+    isDownloadFailed?: boolean
   ): MediaAttachment {
     return new MediaAttachment(
       this.kind,
@@ -127,7 +136,44 @@ export class MediaAttachment {
       audioTitle !== undefined ? audioTitle : this.audioTitle,
       audioPerformer !== undefined ? audioPerformer : this.audioPerformer,
       isListened !== undefined ? isListened : this.isListened,
-      stickerSetId !== undefined ? stickerSetId : this.stickerSetId
+      stickerSetId !== undefined ? stickerSetId : this.stickerSetId,
+      isDownloadFailed !== undefined ? isDownloadFailed : this.isDownloadFailed
+    );
+  }
+
+  /**
+   * MEDIA-107：贴上下载失败态。构造点用的是位置参数（23 个），
+   * 失败标只在视频分支需要，单开一个具名方法比补一串空默认值可读。
+   */
+  withDownloadFailed(isDownloadFailed: boolean): MediaAttachment {
+    if (this.isDownloadFailed === isDownloadFailed) {
+      return this;
+    }
+    return new MediaAttachment(
+      this.kind,
+      this.fileId,
+      this.localPath,
+      this.thumbnailPath,
+      this.width,
+      this.height,
+      this.duration,
+      this.isDownloading,
+      this.isDownloaded,
+      this.progress,
+      this.caption,
+      this.captionSpans,
+      this.hasSpoiler,
+      this.isUploading,
+      this.uploadProgress,
+      this.fileName,
+      this.fileSize,
+      this.mimeType,
+      this.waveform,
+      this.audioTitle,
+      this.audioPerformer,
+      this.isListened,
+      this.stickerSetId,
+      isDownloadFailed
     );
   }
 }

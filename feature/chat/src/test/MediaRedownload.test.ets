@@ -167,6 +167,19 @@ function downloadFileRequests(bridge: TestNativeBridge, fileId: number): number 
   return count;
 }
 
+/** 取某 fileId 最近一条 downloadFile 请求的 @extra.requestId（用于回灌 TDLib 错误）。 */
+function lastDownloadRequestId(bridge: TestNativeBridge, fileId: number): string {
+  for (let i = bridge.sent.length - 1; i >= 0; i--) {
+    const req: Record<string, TdWireValue> = JSON.parse(bridge.sent[i].utf8) as Record<string, TdWireValue>;
+    if (req['@type'] === 'downloadFile' && req['file_id'] === fileId) {
+      const extra: Record<string, TdWireValue> | undefined =
+        req['@extra'] as Record<string, TdWireValue> | undefined;
+      return extra !== undefined && extra !== null ? String(extra['requestId']) : '';
+    }
+  }
+  return '';
+}
+
 function settle(): Promise<void> {
   return new Promise<void>((resolve: () => void): void => {
     setTimeout(resolve, 30);
@@ -246,6 +259,33 @@ export default function mediaRedownloadTest(): void {
 
       coordinator.dispatch(new RequestMediaDownload(666));
       expect(downloadFileRequests(bridge, 666)).assertEqual(0);
+
+      coordinator.destroy();
+    });
+
+    it('requestMediaDownload_errorResponseReleasesLatchForRetry', 0, async (): Promise<void> => {
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const scope: AccountScope = createScope(bridge);
+      const coordinator: ChatCoordinator = new ChatCoordinator(scope, 42, 'Test Chat');
+
+      coordinator.dispatch(new RequestMediaDownload(555));
+      expect(downloadFileRequests(bridge, 555)).assertEqual(1);
+
+      // TDLib 直接回错误（无 updateFile 跟进）：这是唯一的失败信号，
+      // 必须自己放行去重闩，否则重试按钮在同一会话里永远点不动。
+      const requestId: string = lastDownloadRequestId(bridge, 555);
+      expect(requestId.length > 0).assertTrue();
+      const extra: Record<string, TdWireValue> = {};
+      extra['requestId'] = requestId;
+      const fields: Record<string, TdWireValue> = {};
+      fields['@extra'] = extra;
+      fields['code'] = 404;
+      fields['message'] = 'FILE_ID_INVALID';
+      bridge.emitUpdate(1, 'error', fields);
+      await settle();
+
+      coordinator.dispatch(new RequestMediaDownload(555));
+      expect(downloadFileRequests(bridge, 555)).assertEqual(2);
 
       coordinator.destroy();
     });
