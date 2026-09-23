@@ -460,5 +460,39 @@ export type ChatEffect =
   | StopAndSendVoiceRecordEffect
   | CancelVoiceRecordEffect
   | PlayVoiceNoteEffect
-  | PauseVoiceNoteEffect;
+  | PauseVoiceNoteEffect
+  | SendPollEffect
+  | SetPollAnswerEffect;
 
+
+/** POLL-101：发送投票消息（messagePoll）。 */
+export class SendPollEffect implements Effect {
+  readonly kind: 'sendPoll' = 'sendPoll';
+  readonly chatId: number;
+  readonly question: string;
+  readonly options: string[];
+  readonly isAnonymous: boolean;
+  readonly allowsMultiple: boolean;
+
+  constructor(chatId: number, question: string, options: string[], isAnonymous: boolean, allowsMultiple: boolean) {
+    this.chatId = chatId;
+    this.question = question;
+    this.options = options;
+    this.isAnonymous = isAnonymous;
+    this.allowsMultiple = allowsMultiple;
+  }
+}
+
+/** POLL-101：提交投票（setPollAnswer；optionIds 为切换后的完整 0-based 选项集合）。 */
+export class SetPollAnswerEffect implements Effect {
+  readonly kind: 'setPollAnswer' = 'setPollAnswer';
+  readonly chatId: number;
+  readonly messageId: number;
+  readonly optionIds: number[];
+
+  constructor(chatId: number, messageId: number, optionIds: number[]) {
+    this.chatId = chatId;
+    this.messageId = messageId;
+    this.optionIds = optionIds;
+  }
+}

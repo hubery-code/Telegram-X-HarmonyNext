@@ -32,6 +32,7 @@ import { ChatKind } from '../model/SenderInfo';
 import { PinnedMessageInfo } from '../model/PinnedMessageInfo';
 import { StickerSetPreviewState, StickerSetItem, DEFAULT_RECENT_STICKERS } from '../model/StickerSetPreviewState';
 import { GifItem, DEFAULT_RECENT_GIFS } from '../model/GifItem';
+import { PollComposerState } from '../model/PollView';
 
 /** 输入栏模式：回复某条消息。 */
 export class ComposerReplyMode {
@@ -191,6 +192,8 @@ export interface ChatUiStateOptions {
   readonly showMenuConfirmDialog?: boolean;
   /** MENU-101：待确认的菜单动作（clear_history/delete_chat/report/leave）。 */
   readonly pendingMenuAction?: string;
+  /** POLL-101：发起投票面板编辑态（null=面板关闭）。 */
+  readonly pollComposer?: PollComposerState | null;
 }
 
 export const DEFAULT_RECENT_EMOJIS: readonly string[] = [
@@ -264,6 +267,8 @@ export class ChatUiState implements UiState {
   readonly showMenuConfirmDialog: boolean;
   /** MENU-101：待确认的菜单动作（clear_history/delete_chat/report/leave）。 */
   readonly pendingMenuAction: string;
+  /** POLL-101：发起投票面板编辑态（null=面板关闭）。 */
+  readonly pollComposer: PollComposerState | null;
 
   constructor(
     chatId: number,
@@ -304,7 +309,8 @@ export class ChatUiState implements UiState {
     recentGifs: readonly GifItem[] = DEFAULT_RECENT_GIFS,
     gifSearchQuery: string = '',
     showMenuConfirmDialog: boolean = false,
-    pendingMenuAction: string = ''
+    pendingMenuAction: string = '',
+    pollComposer: PollComposerState | null = null
   ) {
     this.chatId = chatId;
     this.chatTitle = chatTitle;
@@ -345,10 +351,11 @@ export class ChatUiState implements UiState {
     this.gifSearchQuery = gifSearchQuery;
     this.showMenuConfirmDialog = showMenuConfirmDialog;
     this.pendingMenuAction = pendingMenuAction;
+    this.pollComposer = pollComposer;
   }
 
   static initial(): ChatUiState {
-    return new ChatUiState(0, '', [], false, true, null, '', null, null, -1, [], 0, 0, false, [], false, false, '', [], false, 0, '', 'unknown', null, false, true, false, null, false, 0, null, 0, 0, DEFAULT_RECENT_EMOJIS, DEFAULT_RECENT_STICKERS, DEFAULT_RECENT_GIFS, '', false, '');
+    return new ChatUiState(0, '', [], false, true, null, '', null, null, -1, [], 0, 0, false, [], false, false, '', [], false, 0, '', 'unknown', null, false, true, false, null, false, 0, null, 0, 0, DEFAULT_RECENT_EMOJIS, DEFAULT_RECENT_STICKERS, DEFAULT_RECENT_GIFS, '', false, '', null);
   }
 
   copyWith(options: ChatUiStateOptions): ChatUiState {
@@ -391,7 +398,8 @@ export class ChatUiState implements UiState {
       options.recentGifs !== undefined ? options.recentGifs : this.recentGifs,
       options.gifSearchQuery !== undefined ? options.gifSearchQuery : this.gifSearchQuery,
       options.showMenuConfirmDialog !== undefined ? options.showMenuConfirmDialog : this.showMenuConfirmDialog,
-      options.pendingMenuAction !== undefined ? options.pendingMenuAction : this.pendingMenuAction
+      options.pendingMenuAction !== undefined ? options.pendingMenuAction : this.pendingMenuAction,
+      options.pollComposer !== undefined ? options.pollComposer : this.pollComposer
     );
   }
 }

@@ -56,6 +56,7 @@ import {
   encodeJoinChat,
   encodeAddMessageReaction,
   encodeRemoveMessageReaction,
+  encodeSetPollAnswer,
   encodeGetMessageThread,
   encodeGetMessageThreadHistory,
   GetChatHistory,
@@ -96,6 +97,10 @@ import {
   InputVideo,
   InputThumbnail,
   InputMessageVideo,
+  InputMessagePoll,
+  InputPollOption,
+  InputPollTypeRegular,
+  SetPollAnswer,
   InputMessageReplyToMessage,
   InputMessageText,
   LinkPreviewOptions,
@@ -443,6 +448,74 @@ export class MessageProjection {
     req.input_message_content = content;
 
     return this.scope.request('sendMessage', encodeSendMessage(req) as TdWireObject);
+  }
+
+  /**
+   * POLL-101：发送投票消息（InputMessagePoll）。问题空或有效选项 <2 判
+   * parameter/missing 不开请求；选项文本去空白后发送。
+   */
+  sendPollMessage(
+    question: string,
+    options: string[],
+    isAnonymous: boolean = true,
+    allowsMultipleAnswers: boolean = false
+  ): Result<TdPendingRequest, AppError> {
+    const trimmedQuestion: string = question.trim();
+    const trimmedOptions: string[] = [];
+    for (let i: number = 0; i < options.length; i++) {
+      const option: string = options[i].trim();
+      if (option.length > 0) {
+        trimmedOptions.push(option);
+      }
+    }
+    if (trimmedQuestion.length === 0) {
+      return err<TdPendingRequest, AppError>(
+        AppErrors.parameter('missing', 'poll_question', 'poll question is empty')
+      );
+    }
+    if (trimmedOptions.length < 2) {
+      return err<TdPendingRequest, AppError>(
+        AppErrors.parameter('invalid', 'poll_options', 'a poll needs at least 2 non-empty options')
+      );
+    }
+    const questionText: FormattedText = new FormattedText();
+    questionText.text = trimmedQuestion;
+    const inputOptions: InputPollOption[] = [];
+    for (let i: number = 0; i < trimmedOptions.length; i++) {
+      const optionText: FormattedText = new FormattedText();
+      optionText.text = trimmedOptions[i];
+      const option: InputPollOption = new InputPollOption();
+      option.text = optionText;
+      inputOptions.push(option);
+    }
+    const content: InputMessagePoll = new InputMessagePoll();
+    content.question = questionText;
+    content.options = inputOptions;
+    content.is_anonymous = isAnonymous;
+    content.allows_multiple_answers = allowsMultipleAnswers;
+    // TDLib 要求 type 非空（缺失时 sendMessage 直接 400 "Poll type must be non-empty"）。
+    content.type_ = new InputPollTypeRegular();
+    // 允许改票：否则 setPollAnswer 二次投票被 TDLib 拒（400 "Can't revote in a quiz"），
+    // 而气泡上的选项一直是可点的。
+    content.allows_revoting = true;
+
+    const pollReq: SendMessage = new SendMessage();
+    pollReq.chat_id = this.chatId;
+    pollReq.input_message_content = content;
+
+    return this.scope.request('sendMessage', encodeSendMessage(pollReq) as TdWireObject);
+  }
+
+  /**
+   * POLL-101：投票（setPollAnswer）。optionIds 为 0-based 选项位置集合，
+   * 多选语义由调用方保证（单选投票只传一项）。
+   */
+  setPollAnswer(messageId: number, optionIds: number[]): Result<TdPendingRequest, AppError> {
+    const req: SetPollAnswer = new SetPollAnswer();
+    req.chat_id = this.chatId;
+    req.message_id = messageId;
+    req.option_ids = optionIds.slice();
+    return this.scope.request('setPollAnswer', encodeSetPollAnswer(req) as TdWireObject);
   }
 
   /**

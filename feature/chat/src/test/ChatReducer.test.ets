@@ -94,9 +94,20 @@ import {
   VoicePlaybackCompleted,
   VoicePlaybackFailed,
   ConfirmMenuAction,
-  DismissMenuConfirmDialog
+  DismissMenuConfirmDialog,
+  OpenPollComposer,
+  ClosePollComposer,
+  PollQuestionChanged,
+  PollOptionTextChanged,
+  AddPollComposerOption,
+  RemovePollComposerOption,
+  TogglePollComposerAnonymous,
+  TogglePollComposerMultiple,
+  SubmitPollComposer,
+  VotePollOption
 } from '../main/ets/contract/ChatIntent';
 import { PinnedMessageInfo } from '../main/ets/model/PinnedMessageInfo';
+import { PollComposerState, PollOptionView, PollView } from '../main/ets/model/PollView';
 import { ReactionChip } from '../main/ets/model/ReactionChip';
 import { StickerSetPreviewState, StickerSetItem } from '../main/ets/model/StickerSetPreviewState';
 import { GifItem } from '../main/ets/model/GifItem';
@@ -129,7 +140,9 @@ import {
   StopAndSendVoiceRecordEffect,
   CancelVoiceRecordEffect,
   PlayVoiceNoteEffect,
-  PauseVoiceNoteEffect
+  PauseVoiceNoteEffect,
+  SendPollEffect,
+  SetPollAnswerEffect
 } from '../main/ets/contract/ChatEffect';
 import { ChatSearchResultItem } from '../main/ets/model/ChatSearchResultItem';
 import { chatReducer, extractFirstLink } from '../main/ets/reducer/ChatReducer';
@@ -203,6 +216,41 @@ function makeChannelPost(
 function menuShowForward(state: ChatUiState): boolean {
   const menu: MessageActionMenuState | null = state.actionMenu;
   return menu !== null ? menu.showForward : false;
+}
+
+/** POLL-101：构造一条两选项投票消息（选项计数固定 A=3 / B=7）。 */
+function makePollMessage(
+  messageId: number,
+  allowsMultiple: boolean = false,
+  isClosed: boolean = false,
+  chosenIndexes: number[] = []
+): MessageItem {
+  const options: PollOptionView[] = [
+    new PollOptionView(0, 'A', 3, 30, chosenIndexes.indexOf(0) >= 0),
+    new PollOptionView(1, 'B', 7, 70, chosenIndexes.indexOf(1) >= 0)
+  ];
+  const poll: PollView = new PollView(
+    'Q?', options, 10, true, allowsMultiple, isClosed, chosenIndexes.length > 0, chosenIndexes.length > 0
+  );
+  return makeTextMessage(messageId, false).withPoll(poll);
+}
+
+/** POLL-101：读取状态中的投票面板（为空时抛错，测试内使用）。 */
+function pollComposerOf(state: ChatUiState): PollComposerState {
+  const composer: PollComposerState | null = state.pollComposer;
+  if (composer === null) {
+    throw new Error('pollComposer is null');
+  }
+  return composer;
+}
+
+/** 取 messages[0] 的投票视图（为空时抛错）。 */
+function pollOfMessage(item: MessageItem): PollView {
+  const poll: PollView | null = item.poll;
+  if (poll === null) {
+    throw new Error('message.poll is null');
+  }
+  return poll;
 }
 
 export default function chatReducerTest() {
@@ -2460,6 +2508,203 @@ export default function chatReducerTest() {
       );
       expect(res.state.showMenuConfirmDialog).assertFalse();
       expect(res.state.pendingMenuAction).assertEqual('');
+    });
+  });
+
+  describe('ChatReducer_POLL101', () => {
+    it('openPollComposer_createsDraft_andClosesAttachmentMenuAndEmoji', 0, () => {
+      const initial: ChatUiState = makeState('').copyWith({ showAttachmentMenu: true, showEmojiBoard: true });
+      const res: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        initial, new OpenPollComposer(), makeEnv()
+      );
+      expect(res.state.pollComposer !== null).assertTrue();
+      expect(pollComposerOf(res.state).options.length).assertEqual(2);
+      expect(res.state.showAttachmentMenu).assertFalse();
+      expect(res.state.showEmojiBoard).assertFalse();
+      expect(res.effects.length).assertEqual(0);
+    });
+
+    it('closePollComposer_clearsDraft', 0, () => {
+      const initial: ChatUiState = makeState('').copyWith({ pollComposer: PollComposerState.draft() });
+      const res: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        initial, new ClosePollComposer(), makeEnv()
+      );
+      expect(res.state.pollComposer).assertNull();
+    });
+
+    it('pollQuestionChanged_truncatesToMaxLength', 0, () => {
+      const long: string = 'x'.repeat(300);
+      const initial: ChatUiState = makeState('').copyWith({ pollComposer: PollComposerState.draft() });
+      const res: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        initial, new PollQuestionChanged(long), makeEnv()
+      );
+      expect(pollComposerOf(res.state).question.length).assertEqual(255);
+    });
+
+    it('pollQuestionChanged_withoutComposer_isNoOp', 0, () => {
+      const initial: ChatUiState = makeState('');
+      const res: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        initial, new PollQuestionChanged('hi'), makeEnv()
+      );
+      expect(res.state === initial).assertTrue();
+    });
+
+    it('pollOptionTextChanged_updatesIndex_andIgnoresOutOfRange', 0, () => {
+      const initial: ChatUiState = makeState('').copyWith({ pollComposer: PollComposerState.draft() });
+      const ok: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        initial, new PollOptionTextChanged(1, 'B'), makeEnv()
+      );
+      expect(pollComposerOf(ok.state).options[1]).assertEqual('B');
+      const bad: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        initial, new PollOptionTextChanged(9, 'nope'), makeEnv()
+      );
+      expect(bad.state === initial).assertTrue();
+    });
+
+    it('addPollComposerOption_appendsEmpty_andCapsAtMax', 0, () => {
+      const initial: ChatUiState = makeState('').copyWith({ pollComposer: PollComposerState.draft() });
+      const added: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        initial, new AddPollComposerOption(), makeEnv()
+      );
+      expect(pollComposerOf(added.state).options.length).assertEqual(3);
+
+      const full: PollComposerState = new PollComposerState(
+        '', ['', '', '', '', '', '', '', '', '', ''], true, false
+      );
+      const fullRes: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        makeState('').copyWith({ pollComposer: full }), new AddPollComposerOption(), makeEnv()
+      );
+      expect(fullRes.state.pollComposer === full).assertTrue();
+    });
+
+    it('removePollComposerOption_removesIndex_andFloorsAtMin', 0, () => {
+      const three: PollComposerState = new PollComposerState('', ['a', 'b', 'c'], true, false);
+      const removed: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        makeState('').copyWith({ pollComposer: three }), new RemovePollComposerOption(0), makeEnv()
+      );
+      const opts: string[] = pollComposerOf(removed.state).options;
+      expect(opts.length).assertEqual(2);
+      expect(opts[0]).assertEqual('b');
+
+      const two: PollComposerState = new PollComposerState('', ['a', 'b'], true, false);
+      const floorRes: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        makeState('').copyWith({ pollComposer: two }), new RemovePollComposerOption(0), makeEnv()
+      );
+      expect(floorRes.state.pollComposer === two).assertTrue();
+    });
+
+    it('togglePollComposerFlags_flipBooleans', 0, () => {
+      const initial: ChatUiState = makeState('').copyWith({ pollComposer: PollComposerState.draft() });
+      const anon: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        initial, new TogglePollComposerAnonymous(), makeEnv()
+      );
+      expect(pollComposerOf(anon.state).isAnonymous).assertFalse();
+      const multi: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        initial, new TogglePollComposerMultiple(), makeEnv()
+      );
+      expect(pollComposerOf(multi.state).allowsMultiple).assertTrue();
+    });
+
+    it('submitPollComposer_valid_emitsSendPollEffectAndClosesPanel', 0, () => {
+      const composer: PollComposerState = new PollComposerState('  lunch?  ', [' pizza ', '  ', 'sushi'], true, false);
+      const res: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        makeState('').copyWith({ pollComposer: composer }), new SubmitPollComposer(), makeEnv()
+      );
+      expect(res.state.pollComposer).assertNull();
+      expect(res.effects.length).assertEqual(1);
+      const effect: SendPollEffect = res.effects[0] as SendPollEffect;
+      expect(effect.kind).assertEqual('sendPoll');
+      expect(effect.chatId).assertEqual(42);
+      expect(effect.question).assertEqual('lunch?');
+      expect(effect.options.join('|')).assertEqual('pizza|sushi');
+      expect(effect.isAnonymous).assertTrue();
+      expect(effect.allowsMultiple).assertFalse();
+    });
+
+    it('submitPollComposer_invalid_draftsEmitsNothing', 0, () => {
+      const noQuestion: ChatUiState = makeState('').copyWith({
+        pollComposer: new PollComposerState('', ['a', 'b'], true, false)
+      });
+      const res1: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        noQuestion, new SubmitPollComposer(), makeEnv()
+      );
+      expect(res1.effects.length).assertEqual(0);
+      expect(res1.state.pollComposer !== null).assertTrue();
+
+      const oneOption: ChatUiState = makeState('').copyWith({
+        pollComposer: new PollComposerState('q', ['a', '  '], true, false)
+      });
+      const res2: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        oneOption, new SubmitPollComposer(), makeEnv()
+      );
+      expect(res2.effects.length).assertEqual(0);
+    });
+
+    it('votePollOption_singleChoice_replacesPreviousChoice', 0, () => {
+      const withVote: MessageItem = makePollMessage(7, false, false, [0]);
+      const state: ChatUiState = makeStateWith([withVote]);
+      const res: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        state, new VotePollOption(7, 1), makeEnv()
+      );
+      const poll: PollView = pollOfMessage(res.state.messages[0]);
+      expect(poll.options[0].isChosen).assertFalse();
+      expect(poll.options[1].isChosen).assertTrue();
+      expect(poll.hasVoted).assertTrue();
+      expect(poll.showResults).assertTrue();
+      expect(res.effects.length).assertEqual(1);
+      const effect: SetPollAnswerEffect = res.effects[0] as SetPollAnswerEffect;
+      expect(effect.kind).assertEqual('setPollAnswer');
+      expect(effect.messageId).assertEqual(7);
+      expect(effect.optionIds.join(',')).assertEqual('1');
+    });
+
+    it('votePollOption_multipleChoice_togglesIndependentOptions', 0, () => {
+      const withVote: MessageItem = makePollMessage(7, true, false, [0]);
+      const res: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        makeStateWith([withVote]), new VotePollOption(7, 1), makeEnv()
+      );
+      const added: PollView = pollOfMessage(res.state.messages[0]);
+      expect(added.options[0].isChosen).assertTrue();
+      expect(added.options[1].isChosen).assertTrue();
+      expect((res.effects[0] as SetPollAnswerEffect).optionIds.join(',')).assertEqual('0,1');
+
+      const res2: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        makeStateWith([withVote]), new VotePollOption(7, 0), makeEnv()
+      );
+      const removed: PollView = pollOfMessage(res2.state.messages[0]);
+      expect(removed.options[0].isChosen).assertFalse();
+      expect(removed.hasVoted).assertFalse();
+      expect((res2.effects[0] as SetPollAnswerEffect).optionIds.length).assertEqual(0);
+    });
+
+    it('votePollOption_closedOrUnknown_isNoOp', 0, () => {
+      const closed: MessageItem = makePollMessage(7, false, true, []);
+      const state: ChatUiState = makeStateWith([closed]);
+      const res: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        state, new VotePollOption(7, 0), makeEnv()
+      );
+      expect(res.effects.length).assertEqual(0);
+
+      const missing: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        state, new VotePollOption(999, 0), makeEnv()
+      );
+      expect(missing.state === state).assertTrue();
+      expect(missing.effects.length).assertEqual(0);
+
+      const negative: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        state, new VotePollOption(7, -1), makeEnv()
+      );
+      expect(negative.effects.length).assertEqual(0);
+    });
+
+    it('votePollOption_leavesOtherMessagesUntouched', 0, () => {
+      const textMsg: MessageItem = makeTextMessage(1, false, 'plain');
+      const pollMsg: MessageItem = makePollMessage(2, false, false, []);
+      const res: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        makeStateWith([textMsg, pollMsg]), new VotePollOption(2, 0), makeEnv()
+      );
+      expect(res.state.messages[0] === textMsg).assertTrue();
+      expect(pollOfMessage(res.state.messages[1]).options[0].isChosen).assertTrue();
     });
   });
 }

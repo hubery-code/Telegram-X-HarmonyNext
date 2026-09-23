@@ -737,7 +737,17 @@ export type ChatIntent =
   | PauseVoiceNote
   | VoicePlaybackProgress
   | VoicePlaybackCompleted
-  | VoicePlaybackFailed;
+  | VoicePlaybackFailed
+  | OpenPollComposer
+  | ClosePollComposer
+  | PollQuestionChanged
+  | PollOptionTextChanged
+  | AddPollComposerOption
+  | RemovePollComposerOption
+  | TogglePollComposerAnonymous
+  | TogglePollComposerMultiple
+  | SubmitPollComposer
+  | VotePollOption;
 
 /** STICKER-PREVIEW-101：打开贴纸包预览弹窗。 */
 export class OpenStickerSet implements Intent {
@@ -967,3 +977,76 @@ export class VoicePlaybackFailed implements Intent {
   }
 }
 
+/** POLL-101：打开发起投票面板（附件面板 Poll 入口）。 */
+export class OpenPollComposer implements Intent {
+  readonly kind: 'openPollComposer' = 'openPollComposer';
+}
+
+/** POLL-101：关闭发起投票面板（放弃草稿）。 */
+export class ClosePollComposer implements Intent {
+  readonly kind: 'closePollComposer' = 'closePollComposer';
+}
+
+/** POLL-101：投票问题输入变化（受控）。 */
+export class PollQuestionChanged implements Intent {
+  readonly kind: 'pollQuestionChanged' = 'pollQuestionChanged';
+  readonly text: string;
+
+  constructor(text: string) {
+    this.text = text;
+  }
+}
+
+/** POLL-101：第 index 个选项文本变化（受控）。 */
+export class PollOptionTextChanged implements Intent {
+  readonly kind: 'pollOptionTextChanged' = 'pollOptionTextChanged';
+  readonly index: number;
+  readonly text: string;
+
+  constructor(index: number, text: string) {
+    this.index = index;
+    this.text = text;
+  }
+}
+
+/** POLL-101：追加一个空选项（达上限时忽略）。 */
+export class AddPollComposerOption implements Intent {
+  readonly kind: 'addPollComposerOption' = 'addPollComposerOption';
+}
+
+/** POLL-101：删除第 index 个选项（少于下限时忽略）。 */
+export class RemovePollComposerOption implements Intent {
+  readonly kind: 'removePollComposerOption' = 'removePollComposerOption';
+  readonly index: number;
+
+  constructor(index: number) {
+    this.index = index;
+  }
+}
+
+/** POLL-101：切换匿名投票。 */
+export class TogglePollComposerAnonymous implements Intent {
+  readonly kind: 'togglePollComposerAnonymous' = 'togglePollComposerAnonymous';
+}
+
+/** POLL-101：切换多选投票。 */
+export class TogglePollComposerMultiple implements Intent {
+  readonly kind: 'togglePollComposerMultiple' = 'togglePollComposerMultiple';
+}
+
+/** POLL-101：提交发起投票（校验通过后出 SendPollEffect 并关面板）。 */
+export class SubmitPollComposer implements Intent {
+  readonly kind: 'submitPollComposer' = 'submitPollComposer';
+}
+
+/** POLL-101：点击投票选项（reducer 出 SetPollAnswerEffect，并乐观更新选中态）。 */
+export class VotePollOption implements Intent {
+  readonly kind: 'votePollOption' = 'votePollOption';
+  readonly messageId: number;
+  readonly optionIndex: number;
+
+  constructor(messageId: number, optionIndex: number) {
+    this.messageId = messageId;
+    this.optionIndex = optionIndex;
+  }
+}

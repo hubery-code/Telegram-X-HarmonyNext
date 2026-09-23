@@ -1226,5 +1226,66 @@ export default function messageProjectionTest(): void {
       projection.stop();
     });
 
+    it('POLL101_sendPollMessage_buildsFullTdLibPollPayload', 0, (): void => {
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const scope: AccountScope = createScope(bridge);
+      const projection: MessageProjection = new MessageProjection(42, scope);
+      projection.start();
+
+      const res: Result<TdPendingRequest, AppError> =
+        projection.sendPollMessage('  Weekend plan  ', [' Beach ', '', 'Mountain '], true, false);
+      expect(res.ok).assertTrue();
+
+      const req: Record<string, TdWireValue> | null = findSentRequest(bridge, 'sendMessage');
+      expect(req !== null).assertTrue();
+      if (req !== null) {
+        const content: Record<string, TdWireValue> = req['input_message_content'] as Record<string, TdWireValue>;
+        expect(content['@type']).assertEqual('inputMessagePoll');
+        // TDLib 缺 type 会直接 400 "Poll type must be non-empty"，缺 allows_revoting 则改票被拒；
+        // 两者都是端上真机跑出来的坑，形状必须锁住。
+        const pollType: Record<string, TdWireValue> = content['type'] as Record<string, TdWireValue>;
+        expect(pollType['@type']).assertEqual('inputPollTypeRegular');
+        expect(content['allows_revoting']).assertTrue();
+        const question: Record<string, TdWireValue> = content['question'] as Record<string, TdWireValue>;
+        expect(question['text']).assertEqual('Weekend plan');
+        const options: Record<string, TdWireValue>[] = content['options'] as Record<string, TdWireValue>[];
+        expect(options.length).assertEqual(2);
+        const first: Record<string, TdWireValue> = options[0]['text'] as Record<string, TdWireValue>;
+        expect(first['text']).assertEqual('Beach');
+        expect(content['is_anonymous']).assertTrue();
+        expect(content['allows_multiple_answers']).assertFalse();
+      }
+      projection.stop();
+    });
+
+    it('POLL101_sendPollMessage_rejectsEmptyQuestionAndSingleOption', 0, (): void => {
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const scope: AccountScope = createScope(bridge);
+      const projection: MessageProjection = new MessageProjection(42, scope);
+      projection.start();
+
+      expect(projection.sendPollMessage('   ', ['a', 'b']).err).assertTrue();
+      expect(projection.sendPollMessage('q', ['a', '  ']).err).assertTrue();
+      expect(findSentRequest(bridge, 'sendMessage') === null).assertTrue();
+      projection.stop();
+    });
+
+    it('POLL101_setPollAnswer_sendsZeroBasedOptionIds', 0, (): void => {
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const scope: AccountScope = createScope(bridge);
+      const projection: MessageProjection = new MessageProjection(42, scope);
+      projection.start();
+
+      expect(projection.setPollAnswer(5678, [1]).ok).assertTrue();
+      const req: Record<string, TdWireValue> | null = findSentRequest(bridge, 'setPollAnswer');
+      expect(req !== null).assertTrue();
+      if (req !== null) {
+        expect(req['chat_id']).assertEqual(42);
+        expect(req['message_id']).assertEqual(5678);
+        expect((req['option_ids'] as number[]).join(',')).assertEqual('1');
+      }
+      projection.stop();
+    });
+
   });
 }

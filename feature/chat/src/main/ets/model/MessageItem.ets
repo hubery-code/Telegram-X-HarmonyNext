@@ -30,6 +30,7 @@ import { MessageTextSpan } from './MessageTextSpan';
 import { MediaAttachment } from './MediaAttachment';
 import { LinkPreviewInfo } from './LinkPreviewInfo';
 import { ReactionChip } from './ReactionChip';
+import { PollView } from './PollView';
 
 /** 发送状态：none=已发送/收到的正常消息；pending=发送中；failed=发送失败。 */
 export type MessageSendState = 'none' | 'pending' | 'failed';
@@ -70,6 +71,8 @@ export class MessageItem {
   readonly commentCount: number;
   /** MSG-108：是否置顶消息。 */
   readonly isPinned: boolean;
+  /** POLL-101：投票内容（messagePoll）；null=非投票消息。 */
+  readonly poll: PollView | null;
 
   constructor(
     messageId: number,
@@ -101,7 +104,8 @@ export class MessageItem {
     isChannelPost: boolean = false,
     reactionChips: ReactionChip[] = [],
     commentCount: number = 0,
-    isPinned: boolean = false
+    isPinned: boolean = false,
+    poll: PollView | null = null
   ) {
     this.messageId = messageId;
     this.text = text;
@@ -133,6 +137,44 @@ export class MessageItem {
     this.reactionChips = reactionChips;
     this.commentCount = commentCount;
     this.isPinned = isPinned;
+    this.poll = poll;
+  }
+
+  /** POLL-101：替换 poll 字段派生副本（投票乐观更新用），其余字段原样保留。 */
+  withPoll(nextPoll: PollView | null): MessageItem {
+    return new MessageItem(
+      this.messageId,
+      this.text,
+      this.timestampMs,
+      this.isOutgoing,
+      this.senderName,
+      this.sendState,
+      this.isTextMessage,
+      this.isEdited,
+      this.replyToMessageId,
+      this.replyToSummary,
+      this.spans,
+      this.senderColorIndex,
+      this.isRead,
+      this.media,
+      this.replySenderName,
+      this.replySenderColorIndex,
+      this.replyThumbnailPath,
+      this.replyIsSticker,
+      this.showDateHeader,
+      this.dateHeaderText,
+      this.showUnreadSeparator,
+      this.senderAvatarPath,
+      this.albumItems,
+      this.albumMessageIds,
+      this.linkPreview,
+      this.senderUserId,
+      this.isChannelPost,
+      this.reactionChips,
+      this.commentCount,
+      this.isPinned,
+      nextPoll
+    );
   }
 }
 

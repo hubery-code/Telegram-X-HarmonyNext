@@ -138,7 +138,8 @@ import {
   encodeReportChat,
   SetChatNotificationSettings,
   encodeSetChatNotificationSettings,
-  ChatNotificationSettings
+  ChatNotificationSettings,
+  MessagePoll
 } from '@tgx/core-td-api-generated';
 import { FileRegistry, formatFullName, MessageListState, MessageProjection, UserRegistry } from '@tgx/core-domain';
 import { TdPendingRequest, TdRoutedEvent, TdUpdateFilter, TdUpdateSubscription, TdWireObject, TdWireValue } from '@tgx/td-gateway';
@@ -153,6 +154,7 @@ import { LinkPreviewInfo } from '../model/LinkPreviewInfo';
 import { ChatSearchResultItem } from '../model/ChatSearchResultItem';
 import { PinnedMessageInfo } from '../model/PinnedMessageInfo';
 import { parseFormattedText } from '../model/FormattedTextParser';
+import { pollViewOf, PollView } from '../model/PollView';
 import {
   ChatKind,
   chatKindOf,
@@ -236,7 +238,9 @@ import {
   StopAndSendVoiceRecordEffect,
   CancelVoiceRecordEffect,
   PlayVoiceNoteEffect,
-  PauseVoiceNoteEffect
+  PauseVoiceNoteEffect,
+  SendPollEffect,
+  SetPollAnswerEffect
 } from '../contract/ChatEffect';
 import { StickerSetPreviewState, StickerSetItem } from '../model/StickerSetPreviewState';
 import { isOutgoingMessageRead, ReadReportThrottle } from '../model/ReadReceipt';
@@ -2144,12 +2148,18 @@ export class ChatCoordinator {
     }
     const isTextMessage: boolean = message.content !== null && message.content.type === 'messageText';
     const media: MediaAttachment | null = this.resolveMediaAttachment(message);
+    // POLL-101：messagePoll 内容解析为 PollView（气泡渲染投票卡，正文行不再输出占位文本）。
+    const poll: PollView | null = message.content !== null && message.content.type === 'messagePoll'
+      ? pollViewOf((message.content as MessagePoll).poll)
+      : null;
 
     let spans: MessageTextSpan[] = [];
     let displayText: string = '';
     let linkPreviewInfo: LinkPreviewInfo | null = null;
 
-    if (media !== null) {
+    if (poll !== null) {
+      displayText = '';
+    } else if (media !== null) {
       displayText = media.kind === 'sticker' ? '' : media.caption;
       spans = media.kind === 'sticker' ? [] : media.captionSpans;
     } else if (isTextMessage) {
@@ -2224,7 +2234,8 @@ export class ChatCoordinator {
       isChannelPost,
       reactionChips,
       commentCount,
-      message.is_pinned ?? false
+      message.is_pinned ?? false,
+      poll
     );
   }
 
@@ -3242,6 +3253,18 @@ export class ChatCoordinator {
         break;
       }
 
+      case 'sendPoll': {
+        const sendPoll: SendPollEffect = effect as SendPollEffect;
+        this.handleSendPoll(sendPoll);
+        break;
+      }
+
+      case 'setPollAnswer': {
+        const voteEffect: SetPollAnswerEffect = effect as SetPollAnswerEffect;
+        this.handleSetPollAnswer(voteEffect);
+        break;
+      }
+
       default:
         break;
     }
@@ -3574,6 +3597,58 @@ export class ChatCoordinator {
           if (!this.destroyed) {
             this.dispatch(new OnStickerSetChanged(setId, isInstalled));
           }
+        }
+      }).catch(() => {
+      });
+    }
+  }
+
+  /** POLL-101：发送投票消息（投影层组 InputMessagePoll 走 sendMessage）。 */
+  private handleSendPoll(sendPoll: SendPollEffect): void {
+    const result: Result<TdPendingRequest, AppError> = this.projection.sendPollMessage(
+      sendPoll.question,
+      sendPoll.options,
+      sendPoll.isAnonymous,
+      sendPoll.allowsMultiple
+    );
+    if (result.err) {
+      this.logger.logError(TAG, result.error);
+      this.dispatch(new OnMessageSendFailed(result.error));
+    }
+    if (result.ok) {
+      result.value.promise.then((res: Result<TdWireObject, AppError>) => {
+        if (res.err) {
+          this.logger.logError(TAG, res.error);
+          if (!this.destroyed) {
+            this.dispatch(new OnMessageSendFailed(res.error));
+          }
+        }
+        if (res.ok) {
+          this.logger.info(TAG, 'send_poll_ok');
+        }
+      }).catch(() => {
+      });
+    }
+  }
+
+  /** POLL-101：投票（setPollAnswer）。失败只记日志 + toast，选中态以服务端回灌为准。 */
+  private handleSetPollAnswer(vote: SetPollAnswerEffect): void {
+    const result: Result<TdPendingRequest, AppError> =
+      this.projection.setPollAnswer(vote.messageId, vote.optionIds);
+    if (result.err) {
+      this.logger.logError(TAG, result.error);
+      this.toastPort.showToast('投票失败');
+    }
+    if (result.ok) {
+      result.value.promise.then((res: Result<TdWireObject, AppError>) => {
+        if (res.err) {
+          this.logger.logError(TAG, res.error);
+          if (!this.destroyed) {
+            this.toastPort.showToast('投票失败');
+          }
+        }
+        if (res.ok) {
+          this.logger.info(TAG, 'set_poll_answer_ok', `messageId=${vote.messageId}`);
         }
       }).catch(() => {
       });

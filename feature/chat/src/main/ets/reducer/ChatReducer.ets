@@ -118,7 +118,17 @@ import {
   VoicePlaybackProgress,
   VoicePlaybackCompleted,
   VoicePlaybackFailed,
-  ChatMenuAction
+  ChatMenuAction,
+  OpenPollComposer,
+  ClosePollComposer,
+  PollQuestionChanged,
+  PollOptionTextChanged,
+  AddPollComposerOption,
+  RemovePollComposerOption,
+  TogglePollComposerAnonymous,
+  TogglePollComposerMultiple,
+  SubmitPollComposer,
+  VotePollOption
 } from '../contract/ChatIntent';
 import {
   ChatEffect,
@@ -153,10 +163,21 @@ import {
   StopAndSendVoiceRecordEffect,
   CancelVoiceRecordEffect,
   PlayVoiceNoteEffect,
-  PauseVoiceNoteEffect
+  PauseVoiceNoteEffect,
+  SendPollEffect,
+  SetPollAnswerEffect
 } from '../contract/ChatEffect';
 import { StickerSetPreviewState, StickerSetItem } from '../model/StickerSetPreviewState';
 import { GifItem } from '../model/GifItem';
+import {
+  PollComposerState,
+  PollOptionView,
+  PollView,
+  POLL_MAX_OPTIONS,
+  POLL_MIN_OPTIONS,
+  POLL_QUESTION_MAX_LENGTH,
+  POLL_OPTION_MAX_LENGTH
+} from '../model/PollView';
 import { incomingIdUpTo } from '../model/ReadReceipt';
 import {
   clearSelection,
@@ -1189,7 +1210,9 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
           item.senderUserId,
           item.isChannelPost,
           newChips,
-          item.commentCount
+          item.commentCount,
+          item.isPinned,
+          item.poll
         );
       });
       if (!targetFound) {
@@ -1603,6 +1626,166 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
           showMenuConfirmDialog: false,
           pendingMenuAction: ''
         })
+      );
+    }
+
+    // ===== POLL-101：发起投票面板（受控编辑态）+ 投票乐观更新 =====
+
+    case 'openPollComposer': {
+      return reduced(state.copyWith({
+        pollComposer: PollComposerState.draft(),
+        showAttachmentMenu: false,
+        showEmojiBoard: false
+      }));
+    }
+
+    case 'closePollComposer': {
+      if (state.pollComposer === null) {
+        return reduced(state);
+      }
+      return reduced(state.copyWith({ pollComposer: null }));
+    }
+
+    case 'pollQuestionChanged': {
+      const composer: PollComposerState | null = state.pollComposer;
+      if (composer === null) {
+        return reduced(state);
+      }
+      const questionIntent: PollQuestionChanged = intent as PollQuestionChanged;
+      return reduced(state.copyWith({
+        pollComposer: composer.copyWith({
+          question: questionIntent.text.slice(0, POLL_QUESTION_MAX_LENGTH)
+        })
+      }));
+    }
+
+    case 'pollOptionTextChanged': {
+      const composer: PollComposerState | null = state.pollComposer;
+      if (composer === null) {
+        return reduced(state);
+      }
+      const optionIntent: PollOptionTextChanged = intent as PollOptionTextChanged;
+      if (optionIntent.index < 0 || optionIntent.index >= composer.options.length) {
+        return reduced(state);
+      }
+      const nextOptions: string[] = composer.options.slice();
+      nextOptions[optionIntent.index] = optionIntent.text.slice(0, POLL_OPTION_MAX_LENGTH);
+      return reduced(state.copyWith({ pollComposer: composer.copyWith({ options: nextOptions }) }));
+    }
+
+    case 'addPollComposerOption': {
+      const composer: PollComposerState | null = state.pollComposer;
+      if (composer === null || composer.options.length >= POLL_MAX_OPTIONS) {
+        return reduced(state);
+      }
+      const nextOptions: string[] = composer.options.slice();
+      nextOptions.push('');
+      return reduced(state.copyWith({ pollComposer: composer.copyWith({ options: nextOptions }) }));
+    }
+
+    case 'removePollComposerOption': {
+      const composer: PollComposerState | null = state.pollComposer;
+      if (composer === null || composer.options.length <= POLL_MIN_OPTIONS) {
+        return reduced(state);
+      }
+      const removeIntent: RemovePollComposerOption = intent as RemovePollComposerOption;
+      if (removeIntent.index < 0 || removeIntent.index >= composer.options.length) {
+        return reduced(state);
+      }
+      const nextOptions: string[] = composer.options.slice();
+      nextOptions.splice(removeIntent.index, 1);
+      return reduced(state.copyWith({ pollComposer: composer.copyWith({ options: nextOptions }) }));
+    }
+
+    case 'togglePollComposerAnonymous': {
+      const composer: PollComposerState | null = state.pollComposer;
+      if (composer === null) {
+        return reduced(state);
+      }
+      return reduced(state.copyWith({
+        pollComposer: composer.copyWith({ isAnonymous: !composer.isAnonymous })
+      }));
+    }
+
+    case 'togglePollComposerMultiple': {
+      const composer: PollComposerState | null = state.pollComposer;
+      if (composer === null) {
+        return reduced(state);
+      }
+      return reduced(state.copyWith({
+        pollComposer: composer.copyWith({ allowsMultiple: !composer.allowsMultiple })
+      }));
+    }
+
+    case 'submitPollComposer': {
+      const composer: PollComposerState | null = state.pollComposer;
+      if (composer === null) {
+        return reduced(state);
+      }
+      const question: string = composer.question.trim();
+      const options: string[] = composer.nonEmptyOptions();
+      if (question.length === 0 || options.length < POLL_MIN_OPTIONS) {
+        return reduced(state);
+      }
+      return reduced(
+        state.copyWith({ pollComposer: null }),
+        [new SendPollEffect(state.chatId, question, options, composer.isAnonymous, composer.allowsMultiple)]
+      );
+    }
+
+    case 'votePollOption': {
+      const voteIntent: VotePollOption = intent as VotePollOption;
+      if (voteIntent.optionIndex < 0) {
+        return reduced(state);
+      }
+      let targetFound: boolean = false;
+      let nextOptionIds: number[] = [];
+      const newMessages: MessageItem[] = state.messages.map((item: MessageItem): MessageItem => {
+        if (item.messageId !== voteIntent.messageId || item.poll === null) {
+          return item;
+        }
+        const poll: PollView = item.poll;
+        // 已结束投票不可再投。
+        if (poll.isClosed) {
+          return item;
+        }
+        targetFound = true;
+        const tappedChosen: boolean = poll.options.length > voteIntent.optionIndex &&
+          poll.options[voteIntent.optionIndex].isChosen;
+        const nextOptions: PollOptionView[] = [];
+        for (let i: number = 0; i < poll.options.length; i++) {
+          const option: PollOptionView = poll.options[i];
+          let chosen: boolean = option.isChosen;
+          if (i === voteIntent.optionIndex) {
+            chosen = poll.allowsMultipleAnswers ? !tappedChosen : true;
+          } else if (!poll.allowsMultipleAnswers) {
+            chosen = false;
+          }
+          if (chosen) {
+            nextOptionIds.push(i);
+          }
+          nextOptions.push(new PollOptionView(
+            option.index, option.text, option.voterCount, option.votePercentage, chosen
+          ));
+        }
+        const anyChosen: boolean = nextOptionIds.length > 0;
+        return item.withPoll(new PollView(
+          poll.question,
+          nextOptions,
+          poll.totalVoterCount,
+          poll.isAnonymous,
+          poll.allowsMultipleAnswers,
+          poll.isClosed,
+          poll.showResults || anyChosen,
+          anyChosen
+        ));
+      });
+      if (!targetFound) {
+        return reduced(state);
+      }
+      return reduced(
+        state.copyWith({ messages: newMessages }),
+        [new SetPollAnswerEffect(state.chatId, voteIntent.messageId, nextOptionIds)]
       );
     }
   }

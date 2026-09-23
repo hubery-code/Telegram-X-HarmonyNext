@@ -140,6 +140,16 @@ export {
   VoicePlaybackProgress,
   VoicePlaybackCompleted,
   VoicePlaybackFailed,
+  OpenPollComposer,
+  ClosePollComposer,
+  PollQuestionChanged,
+  PollOptionTextChanged,
+  AddPollComposerOption,
+  RemovePollComposerOption,
+  TogglePollComposerAnonymous,
+  TogglePollComposerMultiple,
+  SubmitPollComposer,
+  VotePollOption,
   ChatIntent
 } from './contract/ChatIntent';
 
@@ -191,8 +201,22 @@ export {
   CancelVoiceRecordEffect,
   PlayVoiceNoteEffect,
   PauseVoiceNoteEffect,
+  SendPollEffect,
+  SetPollAnswerEffect,
   ChatEffect
 } from './contract/ChatEffect';
+
+export {
+  PollView,
+  PollOptionView,
+  PollComposerState,
+  PollComposerOptions,
+  pollViewOf,
+  POLL_MIN_OPTIONS,
+  POLL_MAX_OPTIONS,
+  POLL_QUESTION_MAX_LENGTH,
+  POLL_OPTION_MAX_LENGTH
+} from './model/PollView';
 
 export {
   isOutgoingMessageRead,

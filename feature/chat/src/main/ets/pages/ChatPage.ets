@@ -139,13 +139,32 @@ import {
   StopAndSendVoiceRecord,
   CancelVoiceRecord,
   PlayVoiceNote,
-  PauseVoiceNote
+  PauseVoiceNote,
+  OpenPollComposer,
+  ClosePollComposer,
+  PollQuestionChanged,
+  PollOptionTextChanged,
+  AddPollComposerOption,
+  RemovePollComposerOption,
+  TogglePollComposerAnonymous,
+  TogglePollComposerMultiple,
+  SubmitPollComposer,
+  VotePollOption
 } from '../contract/ChatIntent';
 import { isMessageSelected } from '../model/ForwardSelection';
 import { ChatSearchResultItem } from '../model/ChatSearchResultItem';
 import { PinnedMessageInfo } from '../model/PinnedMessageInfo';
 import { StickerSetItem } from '../model/StickerSetPreviewState';
 import { GifItem } from '../model/GifItem';
+import {
+  PollComposerState,
+  PollOptionView,
+  PollView,
+  POLL_MIN_OPTIONS,
+  POLL_MAX_OPTIONS,
+  POLL_QUESTION_MAX_LENGTH,
+  POLL_OPTION_MAX_LENGTH
+} from '../model/PollView';
 import { EmojiBoard } from './EmojiBoard';
 import { StickerSetPreviewSheet } from './StickerSetPreviewSheet';
 
@@ -250,10 +269,21 @@ function messageRowKey(
   if (item.reactionChips.length > 0) {
     reactionSig = item.reactionChips.map((c: ReactionChip) => `${c.emoji}:${c.count}:${c.isChosen}`).join(',');
   }
+  // POLL-101：投票计数/选中态参与签名，否则投完票那一行不重绘（服务端回灌也看不见）。
+  let pollSig: string = '';
+  if (item.poll !== null) {
+    const optParts: string[] = [];
+    for (let k: number = 0; k < item.poll.options.length; k++) {
+      const o: PollOptionView = item.poll.options[k];
+      optParts.push(`${o.voterCount}|${o.votePercentage}|${o.isChosen}`);
+    }
+    pollSig = `${item.poll.totalVoterCount}|${item.poll.hasVoted}|${item.poll.isClosed}|${optParts.join(';')}`;
+  }
   const signature: string =
     `${item.sendState}|${item.isRead}|${item.isEdited}|${item.senderColorIndex}|` +
     `${item.text}|${item.senderName}|${item.senderAvatarPath !== null ? item.senderAvatarPath : ''}|` +
     `${item.replyToSummary}|${mediaSig}|${replySig}|${linkPreviewSig}|${selected}|` +
+    `${pollSig}|` +
     `${item.showDateHeader ? item.dateHeaderText : ''}|${item.showUnreadSeparator}|` +
     `${reactionSig}|${item.commentCount}|${item.isChannelPost}|${item.isPinned}|` +
     // SEARCH-102：高亮态参与 key，落位后该行才会局部重绘。
@@ -389,6 +419,12 @@ export struct ChatPage {
   private highlightTimer: number | undefined = undefined;
   /** MSG-106：上次渲染的选择集签名，用于在多选态变化时触发列表重载。 */
   private shownSelectionSignature: string = '';
+  /**
+   * POLL-101：@Builder 按值传参不会随外部状态刷新（面板会停在初始空草稿），
+   * 故把 reducer 的编辑态镜像成 @State，面板内部一律读 this.pollDraft。
+   */
+  @State private showPollComposer: boolean = false;
+  @State private pollDraft: PollComposerState = PollComposerState.draft();
   /** VOICE-101：上次渲染的正在播放语音消息 ID 与进度采样。 */
   private shownPlayingVoiceMessageId: number | null = null;
   private shownVoiceProgress: number = 0;
@@ -534,6 +570,12 @@ export struct ChatPage {
   }
 
   onUiStateChanged(): void {
+    // POLL-101：@Builder 按值传参不随外部状态刷新，编辑态镜像成 @State 后由面板直接读取。
+    const composer: PollComposerState | null = this.uiState.pollComposer;
+    this.showPollComposer = composer !== null;
+    if (composer !== null) {
+      this.pollDraft = composer;
+    }
     // SEARCH-102：待跳转定位的消息 id 回灌后滚到目标（围绕历史已由 coordinator
     // 通过 loadHistoryAround 拉好）。跳转必须压过"首屏未读/尾部新消息"的自动定位——
     // 后者是 40-50ms 的延迟滚动，若走同一条路径会把跳转结果覆盖掉（表现为
@@ -864,6 +906,11 @@ export struct ChatPage {
       // COMPOSER-102：附件选择面板（半透明遮罩 + 底部抽屉）。
       if (this.uiState.showAttachmentMenu) {
         this.AttachmentMenuSheet()
+      }
+
+      // POLL-101：发起投票面板（半透明遮罩 + 底部抽屉）。
+      if (this.showPollComposer) {
+        this.PollComposerSheet()
       }
 
       // 全屏媒体查看器（MEDIA-103 / FEAT-MEDIA-006）
@@ -1398,6 +1445,11 @@ export struct ChatPage {
           } else {
             this.MediaBubble(item.media, item.messageId, item.sendState === 'failed')
           }
+        }
+
+        // POLL-101：投票卡片（messagePoll），替代正文文本行。
+        if (item.poll !== null) {
+          this.PollBubble(item.messageId, item.poll)
         }
 
         // 链接预览卡片（MSG-107）：showAboveText 为 true 时在正文上方渲染
@@ -3361,6 +3413,32 @@ export struct ChatPage {
           .onClick(() => {
             this.onDispatch(new PickAndSendFile());
           })
+          .margin({ right: this.T.spacing.xl })
+
+          // 选项 4：Poll (投票) —— POLL-101 / FEAT-P2-003
+          Column() {
+            Column() {
+              Image($r('app.media.ic_poll'))
+                .width(28)
+                .height(28)
+                .fillColor(this.T.colors.accent)
+            }
+            .width(56)
+            .height(56)
+            .borderRadius(this.T.radius.full)
+            .backgroundColor(this.T.colors.surfaceVariant)
+            .justifyContent(FlexAlign.Center)
+            .alignItems(HorizontalAlign.Center)
+            .margin({ bottom: this.T.spacing.xs })
+
+            Text('Poll')
+              .fontSize(this.T.typography.footnote.fontSize)
+              .fontColor(this.T.colors.textPrimary)
+          }
+          .alignItems(HorizontalAlign.Center)
+          .onClick(() => {
+            this.onDispatch(new OpenPollComposer());
+          })
         }
         .width('100%')
         .padding({
@@ -3376,6 +3454,324 @@ export struct ChatPage {
         topLeft: this.T.radius.xl,
         topRight: this.T.radius.xl
       })
+      .padding({ bottom: this.T.spacing.screenInset })
+    }
+    .width('100%')
+    .height('100%')
+    .alignContent(Alignment.Bottom)
+  }
+
+  /** POLL-101：投票卡片的底部统计文案。 */
+  private pollFooterText(poll: PollView): string {
+    const parts: string[] = [`${poll.totalVoterCount} vote${poll.totalVoterCount === 1 ? '' : 's'}`];
+    if (poll.isAnonymous) {
+      parts.push('Anonymous poll');
+    }
+    if (poll.allowsMultipleAnswers) {
+      parts.push('Multiple answers');
+    }
+    if (poll.isClosed) {
+      parts.push('Finished');
+    }
+    return parts.join(' · ');
+  }
+
+  /**
+   * POLL-101：投票卡片气泡。题目 + 选项行（选中高亮/计数/百分比/进度条）+ 统计脚注。
+   * 点选项分发 VotePollOption（reducer 乐观翻转选中态并出 setPollAnswer），
+   * 权威计数与百分比由 TDLib updateMessageContent 回灌覆盖。
+   */
+  @Builder
+  PollBubble(messageId: number, poll: PollView) {
+    Column() {
+      Text(poll.question)
+        .fontSize(this.chatText(this.T.typography.body.fontSize))
+        .fontWeight(FontWeight.Medium)
+        .fontColor(this.T.colors.chatText)
+        .width('100%')
+        .margin({ bottom: this.T.spacing.sm })
+
+      ForEach(poll.options, (option: PollOptionView) => {
+        Column() {
+          Row() {
+            if (poll.showResults) {
+              Image(option.isChosen ? $r('app.media.ic_check_single') : $r('app.media.ic_radio_empty'))
+                .width(18)
+                .height(18)
+                .fillColor(option.isChosen ? this.T.colors.accent : this.T.colors.textSecondary)
+                .margin({ right: this.T.spacing.sm })
+            }
+            Text(option.text)
+              .fontSize(this.chatText(this.T.typography.body.fontSize))
+              .fontColor(option.isChosen ? this.T.colors.accent : this.T.colors.chatText)
+              .maxLines(2)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+              .layoutWeight(1)
+            if (poll.showResults) {
+              Text(`${option.voterCount}`)
+                .fontSize(this.chatText(this.T.typography.footnote.fontSize))
+                .fontColor(option.isChosen ? this.T.colors.accent : this.T.colors.textSecondary)
+                .width(28)
+                .textAlign(TextAlign.End)
+              Text(`${option.votePercentage}%`)
+                .fontSize(this.chatText(this.T.typography.footnote.fontSize))
+                .fontColor(option.isChosen ? this.T.colors.accent : this.T.colors.textSecondary)
+                .margin({ left: this.T.spacing.xs })
+            }
+          }
+          .width('100%')
+
+          if (poll.showResults) {
+            Stack({ alignContent: Alignment.Start }) {
+              Row()
+                .width('100%')
+                .height(3)
+                .borderRadius(this.T.radius.full)
+                .backgroundColor(this.T.colors.divider)
+              Row()
+                .width(`${Math.max(2, Math.min(100, option.votePercentage))}%`)
+                .height(3)
+                .borderRadius(this.T.radius.full)
+                .backgroundColor(option.isChosen ? this.T.colors.accent : this.T.colors.textSecondary)
+            }
+            .width('100%')
+            .margin({ top: this.T.spacing.xs })
+          }
+        }
+        .width('100%')
+        .alignItems(HorizontalAlign.Start)
+        .padding({ top: this.T.spacing.xs, bottom: this.T.spacing.xs })
+        .onClick(() => {
+          if (!poll.isClosed) {
+            this.onDispatch(new VotePollOption(messageId, option.index));
+          }
+        })
+      }, (option: PollOptionView): string =>
+        `${messageId}:${option.index}:${option.isChosen}:${option.voterCount}:${option.votePercentage}:${poll.showResults}`)
+
+      Row() {
+        Image($r('app.media.ic_poll'))
+          .width(14)
+          .height(14)
+          .fillColor(this.T.colors.textSecondary)
+          .margin({ right: this.T.spacing.xs })
+        Text(this.pollFooterText(poll))
+          .fontSize(this.chatText(this.T.typography.footnote.fontSize))
+          .fontColor(this.T.colors.textSecondary)
+      }
+      .width('100%')
+      .margin({ top: this.T.spacing.sm })
+    }
+    .width(BUBBLE_MAX_WIDTH)
+    .constraintSize({ maxWidth: 360 })
+    .alignItems(HorizontalAlign.Start)
+    .padding({ top: this.T.spacing.xs, bottom: this.T.spacing.xs })
+  }
+
+  /**
+   * POLL-101：发起投票面板（受控：全部编辑动作走 reducer 的 pollComposer 态）。
+   * 问题 + 2..10 选项 + 匿名/多选开关；Create 仅在 isValid() 时可用。
+   * 结构对齐 AttachmentMenuSheet（scrim 遮罩 + 底部抽屉）。
+   */
+  @Builder
+  PollComposerSheet() {
+    Stack() {
+      Column()
+        .width('100%')
+        .height('100%')
+        .backgroundColor(this.T.colors.scrim)
+        .onClick(() => {
+          this.onDispatch(new ClosePollComposer());
+        })
+
+      // 键盘会压缩窗口高度：面板铺满可用区域，编辑区用 layoutWeight(1) 拿到确定高度后才可滚动，
+      // 否则 Create 会被压缩/顶到键盘背后无法点击。
+      Column() {
+        Row() {
+          Text('Create Poll')
+            .fontSize(this.T.typography.title.fontSize)
+            .fontWeight(this.T.typography.title.fontWeight)
+            .fontColor(this.T.colors.textPrimary)
+            .layoutWeight(1)
+          Text('Cancel')
+            .fontSize(this.T.typography.subheadline.fontSize)
+            .fontColor(this.T.colors.accent)
+            .onClick(() => {
+              this.onDispatch(new ClosePollComposer());
+            })
+        }
+        .width('100%')
+        .flexShrink(0)
+        .padding({
+          left: this.T.spacing.screenInset,
+          right: this.T.spacing.screenInset,
+          top: this.T.spacing.xl,
+          bottom: this.T.spacing.md
+        })
+
+        Scroll() {
+          Column() {
+            // 问题输入
+            Column() {
+              TextInput({
+                text: this.pollDraft.question,
+                placeholder: 'Question'
+              })
+                .fontSize(this.T.typography.body.fontSize)
+                .fontColor(this.T.colors.textPrimary)
+                .placeholderColor(this.T.colors.textSecondary)
+                .backgroundColor(Color.Transparent)
+                .width('100%')
+                .maxLength(POLL_QUESTION_MAX_LENGTH)
+                .onChange((value: string) => {
+                  this.onDispatch(new PollQuestionChanged(value));
+                })
+            }
+            .width('100%')
+            .padding({ left: this.T.spacing.md, right: this.T.spacing.md })
+            .backgroundColor(this.T.colors.surfaceVariant)
+            .borderRadius(this.T.radius.md)
+            .margin({
+              left: this.T.spacing.screenInset,
+              right: this.T.spacing.screenInset,
+              bottom: this.T.spacing.sm
+            })
+
+            // 选项输入行
+            Column() {
+              ForEach(this.pollDraft.options, (optionText: string, index: number) => {
+                Row() {
+                  Text(`${index + 1}`)
+                    .fontSize(this.T.typography.footnote.fontSize)
+                    .fontColor(this.T.colors.textSecondary)
+                    .width(20)
+                  TextInput({
+                    text: optionText,
+                    placeholder: `Option ${index + 1}`
+                  })
+                    .fontSize(this.T.typography.body.fontSize)
+                    .fontColor(this.T.colors.textPrimary)
+                    .placeholderColor(this.T.colors.textSecondary)
+                    .backgroundColor(Color.Transparent)
+                    .layoutWeight(1)
+                    .maxLength(POLL_OPTION_MAX_LENGTH)
+                    .onChange((value: string) => {
+                      this.onDispatch(new PollOptionTextChanged(index, value));
+                    })
+                  if (this.pollDraft.options.length > POLL_MIN_OPTIONS) {
+                    Image($r('app.media.ic_close'))
+                      .width(18)
+                      .height(18)
+                      .fillColor(this.T.colors.textSecondary)
+                      .onClick(() => {
+                        this.onDispatch(new RemovePollComposerOption(index));
+                      })
+                  }
+                }
+                .width('100%')
+                .height(44)
+                .padding({ left: this.T.spacing.md, right: this.T.spacing.md })
+                .margin({ bottom: this.T.spacing.xs })
+                .backgroundColor(this.T.colors.surfaceVariant)
+                .borderRadius(this.T.radius.md)
+              }, (optionText: string, index: number): string => {
+                // 键里带选项数：增删后整组重建（键不变则 ForEach 不刷新，行内会留旧文本）；
+                // 单纯击键不改长度，避免输入框被重建而丢焦点。
+                return `${this.pollDraft.options.length}:${index}`;
+              })
+
+              if (this.pollDraft.options.length < POLL_MAX_OPTIONS) {
+                Row() {
+                  Text('＋ Add Option')
+                    .fontSize(this.T.typography.subheadline.fontSize)
+                    .fontColor(this.T.colors.accent)
+                }
+                .width('100%')
+                .height(40)
+                .justifyContent(FlexAlign.Center)
+                .onClick(() => {
+                  this.onDispatch(new AddPollComposerOption());
+                })
+              }
+            }
+            .width('100%')
+            .padding({
+              left: this.T.spacing.screenInset,
+              right: this.T.spacing.screenInset
+            })
+
+            // 设置行：匿名 / 多选（点击整行切换；Toggle 仅呈现，不吃事件避免双触发）
+            Row() {
+              Text('Anonymous Poll')
+                .fontSize(this.T.typography.body.fontSize)
+                .fontColor(this.T.colors.textPrimary)
+                .layoutWeight(1)
+              Toggle({ type: ToggleType.Switch, isOn: this.pollDraft.isAnonymous })
+                .selectedColor(this.T.colors.accent)
+                .hitTestBehavior(HitTestMode.None)
+            }
+            .width('100%')
+            .height(48)
+            .padding({
+              left: this.T.spacing.screenInset,
+              right: this.T.spacing.screenInset
+            })
+            .onClick(() => {
+              this.onDispatch(new TogglePollComposerAnonymous());
+            })
+
+            Row() {
+              Text('Multiple Answers')
+                .fontSize(this.T.typography.body.fontSize)
+                .fontColor(this.T.colors.textPrimary)
+                .layoutWeight(1)
+              Toggle({ type: ToggleType.Switch, isOn: this.pollDraft.allowsMultiple })
+                .selectedColor(this.T.colors.accent)
+                .hitTestBehavior(HitTestMode.None)
+            }
+            .width('100%')
+            .height(48)
+            .padding({
+              left: this.T.spacing.screenInset,
+              right: this.T.spacing.screenInset
+            })
+            .onClick(() => {
+              this.onDispatch(new TogglePollComposerMultiple());
+            })
+
+            // 提交
+            Column() {
+              Text(this.pollDraft.isValid() ? 'Create' : 'Add a question and 2 options')
+                .fontSize(this.T.typography.subheadline.fontSize)
+                .fontWeight(FontWeight.Medium)
+                .fontColor(this.pollDraft.isValid() ? this.T.colors.textOnAccent : this.T.colors.textSecondary)
+                .width('100%')
+                .height(44)
+                .borderRadius(this.T.radius.full)
+                .backgroundColor(this.pollDraft.isValid() ? this.T.colors.accent : this.T.colors.surfaceVariant)
+                .textAlign(TextAlign.Center)
+                .onClick(() => {
+                  this.onDispatch(new SubmitPollComposer());
+                })
+            }
+            .width('100%')
+            .padding({
+              left: this.T.spacing.screenInset,
+              right: this.T.spacing.screenInset,
+              top: this.T.spacing.sm,
+              bottom: this.T.spacing.xl
+            })
+          }
+          .width('100%')
+        }
+        .width('100%')
+        .layoutWeight(1)
+        .scrollBar(BarState.Auto)
+        .align(Alignment.Top)
+      }
+      .width('100%')
+      .height('100%')
+      .backgroundColor(this.T.colors.surface)
       .padding({ bottom: this.T.spacing.screenInset })
     }
     .width('100%')
