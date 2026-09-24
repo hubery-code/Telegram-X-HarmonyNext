@@ -77,6 +77,13 @@ import {
   viewerNativeScale,
   viewerOffsetForZoom
 } from '../model/ViewerTransform';
+import {
+  ViewerMotionRender,
+  animationContainer,
+  viewerMotionRender,
+  viewerRendersPlayer,
+  viewerZoomable
+} from '../model/ViewerPlayback';
 import { LinkPreviewInfo } from '../model/LinkPreviewInfo';
 import {
   calculateMosaicLayout,
@@ -2483,7 +2490,9 @@ export struct ChatPage {
     Stack({ alignContent: Alignment.Center }) {
       // 1. 底图 / 缩略图 / 占位 / 动图视频
       if (media.localPath !== null && (media.isDownloaded || media.isUploading)) {
-        if (media.kind === 'animation' && (media.localPath.endsWith('.mp4') || media.localPath.indexOf('.mp4') >= 0)) {
+        // MEDIA-VIEWER-102：容器按 mime（缺失时退回结尾扩展名）判定，不再用
+        // `localPath.indexOf('.mp4') >= 0` 碰运气 —— GIF 容器的动图走下面的 Image 分支原生逐帧播。
+        if (media.kind === 'animation' && animationContainer(media) === 'video') {
           // Telegram 动图通常为 MP4 格式，无声循环播放
           Video({
             src: toSandboxUri(media.localPath),
@@ -3978,7 +3987,8 @@ export struct ChatPage {
   /** 换倍率时保持焦点不动：把 `(focalX, focalY)` 那个内容点钉在原处。 */
   private zoomViewerTo(nextScale: number, focalX: number, focalY: number): void {
     const item: MediaViewerItem | null = this.activeViewerItem();
-    if (item === null) {
+    if (item === null || !viewerZoomable(item.media.kind)) {
+      // 只有照片放大；视频页的倍率永远停在 1（缩放上限是按像素算的，视频不适用）。
       return;
     }
     const clampedScale: number = clampViewerScale(nextScale, this.viewerMaxScaleOf(item));
@@ -4015,28 +4025,65 @@ export struct ChatPage {
     };
   }
 
+  /**
+   * 这一页的动态内容该画什么（'player' / 'gif' / 'poster' / 'download'）。
+   * 「是不是当前页」在这里合成，纯判定全在 model/ViewerPlayback.ets。
+   */
+  private viewerPageRender(item: MediaViewerItem, index: number): ViewerMotionRender {
+    return viewerMotionRender(item.media, viewerRendersPlayer(index, this.uiState.activeViewerIndex));
+  }
+
+  /** 缩放与拖拽只开放给照片页：视频页由播放器自己的控制条接管。 */
+  private viewerActiveZoomable(): boolean {
+    const item: MediaViewerItem | null = this.activeViewerItem();
+    return item !== null && viewerZoomable(item.media.kind);
+  }
+
   /** 全屏多媒体画廊查看器（MEDIA-103 / FEAT-MEDIA-006）。 */
   @Builder
   MediaViewerOverlay() {
     Stack({ alignContent: Alignment.Center }) {
       // 1. 底层：多图 Swiper 翻页与手势缩放
       Swiper(this.swiperController) {
-        ForEach(this.uiState.viewerItems, (item: MediaViewerItem) => {
+        ForEach(this.uiState.viewerItems, (item: MediaViewerItem, index: number) => {
           Stack({ alignContent: Alignment.Center }) {
-            if (item.media.kind === 'video') {
-              if (item.media.localPath !== null && item.media.isDownloaded) {
-                Video({
-                  src: toSandboxUri(item.media.localPath),
-                  previewUri: toSandboxUri(item.media.thumbnailPath)
-                })
-                  .autoPlay(true)
-                  .loop(false)
-                  .controls(true)
-                  .muted(false)
+            if (item.media.kind === 'video' || item.media.kind === 'animation') {
+              // MEDIA-VIEWER-102：动态内容按档位画。'player' 只给当前页 —— Swiper 会缓存
+              // 相邻页，缓存着的 `autoPlay(true)` 视频会一起开播，于是好几条音轨同时响。
+              if (this.viewerPageRender(item, index) === 'gif') {
+                // GIF 容器交给 Image 原生逐帧播放：不起播放器、天然无声循环。
+                Image(toSandboxUri(item.media.localPath))
                   .objectFit(ImageFit.Contain)
                   .width('100%')
                   .height('100%')
-              } else {
+              } else if (this.viewerPageRender(item, index) === 'player') {
+                if (item.media.kind === 'video') {
+                  Video({
+                    src: toSandboxUri(item.media.localPath),
+                    previewUri: toSandboxUri(item.media.thumbnailPath)
+                  })
+                    .autoPlay(true)
+                    .loop(false)
+                    .controls(true)
+                    .muted(false)
+                    .objectFit(ImageFit.Contain)
+                    .width('100%')
+                    .height('100%')
+                } else {
+                  // 动图（TDLib 已转码的 mp4）：无声循环、不给控制条，和气泡里同一套语义。
+                  Video({
+                    src: toSandboxUri(item.media.localPath),
+                    previewUri: toSandboxUri(item.media.thumbnailPath)
+                  })
+                    .autoPlay(true)
+                    .loop(true)
+                    .controls(false)
+                    .muted(true)
+                    .objectFit(ImageFit.Contain)
+                    .width('100%')
+                    .height('100%')
+                }
+              } else if (this.viewerPageRender(item, index) === 'download') {
                 Stack({ alignContent: Alignment.Center }) {
                   if (item.media.thumbnailPath !== null) {
                     Image(toSandboxUri(item.media.thumbnailPath))
@@ -4059,7 +4106,7 @@ export struct ChatPage {
                         .width(26)
                         .height(26)
                         .fillColor(Color.White)
-                      Text('Download Video')
+                      Text(item.media.kind === 'video' ? 'Download Video' : 'Download GIF')
                         .fontSize(12)
                         .fontColor(Color.White)
                         .margin({ top: 6 })
@@ -4074,19 +4121,13 @@ export struct ChatPage {
                 }
                 .width('100%')
                 .height('100%')
+              } else if (item.media.thumbnailPath !== null) {
+                // 'poster'：Swiper 缓存的相邻页只画封面，翻页动画期间不会出现第二个播放器。
+                Image(toSandboxUri(item.media.thumbnailPath))
+                  .objectFit(ImageFit.Contain)
+                  .width('100%')
+                  .height('100%')
               }
-            } else if (item.media.kind === 'animation' && (item.media.localPath !== null && (item.media.localPath.endsWith('.mp4') || item.media.localPath.indexOf('.mp4') >= 0))) {
-              Video({
-                src: toSandboxUri(item.media.localPath),
-                previewUri: toSandboxUri(item.media.thumbnailPath)
-              })
-                .autoPlay(true)
-                .loop(true)
-                .controls(false)
-                .muted(true)
-                .objectFit(ImageFit.Contain)
-                .width('100%')
-                .height('100%')
             } else if (this.viewerRenderSrc(item).length > 0) {
               // MEDIA-VIEWER-101：优先画最大档，大图还在路上时先画显示档。
               Image(this.viewerRenderSrc(item))
@@ -4135,7 +4176,11 @@ export struct ChatPage {
           // translate 会按各自的中心各算一遍，拖起来就对不上手指。
           .scale({ x: this.viewerScale, y: this.viewerScale })
           .translate({ x: this.viewerOffsetX, y: this.viewerOffsetY })
-        }, (item: MediaViewerItem) => mediaViewerItemKey(item))
+        }, (item: MediaViewerItem, index: number): string => {
+          // MEDIA-VIEWER-102：「是不是当前页」要进键 —— 翻页时 item 内容没变，键不变就
+          // 不会重渲，刚离开那一页的 Video 节点会一直活着继续出声。
+          return mediaViewerItemKey(item, viewerRendersPlayer(index, this.uiState.activeViewerIndex));
+        })
       }
       .index(this.uiState.activeViewerIndex)
       .onChange((index: number) => {
@@ -4208,27 +4253,40 @@ export struct ChatPage {
                 this.panStartOffsetX + event.offsetX,
                 this.panStartOffsetY + event.offsetY
               );
+            })
+        )
+      )
+      // MEDIA-VIEWER-102：点击必须走 `.gesture` 而不是跟着上面那条 `priorityGesture`。
+      // priorityGesture 连**子节点**的识别器一起压，Video 自带的播放/进度条于是永远点不到
+      // （设备实测：点播放键只翻了工具栏），'download' 档的下载按钮同理。
+      // 普通 `.gesture` 是祖先识别器，子节点（Video 控制条、下载按钮）优先命中。
+      .gesture(
+        GestureGroup(
+          GestureMode.Exclusive,
+          TapGesture({ count: 2 })
+            .onAction((event: GestureEvent) => {
+              this.toggleViewerZoom(event);
             }),
-          GestureGroup(
-            GestureMode.Exclusive,
-            TapGesture({ count: 2 })
-              .onAction((event: GestureEvent) => {
-                this.toggleViewerZoom(event);
-              }),
-            TapGesture({ count: 1 })
-              .onAction(() => {
-                this.viewerBarsVisible = !this.viewerBarsVisible;
-              })
-          )
+          TapGesture({ count: 1 })
+            .onAction(() => {
+              this.viewerBarsVisible = !this.viewerBarsVisible;
+            })
         )
       )
       // 未放大时把**我们自己那条**拖拽判掉，否则 priorityGesture 会抢走 Swiper 的横滑翻页。
       // 判据必须带 `!isSystemGesture`：Swiper 内置的滑动同样是 PAN_GESTURE（只是 isSystemGesture
       // 为 true），一起判掉就等于把翻页也判死了 —— 设备实测踩过。
+      // 视频 / 动图页（MEDIA-VIEWER-102）连捏合一起判掉：那两页不缩放，手势要留给播放器自己的控制条。
       .onGestureJudgeBegin((info: GestureInfo, _event: BaseGestureEvent) => {
-        if (!info.isSystemGesture && info.type === GestureControl.GestureType.PAN_GESTURE &&
-          this.viewerScale <= 1.05) {
-          return GestureJudgeResult.REJECT;
+        if (!info.isSystemGesture) {
+          const zoomable: boolean = this.viewerActiveZoomable();
+          if (info.type === GestureControl.GestureType.PAN_GESTURE &&
+            (this.viewerScale <= 1.05 || !zoomable)) {
+            return GestureJudgeResult.REJECT;
+          }
+          if (info.type === GestureControl.GestureType.PINCH_GESTURE && !zoomable) {
+            return GestureJudgeResult.REJECT;
+          }
         }
         return GestureJudgeResult.CONTINUE;
       })
@@ -4273,6 +4331,11 @@ export struct ChatPage {
       .height(BACK_ARROW_SIZE)
       .justifyContent(FlexAlign.Center)
       .alignItems(VerticalAlign.Center)
+      // MEDIA-VIEWER-102：返回键这块热区要独占。浮层根 Column 是 Transparent（否则中间区域
+      // 挡死了翻页与点击翻栏），而 Transparent 的语义就是「连祖先的兄弟节点一起放进来做触摸
+      // 测试」，下层那台全屏 Swiper 于是和返回键抢同一次点击。Block 在自身这里截断祖先链，
+      // 该热区只报给浮层。（SDK：Default 只挡兄弟、不挡祖先；Block 挡子/兄/祖三级。）
+      .hitTestBehavior(HitTestMode.Block)
       .onClick(() => {
         this.onDispatch(new CloseMediaViewer());
       })

@@ -229,7 +229,7 @@ export default function mediaViewerTest() {
     it('itemKey_separatesAlbumSiblingsSharingMessageId', 0, () => {
       const a: MediaViewerItem = new MediaViewerItem(101, 'Bob', 1000, makePhotoMedia(1));
       const b: MediaViewerItem = new MediaViewerItem(101, 'Bob', 1000, makePhotoMedia(2));
-      expect(mediaViewerItemKey(a) === mediaViewerItemKey(b)).assertFalse();
+      expect(mediaViewerItemKey(a, false) === mediaViewerItemKey(b, false)).assertFalse();
     });
 
     it('itemKey_changesWhenFullTierLands', 0, () => {
@@ -237,15 +237,28 @@ export default function mediaViewerTest() {
         .withFullSource(new MediaFullSource(9, 4000, 3000));
       const ready: MediaAttachment = makePhotoMedia(1)
         .withFullSource(new MediaFullSource(9, 4000, 3000, '/path/photo-full.jpg', true));
-      const k1: string = mediaViewerItemKey(new MediaViewerItem(101, 'Bob', 1000, pending));
-      const k2: string = mediaViewerItemKey(new MediaViewerItem(101, 'Bob', 1000, ready));
+      const k1: string = mediaViewerItemKey(new MediaViewerItem(101, 'Bob', 1000, pending), false);
+      const k2: string = mediaViewerItemKey(new MediaViewerItem(101, 'Bob', 1000, ready), false);
       expect(k1 === k2).assertFalse();
     });
 
     it('itemKey_isStableForIdenticalRenderedState', 0, () => {
-      const k1: string = mediaViewerItemKey(new MediaViewerItem(101, 'Bob', 1000, makePhotoMedia(1)));
-      const k2: string = mediaViewerItemKey(new MediaViewerItem(101, 'Bob', 1000, makePhotoMedia(1)));
+      const k1: string = mediaViewerItemKey(new MediaViewerItem(101, 'Bob', 1000, makePhotoMedia(1)), false);
+      const k2: string = mediaViewerItemKey(new MediaViewerItem(101, 'Bob', 1000, makePhotoMedia(1)), false);
       expect(k1).assertEqual(k2);
+    });
+
+    // ---- MEDIA-VIEWER-102：播放器归属位进键（翻页必须让上一页的 Video 节点重建消失）----
+
+    it('itemKey_playerBitChangesOnActivation', 0, () => {
+      const video: MediaViewerItem = new MediaViewerItem(201, 'Bob', 1000, makeVideoMedia(5));
+      expect(mediaViewerItemKey(video, true) === mediaViewerItemKey(video, false)).assertFalse();
+    });
+
+    it('itemKey_photoIgnoresActivationBit', 0, () => {
+      // 照片页不因为翻页白白重建（重建就是重新解码，会闪）。
+      const photo: MediaViewerItem = new MediaViewerItem(202, 'Bob', 1000, makePhotoMedia(6));
+      expect(mediaViewerItemKey(photo, true)).assertEqual(mediaViewerItemKey(photo, false));
     });
   });
 }

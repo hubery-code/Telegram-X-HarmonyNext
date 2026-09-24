@@ -377,6 +377,43 @@
 > `MediaAttachment` +1 例 `fullSource` 经 `copyWith` 往返）；三守卫 0 违规。
 > 遗留：`PinchGesture` 无法用 `uitest` 注入，捏合数学只有单测覆盖（设备侧靠双击档位验证）；
 > 视频与 GIF 在查看器里仍是静态首帧；`HitTestMode.Block` 这类「浮层吃掉整屏命中」的隐患还没在其他浮层系统排查。
+>
+> **同日追加（MEDIA-VIEWER-102，FEAT-P2-006 收官）**：查看器里的视频与 GIF 从「静态首帧」变成播放器，动图容器判定换轨。
+> **容器判定信 mime 不信文件名子串**：旧写法 `fileName.indexOf('.mp4') >= 0` 撞上 TDLib 的 GIF 转码产物
+> `2176acbf..._hq.gif.mp4` —— 子串判定把 GIF 认成视频、真视频反被当成动图，两边一起错。
+> `model/ViewerPlayback.ets` 的 `motionContainerOf()` 先读 `animation.mime_type` / `video.mime_type`
+> （`image/gif` 精确匹配、`video/` 前缀匹配），mime 缺失才退到 `file_name`、再退到 `localPath` 的**尾缀**
+> （`lastIndexOf('.')` 取最后一段，所以 `abc.gif.mp4` 是 `mp4`、`video.mp4.notes.txt` 是未知）；
+> `ChatCoordinator` 为此把 `mime_type` / `file_name` / `file.size` 一路送进 `MediaAttachment`。
+> **单播放器所有权**：`Swiper` 缓存相邻页，每页都挂 `Video({autoPlay:true})` 就是几条音轨同时响。
+> 「是不是当前页」因此必须进 `ForEach` 的键 —— `mediaViewerItemKey(item, isActive)` 只给需要播放器的项追加
+> `|player` / `|poster`，照片页保持稳定的键免得翻页时重新解码大图。四档渲染：`gif`（`Image` 原生逐帧，
+> 不起播放器、天然无声循环）/ `player`（视频带控制条，动图静音循环）/ `poster`（缓存页只画封面）/
+> `download`（本地无文件时出 `Download Video` / `Download GIF`；出站消息在 `isDownloaded` 之前靠
+> `isUploading` 就能播）。缩放、拖拽、双击只对照片页开放，视频页手势连捏合一起在 `onGestureJudgeBegin` 判死，
+> 热区留给播放器自己的控制条。
+> **两个只有真跑设备才看得见的命中缺陷**：① 点击 / 双击挂在 `Swiper` 的 `priorityGesture` 上，而 priorityGesture
+> 按 SDK 语义连**子节点**识别器一起压 —— `Video` 的播放键与进度条、`download` 档的下载按钮永远点不到
+> （实测点播放键只翻工具栏、进度恒 `0.000000`）；点击改挂普通 `.gesture`（祖先识别器，子节点优先命中）后归位。
+> ② 工具栏浮层根 `Column` 用 `HitTestMode.Transparent`（语义是「不阻塞兄弟**和祖先**的触摸测试」），
+> 下层那台全屏 `Swiper` 于是和返回键抢同一次点击，`onClick` 永不派发、查看器关不掉；返回键热区加
+> `HitTestMode.Block` 截断祖先链才解决。附带一条取证教训：查看器顶栏有 36vp 顶部内边距，返回键真实热区是
+> `[28,262][182,416]`，沿用聊天页的 `(105,241)` 会点到栏外透传区，把好的修复读成没生效。
+> 设备取证（模拟器 127.0.0.1:5555，真实 TDLib，全程只读未发送）：`dumpLayout` 里 `Video` 节点的 `text` 即其 src，
+> 可直接数播放器 —— 视频页 `video:['VID_20260823_100342.mp4'], swiper:1`，右滑回照片页 `video:[]`（缓存页降级为封面、
+> 播放器销毁），再滑回来重建为 1，末页继续左滑不越界；返回键关闭后 `swiper:0`、聊天列表恢复。
+> **视频画面本身在这台模拟器上取不到，根因不是接线**：`media_service` 日志
+> `KPI-TRACE: PlayerServer SetSource in(fd), fd: 14, offset: 0, size: 13791948` 证明 `Video` 已把
+> `file://<bundleName>/data/storage/el2/base/haps/entry/files/tdlib/files/videos/....mp4` 解析成 fd 并读到真实大小
+> （沙盒 URI 形态正确、文件可读），随后 `AVCodecListImpl: Get capability failed, mime: video/hevc` →
+> `DecoderSurfaceFilter: Video size 1920x1080 not supported by both hw and sw decoder` →
+> `onError 331350546 VID_DEC_ERR-unsupport interface`：这条 TDLib 视频是 H.265，模拟器镜像没带 HEVC 解码器，
+> 而账号里可翻到的会话没有 H.264 视频消息可替换。真机可播；本端取证停在解码器边界。
+> 测试：`feature_chat` **321/321 PASS**（新增 `ViewerPlayback.test.ets` 17 例覆盖 mime 优先级、尾缀回退、
+> `needsPlayer` / `rendersPlayer` / `motionRender` 四档与出站态、`zoomable` 只给照片；`MediaViewer` +2 例键位）；
+> 三守卫 0 违规。FEAT-P2-006（完整媒体查看器、后台音频、AVSession）至此收官。
+> 遗留：HEVC 视频帧画面待真机或有 H.264 素材时复核；`gif` 档只有单测覆盖（本账号会话里没有 GIF 消息可点）；
+> 视频页双击会翻一次工具栏（`Video` 控制条与祖先点击的仲裁待真机复核）。
 
 
 | 功能 ID | 功能名 |

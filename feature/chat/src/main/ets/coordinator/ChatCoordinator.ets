@@ -1623,7 +1623,14 @@ export class ChatCoordinator {
         progress,
         captionText,
         captionSpans,
-        animContent.has_spoiler
+        animContent.has_spoiler,
+        false,
+        0,
+        anim.file_name,
+        targetFile.size,
+        // MEDIA-VIEWER-102：动图到底是 GIF 还是已转码的 mp4，只有 TDLib 的 mime 说得准；
+        // 此前这两个字段一直没带上，查看器只能拿文件名猜容器。
+        anim.mime_type
       );
     }
 
@@ -1713,7 +1720,11 @@ export class ChatCoordinator {
         captionSpans,
         videoContent.has_spoiler,
         isUploading,
-        uploadProgress
+        uploadProgress,
+        video.file_name,
+        targetFile.size,
+        // MEDIA-VIEWER-102：容器与尺寸带上，查看器不必再从沙箱文件名里猜。
+        video.mime_type
       ).withDownloadFailed(this.failedFileIds.has(fileId));
     }
 
