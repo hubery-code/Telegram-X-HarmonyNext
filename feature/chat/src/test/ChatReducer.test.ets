@@ -1,6 +1,7 @@
 import { describe, it, expect } from '@ohos/hypium';
 import { ManualClock, SequentialIdGenerator, AppErrors } from '@tgx/core-common';
 import { ReducerEnv, ReducerResult } from '@tgx/feature-template';
+import { canSendAnyMedia, ChatSendRights } from '@tgx/core-domain';
 import {
   ChatUiState,
   ComposerEditMode,
@@ -148,6 +149,11 @@ import {
 import { ChatSearchResultItem } from '../main/ets/model/ChatSearchResultItem';
 import { chatReducer, extractFirstLink } from '../main/ets/reducer/ChatReducer';
 import { MessageTextSpan } from '../main/ets/model/MessageTextSpan';
+
+/** 只读频道形状的一份权限（基础消息与所有媒体位全 false），CHAN-SEND-2 用例复用。 */
+function readonlyRights(): ChatSendRights {
+  return new ChatSendRights(false, false, false, false, false, false, false, false, false);
+}
 
 function makeEnv(nowMillis: number = 1000, monotonicMillis: number = 500): ReducerEnv {
   const env: ReducerEnv = {
@@ -1713,29 +1719,44 @@ export default function chatReducerTest() {
       expect(noopResult.state === result.state).assertTrue();
     });
 
-    // CHAN-SEND：发言权回灌驱动频道底栏（有权限=输入栏，明确 false=静音条）。
-    it('onChatSendPermissionsChanged_updatesCanSendMessages', 0, () => {
-      const state: ChatUiState = makeState('', null).copyWith({ chatKind: 'channel', canSendMessages: true });
+    // CHAN-SEND-2：发言权回灌驱动频道底栏与附件可用性（有权限=输入栏，明确 false=静音条）。
+    it('onChatSendPermissionsChanged_updatesSendRights', 0, () => {
+      const state: ChatUiState = makeState('', null).copyWith({ chatKind: 'channel' });
       const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
         state,
-        new OnChatSendPermissionsChanged(false),
+        new OnChatSendPermissionsChanged(readonlyRights()),
         makeEnv()
       );
-      expect(result.state.canSendMessages).assertFalse();
+      expect(result.state.sendRights.basic).assertFalse();
       expect(result.effects.length).assertEqual(0);
 
       // 同值回灌不动状态引用（权限没变时不该让整页重算）
       const noopResult: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
         result.state,
-        new OnChatSendPermissionsChanged(false),
+        new OnChatSendPermissionsChanged(readonlyRights()),
         makeEnv()
       );
       expect(noopResult.state === result.state).assertTrue();
     });
 
+    it('onChatSendPermissionsChanged_singleMediaBitFlipUpdatesReference', 0, () => {
+      // 只禁投票、其余照旧：九位逐位比较必须认出这是变更，附件面板才会重算可用性。
+      const before: ChatUiState = ChatUiState.initial().copyWith({ sendRights: readonlyRights() });
+      const pollless: ChatSendRights = new ChatSendRights(true, true, true, true, true, true, true, false, true);
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        before,
+        new OnChatSendPermissionsChanged(pollless),
+        makeEnv()
+      );
+      expect(result.state === before).assertFalse();
+      expect(result.state.sendRights.basic).assertTrue();
+      expect(result.state.sendRights.polls).assertFalse();
+    });
+
     it('chatUiState_defaultAllowsSendingUntilPermissionsRead', 0, () => {
-      // 读不到权限不等于没权限：初值必须保留输入栏，静音条只在明确 false 时出。
-      expect(ChatUiState.initial().canSendMessages).assertTrue();
+      // 读不到权限不等于没权限：初值必须保留输入栏与全部附件项，静音条只在明确 false 时出。
+      expect(ChatUiState.initial().sendRights.basic).assertTrue();
+      expect(canSendAnyMedia(ChatUiState.initial().sendRights)).assertTrue();
     });
 
     it('openMessageComments_emitsOpenCommentsEffect', 0, () => {

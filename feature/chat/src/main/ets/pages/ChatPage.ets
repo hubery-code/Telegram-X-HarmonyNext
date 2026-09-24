@@ -45,6 +45,17 @@
 
 import { LightTheme, Theme, chatTextSizeOf } from '@tgx/core-design-system';
 import { Lang } from '@tgx/core-common';
+import {
+  AttachmentEntry,
+  ATTACHMENT_FILE,
+  ATTACHMENT_GALLERY,
+  ATTACHMENT_POLL,
+  ATTACHMENT_VIDEO,
+  attachmentRestrictionLabel,
+  buildAttachmentEntries,
+  canRecordVoice,
+  canSendAnyMedia
+} from '@tgx/core-domain';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { common } from '@kit.AbilityKit';
 import { display } from '@kit.ArkUI';
@@ -3375,110 +3386,37 @@ export struct ChatPage {
           bottom: this.T.spacing.md
         })
 
-        // 附件选项网格
+        // 附件选项网格：各项可用性由 chat.permissions 的各位驱动（CHAN-SEND-2）。
+        // 不可用的条目保持可见但置灰，点击时出限制提示 —— 对齐 Android：入口不藏起来，
+        // 点了再由 Tdlib.showRestriction 说明为什么不行（MessagesController.java:10324）。
         Row() {
-          // 选项 1：Gallery (相册)
-          Column() {
+          ForEach(this.attachmentEntries(), (entry: AttachmentEntry) => {
             Column() {
-              Image($r('app.media.ic_photo'))
-                .width(28)
-                .height(28)
-                .fillColor(this.T.colors.accent)
+              Column() {
+                Image(this.attachmentIcon(entry.key))
+                  .width(28)
+                  .height(28)
+                  .fillColor(entry.enabled ? this.T.colors.accent : this.T.colors.disabled)
+              }
+              .width(56)
+              .height(56)
+              .borderRadius(this.T.radius.full)
+              .backgroundColor(this.T.colors.surfaceVariant)
+              .justifyContent(FlexAlign.Center)
+              .alignItems(HorizontalAlign.Center)
+              .margin({ bottom: this.T.spacing.xs })
+
+              Text(this.attachmentLabel(entry.key))
+                .fontSize(this.T.typography.footnote.fontSize)
+                .fontColor(entry.enabled ? this.T.colors.textPrimary : this.T.colors.textSecondary)
             }
-            .width(56)
-            .height(56)
-            .borderRadius(this.T.radius.full)
-            .backgroundColor(this.T.colors.surfaceVariant)
-            .justifyContent(FlexAlign.Center)
             .alignItems(HorizontalAlign.Center)
-            .margin({ bottom: this.T.spacing.xs })
-
-            Text('Gallery')
-              .fontSize(this.T.typography.footnote.fontSize)
-              .fontColor(this.T.colors.textPrimary)
-          }
-          .alignItems(HorizontalAlign.Center)
-          .onClick(() => {
-            this.onDispatch(new PickAndSendPhoto());
-          })
-          .margin({ right: this.T.spacing.xl })
-
-          // 选项 2：Video (视频) —— MEDIA-105 / FEAT-MEDIA-002
-          Column() {
-            Column() {
-              Image($r('app.media.ic_video'))
-                .width(28)
-                .height(28)
-                .fillColor(this.T.colors.accent)
-            }
-            .width(56)
-            .height(56)
-            .borderRadius(this.T.radius.full)
-            .backgroundColor(this.T.colors.surfaceVariant)
-            .justifyContent(FlexAlign.Center)
-            .alignItems(HorizontalAlign.Center)
-            .margin({ bottom: this.T.spacing.xs })
-
-            Text('Video')
-              .fontSize(this.T.typography.footnote.fontSize)
-              .fontColor(this.T.colors.textPrimary)
-          }
-          .alignItems(HorizontalAlign.Center)
-          .onClick(() => {
-            this.onDispatch(new PickAndSendVideo());
-          })
-          .margin({ right: this.T.spacing.xl })
-
-          // 选项 3：File (文件)
-          Column() {
-            Column() {
-              Image($r('app.media.ic_file'))
-                .width(28)
-                .height(28)
-                .fillColor(this.T.colors.accent)
-            }
-            .width(56)
-            .height(56)
-            .borderRadius(this.T.radius.full)
-            .backgroundColor(this.T.colors.surfaceVariant)
-            .justifyContent(FlexAlign.Center)
-            .alignItems(HorizontalAlign.Center)
-            .margin({ bottom: this.T.spacing.xs })
-
-            Text('File')
-              .fontSize(this.T.typography.footnote.fontSize)
-              .fontColor(this.T.colors.textPrimary)
-          }
-          .alignItems(HorizontalAlign.Center)
-          .onClick(() => {
-            this.onDispatch(new PickAndSendFile());
-          })
-          .margin({ right: this.T.spacing.xl })
-
-          // 选项 4：Poll (投票) —— POLL-101 / FEAT-P2-003
-          Column() {
-            Column() {
-              Image($r('app.media.ic_poll'))
-                .width(28)
-                .height(28)
-                .fillColor(this.T.colors.accent)
-            }
-            .width(56)
-            .height(56)
-            .borderRadius(this.T.radius.full)
-            .backgroundColor(this.T.colors.surfaceVariant)
-            .justifyContent(FlexAlign.Center)
-            .alignItems(HorizontalAlign.Center)
-            .margin({ bottom: this.T.spacing.xs })
-
-            Text('Poll')
-              .fontSize(this.T.typography.footnote.fontSize)
-              .fontColor(this.T.colors.textPrimary)
-          }
-          .alignItems(HorizontalAlign.Center)
-          .onClick(() => {
-            this.onDispatch(new OpenPollComposer());
-          })
+            .opacity(entry.enabled ? 1 : 0.45)
+            .margin({ right: this.T.spacing.xl })
+            .onClick(() => {
+              this.onAttachmentTap(entry);
+            })
+          }, (entry: AttachmentEntry): string => `${entry.key}:${entry.enabled}`)
         }
         .width('100%')
         .padding({
@@ -3499,6 +3437,75 @@ export struct ChatPage {
     .width('100%')
     .height('100%')
     .alignContent(Alignment.Bottom)
+  }
+
+  // ---- CHAN-SEND-2：附件面板与录音入口的权限驱动 ----
+
+  /** 面板条目及其可用性（纯函数在 core/domain，便于单测覆盖九位组合）。 */
+  private attachmentEntries(): AttachmentEntry[] {
+    return buildAttachmentEntries(this.uiState.sendRights);
+  }
+
+  private attachmentIcon(key: string): Resource {
+    if (key === ATTACHMENT_GALLERY) {
+      return $r('app.media.ic_photo');
+    }
+    if (key === ATTACHMENT_VIDEO) {
+      return $r('app.media.ic_video');
+    }
+    if (key === ATTACHMENT_FILE) {
+      return $r('app.media.ic_file');
+    }
+    return $r('app.media.ic_poll');
+  }
+
+  private attachmentLabel(key: string): string {
+    if (key === ATTACHMENT_GALLERY) {
+      return 'Gallery';
+    }
+    if (key === ATTACHMENT_VIDEO) {
+      return 'Video';
+    }
+    if (key === ATTACHMENT_FILE) {
+      return 'File';
+    }
+    return 'Poll';
+  }
+
+  /** 受限点击的统一提示：拿不到 UIContext 时静默（不因为提示失败而打断交互）。 */
+  private showHintToast(message: string): void {
+    try {
+      this.getUIContext().getPromptAction().showToast({ message: message, duration: 2000 });
+    } catch (toastErr) {
+    }
+  }
+
+  /** 受限条目不静默失效：出提示说明为什么点不动，可用条目才分发选择动作。 */
+  private onAttachmentTap(entry: AttachmentEntry): void {
+    const hint: string = attachmentRestrictionLabel(entry);
+    if (hint.length > 0) {
+      this.showHintToast(hint);
+      return;
+    }
+    if (entry.key === ATTACHMENT_GALLERY) {
+      this.onDispatch(new PickAndSendPhoto());
+    } else if (entry.key === ATTACHMENT_VIDEO) {
+      this.onDispatch(new PickAndSendVideo());
+    } else if (entry.key === ATTACHMENT_FILE) {
+      this.onDispatch(new PickAndSendFile());
+    } else {
+      this.onDispatch(new OpenPollComposer());
+    }
+  }
+
+  /** 九位媒体权限全被禁时，附件入口本身没有意义（对齐 Android canSendSendSomeMedia）。 */
+  private showAttachButton(): boolean {
+    return canSendAnyMedia(this.uiState.sendRights);
+  }
+
+  /** 无输入文本时的麦克风按钮是否被权限挡住；挡住时点击出提示而不是开始录音。 */
+  private canRecordVoiceNow(): boolean {
+    return canRecordVoice(this.uiState.sendRights);
   }
 
   /** POLL-101：投票卡片的底部统计文案。 */
@@ -4162,26 +4169,31 @@ export struct ChatPage {
       .borderRadius(this.T.radius.full)
 
       // COMPOSER-102：统一附件入口按钮（展开/收起附件选择面板）
-      Row() {
-        Image($r('app.media.ic_attach'))
-          .width(24)
-          .height(24)
-          .fillColor(this.uiState.showAttachmentMenu ? this.T.colors.accent : this.T.colors.textSecondary)
+      // CHAN-SEND-2：九位媒体权限全禁时不出附件入口（Android Tdlib.canSendSendSomeMedia）。
+      if (this.showAttachButton()) {
+        Row() {
+          Image($r('app.media.ic_attach'))
+            .width(24)
+            .height(24)
+            .fillColor(this.uiState.showAttachmentMenu ? this.T.colors.accent : this.T.colors.textSecondary)
+        }
+        .width(COMPOSER_INPUT_HEIGHT)
+        .height(COMPOSER_INPUT_HEIGHT)
+        .justifyContent(FlexAlign.Center)
+        .alignItems(VerticalAlign.Center)
+        .margin({ left: this.T.spacing.xs, right: this.T.spacing.xs })
+        .onClick(() => {
+          this.onDispatch(new ToggleAttachmentMenu());
+        })
       }
-      .width(COMPOSER_INPUT_HEIGHT)
-      .height(COMPOSER_INPUT_HEIGHT)
-      .justifyContent(FlexAlign.Center)
-      .alignItems(VerticalAlign.Center)
-      .margin({ left: this.T.spacing.xs, right: this.T.spacing.xs })
-      .onClick(() => {
-        this.onDispatch(new ToggleAttachmentMenu());
-      })
 
       Row() {
         Image(this.canSend() ? $r('app.media.ic_send') : $r('app.media.ic_mic'))
           .width(20)
           .height(20)
-          .fillColor(this.T.colors.textOnAccent)
+          .fillColor(this.canSend() || this.canRecordVoiceNow()
+            ? this.T.colors.textOnAccent
+            : this.T.colors.disabled)
       }
       .width(SEND_BUTTON_SIZE)
       .height(SEND_BUTTON_SIZE)
@@ -4192,6 +4204,8 @@ export struct ChatPage {
       .onClick(() => {
         if (this.canSend()) {
           this.dispatchSend();
+        } else if (!this.canRecordVoiceNow()) {
+          this.showHintToast('此会话不允许发送语音消息');
         } else {
           this.onDispatch(new StartVoiceRecord());
         }
@@ -4281,20 +4295,20 @@ export struct ChatPage {
   }
 
   /**
-   * CHAN-SEND：频道只读态 —— 已是成员但 TDLib 明确给出无发言权（can_send_basic_messages=false）。
+   * CHAN-SEND-2：频道只读态 —— 已是成员但 TDLib 明确给出无发言权（permissions.can_send_basic_messages=false）。
    * 对齐 Android TGX 的 `Tdlib.canSendBasicMessage(chat)` 判定：有权限的成员看到正常输入栏，
    * 只有真正被限制发言的频道才把底栏收成静音条。
    */
   private isChannelReadOnly(): boolean {
-    return this.uiState.chatKind === 'channel' && this.uiState.isChannelMember && !this.uiState.canSendMessages;
+    return this.uiState.chatKind === 'channel' && this.uiState.isChannelMember && !this.uiState.sendRights.basic;
   }
 
   /**
-   * CHAN-SEND：底栏是否被频道条占据（未加入 → 加入条，只读 → 静音条）。
+   * CHAN-SEND-2：底栏是否被频道条占据（未加入 → 加入条，只读 → 静音条）。
    * 这三种输入相关 UI（模式条 / 输入栏 / 表情面板）互斥，统一走这一个谓词，避免各分支各写一份。
    */
   private isChannelOverlayBar(): boolean {
-    return this.uiState.chatKind === 'channel' && (!this.uiState.isChannelMember || !this.uiState.canSendMessages);
+    return this.uiState.chatKind === 'channel' && (!this.uiState.isChannelMember || !this.uiState.sendRights.basic);
   }
 
   /** CHANNEL-101：非成员频道底部"加入频道"全宽条 */

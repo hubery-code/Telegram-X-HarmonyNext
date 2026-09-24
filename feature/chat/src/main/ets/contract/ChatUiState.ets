@@ -25,6 +25,7 @@
  */
 
 import { UiState } from '@tgx/feature-template';
+import { ChatSendRights } from '@tgx/core-domain';
 import { MessageItem } from '../model/MessageItem';
 import { MediaViewerItem } from '../model/MediaViewerItem';
 import { ChatSearchResultItem } from '../model/ChatSearchResultItem';
@@ -166,8 +167,8 @@ export interface ChatUiStateOptions {
   readonly showPinnedBar?: boolean;
   /** CHANNEL-101：是否已加入频道（未加入频道时底栏显示"加入频道"按钮）。 */
   readonly isChannelMember?: boolean;
-  /** CHAN-SEND：当前用户在该会话是否有发言权（chat.permissions.can_send_basic_messages）。 */
-  readonly canSendMessages?: boolean;
+  /** CHAN-SEND-2：本会话发言权九位快照（chat.permissions），驱动输入栏与附件入口可用性。 */
+  readonly sendRights?: ChatSendRights;
   /** EMOJI-101：表情/贴纸面板是否展开。 */
   readonly showEmojiBoard?: boolean;
   /** STICKER-PREVIEW-101：贴纸包详情预览状态（null=不显示弹窗）。 */
@@ -245,8 +246,8 @@ export class ChatUiState implements UiState {
   readonly showPinnedBar: boolean;
   /** CHANNEL-101：是否已加入频道（未加入频道时底栏显示"加入频道"按钮）。 */
   readonly isChannelMember: boolean;
-  /** CHAN-SEND：当前用户在该会话是否有发言权（chat.permissions.can_send_basic_messages）。 */
-  readonly canSendMessages: boolean;
+  /** CHAN-SEND-2：本会话发言权九位快照（chat.permissions），驱动输入栏与附件入口可用性。 */
+  readonly sendRights: ChatSendRights;
   /** EMOJI-101：表情/贴纸面板是否展开。 */
   readonly showEmojiBoard: boolean;
   /** STICKER-PREVIEW-101：贴纸包详情预览状态（null=不显示弹窗）。 */
@@ -305,7 +306,7 @@ export class ChatUiState implements UiState {
     pinnedMessage: PinnedMessageInfo | null = null,
     showPinnedBar: boolean = false,
     isChannelMember: boolean = true,
-    canSendMessages: boolean = true,
+    sendRights: ChatSendRights = new ChatSendRights(),
     showEmojiBoard: boolean = false,
     stickerSetPreview: StickerSetPreviewState | null = null,
     isRecordingVoice: boolean = false,
@@ -348,7 +349,7 @@ export class ChatUiState implements UiState {
     this.pinnedMessage = pinnedMessage;
     this.showPinnedBar = showPinnedBar;
     this.isChannelMember = isChannelMember;
-    this.canSendMessages = canSendMessages;
+    this.sendRights = sendRights;
     this.showEmojiBoard = showEmojiBoard;
     this.stickerSetPreview = stickerSetPreview;
     this.isRecordingVoice = isRecordingVoice;
@@ -367,7 +368,7 @@ export class ChatUiState implements UiState {
   }
 
   static initial(): ChatUiState {
-    return new ChatUiState(0, '', [], false, true, null, '', null, null, -1, [], 0, 0, false, [], false, false, '', [], false, 0, '', 'unknown', null, false, true, true, false, null, false, 0, null, 0, 0, DEFAULT_RECENT_EMOJIS, DEFAULT_RECENT_STICKERS, DEFAULT_RECENT_GIFS, '', false, '', null);
+    return new ChatUiState(0, '', [], false, true, null, '', null, null, -1, [], 0, 0, false, [], false, false, '', [], false, 0, '', 'unknown', null, false, true, new ChatSendRights(), false, null, false, 0, null, 0, 0, DEFAULT_RECENT_EMOJIS, DEFAULT_RECENT_STICKERS, DEFAULT_RECENT_GIFS, '', false, '', null);
   }
 
   copyWith(options: ChatUiStateOptions): ChatUiState {
@@ -398,7 +399,7 @@ export class ChatUiState implements UiState {
       options.pinnedMessage !== undefined ? options.pinnedMessage : this.pinnedMessage,
       options.showPinnedBar !== undefined ? options.showPinnedBar : this.showPinnedBar,
       options.isChannelMember !== undefined ? options.isChannelMember : this.isChannelMember,
-      options.canSendMessages !== undefined ? options.canSendMessages : this.canSendMessages,
+      options.sendRights !== undefined ? options.sendRights : this.sendRights,
       options.showEmojiBoard !== undefined ? options.showEmojiBoard : this.showEmojiBoard,
       options.stickerSetPreview !== undefined ? options.stickerSetPreview : this.stickerSetPreview,
       options.isRecordingVoice !== undefined ? options.isRecordingVoice : this.isRecordingVoice,

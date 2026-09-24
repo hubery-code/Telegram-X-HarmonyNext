@@ -35,6 +35,7 @@ import { ChatSearchResultItem } from '../model/ChatSearchResultItem';
 import { ChatKind } from '../model/SenderInfo';
 import { StickerSetPreviewState, StickerSetItem } from '../model/StickerSetPreviewState';
 import { GifItem } from '../model/GifItem';
+import { ChatSendRights } from '@tgx/core-domain';
 
 export class LoadInitialMessages implements Intent {
   readonly kind: 'loadInitialMessages' = 'loadInitialMessages';
@@ -634,17 +635,18 @@ export class OnChannelMemberStatusChanged implements Intent {
 }
 
 /**
- * CHAN-SEND：发言权回灌。来源两条：getChat 响应里的 chat.permissions.can_send_basic_messages
- * （进入会话时的一次性回读）与 updateChatPermissions 推送（管理员中途改权限会推）。
- * 驱动频道成员底栏出「输入栏」还是「静音条」—— 只有 TDLib 明确给出 false 才收成静音条，
- * permissions 缺失时按可发言处理，避免把读不到权限当成没权限而把用户锁在输入栏外。
+ * CHAN-SEND-2：发言权回灌。来源两条：getChat 响应里的 chat.permissions（进入会话时的一次性回读）
+ * 与 updateChatPermissions 推送（管理员中途改权限会推）。
+ * 一次带回九位（sendRightsFromPermissions 转换），既驱动频道成员底栏出「输入栏」还是「静音条」，
+ * 也驱动附件面板各项与录音入口的可用性。permissions 缺失时按全放开处理 —— 读不到权限不等于没权限，
+ * 收成静音条等于把人锁在输入栏外。
  */
 export class OnChatSendPermissionsChanged implements Intent {
   readonly kind: 'onChatSendPermissionsChanged' = 'onChatSendPermissionsChanged';
-  readonly canSendMessages: boolean;
+  readonly rights: ChatSendRights;
 
-  constructor(canSendMessages: boolean) {
-    this.canSendMessages = canSendMessages;
+  constructor(rights: ChatSendRights) {
+    this.rights = rights;
   }
 }
 

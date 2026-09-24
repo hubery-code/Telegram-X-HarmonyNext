@@ -206,6 +206,26 @@
 > 切 Tab 与返回后选中态和数据均保留不重复请求；私聊页四 Tab 与空态无回归。`feature_profile` 81/81 PASS。
 > 遗留：群/频道页共享内容无按日期分组头；`shared_media_ok` 日志的 `placeholder=` 统计 `fileId === 0` 而非
 > `localPath === null`，「下载中且缩略图未落盘」在日志上不可见。
+> **2026-09-24（CHAN-SEND-2，FEAT-P2-002/005 附件菜单按发言权限实化）**：CHAN-SEND 的遗留两项处理如下 ——
+> **① 「有发帖权频道输入栏左侧 🔔 静音位」判定为非缺口，删项**。读码：Android TGX 里非管理员频道成员**根本没有输入栏**，
+> 底栏就是 Follow / Discuss / **ToggleMute** 三态按钮（`MessagesController.java:3162-3172`），而管理员/有发帖权成员的
+> 输入栏左侧没有 🔔，静音在 ⋮ 菜单（`:4468`、`:5938`）。本端 ⋮ 与频道资料页均已有静音入口，所以「左侧 🔔」是凭空造 UI。
+> **② `ChatPermissions` 其余位驱动附件菜单已落地**：`core/domain/chat/ChatSendRights.ets` 落九位发言权（一位一个
+> `RightId`，映射表照 `data/TD.java:316-334` 的 `TD.checkRight`：basic/audios/documents/photos/videos/video_notes/
+> voice_notes/polls/other_messages）+ 纯函数 `sendRightsFromPermissions` / `canSendAnyMedia` / `buildAttachmentEntries` /
+> `canRecordVoice` / `attachmentRestrictionLabel`。放 `core/domain` 而不是 `feature/chat/model`：跨层共享且要能被
+> `core_domain` 单测覆盖（先例 `chat/ChatMute.ets`）。`ChatUiState.canSendMessages: boolean` 换成整份 `sendRights`，
+> 意图 `OnChatSendPermissionsChanged` 携带九位，reducer 用 `sameAs` 做到同值不动状态引用。
+> **语义按原样：受限项置灰可见、点击弹限制提示，而不是消失**（Android `Tdlib.showRestriction`，受限条目保留在菜单里
+> 让用户知道「有这功能但这里不让发」）；只有**八位媒体权限全禁**时才把输入栏的 📎 整个收掉（对齐 `canSendSendSomeMedia`
+> 决定整行媒体入口的显隐，`basic` 不参与媒体判断）。语音按钮按 `can_send_voice_notes || can_send_video_notes` 决定，
+> 禁录时点击给提示而不是起录音。权限读不到（null）仍按全放开，与 CHAN-SEND 同方向。
+> 设备实证：真实数据只有「全放开」两端（群四格全亮、只读频道收成 `静音` 条 `Text [618,2529][737,2599]`），
+> 中间态用一次性强制权限包取证后删除重建复验 —— 禁视频+投票时 `Video`/`Poll` 置灰（opacity .45）且点 `Video` 弹
+> 「此会话不允许发送视频」；仅留 basic 时 📎 从输入栏消失、点麦克风弹「此会话不允许发送语音消息」。全程未向真实会话发送内容。
+> `core_domain` 124/124（新增 8 例，含九位映射矩阵防位序写错）、`feature_chat` 281/281，三守卫 0 违规。
+> 遗留：`can_send_other_messages` 尚未驱动 `EmojiBoard` 里的贴纸/GIF 页签；`can_send_audios` 本端附件菜单无「音乐」入口可置灰；
+> 「可发言但禁部分媒体」的真实会话账号内不存在，受限态只有注入证据；`updateChatPermissions` 推送链仍未设备实证。
 
 | 功能 ID | 功能名 |
 |---|---|

@@ -150,6 +150,9 @@ import {
   FileRegistry,
   formatFullName,
   isChatMuted,
+  canSendAnyMedia,
+  ChatSendRights,
+  sendRightsFromPermissions,
   MessageListState,
   MessageProjection,
   UserRegistry,
@@ -2914,17 +2917,18 @@ export class ChatCoordinator {
   }
 
   /**
-   * CHAN-SEND：把发言权（chat.permissions.can_send_basic_messages）回灌状态。
-   * permissions 为 null（TDLib 没给）时按「可发言」处理 ——
-   * 读不到权限不等于没有权限，收成静音条会把用户彻底锁在输入栏外。
+   * CHAN-SEND-2：把 chat.permissions 的九位发言权回灌状态（基础消息 / 图片 / 视频 / 文件 /
+   * 音乐 / 语音便签 / 视频便签 / 投票 / 贴纸与 GIF）。
+   * permissions 为 null（TDLib 没给）时按「全放开」处理 —— 读不到权限不等于没有权限，
+   * 收成静音条会把用户彻底锁在输入栏外。
    */
   private applyChatSendPermissions(permissions: ChatPermissions | null): void {
-    const canSend: boolean = permissions === null ? true : permissions.can_send_basic_messages;
+    const rights: ChatSendRights = sendRightsFromPermissions(permissions);
     // 每次 getChat / updateChatPermissions 都打一条：真机取证要能直接看到 TDLib 给的值，
     // 而不是靠「没变化所以没日志」反推。
     this.logger.info(TAG, 'chat_send_permissions',
-      `can_send=${canSend},permissions=${permissions === null ? 'missing' : 'read'}`);
-    this.dispatch(new OnChatSendPermissionsChanged(canSend));
+      `can_send=${rights.basic},media=${canSendAnyMedia(rights)},permissions=${permissions === null ? 'missing' : 'read'}`);
+    this.dispatch(new OnChatSendPermissionsChanged(rights));
   }
 
   /** CHAN-SEND：订阅 updateChatPermissions（本会话），管理员中途改权限即时生效；destroy 时退订。 */

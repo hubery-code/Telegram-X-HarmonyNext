@@ -1164,14 +1164,14 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
       return reduced(state.copyWith({ isChannelMember: memberIntent.isMember }));
     }
 
-    // CHAN-SEND：发言权回灌（getChat 的 chat.permissions + updateChatPermissions 推送）；
-    // 值相同不动状态，避免每次推送都让整页重算。
+    // CHAN-SEND-2：发言权回灌（getChat 的 chat.permissions + updateChatPermissions 推送）；
+    // 九位逐位比对，值全相同不动状态引用，避免每次推送都让整页重算。
     case 'onChatSendPermissionsChanged': {
       const permIntent: OnChatSendPermissionsChanged = intent as OnChatSendPermissionsChanged;
-      if (state.canSendMessages === permIntent.canSendMessages) {
+      if (state.sendRights.sameAs(permIntent.rights)) {
         return reduced(state);
       }
-      return reduced(state.copyWith({ canSendMessages: permIntent.canSendMessages }));
+      return reduced(state.copyWith({ sendRights: permIntent.rights }));
     }
 
     case 'openMessageComments': {
