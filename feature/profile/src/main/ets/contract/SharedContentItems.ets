@@ -78,16 +78,22 @@ export class SharedAudioItem {
   readonly fileId: number;
   readonly localPath: string | null;
   readonly title: string;
+  /**
+   * 表演者（AUDIO-BG-101 给锁屏播控卡片用）：音乐取 `audio.performer`，语音留空。
+   * 行副标题里也有这段文字，但那是给人读的一整行，不能拿来当 artist 用。
+   */
+  readonly artist: string;
   readonly subtitle: string;
   /** 时长（秒）；0 表示源消息没给。仅用于日志与后续进度条。 */
   readonly duration: number;
   readonly date: number;
 
-  constructor(fileId: number, localPath: string | null, title: string, subtitle: string,
-    duration: number = 0, date: number = 0) {
+  constructor(fileId: number, localPath: string | null, title: string, artist: string,
+    subtitle: string, duration: number = 0, date: number = 0) {
     this.fileId = fileId;
     this.localPath = localPath;
     this.title = title;
+    this.artist = artist;
     this.subtitle = subtitle;
     this.duration = duration;
     this.date = date;

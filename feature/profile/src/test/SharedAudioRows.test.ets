@@ -17,12 +17,14 @@ import {
   SharedMediaItem
 } from '../main/ets/contract/SharedContentItems';
 import {
+  audioSessionMetadata,
   audioSubtitleOf,
   audioTitleOf,
   formatSharedDuration,
   voiceTitleOf,
   withSharedAudioPath
 } from '../main/ets/model/SharedContentFormat';
+import { AudioPlaybackMetadata } from '@tgx/platform-ports';
 import {
   mergeSharedRows,
   SHARED_TAB_AUDIO,
@@ -31,7 +33,7 @@ import {
 } from '../main/ets/model/SharedContentSearch';
 
 function audio(fileId: number, localPath: string | null = null): SharedAudioItem {
-  return new SharedAudioItem(fileId, localPath, `T${fileId}`, 'sub', 60, 1700000000);
+  return new SharedAudioItem(fileId, localPath, `T${fileId}`, 'A', 'sub', 60, 1700000000);
 }
 
 export default function sharedAudioRowsTest(): void {
@@ -102,6 +104,29 @@ export default function sharedAudioRowsTest(): void {
       // 没命中（或已经有路径）时返回 null，调用方据此不派发无意义的状态回灌。
       expect(withSharedAudioPath(items, 99, '/x.mp3')).assertNull();
       expect(withSharedAudioPath(items, 12, '/y.mp3')).assertNull();
+    });
+
+    it('audioSessionMetadata_mapsRowsForLockScreenCard', 0, () => {
+      // 音乐行：标题/表演者给 TD 的元数据，时长秒→毫秒（AVSession 全按毫秒计）。
+      const music: SharedAudioItem = audio(11);
+      const musicMeta: AudioPlaybackMetadata = audioSessionMetadata(music, false, 'El CLUB');
+      expect(musicMeta.assetId).assertEqual('11');
+      expect(musicMeta.title).assertEqual('T11');
+      expect(musicMeta.artist).assertEqual('A');
+      expect(musicMeta.durationMs).assertEqual(60000);
+
+      // 语音行标题为空：锁屏上不能印一堆随机落盘文件名，回落到「语音消息」，
+      // 第二行留给会话名（表演者为空时才用 contextTitle）。
+      const voice: SharedAudioItem = new SharedAudioItem(21, null, '', '', '0:07, 128 KB', 7);
+      const voiceMeta: AudioPlaybackMetadata = audioSessionMetadata(voice, true, 'be hu');
+      expect(voiceMeta.title).assertEqual('语音消息');
+      expect(voiceMeta.artist).assertEqual('be hu');
+      expect(voiceMeta.durationMs).assertEqual(7000);
+
+      // 音乐行没标题时保持空串，交给 entry 侧按文件名兜底（那里才知道路径）。
+      const bare: SharedAudioItem = new SharedAudioItem(31, null, '', 'Perf', '3:34', 214);
+      expect(audioSessionMetadata(bare, false, '频道').title).assertEqual('');
+      expect(audioSessionMetadata(bare, false, '频道').artist).assertEqual('Perf');
     });
   });
 }

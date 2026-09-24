@@ -5,10 +5,12 @@
  * 与群/频道资料页的 coordinator 共用同一套解析规则：两处若各写一份，文件大小文案、
  * 缩略图选档、link_preview 兜底就会开始分叉，同一批消息在两个页面上长得不一样。
  *
- * Kit-free：只依赖 TDLib DTO 与本模块契约类型，可被 reducer/coordinator 直接 import。
+ * Kit-free：只依赖 TDLib DTO、本模块契约类型与 `@tgx/platform-ports` 的纯类型，
+ * 可被 reducer/coordinator 直接 import。
  * 视图侧纯助手（头像调色板、字母头像首字符）同样收在这里，页面与共享内容分区组件共用一份色值。
  */
 
+import { AudioPlaybackMetadata } from '@tgx/platform-ports';
 import {
   Message,
   TdMessageContent,
@@ -396,6 +398,7 @@ export function audioItemOf(
     file.id,
     localPathOf(file.id),
     title,
+    audio.performer,
     // 日期不重复写进副标题：本 Tab 按日期分段，段头已经说了哪天。
     audioSubtitleOf(audio.performer, audio.title, audio.duration, file.size),
     audio.duration,
@@ -428,6 +431,8 @@ export function voiceItemOf(
     file.id,
     localPathOf(file.id),
     voiceTitleOf(senderNameOf(senderId), msg.is_outgoing),
+    // 语音没有表演者；锁屏卡片上这一行留给调用方填会话名。
+    '',
     joinRowParts([formatSharedDuration(voice.duration), formatFileSizeText(file.size)]),
     voice.duration,
     msg.date
@@ -448,7 +453,7 @@ export function withSharedAudioPath(
   for (let i = 0; i < items.length; i++) {
     const item: SharedAudioItem = items[i];
     if (item.fileId === fileId && (item.localPath === null || item.localPath.length === 0)) {
-      updated.push(new SharedAudioItem(item.fileId, path, item.title, item.subtitle,
+      updated.push(new SharedAudioItem(item.fileId, path, item.title, item.artist, item.subtitle,
         item.duration, item.date));
       touched = true;
     } else {
@@ -584,4 +589,26 @@ export function avatarLetterOf(title: string): string {
     return '?';
   }
   return String.fromCodePoint(codePoint).toUpperCase();
+}
+
+/**
+ * 音频行 → 媒体会话元数据（AUDIO-BG-101）。
+ *
+ * 锁屏/控制中心的卡片只有「标题 + 表演者 + 总长」三个位置，规则照 TGX 的播放器通知：
+ * - 标题：行标题（音乐是曲名，语音是发送者）；语音行没有发送者可显（陌生人）时显
+ *   「语音消息」，**不显**下载来的随机文件名；
+ * - 表演者：音乐优先 `audio.performer`，没有（以及语音）退到会话名 —— 卡片上第二行
+ *   写「在哪个会话里听的」比空着有用；
+ * - `assetId` 用 fileId：同一条重复点按是「同一首」，编排器才会走 setMetadata 而不是重建会话。
+ */
+export function audioSessionMetadata(
+  item: SharedAudioItem,
+  isVoice: boolean,
+  contextTitle: string
+): AudioPlaybackMetadata {
+  const title: string = item.title.length > 0
+    ? item.title
+    : (isVoice ? '语音消息' : '');
+  const artist: string = item.artist.length > 0 ? item.artist : contextTitle;
+  return new AudioPlaybackMetadata(`${item.fileId}`, title, artist, item.duration * 1000);
 }

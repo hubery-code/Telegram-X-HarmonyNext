@@ -37,7 +37,14 @@ import {
   MessageSenderUser
 } from '@tgx/core-td-api-generated';
 import { TdWireObject, TdPendingRequest } from '@tgx/td-gateway';
-import { AudioPlayerPort, ClipboardPort, FakeAudioPlayer, ToastPort, Subscription } from '@tgx/platform-ports';
+import {
+  AudioPlaybackMetadata,
+  AudioPlayerPort,
+  ClipboardPort,
+  FakeAudioPlayer,
+  ToastPort,
+  Subscription
+} from '@tgx/platform-ports';
 import { Logger } from '@tgx/observability';
 import { ReducerResult, ReducerEnv } from '@tgx/feature-template';
 import { ChatProfileUiState, ChatMemberUiItem } from '../contract/ChatProfileUiState';
@@ -46,9 +53,14 @@ import {
   SharedContentRows,
   SharedMediaItem
 } from '../contract/SharedContentItems';
-import { withSharedAudioPath, withSharedMediaPath } from '../model/SharedContentFormat';
+import {
+  audioSessionMetadata,
+  withSharedAudioPath,
+  withSharedMediaPath
+} from '../model/SharedContentFormat';
 import {
   mergeSharedRows,
+  SHARED_TAB_VOICE,
   SharedContentPage,
   SharedContentSearcher
 } from '../model/SharedContentSearch';
@@ -537,7 +549,7 @@ export class ChatProfileCoordinator {
     }
     if (this.pendingPlayFileId === file.id) {
       this.pendingPlayFileId = 0;
-      this.startSharedAudioPlayback(path);
+      this.startSharedAudioPlayback(path, this.findSharedAudio(file.id));
     }
   }
 
@@ -552,7 +564,7 @@ export class ChatProfileCoordinator {
       return;
     }
     if (item.localPath !== null && item.localPath.length > 0) {
-      this.startSharedAudioPlayback(item.localPath);
+      this.startSharedAudioPlayback(item.localPath, item);
       return;
     }
     // 音频没落盘：先触发下载，路径回来后由 onSharedFileReady 续播；
@@ -562,8 +574,11 @@ export class ChatProfileCoordinator {
     this.toastPort.showToast('正在下载音频...');
   }
 
-  private startSharedAudioPlayback(path: string): void {
+  private startSharedAudioPlayback(path: string, item: SharedAudioItem | null): void {
     const fileId: number = this.state.sharedPlayingFileId;
+    const metadata: AudioPlaybackMetadata | undefined = item === null
+      ? undefined
+      : audioSessionMetadata(item, this.state.activeSharedTab === SHARED_TAB_VOICE, this.state.title);
     this.audioPlayerPort.play(
       path,
       (_currentMs: number, _totalMs: number): void => {},
@@ -577,7 +592,8 @@ export class ChatProfileCoordinator {
         if (!this.destroyed) {
           this.dispatch(new OnSharedAudioPlaying(0));
         }
-      }
+      },
+      metadata
     ).catch((e: Error): void => {
       this.logger.error(TAG, 'shared_audio_play_failed', String(e));
       if (!this.destroyed) {

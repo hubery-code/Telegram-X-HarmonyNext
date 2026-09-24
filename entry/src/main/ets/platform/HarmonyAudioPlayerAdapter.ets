@@ -12,6 +12,10 @@
  *
  * 注意：`onError` 回调只保留给「音源根本挂不上」（文件缺失/不可读）这类用户
  * 可操作的真实错误；容器不可解码属于环境能力问题，走降级不打扰用户。
+ *
+ * AUDIO-BG-101 追加：播放态会同步给 `AudioSessionOrchestrator`（AVSession 锁屏播控 +
+ * 后台长时任务），锁屏上的 ▶/⏹/进度条反向驱动本类的 pause/stop/seek。会话生命周期
+ * 决策全在编排器里，本类只负责「出声」和「把状态如实报出去」。
  */
 
 import { media } from '@kit.MediaKit';
@@ -19,11 +23,15 @@ import { fileIo } from '@kit.CoreFileKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import {
   AudioPlayerPort,
+  AudioPlaybackMetadata,
   AudioPlaybackProgressCallback,
   AudioPlaybackCompleteCallback,
-  AudioPlaybackErrorCallback
+  AudioPlaybackErrorCallback,
+  AudioSessionPort,
+  ContinuousTaskPort
 } from '@tgx/platform-ports';
 import { probeAudioFile, AudioProbe } from './AudioContainer';
+import { AudioPlaybackController, AudioSessionOrchestrator } from './AudioSessionOrchestrator';
 
 const DOMAIN: number = 0x0000;
 const TAG: string = 'HarmonyAudioPlayerAdapter';
@@ -31,11 +39,14 @@ const TAG: string = 'HarmonyAudioPlayerAdapter';
 /** 降级模拟播放的假定时长（真实时长不可用时的兜底）。 */
 const SIMULATED_DURATION_MS: number = 5000;
 
-export class HarmonyAudioPlayerAdapter implements AudioPlayerPort {
+export class HarmonyAudioPlayerAdapter implements AudioPlayerPort, AudioPlaybackController {
   private avPlayer: media.AVPlayer | null = null;
   private currentUri: string = '';
+  private currentMetadata: AudioPlaybackMetadata | null = null;
   private currentFd: number = -1;
   private playing: boolean = false;
+  /** 自然播完：AVPlayer 处于 completed 态，此时锁屏按 ▶ 需要 seek(0) 重来。 */
+  private finished: boolean = false;
   private durationMs: number = 0;
   private currentPositionMs: number = 0;
 
@@ -46,20 +57,40 @@ export class HarmonyAudioPlayerAdapter implements AudioPlayerPort {
   // 降级模拟定时器
   private fallbackTimer: number | undefined = undefined;
 
+  // 媒体会话（可选：未注入时退化成「只有前台出声」，与 AUDIO-BG-101 之前一致）。
+  private orchestrator: AudioSessionOrchestrator | null = null;
+
+  /**
+   * 装配层注入 AVSession 与后台长时任务端口（`Index.ets` 在拿到 UIAbilityContext 后调用）。
+   * 只注入一次；重复注入会重建编排器，把已激活的会话留在原地。
+   */
+  attachAudioSession(session: AudioSessionPort, task: ContinuousTaskPort): void {
+    if (this.orchestrator !== null) {
+      return;
+    }
+    this.orchestrator = new AudioSessionOrchestrator(session, task, this);
+  }
+
   async play(
     uriOrPath: string,
     onProgress?: AudioPlaybackProgressCallback,
     onComplete?: AudioPlaybackCompleteCallback,
-    onError?: AudioPlaybackErrorCallback
+    onError?: AudioPlaybackErrorCallback,
+    metadata?: AudioPlaybackMetadata
   ): Promise<void> {
-    await this.stop();
+    await this.releasePlayer();
 
     this.currentUri = uriOrPath;
+    this.currentMetadata = metadata === undefined
+      ? new AudioPlaybackMetadata(uriOrPath, '', '', 0)
+      : metadata;
     this.onProgressCallback = onProgress;
     this.onCompleteCallback = onComplete;
     this.onErrorCallback = onError;
     this.playing = true;
+    this.finished = false;
     this.currentPositionMs = 0;
+    this.notifySessionStarted();
 
     if (uriOrPath.startsWith('http://') || uriOrPath.startsWith('https://')) {
       await this.startPlayer(uriOrPath, -1);
@@ -134,6 +165,7 @@ export class HarmonyAudioPlayerAdapter implements AudioPlayerPort {
         case 'prepared':
           try {
             this.durationMs = player.duration;
+            this.notifySessionDuration();
             await player.play();
           } catch (e) {
             hilog.error(DOMAIN, TAG, `player.play() failed: ${String(e)}`);
@@ -142,13 +174,18 @@ export class HarmonyAudioPlayerAdapter implements AudioPlayerPort {
           break;
         case 'playing':
           this.playing = true;
+          this.notifySessionState();
           break;
         case 'paused':
           this.playing = false;
+          this.notifySessionState();
           break;
         case 'completed':
           this.playing = false;
+          this.finished = true;
           this.currentPositionMs = this.durationMs;
+          // 不销毁会话：锁屏上留在结束位置的卡片按 ▶ 可以重听，这是 TGX 播放器的行为。
+          this.notifySessionState();
           if (this.onCompleteCallback) {
             this.onCompleteCallback();
           }
@@ -170,6 +207,7 @@ export class HarmonyAudioPlayerAdapter implements AudioPlayerPort {
       if (this.onProgressCallback) {
         this.onProgressCallback(timeMs, this.durationMs > 0 ? this.durationMs : timeMs);
       }
+      this.notifySessionState();
     });
 
     // 错误详情只落日志（含 errorCode），用户侧不再看到裸错误串。
@@ -223,6 +261,7 @@ export class HarmonyAudioPlayerAdapter implements AudioPlayerPort {
 
   private startFallbackPlayback(): void {
     this.durationMs = SIMULATED_DURATION_MS;
+    this.notifySessionDuration();
     const intervalMs: number = 200;
     this.fallbackTimer = setInterval(() => {
       if (!this.playing) {
@@ -232,9 +271,11 @@ export class HarmonyAudioPlayerAdapter implements AudioPlayerPort {
       if (this.onProgressCallback) {
         this.onProgressCallback(this.currentPositionMs, this.durationMs);
       }
+      this.notifySessionState();
       if (this.currentPositionMs >= this.durationMs) {
         this.stopFallback();
         this.playing = false;
+        this.finished = true;
         if (this.onCompleteCallback) {
           this.onCompleteCallback();
         }
@@ -251,6 +292,7 @@ export class HarmonyAudioPlayerAdapter implements AudioPlayerPort {
 
   async pause(): Promise<void> {
     this.playing = false;
+    this.notifySessionState();
     if (this.avPlayer) {
       try {
         await this.avPlayer.pause();
@@ -262,16 +304,31 @@ export class HarmonyAudioPlayerAdapter implements AudioPlayerPort {
 
   async resume(): Promise<void> {
     this.playing = true;
+    this.finished = false;
+    this.notifySessionState();
     if (this.avPlayer) {
       try {
         await this.avPlayer.play();
       } catch (_e) {
         // ignore
       }
+    } else if (this.fallbackTimer === undefined && this.currentUri.length > 0) {
+      // 降级模拟播放被暂停后继续：定时器已经停了，重新按当前进度走。
+      this.playing = true;
+      this.startFallbackPlayback();
     }
   }
 
   async stop(): Promise<void> {
+    this.playing = false;
+    this.finished = false;
+    this.stopFallback();
+    await this.releasePlayer();
+    await this.releaseSession();
+  }
+
+  /** 只回收播放器实例，不动会话 —— `play()` 换曲目用它，避免会话抖动重建。 */
+  private async releasePlayer(): Promise<void> {
     this.playing = false;
     this.stopFallback();
     if (this.avPlayer) {
@@ -288,6 +345,9 @@ export class HarmonyAudioPlayerAdapter implements AudioPlayerPort {
 
   async seek(positionMs: number): Promise<void> {
     this.currentPositionMs = positionMs;
+    if (positionMs < this.durationMs) {
+      this.finished = false;
+    }
     if (this.avPlayer) {
       try {
         await this.avPlayer.seek(positionMs);
@@ -295,6 +355,7 @@ export class HarmonyAudioPlayerAdapter implements AudioPlayerPort {
         // ignore
       }
     }
+    this.notifySessionState();
   }
 
   isPlaying(): boolean {
@@ -311,5 +372,74 @@ export class HarmonyAudioPlayerAdapter implements AudioPlayerPort {
 
   async release(): Promise<void> {
     await this.stop();
+  }
+
+  // ---- 会话同步（未注入编排器时全部 no-op）----
+
+  private notifySessionStarted(): void {
+    const orchestrator: AudioSessionOrchestrator | null = this.orchestrator;
+    const metadata: AudioPlaybackMetadata | null = this.currentMetadata;
+    if (orchestrator === null || metadata === null) {
+      return;
+    }
+    orchestrator.onPlaybackStarted(this.currentUri, metadata).catch((e: Error): void => {
+      hilog.warn(DOMAIN, TAG, `session start notify failed: ${String(e)}`);
+    });
+  }
+
+  /** `prepared` 才拿到真实时长：补一次元数据，锁屏进度条才有总长。 */
+  private notifySessionDuration(): void {
+    const orchestrator: AudioSessionOrchestrator | null = this.orchestrator;
+    const metadata: AudioPlaybackMetadata | null = this.currentMetadata;
+    if (orchestrator === null || metadata === null || this.durationMs <= 0) {
+      return;
+    }
+    if (metadata.durationMs === this.durationMs) {
+      return;
+    }
+    const withDuration: AudioPlaybackMetadata = new AudioPlaybackMetadata(
+      metadata.assetId, metadata.title, metadata.artist, this.durationMs);
+    this.currentMetadata = withDuration;
+    orchestrator.onPlaybackStarted(this.currentUri, withDuration).catch((): void => {});
+  }
+
+  private notifySessionState(): void {
+    const orchestrator: AudioSessionOrchestrator | null = this.orchestrator;
+    if (orchestrator === null) {
+      return;
+    }
+    orchestrator.onPlaybackStateChanged(this.playing, this.currentPositionMs, this.durationMs)
+      .catch((): void => {});
+  }
+
+  private async releaseSession(): Promise<void> {
+    const orchestrator: AudioSessionOrchestrator | null = this.orchestrator;
+    if (orchestrator === null) {
+      return;
+    }
+    await orchestrator.release();
+  }
+
+  // ---- AudioPlaybackController：锁屏/耳机命令落到播放器 ----
+
+  resumeFromSession(): void {
+    if (this.finished) {
+      // completed 态不能直接 play()，回到起点重听。
+      this.seek(0).then((): Promise<void> => this.resume()).catch((): void => {});
+      return;
+    }
+    this.resume().catch((): void => {});
+  }
+
+  pauseFromSession(): void {
+    this.pause().catch((): void => {});
+  }
+
+  stopFromSession(): void {
+    this.stop().catch((): void => {});
+  }
+
+  seekFromSession(positionMs: number): void {
+    this.seek(positionMs).catch((): void => {});
   }
 }

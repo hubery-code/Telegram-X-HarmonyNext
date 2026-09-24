@@ -41,6 +41,7 @@ import {
   FakeClipboard,
   FakeToast,
   FakeMediaPicker,
+  AudioPlaybackMetadata,
   AudioPlayerPort,
   AudioRecorderPort,
   ERR_MIC_PERMISSION_DENIED,
@@ -4053,7 +4054,9 @@ export class ChatCoordinator {
           if (!this.destroyed && this.currentState.playingVoiceMessageId === effect.messageId) {
             this.dispatch(new VoicePlaybackFailed(effect.messageId, errMsg));
           }
-        }
+        },
+        // AUDIO-BG-101：锁屏卡片显「语音消息 — 会话名」。时长留 0，由播放器 prepared 后回填。
+        new AudioPlaybackMetadata(`${effect.messageId}`, '语音消息', this.currentState.chatTitle, 0)
       );
     } catch (e) {
       this.logger.error(TAG, 'play_voice_note_failed', String(e));

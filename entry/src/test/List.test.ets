@@ -4,6 +4,7 @@ import lifecycleCoordinatorTest from './lifecycle/LifecycleCoordinator.test';
 import bootstrapKeystoreTest from './lifecycle/BootstrapKeystore.test';
 import entryNavigationTest from './navigation/EntryNavigation.test';
 import multiAccountFlowTest from './account/MultiAccountFlow.test';
+import audioSessionOrchestratorTest from './platform/AudioSessionOrchestrator.test';
 
 const DOMAIN: number = 0x0000;
 const TAG: string = 'ListTest';
@@ -23,4 +24,5 @@ export default function listTest() {
   bootstrapKeystoreTest();
   entryNavigationTest();
   multiAccountFlowTest();
+  audioSessionOrchestratorTest();
 }

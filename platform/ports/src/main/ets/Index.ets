@@ -29,10 +29,16 @@ export { ToastPort } from './ToastPort';
 export { MediaPickerPort, PickedMedia } from './MediaPickerPort';
 export {
   AudioPlayerPort,
+  AudioPlaybackMetadata,
   AudioPlaybackProgressCallback,
   AudioPlaybackCompleteCallback,
   AudioPlaybackErrorCallback
 } from './AudioPlayerPort';
+export {
+  AudioSessionCommandHandler,
+  AudioSessionPort,
+  ContinuousTaskPort
+} from './AudioSessionPort';
 export { AudioRecorderPort, AudioRecordResult, ERR_MIC_PERMISSION_DENIED } from './AudioRecorderPort';
 export { FakePreferencesStore } from './fakes/FakePreferencesStore';
 export { FakeSecureKeyStore } from './fakes/FakeSecureKeyStore';
@@ -45,6 +51,7 @@ export { FakeToast } from './fakes/FakeToast';
 export type { RecordedToast } from './fakes/FakeToast';
 export { FakeMediaPicker } from './fakes/FakeMediaPicker';
 export { FakeAudioPlayer } from './fakes/FakeAudioPlayer';
+export { FakeAudioSession, FakeContinuousTask } from './fakes/FakeAudioSession';
 export { FakeAudioRecorder } from './fakes/FakeAudioRecorder';
 
 

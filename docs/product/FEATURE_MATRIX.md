@@ -260,7 +260,35 @@
 > 播放中该行圆形按钮翻成实心 accent + ⏸、另一行保持灰底 ▶；音乐 Tab 空态「暂无音乐文件」+ 引导文案；
 > 群资料页（El CLUB）只有五个 Tab（无「群组」）且语音/音乐均走空态。`feature_profile` **105/105 PASS**
 > （新增 `SharedAudioRows.test.ets` 5 例纯函数 + 协调器端 3 例：过滤器选型、行映射、点按下载→回灌→续播）。
-> 遗留：语音行昵称晚到不回灌（下一页起才有名字）；「后台音频 / AVSession 锁屏控制」仍属 FEAT-P2-006 未做部分。
+> 遗留：语音行昵称晚到不回灌（下一页起才有名字）。
+> **同日追加（AUDIO-BG-101，FEAT-P2-006 后台音频与 AVSession 播控）**：SHARED-AUDIO 记的那条遗留清掉。
+> 「退后台不断音」在 HarmonyOS 上不是一个 API，而是两个必须成对的：AVSession（锁屏/控制中心播控卡片 + 系统通知）与
+> `AUDIO_PLAYBACK` 长时任务（进程保活）。自 API 20 起，不接 AVSession 的音频长时任务会被系统直接回收
+> （`SYSTEM_CANCEL_AUDIO_PLAYBACK_NOT_USE_AVSESSION`），所以 `platform/ports/AudioSessionPort.ets` 把两者收进一份契约
+> （`AudioSessionPort` + `ContinuousTaskPort`），生命周期交给 entry 侧一个 Kit-free 的 `AudioSessionOrchestrator`：
+> 首次播放 activate + 申请任务（并发 activate 合并成一次）、换曲只换元数据、播放态变化立刻上报而位置按 1s 节流
+> （AVPlayer 的 `timeUpdate` 约 200ms 一次，逐条转给会话会把 IPC 打满）、stop / 页面 destroy 时 deactivate + 释放任务成对收尾。
+> Kit 调用只留在 `HarmonyAVSessionAdapter` / `HarmonyContinuousTaskAdapter` 两个薄适配器里，由装配层 `pages/Index.ets`
+> 注入 UIAbilityContext（沿用 VOICE-101 录音适配器的做法）。
+> **元数据才是这一包的产品活**：锁屏卡片不能印裸落盘文件名 —— `audioSessionMetadata()` 把语音行映射成
+> 「标题=发送者（空则「语音消息」）、副标题=会话名」，音乐行映射成「标题=`audio.title`、副标题=performer」，
+> 时长秒→毫秒（AVSession 的 `elapsedTime`/`duration` 一律按毫秒计，别自作主张换算）；聊天页语音给「语音消息 / 会话标题」。
+> **两处按文档收敛的取舍**：① 只注册 play/pause/stop/seek 四个监听 —— 新 SDK 已删 `availableCommands`，
+> 卡片上有哪些键完全由注册了哪些回调决定，没有播放队列就不画上下曲；② `completed` 不销毁会话，卡片停在末尾，
+> 锁屏按 ▶ 走 `seek(0)+resume` 重播，只有显式 stop / 页面 destroy 才整体收摊。
+> **设备实测踩到的真缺陷**：`startBackgroundRunning` 报 `9800005 The sequence of backgroundTaskModes does not match the
+> backgroundTaskSubmodes` —— 主/子类型必须按官方对照表配对：`MODE_AUDIO_PLAYBACK` 只配 `SUBMODE_NORMAL_NOTIFICATION`，
+> `SUBMODE_AVSESSION_AUDIO_PLAYBACK` 挂在 `MODE_AV_PLAYBACK_AND_RECORD(12)` 下。改对后 `continuous task started: taskId=1`。
+> 取证（模拟器 127.0.0.1:5555，真实数据、未发送内容）：播 0:25 语音 → `AVSession activated: sessionId=…` + 任务申请成功；
+> 按 Home 退后台后 `playing 11:42:24 → completed 11:42:36` 整段在后台跑完；控制中心
+> `control_center_media_card` 出现 `MCC_Text_title=语音消息 / MCC_Text_artist=be hu`（资料页语音行是 `我 / be hu`），
+> 点卡片 ▶ 直接驱动播放器 `paused → playing`；离开页面 `stopped → AVSession deactivated and destroyed →
+> continuous task stopped: taskId=1`，再播一次拿到新的 `taskId=2`（成对申请/释放的直接证据）。
+> `module.json5` 补 `backgroundModes: ["audioPlayback"]` 与 `ohos.permission.KEEP_BACKGROUND_RUNNING`（normal 级，无需 reason/usedScene）。
+> 测试：`entry` **41/41 PASS**（新增 `AudioSessionOrchestrator.test.ets` 12 例：activate 只一次、并发合并、1s 节流、
+> 播放态翻转穿透节流、release 幂等、会话不可用时既不申请任务也不上报、命令路由、文件名兜底）、`platform_ports` 47/47、
+> `feature_profile` **106/106**（+1 例元数据映射）、`feature_chat` 281/281；三守卫 0 违规。
+> 遗留：真锁屏界面未取证（模拟器无锁屏，验到的是同一张 AVSession 控制中心卡片）；会话进度只上报、不回驱动应用内进度条。
 
 | 功能 ID | 功能名 |
 |---|---|

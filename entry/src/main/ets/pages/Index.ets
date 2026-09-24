@@ -118,6 +118,8 @@ import { HarmonyToastAdapter } from '../platform/HarmonyToastAdapter';
 import { HarmonyMediaPickerAdapter } from '../platform/HarmonyMediaPickerAdapter';
 import { HarmonyAudioPlayerAdapter } from '../platform/HarmonyAudioPlayerAdapter';
 import { HarmonyAudioRecorderAdapter } from '../platform/HarmonyAudioRecorderAdapter';
+import { HarmonyAVSessionAdapter } from '../platform/HarmonyAVSessionAdapter';
+import { HarmonyContinuousTaskAdapter } from '../platform/HarmonyContinuousTaskAdapter';
 import { createHarmonyLogger } from '../platform/HarmonyLogSink';
 
 const DOMAIN: number = 0x0000;
@@ -150,6 +152,12 @@ struct Index {
   private readonly mediaPickerAdapter: HarmonyMediaPickerAdapter = new HarmonyMediaPickerAdapter();
   private readonly audioPlayerAdapter: HarmonyAudioPlayerAdapter = new HarmonyAudioPlayerAdapter();
   private readonly audioRecorderAdapter: HarmonyAudioRecorderAdapter = new HarmonyAudioRecorderAdapter();
+  /**
+   * AUDIO-BG-101：锁屏播控（AVSession）+ 后台长时任务。两者必须成对注入 ——
+   * HarmonyOS 自 API 20 起，不带 AVSession 的 AUDIO_PLAYBACK 长时任务会被系统回收。
+   */
+  private readonly avSessionAdapter: HarmonyAVSessionAdapter = new HarmonyAVSessionAdapter();
+  private readonly continuousTaskAdapter: HarmonyContinuousTaskAdapter = new HarmonyContinuousTaskAdapter();
   private cacheDir: string = '/data/storage/el2/base/cache';
   private readonly logger: Logger = createHarmonyLogger();
   private readonly navController: EntryNavigationController = new EntryNavigationController({ name: 'auth' });
@@ -242,6 +250,11 @@ struct Index {
     const hostContext = this.getUIContext().getHostContext();
     if (hostContext !== undefined) {
       this.audioRecorderAdapter.setAbilityContext(hostContext as common.UIAbilityContext);
+      // AUDIO-BG-101：会话与长时任务同样要 UIAbilityContext（建会话、申请任务、点通知回到本应用）。
+      const abilityContext = hostContext as common.UIAbilityContext;
+      this.avSessionAdapter.setContext(abilityContext);
+      this.continuousTaskAdapter.setContext(abilityContext);
+      this.audioPlayerAdapter.attachAudioSession(this.avSessionAdapter, this.continuousTaskAdapter);
     } else {
       hilog.warn(DOMAIN, TAG, 'no host context; voice recording will fall back to placeholder clip');
     }

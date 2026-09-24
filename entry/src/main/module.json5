@@ -29,7 +29,10 @@
           }
         ],
         "startWindowIcon": "$media:icon",
-        "startWindowBackground": "$color:start_window_background"
+        "startWindowBackground": "$color:start_window_background",
+        "backgroundModes": [
+          "audioPlayback"
+        ]
       }
     ],
     "requestPermissions": [
@@ -38,6 +41,9 @@
       },
       {
         "name": "ohos.permission.GET_NETWORK_INFO"
+      },
+      {
+        "name": "ohos.permission.KEEP_BACKGROUND_RUNNING"
       },
       {
         "name": "ohos.permission.MICROPHONE",

@@ -64,7 +64,14 @@ import {
   TdWireObject
 } from '@tgx/td-gateway';
 import { Logger } from '@tgx/observability';
-import { Subscription, ToastPort, FakeToast, AudioPlayerPort, FakeAudioPlayer } from '@tgx/platform-ports';
+import {
+  AudioPlaybackMetadata,
+  Subscription,
+  ToastPort,
+  FakeToast,
+  AudioPlayerPort,
+  FakeAudioPlayer
+} from '@tgx/platform-ports';
 import { ReducerEnv, ReducerResult } from '@tgx/feature-template';
 import { ProfileUiState } from '../contract/ProfileUiState';
 import {
@@ -108,6 +115,7 @@ import {
 import {
   chatTypeLabel,
   messageContentSummary,
+  audioSessionMetadata,
   withSharedAudioPath,
   withSharedMediaPath
 } from '../model/SharedContentFormat';
@@ -115,6 +123,7 @@ import {
   mergeSharedRows,
   SHARED_PAGE_LIMIT,
   SHARED_TAB_GROUPS,
+  SHARED_TAB_VOICE,
   SharedContentPage,
   SharedContentSearcher
 } from '../model/SharedContentSearch';
@@ -730,7 +739,7 @@ export class ProfileCoordinator {
     }
     if (this.pendingPlayFileId === file.id) {
       this.pendingPlayFileId = 0;
-      this.startSharedAudioPlayback(path);
+      this.startSharedAudioPlayback(path, this.findSharedAudio(file.id));
     }
   }
 
@@ -745,7 +754,7 @@ export class ProfileCoordinator {
       return;
     }
     if (item.localPath !== null && item.localPath.length > 0) {
-      this.startSharedAudioPlayback(item.localPath);
+      this.startSharedAudioPlayback(item.localPath, item);
       return;
     }
     // 音频没落盘：先触发下载，路径回来后由 onSharedFileReady 续播；
@@ -755,8 +764,11 @@ export class ProfileCoordinator {
     this.toastPort.showToast('正在下载音频...');
   }
 
-  private startSharedAudioPlayback(path: string): void {
+  private startSharedAudioPlayback(path: string, item: SharedAudioItem | null): void {
     const fileId: number = this.currentState.sharedPlayingFileId;
+    const metadata: AudioPlaybackMetadata | undefined = item === null
+      ? undefined
+      : audioSessionMetadata(item, this.currentState.activeSharedTab === SHARED_TAB_VOICE, this.currentState.displayName);
     this.audioPlayerPort.play(
       path,
       (_currentMs: number, _totalMs: number): void => {},
@@ -770,7 +782,8 @@ export class ProfileCoordinator {
         if (!this.destroyed) {
           this.dispatch(new OnSharedAudioPlaying(0));
         }
-      }
+      },
+      metadata
     ).catch((e: Error): void => {
       this.logger.error(TAG, 'shared_audio_play_failed', String(e));
       if (!this.destroyed) {

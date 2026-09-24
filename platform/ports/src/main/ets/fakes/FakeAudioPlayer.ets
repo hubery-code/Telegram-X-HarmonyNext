@@ -1,5 +1,6 @@
 import {
   AudioPlayerPort,
+  AudioPlaybackMetadata,
   AudioPlaybackProgressCallback,
   AudioPlaybackCompleteCallback,
   AudioPlaybackErrorCallback
@@ -8,6 +9,7 @@ import {
 export class FakeAudioPlayer implements AudioPlayerPort {
   private playing: boolean = false;
   private currentUri: string = '';
+  private currentMetadata: AudioPlaybackMetadata | null = null;
   private currentPosMs: number = 0;
   private totalDurationMs: number = 5000;
   private onProgressCallback?: AudioPlaybackProgressCallback;
@@ -18,9 +20,11 @@ export class FakeAudioPlayer implements AudioPlayerPort {
     uriOrPath: string,
     onProgress?: AudioPlaybackProgressCallback,
     onComplete?: AudioPlaybackCompleteCallback,
-    onError?: AudioPlaybackErrorCallback
+    onError?: AudioPlaybackErrorCallback,
+    metadata?: AudioPlaybackMetadata
   ): Promise<void> {
     this.currentUri = uriOrPath;
+    this.currentMetadata = metadata === undefined ? null : metadata;
     this.playing = true;
     this.onProgressCallback = onProgress;
     this.onCompleteCallback = onComplete;
@@ -93,5 +97,9 @@ export class FakeAudioPlayer implements AudioPlayerPort {
 
   public getCurrentUri(): string {
     return this.currentUri;
+  }
+
+  public getCurrentMetadata(): AudioPlaybackMetadata | null {
+    return this.currentMetadata;
   }
 }

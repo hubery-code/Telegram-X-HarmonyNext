@@ -472,7 +472,7 @@ export default function profileReducerTest(): void {
       const state: ProfileUiState = makeState(42).copyWith({
         activeSharedTab: SHARED_TAB_AUDIO,
         sharedPlayingFileId: 701,
-        sharedAudios: [new SharedAudioItem(701, '/data/a.mp3', 'A', 'Performer · 3:34', 214)]
+        sharedAudios: [new SharedAudioItem(701, '/data/a.mp3', 'A', 'Performer', 'Performer · 3:34', 214)]
       });
       const result: ReducerResult<ProfileUiState, ProfileEffect> = profileReducer(
         state,
@@ -492,7 +492,7 @@ export default function profileReducerTest(): void {
       const result: ReducerResult<ProfileUiState, ProfileEffect> = profileReducer(
         state,
         new OnSharedContentLoaded(SHARED_TAB_VOICE, new SharedContentRows({
-          voices: [new SharedAudioItem(801, null, 'Peer', '0:07, 昨天', 7)]
+          voices: [new SharedAudioItem(801, null, 'Peer', '', '0:07, 昨天', 7)]
         }), false),
         makeEnv()
       );
