@@ -64,8 +64,19 @@ import { fileUri } from '@kit.CoreFileKit';
 import { MessageItem } from '../model/MessageItem';
 import { ReactionChip } from '../model/ReactionChip';
 import { MessageTextSpan } from '../model/MessageTextSpan';
-import { MediaAttachment, formatFileSize, normalizeWaveform } from '../model/MediaAttachment';
-import { MediaViewerItem } from '../model/MediaViewerItem';
+import { MediaAttachment, MediaFullSource, formatFileSize, normalizeWaveform } from '../model/MediaAttachment';
+import { MediaViewerItem, mediaViewerItemKey } from '../model/MediaViewerItem';
+import {
+  ViewerOffset,
+  ViewerRect,
+  clampViewerOffset,
+  clampViewerScale,
+  viewerContentRect,
+  viewerDoubleTapScale,
+  viewerMaxScale,
+  viewerNativeScale,
+  viewerOffsetForZoom
+} from '../model/ViewerTransform';
 import { LinkPreviewInfo } from '../model/LinkPreviewInfo';
 import {
   calculateMosaicLayout,
@@ -420,6 +431,22 @@ export struct ChatPage {
   @State private viewerBarsVisible: boolean = true;
   @State private activeVideoNoteId: number | null = null;
   private swiperController: SwiperController = new SwiperController();
+  /**
+   * MEDIA-VIEWER-101：放大后的位移（vp）与视口尺寸（vp）。
+   * 视口由 `onAreaChange` 测得 —— 贴合矩形和位移夹紧都以它为准；
+   * 缩放上限不落 @State，按「当前真正在画的那一档的真实像素」随算随用，
+   * 这样大图档落盘换源之后上限自动变大，不需要任何同步逻辑。
+   */
+  @State private viewerOffsetX: number = 0;
+  @State private viewerOffsetY: number = 0;
+  @State private viewerViewportW: number = 0;
+  @State private viewerViewportH: number = 0;
+  private panStartOffsetX: number = 0;
+  private panStartOffsetY: number = 0;
+  private pinchStartOffsetX: number = 0;
+  private pinchStartOffsetY: number = 0;
+  private pinchFocalX: number = 0;
+  private pinchFocalY: number = 0;
   /** 标记用户是否已手动滑动过列表；为 false 时新拉取历史保持目标定位。 */
   private hasUserScrolled: boolean = false;
   /**
@@ -443,6 +470,12 @@ export struct ChatPage {
   private shownVoiceProgress: number = 0;
   /** 屏幕宽度（vp），aboutToAppear 时取一次。气泡内容区宽度上限由它算出，见 contentMaxVp()。 */
   private screenWidthVp: number = 360;
+  /**
+   * 1vp 对应的物理像素数（`display.densityPixels`），与屏宽同一次取样。
+   * 查看器的 1:1 像素档位必须按真实像素算，所以不能省；
+   * 全局 `vp2px` 已标记 deprecated，这里直接用底层密度。
+   */
+  private densityPxPerVp: number = 3;
 
   /**
    * 气泡「内容区」的最大宽度（vp）。
@@ -558,6 +591,7 @@ export struct ChatPage {
     // 用 densityPixels 自己换算：全局 px2vp 已标记 deprecated。
     try {
       const info: display.Display = display.getDefaultDisplaySync();
+      this.densityPxPerVp = info.densityPixels > 0 ? info.densityPixels : 3;
       this.screenWidthVp = info.densityPixels > 0 ? Math.round(info.width / info.densityPixels) : 360;
     } catch (_e) {
       this.screenWidthVp = 360;
@@ -604,7 +638,7 @@ export struct ChatPage {
       }
     }
     if (this.uiState.activeViewerIndex < 0) {
-      this.viewerScale = 1.0;
+      this.resetViewerTransform();
       this.viewerBarsVisible = true;
     }
     const messages: readonly MessageItem[] = this.uiState.messages;
@@ -3826,6 +3860,161 @@ export struct ChatPage {
     .alignContent(Alignment.Bottom)
   }
 
+  /** MEDIA-VIEWER-101：缩放与位移一起归零（翻页、关闭查看器都走这里）。 */
+  private resetViewerTransform(): void {
+    this.viewerScale = 1.0;
+    this.viewerOffsetX = 0;
+    this.viewerOffsetY = 0;
+    this.pinchStartScale = 1.0;
+  }
+
+  private activeViewerItem(): MediaViewerItem | null {
+    const index: number = this.uiState.activeViewerIndex;
+    if (index < 0 || index >= this.uiState.viewerItems.length) {
+      return null;
+    }
+    return this.uiState.viewerItems[index];
+  }
+
+  /**
+   * 此刻真正画在屏幕上的图源（沙箱 uri）。
+   *
+   * 最大档已落盘就用最大档，否则退回显示档 —— 气泡只吃 320~960px，放大到 1:1
+   * 必然糊；查看器等大图到了再换。没有可渲染的本地文件时返回 ''，由分支画缩略图/占位。
+   */
+  private viewerRenderSrc(item: MediaViewerItem): string {
+    const full: MediaFullSource | null = item.media.fullSource;
+    if (full !== null && full.isDownloaded && full.localPath !== null) {
+      return toSandboxUri(full.localPath);
+    }
+    if (item.media.isDownloaded && item.media.localPath !== null) {
+      return toSandboxUri(item.media.localPath);
+    }
+    return '';
+  }
+
+  /** 当前渲染档的真实像素宽（缩放上限按它算，不按显示档蒙）。 */
+  private viewerRenderedWidth(item: MediaViewerItem): number {
+    const full: MediaFullSource | null = item.media.fullSource;
+    if (item.media.kind !== 'photo' || full === null || !full.isDownloaded) {
+      return item.media.width;
+    }
+    return full.width;
+  }
+
+  private viewerRenderedHeight(item: MediaViewerItem): number {
+    const full: MediaFullSource | null = item.media.fullSource;
+    if (item.media.kind !== 'photo' || full === null || !full.isDownloaded) {
+      return item.media.height;
+    }
+    return full.height;
+  }
+
+  /** 贴合态（scale=1）下内容在视口内的矩形，vp。 */
+  private viewerContentRectOf(item: MediaViewerItem): ViewerRect {
+    return viewerContentRect(
+      this.viewerRenderedWidth(item),
+      this.viewerRenderedHeight(item),
+      this.viewerViewportW,
+      this.viewerViewportH
+    );
+  }
+
+  private viewerNativeScaleOf(item: MediaViewerItem): number {
+    return viewerNativeScale(
+      this.viewerRenderedWidth(item),
+      this.viewerContentRectOf(item).width,
+      this.densityPxPerVp
+    );
+  }
+
+  /** 缩放上限 = 1:1 像素再乘余量；尺寸或视口还没测到时内部退回固定值。 */
+  private viewerMaxScaleOf(item: MediaViewerItem): number {
+    return viewerMaxScale(
+      this.viewerRenderedWidth(item),
+      this.viewerContentRectOf(item).width,
+      this.densityPxPerVp
+    );
+  }
+
+  /** 位移写入前一律夹紧（PAN_LIMIT_INSIDE）：内容比视口小的那一轴只能居中。 */
+  private setViewerOffset(offsetX: number, offsetY: number): void {
+    const item: MediaViewerItem | null = this.activeViewerItem();
+    if (item === null || this.viewerViewportW <= 0 || this.viewerViewportH <= 0) {
+      this.viewerOffsetX = 0;
+      this.viewerOffsetY = 0;
+      return;
+    }
+    const clamped: ViewerOffset = clampViewerOffset(
+      offsetX,
+      offsetY,
+      this.viewerScale,
+      this.viewerContentRectOf(item),
+      this.viewerViewportW,
+      this.viewerViewportH
+    );
+    this.viewerOffsetX = clamped.x;
+    this.viewerOffsetY = clamped.y;
+  }
+
+  /** 双击：贴合 ↔ 1:1 像素两档切换，锚在手指点上（TGX 的双击语义）。 */
+  private toggleViewerZoom(event: GestureEvent): void {
+    const item: MediaViewerItem | null = this.activeViewerItem();
+    if (item === null) {
+      return;
+    }
+    const focal: ViewerOffset = this.viewerFocal(event);
+    if (this.viewerScale > 1.05) {
+      this.zoomViewerTo(1.0, focal.x, focal.y);
+      return;
+    }
+    this.zoomViewerTo(
+      viewerDoubleTapScale(this.viewerMaxScaleOf(item), this.viewerNativeScaleOf(item)),
+      focal.x,
+      focal.y
+    );
+  }
+
+  /** 换倍率时保持焦点不动：把 `(focalX, focalY)` 那个内容点钉在原处。 */
+  private zoomViewerTo(nextScale: number, focalX: number, focalY: number): void {
+    const item: MediaViewerItem | null = this.activeViewerItem();
+    if (item === null) {
+      return;
+    }
+    const clampedScale: number = clampViewerScale(nextScale, this.viewerMaxScaleOf(item));
+    if (clampedScale <= 1.0) {
+      this.resetViewerTransform();
+      return;
+    }
+    const moved: ViewerOffset = viewerOffsetForZoom(
+      focalX,
+      focalY,
+      this.viewerOffsetX,
+      this.viewerOffsetY,
+      this.viewerScale,
+      clampedScale
+    );
+    this.viewerScale = clampedScale;
+    this.setViewerOffset(moved.x, moved.y);
+  }
+
+  /** 触点（多指取中点）相对视口中心的坐标，vp；取不到手指时按视口中心。 */
+  private viewerFocal(event: GestureEvent): ViewerOffset {
+    if (event.fingerList.length === 0 || this.viewerViewportW <= 0 || this.viewerViewportH <= 0) {
+      return { x: 0, y: 0 };
+    }
+    let sumX: number = 0;
+    let sumY: number = 0;
+    for (let i = 0; i < event.fingerList.length; i++) {
+      sumX += event.fingerList[i].localX;
+      sumY += event.fingerList[i].localY;
+    }
+    return {
+      x: sumX / event.fingerList.length - this.viewerViewportW / 2,
+      y: sumY / event.fingerList.length - this.viewerViewportH / 2
+    };
+  }
+
   /** 全屏多媒体画廊查看器（MEDIA-103 / FEAT-MEDIA-006）。 */
   @Builder
   MediaViewerOverlay() {
@@ -3847,7 +4036,6 @@ export struct ChatPage {
                   .objectFit(ImageFit.Contain)
                   .width('100%')
                   .height('100%')
-                  .scale({ x: this.viewerScale, y: this.viewerScale })
               } else {
                 Stack({ alignContent: Alignment.Center }) {
                   if (item.media.thumbnailPath !== null) {
@@ -3855,7 +4043,6 @@ export struct ChatPage {
                       .objectFit(ImageFit.Contain)
                       .width('100%')
                       .height('100%')
-                      .scale({ x: this.viewerScale, y: this.viewerScale })
                   }
                   Column() {
                     if (item.media.isDownloading) {
@@ -3900,13 +4087,12 @@ export struct ChatPage {
                 .objectFit(ImageFit.Contain)
                 .width('100%')
                 .height('100%')
-                .scale({ x: this.viewerScale, y: this.viewerScale })
-            } else if (item.media.localPath !== null && item.media.isDownloaded) {
-              Image(toSandboxUri(item.media.localPath))
+            } else if (this.viewerRenderSrc(item).length > 0) {
+              // MEDIA-VIEWER-101：优先画最大档，大图还在路上时先画显示档。
+              Image(this.viewerRenderSrc(item))
                 .objectFit(ImageFit.Contain)
                 .width('100%')
                 .height('100%')
-                .scale({ x: this.viewerScale, y: this.viewerScale })
             } else if (item.media.thumbnailPath !== null) {
               Stack({ alignContent: Alignment.Center }) {
                 Image(toSandboxUri(item.media.thumbnailPath))
@@ -3914,7 +4100,6 @@ export struct ChatPage {
                   .width('100%')
                   .height('100%')
                   .blur(8)
-                  .scale({ x: this.viewerScale, y: this.viewerScale })
 
                 Column() {
                   LoadingProgress()
@@ -3946,13 +4131,17 @@ export struct ChatPage {
           }
           .width('100%')
           .height('100%')
-        }, (item: MediaViewerItem) => `${item.messageId}`)
+          // MEDIA-VIEWER-101：缩放与位移只挂在这一层。挂在各子节点上时
+          // translate 会按各自的中心各算一遍，拖起来就对不上手指。
+          .scale({ x: this.viewerScale, y: this.viewerScale })
+          .translate({ x: this.viewerOffsetX, y: this.viewerOffsetY })
+        }, (item: MediaViewerItem) => mediaViewerItemKey(item))
       }
       .index(this.uiState.activeViewerIndex)
       .onChange((index: number) => {
         if (index !== this.uiState.activeViewerIndex) {
           this.onDispatch(new ChangeViewerIndex(index));
-          this.viewerScale = 1.0;
+          this.resetViewerTransform();
         }
       })
       .disableSwipe(this.viewerScale > 1.05)
@@ -3960,38 +4149,71 @@ export struct ChatPage {
       .loop(false)
       .width('100%')
       .height('100%')
+      .onAreaChange((_oldValue: Area, newValue: Area) => {
+        this.viewerViewportW = Number(newValue.width);
+        this.viewerViewportH = Number(newValue.height);
+      })
       .priorityGesture(
         GestureGroup(
           GestureMode.Parallel,
           PinchGesture({ fingers: 2 })
-            .onActionStart(() => {
+            .onActionStart((event: GestureEvent) => {
               this.pinchStartScale = this.viewerScale;
+              this.pinchStartOffsetX = this.viewerOffsetX;
+              this.pinchStartOffsetY = this.viewerOffsetY;
+              const focal: ViewerOffset = this.viewerFocal(event);
+              this.pinchFocalX = focal.x;
+              this.pinchFocalY = focal.y;
             })
             .onActionUpdate((event: GestureEvent) => {
-              let nextScale: number = this.pinchStartScale * event.scale;
-              if (nextScale < 0.8) {
-                nextScale = 0.8;
-              } else if (nextScale > 3.5) {
-                nextScale = 3.5;
+              const item: MediaViewerItem | null = this.activeViewerItem();
+              if (item === null) {
+                return;
               }
+              const nextScale: number = clampViewerScale(
+                this.pinchStartScale * event.scale,
+                this.viewerMaxScaleOf(item)
+              );
+              if (nextScale <= 1.0) {
+                this.resetViewerTransform();
+                return;
+              }
+              const moved: ViewerOffset = viewerOffsetForZoom(
+                this.pinchFocalX,
+                this.pinchFocalY,
+                this.pinchStartOffsetX,
+                this.pinchStartOffsetY,
+                this.pinchStartScale,
+                nextScale
+              );
               this.viewerScale = nextScale;
+              this.setViewerOffset(moved.x, moved.y);
             })
             .onActionEnd(() => {
-              if (this.viewerScale < 1.0) {
-                this.viewerScale = 1.0;
-              } else if (this.viewerScale > 3.0) {
-                this.viewerScale = 3.0;
+              if (this.viewerScale <= 1.0) {
+                this.resetViewerTransform();
               }
+            }),
+          // 放大后才接管拖拽；未放大时让位给 Swiper 的横滑翻页。
+          PanGesture({ fingers: 1, distance: 8 })
+            .onActionStart(() => {
+              this.panStartOffsetX = this.viewerOffsetX;
+              this.panStartOffsetY = this.viewerOffsetY;
+            })
+            .onActionUpdate((event: GestureEvent) => {
+              if (this.viewerScale <= 1.05) {
+                return;
+              }
+              this.setViewerOffset(
+                this.panStartOffsetX + event.offsetX,
+                this.panStartOffsetY + event.offsetY
+              );
             }),
           GestureGroup(
             GestureMode.Exclusive,
             TapGesture({ count: 2 })
-              .onAction(() => {
-                if (this.viewerScale > 1.05) {
-                  this.viewerScale = 1.0;
-                } else {
-                  this.viewerScale = 2.0;
-                }
+              .onAction((event: GestureEvent) => {
+                this.toggleViewerZoom(event);
               }),
             TapGesture({ count: 1 })
               .onAction(() => {
@@ -4000,6 +4222,16 @@ export struct ChatPage {
           )
         )
       )
+      // 未放大时把**我们自己那条**拖拽判掉，否则 priorityGesture 会抢走 Swiper 的横滑翻页。
+      // 判据必须带 `!isSystemGesture`：Swiper 内置的滑动同样是 PAN_GESTURE（只是 isSystemGesture
+      // 为 true），一起判掉就等于把翻页也判死了 —— 设备实测踩过。
+      .onGestureJudgeBegin((info: GestureInfo, _event: BaseGestureEvent) => {
+        if (!info.isSystemGesture && info.type === GestureControl.GestureType.PAN_GESTURE &&
+          this.viewerScale <= 1.05) {
+          return GestureJudgeResult.REJECT;
+        }
+        return GestureJudgeResult.CONTINUE;
+      })
 
       // 2. 顶部工具栏与底部附言栏（两端对齐浮层）
       if (this.viewerBarsVisible) {
@@ -4021,7 +4253,11 @@ export struct ChatPage {
     .width('100%')
     .height('100%')
     .backgroundColor(Color.Black)
-    .hitTestBehavior(HitTestMode.Block)
+    // MEDIA-VIEWER-101：这里必须是 Default 而不是 Block。
+    // `HitTestMode.Block` 按 SDK 定义连**子节点**一起挡掉（"blocks the hit test of
+    // child nodes, sibling nodes, and ancestor nodes"），整个查看器于是点不动、
+    // 捏不动、翻页也不动 —— 只剩系统 Back 能退出。Default 已经足够挡住下层的聊天页。
+    .hitTestBehavior(HitTestMode.Default)
   }
 
   @Builder

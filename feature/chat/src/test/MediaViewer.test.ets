@@ -7,8 +7,8 @@ import {
   MessageActionMenuState
 } from '../main/ets/contract/ChatUiState';
 import { MessageItem } from '../main/ets/model/MessageItem';
-import { MediaAttachment } from '../main/ets/model/MediaAttachment';
-import { MediaViewerItem } from '../main/ets/model/MediaViewerItem';
+import { MediaAttachment, MediaFullSource } from '../main/ets/model/MediaAttachment';
+import { MediaViewerItem, mediaViewerItemKey } from '../main/ets/model/MediaViewerItem';
 import {
   OpenMediaViewer,
   CloseMediaViewer,
@@ -222,6 +222,30 @@ export default function mediaViewerTest() {
 
       expect(result.state.viewerItems.length).assertEqual(1);
       expect(result.state.activeViewerIndex).assertEqual(0); // clamped from 1 to 0
+    });
+
+    // ---- MEDIA-VIEWER-101：画廊项 key（大图档换源与相册同 id 兄弟项）----
+
+    it('itemKey_separatesAlbumSiblingsSharingMessageId', 0, () => {
+      const a: MediaViewerItem = new MediaViewerItem(101, 'Bob', 1000, makePhotoMedia(1));
+      const b: MediaViewerItem = new MediaViewerItem(101, 'Bob', 1000, makePhotoMedia(2));
+      expect(mediaViewerItemKey(a) === mediaViewerItemKey(b)).assertFalse();
+    });
+
+    it('itemKey_changesWhenFullTierLands', 0, () => {
+      const pending: MediaAttachment = makePhotoMedia(1)
+        .withFullSource(new MediaFullSource(9, 4000, 3000));
+      const ready: MediaAttachment = makePhotoMedia(1)
+        .withFullSource(new MediaFullSource(9, 4000, 3000, '/path/photo-full.jpg', true));
+      const k1: string = mediaViewerItemKey(new MediaViewerItem(101, 'Bob', 1000, pending));
+      const k2: string = mediaViewerItemKey(new MediaViewerItem(101, 'Bob', 1000, ready));
+      expect(k1 === k2).assertFalse();
+    });
+
+    it('itemKey_isStableForIdenticalRenderedState', 0, () => {
+      const k1: string = mediaViewerItemKey(new MediaViewerItem(101, 'Bob', 1000, makePhotoMedia(1)));
+      const k2: string = mediaViewerItemKey(new MediaViewerItem(101, 'Bob', 1000, makePhotoMedia(1)));
+      expect(k1).assertEqual(k2);
     });
   });
 }

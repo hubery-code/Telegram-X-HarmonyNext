@@ -347,6 +347,36 @@
 > 遗留：省流量与网络类型条件（Android `DATASAVER_FLAG_ENABLED / _WHEN_MOBILE / _WHEN_ROAMING`，本端不分 Wi-Fi 与移动网络）、
 > 10MB 上限不可配、没有按会话单独覆盖的入口、策略变更不追溯已下载内容（清理仍归「存储与缓存」那包）。
 > FEAT-P2-007 的两半边（代理 + 下载与自动缓存策略）至此均已落地。
+> **同日追加（MEDIA-VIEWER-101，FEAT-P2-006 完整媒体查看器剩余项）**：查看器从「能放大的一张缩略图」补成「能看原图」。
+> **换档是这包的核心，不是缩放**：气泡沿用 `chooseDisplaySize()` 的 320–960px 档省流量，查看器再放大就是糊的；
+> `ChatCoordinator.chooseFullSize()` 按**面积最大**取档（明确不信 `sizes` 下标，TDLib 不保证 `#big` 在末位），
+> 只有大档 `fileId` 与显示档不同才构造 `MediaFullSource`，`ensureActiveViewerTier()` 在 `openMediaViewer` /
+> `changeViewerIndex` 之后用**显式动作**优先级 32 拉大档 —— AUTODL-101 那道门管的是「没人看就偷偷下」，
+> 用户点开查看器是请求，不该被门挡住。
+> **换档必须让 ArkUI 看见**：`ForEach` 键不变 ⇒ 子节点不重建 ⇒ 大档下完画面不刷新。
+> `mediaViewerItemKey()` 把 `localPath / isDownloaded / progress / 大档签名` 编进键，同时保留 `fileId`
+> 让图集里共用 `messageId` 的兄弟项不撞键。
+> **缩放与钳位是纯数学，全部下沉 `model/ViewerTransform.ets`**：1:1 像素档 = 屏幕像素 / 内容 vp，
+> 密度取 `display.getDefaultDisplaySync().densityPixels`（`vp2px` 已 deprecated）；上限由真实像素推导
+> （`VIEWER_NATIVE_HEADROOM` 留 1.5 倍余量、`VIEWER_MAX_SCALE_CAP` 封顶 8），不是拍脑袋常数；
+> 偏移钳位 `(内容×scale − 视口)/2`，**某轴短于视口就把该轴钉 0**，放大后拖不出黑边；长宽比 ≥ 2 走长图路径。
+> **两个只有真跑设备才会暴露的缺陷**：① MEDIA-103 的查看器根 `Stack` 用了 `HitTestMode.Block` ——
+> 按 SDK 定义它连**子节点**一起挡掉，整个查看器点不动、捏不动、翻页不动，只剩系统 Back 能退，改 `Default`
+> （挡住下层聊天页已经够用）；② 给 `Swiper` 加的 `priorityGesture` 把横滑翻页抢死，
+> `onGestureJudgeBegin` 必须带 `!info.isSystemGesture` —— `Swiper` 内置滑动同样是 `PAN_GESTURE`
+> （只是 `isSystemGesture` 为 true），一起判掉等于把翻页判死。
+> 设备取证（模拟器 127.0.0.1:5555，真实 TDLib，全程只读未发送）：`viewer_tiers fileId=49,display=320x160,
+> full=2560x1280#52,rendered=display` → 1.6 s 后 `media_download_completed fileId=52` → 翻走再翻回同一项
+> `rendered=full`，2560×1280 横幅清晰可辨（另一样本 `display=320x100,full=1264x394` 的 3.2:1 横幅，
+> 显示档只有 320px 宽，正是这包存在的理由）；缩放态拖拽按日志数值复核钳位：视口 `358.9x721.7`vp、内容
+> `358.9x111.9`vp、`offsetX in=-255.7 → out=-179.4` 恰为 `(358.9×2−358.9)/2`，y 轴因内容短于视口被钉 0；
+> 未放大态 `38 / 39 ↔ 39 / 39` 双向翻页正常，单击隐藏系统栏、双击 1:1、再双击回贴合。
+> **摘掉临时日志重签重装后再跑一遍出厂包**：开图 → 翻页 → 双击放大 → 拖拽 → 双击还原 → 关闭，四帧互不相同且末帧回到贴合。
+> 测试：`feature_chat` **302/302 PASS**（新增 `ViewerTransform.test.ets` 17 例：像素档换算、上限封顶、
+> `clampViewerOffset` 短轴钉零、`viewerOffsetForZoom` 焦点保持、`isTallImage` 阈值；`MediaViewer` +3 例键唯一性、
+> `MediaAttachment` +1 例 `fullSource` 经 `copyWith` 往返）；三守卫 0 违规。
+> 遗留：`PinchGesture` 无法用 `uitest` 注入，捏合数学只有单测覆盖（设备侧靠双击档位验证）；
+> 视频与 GIF 在查看器里仍是静态首帧；`HitTestMode.Block` 这类「浮层吃掉整屏命中」的隐患还没在其他浮层系统排查。
 
 
 | 功能 ID | 功能名 |

@@ -12,6 +12,41 @@ import { MessageTextSpan } from './MessageTextSpan';
 
 export type MediaKind = 'none' | 'photo' | 'video' | 'animation' | 'document' | 'sticker' | 'voiceNote' | 'audio' | 'videoNote';
 
+/**
+ * MEDIA-VIEWER-101：同一张照片的**最大分辨率档**（TDLib `photo.sizes` 里像素最多的那一档）。
+ *
+ * 气泡只吃 320~960px 的显示档（`localPath`），查看器要放大到 1:1 物理像素才谈得上「看清」，
+ * 所以大图档必须单独带一条路径与下载态 —— 两者是不同的 fileId，各自下载、各自落盘。
+ * 显示档就是最大档时本字段为 null（没有可升级的东西，别白跑一次请求）。
+ */
+export class MediaFullSource {
+  readonly fileId: number;
+  readonly width: number;
+  readonly height: number;
+  readonly localPath: string | null;
+  readonly isDownloaded: boolean;
+  readonly isDownloading: boolean;
+  readonly progress: number; // 0..1
+
+  constructor(
+    fileId: number,
+    width: number,
+    height: number,
+    localPath: string | null = null,
+    isDownloaded: boolean = false,
+    isDownloading: boolean = false,
+    progress: number = 0
+  ) {
+    this.fileId = fileId;
+    this.width = width;
+    this.height = height;
+    this.localPath = localPath;
+    this.isDownloaded = isDownloaded;
+    this.isDownloading = isDownloading;
+    this.progress = progress;
+  }
+}
+
 export class MediaAttachment {
   readonly kind: MediaKind;
   readonly fileId: number;
@@ -42,6 +77,10 @@ export class MediaAttachment {
    * 未下载态，但气泡要出错误标与重试入口，而不是静默退回下载按钮。
    */
   readonly isDownloadFailed: boolean;
+  /**
+   * MEDIA-VIEWER-101：查看器用的大图档；null 表示「显示档已是最大档」或本条不是照片。
+   */
+  readonly fullSource: MediaFullSource | null;
 
   constructor(
     kind: MediaKind,
@@ -67,7 +106,8 @@ export class MediaAttachment {
     audioPerformer: string = '',
     isListened: boolean = false,
     stickerSetId: string = '',
-    isDownloadFailed: boolean = false
+    isDownloadFailed: boolean = false,
+    fullSource: MediaFullSource | null = null
   ) {
     this.kind = kind;
     this.fileId = fileId;
@@ -93,6 +133,7 @@ export class MediaAttachment {
     this.isListened = isListened;
     this.stickerSetId = stickerSetId;
     this.isDownloadFailed = isDownloadFailed;
+    this.fullSource = fullSource;
   }
 
   copyWith(
@@ -137,7 +178,8 @@ export class MediaAttachment {
       audioPerformer !== undefined ? audioPerformer : this.audioPerformer,
       isListened !== undefined ? isListened : this.isListened,
       stickerSetId !== undefined ? stickerSetId : this.stickerSetId,
-      isDownloadFailed !== undefined ? isDownloadFailed : this.isDownloadFailed
+      isDownloadFailed !== undefined ? isDownloadFailed : this.isDownloadFailed,
+      this.fullSource
     );
   }
 
@@ -173,7 +215,45 @@ export class MediaAttachment {
       this.audioPerformer,
       this.isListened,
       this.stickerSetId,
-      isDownloadFailed
+      isDownloadFailed,
+      this.fullSource
+    );
+  }
+
+  /**
+   * MEDIA-VIEWER-101：贴上大图档。只有照片分支会带，构造点已经占了 15 个位置参数，
+   * 与其补一串空默认值，不如和 withDownloadFailed 一样单开具名方法。
+   */
+  withFullSource(fullSource: MediaFullSource | null): MediaAttachment {
+    if (this.fullSource === fullSource) {
+      return this;
+    }
+    return new MediaAttachment(
+      this.kind,
+      this.fileId,
+      this.localPath,
+      this.thumbnailPath,
+      this.width,
+      this.height,
+      this.duration,
+      this.isDownloading,
+      this.isDownloaded,
+      this.progress,
+      this.caption,
+      this.captionSpans,
+      this.hasSpoiler,
+      this.isUploading,
+      this.uploadProgress,
+      this.fileName,
+      this.fileSize,
+      this.mimeType,
+      this.waveform,
+      this.audioTitle,
+      this.audioPerformer,
+      this.isListened,
+      this.stickerSetId,
+      this.isDownloadFailed,
+      fullSource
     );
   }
 }

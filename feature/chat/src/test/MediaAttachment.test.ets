@@ -1,5 +1,5 @@
 import { describe, it, expect } from '@ohos/hypium';
-import { MediaAttachment, MediaKind, formatFileSize, decodeWaveform, encodeWaveform, normalizeWaveform } from '../main/ets/model/MediaAttachment';
+import { MediaAttachment, MediaFullSource, MediaKind, formatFileSize, decodeWaveform, encodeWaveform, normalizeWaveform } from '../main/ets/model/MediaAttachment';
 import { MessageItem } from '../main/ets/model/MessageItem';
 import { MessageTextSpan } from '../main/ets/model/MessageTextSpan';
 
@@ -439,6 +439,36 @@ export default function mediaAttachmentTest() {
       expect(failed.isDownloaded).assertFalse();
       // 同值返回自身，避免每次映射都新建对象。
       expect(video.withDownloadFailed(false) === video).assertTrue();
+    });
+
+    // ---- MEDIA-VIEWER-101：照片的最大分辨率档（查看器换源的根据）----
+
+    it('fullSource_defaultsToNull_andRoundTripsThroughDerivedCopies', 0, () => {
+      const photo: MediaAttachment = new MediaAttachment(
+        'photo',
+        2100,
+        '/data/local/tmp/p_small.jpg',
+        '/data/local/tmp/p_thumb.jpg',
+        900,
+        675
+      );
+      // 没有第二档可升时必须是 null —— 查看器据此省掉一次没有意义的下载请求。
+      expect(photo.fullSource).assertNull();
+
+      const full: MediaFullSource = new MediaFullSource(2101, 4000, 3000, '/data/local/tmp/p_big.jpg', true);
+      const upgraded: MediaAttachment = photo.withFullSource(full);
+      expect(upgraded.fullSource === full).assertTrue();
+      expect(upgraded.fileId).assertEqual(2100);
+      expect(upgraded.localPath).assertEqual('/data/local/tmp/p_small.jpg');
+      expect(upgraded.width).assertEqual(900);
+      // 同值返回自身：投影每帧重建附件时不该白刷查看器的 ForEach key。
+      expect(upgraded.withFullSource(full) === upgraded).assertTrue();
+
+      // 派生副本（下载态、失败态）不得把大图档丢掉。
+      const touched: MediaAttachment = upgraded.copyWith(undefined, undefined, true, false, 0.5);
+      expect(touched.fullSource === full).assertTrue();
+      expect(touched.isDownloading).assertTrue();
+      expect(upgraded.withDownloadFailed(true).fullSource === full).assertTrue();
     });
 
   });

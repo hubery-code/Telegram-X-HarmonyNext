@@ -170,7 +170,8 @@ import { ReducerEnv, ReducerResult } from '@tgx/feature-template';
 import { MessageItem, MessageSendState } from '../model/MessageItem';
 import { ReactionChip } from '../model/ReactionChip';
 import { MessageTextSpan } from '../model/MessageTextSpan';
-import { MediaAttachment, decodeWaveform, encodeWaveform } from '../model/MediaAttachment';
+import { MediaAttachment, MediaFullSource, decodeWaveform, encodeWaveform } from '../model/MediaAttachment';
+import { MediaViewerItem } from '../model/MediaViewerItem';
 import { LinkPreviewInfo } from '../model/LinkPreviewInfo';
 import { ChatSearchResultItem } from '../model/ChatSearchResultItem';
 import { PinnedMessageInfo } from '../model/PinnedMessageInfo';
@@ -1063,6 +1064,11 @@ export class ChatCoordinator {
     const stateChanged: boolean = result.state !== this.currentState;
     this.currentState = result.state;
 
+    if (intent.kind === 'openMediaViewer' || intent.kind === 'changeViewerIndex') {
+      // MEDIA-VIEWER-101：查看器落在哪一张，就只为那一张补最大档（点开即拉全量图集是浪费）。
+      this.ensureActiveViewerTier();
+    }
+
     if (stateChanged) {
       for (let i = 0; i < this.listeners.length; i++) {
         this.listeners[i](this.currentState);
@@ -1092,6 +1098,38 @@ export class ChatCoordinator {
         }
         break;
       }
+    }
+  }
+
+  /**
+   * MEDIA-VIEWER-101：为查看器当前这一张请求最大分辨率档，并留下「这一张到底渲染的是哪一档」的证据。
+   *
+   * 显式动作（点开、翻页），不走 AUTODL-101 的自动下载门。请求优先级 32 与点下载按钮同级。
+   * `rendered=` 直接说明此刻画在屏幕上的东西：最大档没落盘前只会是显示档，放大即糊 ——
+   * 这条日志是为了在设备上区分「代码没请求大图」和「大图还在路上」。
+   */
+  private ensureActiveViewerTier(): void {
+    const index: number = this.currentState.activeViewerIndex;
+    const items: MediaViewerItem[] = this.currentState.viewerItems;
+    if (index < 0 || index >= items.length) {
+      return;
+    }
+    const media: MediaAttachment = items[index].media;
+    if (media.kind !== 'photo') {
+      // 分档只属于照片；视频 / 文件只有一个 fileId，别报一条假档位。
+      return;
+    }
+    const full: MediaFullSource | null = media.fullSource;
+    if (full === null) {
+      this.logger.info(TAG, 'viewer_tiers',
+        `fileId=${media.fileId},display=${media.width}x${media.height},full=same,rendered=display`);
+      return;
+    }
+    this.logger.info(TAG, 'viewer_tiers',
+      `fileId=${media.fileId},display=${media.width}x${media.height},` +
+        `full=${full.width}x${full.height}#${full.fileId},rendered=${full.isDownloaded ? 'full' : (full.isDownloading ? 'downloading' : 'display')}`);
+    if (!full.isDownloaded) {
+      this.requestMediaDownload(full.fileId, 32);
     }
   }
 
@@ -1411,6 +1449,29 @@ export class ChatCoordinator {
     return sizes[sizes.length - 1];
   }
 
+  /**
+   * MEDIA-VIEWER-101：取 `photo.sizes` 里像素最多的那一档（查看器放大到 1:1 要看的东西）。
+   *
+   * TDLib 的 size 数组按边长升序，但 `type_` 在不同版本上是 min/thumb/small/big/huge，
+   * 排序并不总成立，所以直接按面积挑，别信下标。没有可用 file 的档位一律跳过。
+   */
+  private chooseFullSize(sizes: PhotoSize[]): PhotoSize | null {
+    let best: PhotoSize | null = null;
+    let bestArea: number = 0;
+    for (let i = 0; i < sizes.length; i++) {
+      const s: PhotoSize = sizes[i];
+      if (s.photo === null || s.width <= 0 || s.height <= 0) {
+        continue;
+      }
+      const area: number = s.width * s.height;
+      if (area > bestArea) {
+        bestArea = area;
+        best = s;
+      }
+    }
+    return best;
+  }
+
   private resolveMediaAttachment(message: Message): MediaAttachment | null {
     if (message.content === null) {
       return null;
@@ -1473,6 +1534,27 @@ export class ChatCoordinator {
       const captionText: string = photoContent.caption !== null ? photoContent.caption.text : '';
       const captionSpans: MessageTextSpan[] = photoContent.caption !== null ? parseFormattedText(photoContent.caption) : [];
 
+      // MEDIA-VIEWER-101：气泡吃显示档，查看器放大后要的是最大档 —— 两者是不同 fileId，
+      // 各下各的。最大档就是显示档时不带（没有可升级的东西，别白跑一次请求）。
+      let fullSource: MediaFullSource | null = null;
+      const fullSize: PhotoSize | null = this.chooseFullSize(sizes);
+      if (fullSize !== null && fullSize.photo !== null && fullSize.photo.id !== fileId) {
+        const fullFile: File = fullSize.photo;
+        const fullId: number = fullFile.id;
+        const fullLatest: File | null = this.fileRegistry.getFile(fullId);
+        fullSource = new MediaFullSource(
+          fullId,
+          fullSize.width,
+          fullSize.height,
+          this.fileRegistry.getLocalPath(fullId, fullFile),
+          this.fileRegistry.isDownloaded(fullId, fullFile),
+          fullLatest !== null && fullLatest.local !== null
+            ? fullLatest.local.is_downloading_active
+            : (fullFile.local !== null ? fullFile.local.is_downloading_active : false),
+          this.fileRegistry.getDownloadProgress(fullId)
+        );
+      }
+
       return new MediaAttachment(
         'photo',
         fileId,
@@ -1489,7 +1571,7 @@ export class ChatCoordinator {
         photoContent.has_spoiler,
         isUploading,
         uploadProgress
-      );
+      ).withFullSource(fullSource);
     }
 
     if (message.content.type === 'messageAnimation') {
