@@ -5,7 +5,8 @@
  * PROFILE-103 新增字段全部带默认值并置于构造末尾，保持旧调用点兼容。
  */
 
-import { SharedMediaItem, SharedFileItem, SharedLinkItem, SharedGroupItem } from './SharedContentItems';
+import { SharedAudioItem, SharedFileItem, SharedGroupItem, SharedLinkItem, SharedMediaItem }
+  from './SharedContentItems';
 
 export interface ProfileUiStateOptions {
   userId?: number;
@@ -29,7 +30,7 @@ export interface ProfileUiStateOptions {
   errorMessage?: string | null;
   /** 生日文案：'YYYY年M月D日 (N 岁)'；无生日为空串。 */
   birthdayText?: string;
-  /** 共享内容当前选中 Tab：0 媒体 / 1 文件 / 2 链接 / 3 群组。 */
+  /** 共享内容当前选中 Tab：0 媒体 / 1 文件 / 2 链接 / 3 音乐 / 4 语音 / 5 群组。 */
   activeSharedTab?: number;
   /** 共享媒体条目（已加载的缓存页）。 */
   sharedMedia?: SharedMediaItem[];
@@ -37,6 +38,12 @@ export interface ProfileUiStateOptions {
   sharedFiles?: SharedFileItem[];
   /** 共享链接条目。 */
   sharedLinks?: SharedLinkItem[];
+  /** SHARED-AUDIO：共享音乐条目。 */
+  sharedAudios?: SharedAudioItem[];
+  /** SHARED-AUDIO：共享语音条目。 */
+  sharedVoices?: SharedAudioItem[];
+  /** SHARED-AUDIO：正在播放的行 fileId；0 = 未在播放。 */
+  sharedPlayingFileId?: number;
   /** 共同群组条目。 */
   sharedGroups?: SharedGroupItem[];
   /** 共享内容加载中（切 Tab 触发请求后为 true，回灌后 false）。 */
@@ -84,6 +91,9 @@ export class ProfileUiState {
   readonly sharedMedia: SharedMediaItem[];
   readonly sharedFiles: SharedFileItem[];
   readonly sharedLinks: SharedLinkItem[];
+  readonly sharedAudios: SharedAudioItem[];
+  readonly sharedVoices: SharedAudioItem[];
+  readonly sharedPlayingFileId: number;
   readonly sharedGroups: SharedGroupItem[];
   readonly sharedLoading: boolean;
   readonly sharedHasMore: boolean;
@@ -132,7 +142,10 @@ export class ProfileUiState {
     notificationRequested: boolean = false,
     peerBlocked: boolean = false,
     peerBlockReady: boolean = false,
-    peerBlockUpdating: boolean = false
+    peerBlockUpdating: boolean = false,
+    sharedAudios: SharedAudioItem[] = [],
+    sharedVoices: SharedAudioItem[] = [],
+    sharedPlayingFileId: number = 0
   ) {
     this.userId = userId;
     this.displayName = displayName;
@@ -164,6 +177,9 @@ export class ProfileUiState {
     this.peerBlocked = peerBlocked;
     this.peerBlockReady = peerBlockReady;
     this.peerBlockUpdating = peerBlockUpdating;
+    this.sharedAudios = sharedAudios;
+    this.sharedVoices = sharedVoices;
+    this.sharedPlayingFileId = sharedPlayingFileId;
   }
 
   static initial(userId: number = 0): ProfileUiState {
@@ -201,7 +217,10 @@ export class ProfileUiState {
       options.notificationRequested !== undefined ? options.notificationRequested : this.notificationRequested,
       options.peerBlocked !== undefined ? options.peerBlocked : this.peerBlocked,
       options.peerBlockReady !== undefined ? options.peerBlockReady : this.peerBlockReady,
-      options.peerBlockUpdating !== undefined ? options.peerBlockUpdating : this.peerBlockUpdating
+      options.peerBlockUpdating !== undefined ? options.peerBlockUpdating : this.peerBlockUpdating,
+      options.sharedAudios !== undefined ? options.sharedAudios : this.sharedAudios,
+      options.sharedVoices !== undefined ? options.sharedVoices : this.sharedVoices,
+      options.sharedPlayingFileId !== undefined ? options.sharedPlayingFileId : this.sharedPlayingFileId
     );
   }
 }

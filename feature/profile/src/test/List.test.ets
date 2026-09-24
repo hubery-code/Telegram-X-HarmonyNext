@@ -5,6 +5,7 @@ import profileNotificationTest from './ProfileNotification.test';
 import profileMenuTest from './ProfileMenu.test';
 import chatProfileSharedContentTest from './ChatProfileSharedContent.test';
 import sharedDateSectionsTest from './SharedDateSections.test';
+import sharedAudioRowsTest from './SharedAudioRows.test';
 
 export default function testsuite(): void {
   profileReducerTest();
@@ -14,4 +15,5 @@ export default function testsuite(): void {
   profileMenuTest();
   chatProfileSharedContentTest();
   sharedDateSectionsTest();
+  sharedAudioRowsTest();
 }

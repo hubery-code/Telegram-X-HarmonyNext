@@ -8,13 +8,15 @@
  * 4. 请求失败与「确实没有内容」分开：失败只标当前 Tab，且不清掉已到手的数据；
  * 5. 换会话（openChatProfile）必须清空上一个会话的网格，否则新群看到的是旧图；
  * 6. 协调器端到端：getChat → searchChatMessages(按 Tab 过滤) → 网格含真实条目与占位条目
- *    → 翻页追加，并且本页不需要 createPrivateChat（chatId 由入口给出）。
+ *    → 翻页追加，并且本页不需要 createPrivateChat（chatId 由入口给出）；
+ * 7. SHARED-AUDIO：音乐/语音 Tab 各自用对过滤器、行文案与日期齐活；解析阶段一律
+ *    不发起下载（一屏 20 条音频同时下是灾难），点按才下载并在落盘后续播。
  */
 
 import { describe, it, expect } from '@ohos/hypium';
 import { AccountScope } from '@tgx/core-account';
 import { ChatRegistry } from '@tgx/core-domain';
-import { FakeClipboard, FakeToast } from '@tgx/platform-ports';
+import { AudioPlayerPort, FakeAudioPlayer, FakeClipboard, FakeToast } from '@tgx/platform-ports';
 import { Logger, LogLevel, LogSink } from '@tgx/observability';
 import { TdWireValue } from '@tgx/td-gateway';
 import { ReducerEnv, ReducerResult } from '@tgx/feature-template';
@@ -24,6 +26,8 @@ import {
   ChatProfileUiStateOptions
 } from '../main/ets/contract/ChatProfileUiState';
 import {
+  SharedAudioItem,
+  SharedContentRows,
   SharedFileItem,
   SharedLinkItem,
   SharedMediaItem
@@ -34,14 +38,25 @@ import {
   OnSharedTabSelected,
   LoadMoreSharedContent,
   OnSharedContentLoaded,
-  OnSharedContentFailed
+  OnSharedContentFailed,
+  ToggleSharedAudio
 } from '../main/ets/contract/ChatProfileIntent';
 import { ChatProfileEffect } from '../main/ets/contract/ChatProfileEffect';
 import { chatProfileReducer } from '../main/ets/reducer/ChatProfileReducer';
-import { ChatProfileCoordinator } from '../main/ets/coordinator/ChatProfileCoordinator';
+import {
+  SHARED_TAB_AUDIO,
+  SHARED_TAB_GROUPS,
+  SHARED_TAB_VOICE
+} from '../main/ets/model/SharedContentSearch';
+import {
+  ChatProfileCoordinator,
+  ChatProfileCoordinatorOptions
+} from '../main/ets/coordinator/ChatProfileCoordinator';
 import {
   TestNativeBridge,
+  audioMessage,
   basicGroupChatResponse,
+  downloadedFileValue,
   supergroupChatResponse,
   createScope,
   documentMessage,
@@ -50,7 +65,8 @@ import {
   photoSizeValue,
   settle,
   textUrlMessage,
-  videoMessageWithoutThumb
+  videoMessageWithoutThumb,
+  voiceMessage
 } from './ProfileTestHarness';
 
 const CHAT_ID: number = 4242;
@@ -95,7 +111,10 @@ function reduce(intent: ChatProfileIntent, state: ChatProfileUiState): ReducerRe
 }
 
 /** 起一个真实的 ChatProfileCoordinator（假桥 + 假端口），走完 start → getChat。 */
-function openCoordinator(bridge: TestNativeBridge): ChatProfileCoordinator {
+function openCoordinator(
+  bridge: TestNativeBridge,
+  options?: ChatProfileCoordinatorOptions
+): ChatProfileCoordinator {
   const scope: AccountScope = createScope(bridge, 'test_chat_profile_shared');
   const sink: LogSink = (_level: LogLevel, _line: string): void => {};
   return new ChatProfileCoordinator(
@@ -103,7 +122,8 @@ function openCoordinator(bridge: TestNativeBridge): ChatProfileCoordinator {
     new ChatRegistry(),
     new FakeClipboard(),
     new FakeToast(),
-    new Logger('error', sink)
+    new Logger('error', sink),
+    options
   );
 }
 
@@ -158,11 +178,11 @@ export default function chatProfileSharedContentTest(): void {
     });
 
     it('onSharedTabSelected_rejectsGroupsTabIndex', 0, (): void => {
-      // 本页只有媒体/文件/链接三 Tab：群组是私聊概念，越界索引必须 no-op。
+      // 本页五个内容 Tab（媒体/文件/链接/音乐/语音）：群组是私聊概念，越界索引必须 no-op。
       const state: ChatProfileUiState = stateWith({ chatId: CHAT_ID });
 
       const res: ReducerResult<ChatProfileUiState, ChatProfileEffect> =
-        reduce(new OnSharedTabSelected(3), state);
+        reduce(new OnSharedTabSelected(SHARED_TAB_GROUPS), state);
 
       expect(res.effects.length).assertEqual(0);
       expect(res.state.activeSharedTab).assertEqual(0);
@@ -193,7 +213,7 @@ export default function chatProfileSharedContentTest(): void {
       });
 
       const res: ReducerResult<ChatProfileUiState, ChatProfileEffect> =
-        reduce(new OnSharedContentLoaded(0, mediaOf(2), [], [], true), state);
+        reduce(new OnSharedContentLoaded(0, new SharedContentRows({ media: mediaOf(2) }), true), state);
 
       expect(res.state.sharedMedia.length).assertEqual(2);
       expect(res.state.sharedLoading).assertFalse();
@@ -363,6 +383,120 @@ export default function chatProfileSharedContentTest(): void {
       expect(state.sharedLoadFailed).assertTrue();
       expect(state.sharedLoadingMore).assertFalse();
       expect(state.sharedMedia.length).assertEqual(1);
+      coordinator.destroy();
+    });
+
+    it('coordinator_audioTab_mapsRowsWithoutBulkDownload', 0, async (): Promise<void> => {
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const coordinator: ChatProfileCoordinator = openCoordinator(bridge);
+      coordinator.start(CHAT_ID);
+      bridge.respondTo(bridge.lastRequestIdOf('getChat'), basicGroupChatResponse(CHAT_ID));
+      await settle();
+      const sizes: Record<string, TdWireValue>[] = [photoSizeValue(9001, 640)];
+      bridge.respondTo(bridge.lastRequestIdOf('searchChatMessages'),
+        foundMessages([photoMessage(101, sizes)], 0));
+      await settle();
+
+      coordinator.dispatch(new OnSharedTabSelected(SHARED_TAB_AUDIO));
+      await settle();
+      const req: Record<string, TdWireValue> = bridge.lastRequestOf('searchChatMessages');
+      const filter: Record<string, TdWireValue> = req['filter'] as Record<string, TdWireValue>;
+      expect(filter['@type']).assertEqual('searchMessagesFilterAudio');
+
+      const downloadsBefore: number = bridge.countRequests('downloadFile');
+      bridge.respondTo(bridge.lastRequestIdOf('searchChatMessages'), foundMessages(
+        [audioMessage(501, 'Moon River', 'Andy Williams', 1758633600),
+          audioMessage(502, '', '', 1756000000)], 0));
+      await settle();
+
+      const rows: SharedAudioItem[] = coordinator.getState().sharedAudios;
+      expect(rows.length).assertEqual(2);
+      expect(rows[0].fileId).assertEqual(501 * 11);
+      expect(rows[0].title).assertEqual('Moon River');
+      expect(rows[0].subtitle).assertEqual('Andy Williams - Moon River');
+      expect(rows[0].duration).assertEqual(214);
+      expect(rows[0].date).assertEqual(1758633600);
+      // 没有 title：标题回落「文件名去扩展名」，副标题回落文件大小（TD.getTitle/getSubtitle）。
+      expect(rows[1].title).assertEqual('502');
+      expect(rows[1].subtitle).assertEqual('1.0 KB');
+      // 其它媒体行不受影响。
+      expect(coordinator.getState().sharedMedia.length).assertEqual(1);
+      // 解析阶段一条下载都不发：早期版本用带订阅的 localPathOf，翻个 Tab 就同时下 20 个音频。
+      expect(bridge.countRequests('downloadFile')).assertEqual(downloadsBefore);
+      expect(bridge.countDownloadRequestsFor(501 * 11)).assertEqual(0);
+      coordinator.destroy();
+    });
+
+    it('coordinator_voiceTab_mapsRowsWithSenderFallbackChain', 0, async (): Promise<void> => {
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const coordinator: ChatProfileCoordinator = openCoordinator(bridge);
+      coordinator.start(CHAT_ID);
+      bridge.respondTo(bridge.lastRequestIdOf('getChat'), basicGroupChatResponse(CHAT_ID));
+      await settle();
+
+      coordinator.dispatch(new OnSharedTabSelected(SHARED_TAB_VOICE));
+      await settle();
+      const req: Record<string, TdWireValue> = bridge.lastRequestOf('searchChatMessages');
+      const filter: Record<string, TdWireValue> = req['filter'] as Record<string, TdWireValue>;
+      expect(filter['@type']).assertEqual('searchMessagesFilterVoiceNote');
+
+      bridge.respondTo(bridge.lastRequestIdOf('searchChatMessages'),
+        foundMessages([voiceMessage(601, 777, 7, 1758633600)], 0));
+      await settle();
+
+      const rows: SharedAudioItem[] = coordinator.getState().sharedVoices;
+      expect(rows.length).assertEqual(1);
+      expect(rows[0].fileId).assertEqual(601 * 13);
+      // 成员昵称还没进缓存 → 空串，由组件回落到「语音消息」；不印裸 user id。
+      expect(rows[0].title).assertEqual('');
+      expect(rows[0].subtitle).assertEqual('0:07 · 1.0 KB');
+      expect(rows[0].date).assertEqual(1758633600);
+      // 语音行不会串到音乐数组里。
+      expect(coordinator.getState().sharedAudios.length).assertEqual(0);
+      coordinator.destroy();
+    });
+
+    it('coordinator_tapAudio_downloadsThenBackfillsPathAndResumesPlay', 0, async (): Promise<void> => {
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const player: AudioPlayerPort = new FakeAudioPlayer();
+      const coordinator: ChatProfileCoordinator = openCoordinator(bridge, { audioPlayerPort: player });
+      coordinator.start(CHAT_ID);
+      bridge.respondTo(bridge.lastRequestIdOf('getChat'), basicGroupChatResponse(CHAT_ID));
+      await settle();
+      coordinator.dispatch(new OnSharedTabSelected(SHARED_TAB_AUDIO));
+      await settle();
+      bridge.respondTo(bridge.lastRequestIdOf('searchChatMessages'),
+        foundMessages([audioMessage(501, 'Moon River', 'Andy Williams')], 0));
+      await settle();
+
+      const fileId: number = 501 * 11;
+      coordinator.dispatch(new ToggleSharedAudio(fileId));
+      await settle();
+
+      const playing: ChatProfileUiState = coordinator.getState();
+      expect(playing.sharedPlayingFileId).assertEqual(fileId);
+      expect(playing.sharedAudios[0].localPath).assertNull();
+      // 音频没落盘：点按才发起下载，此时还没外放。
+      expect(bridge.countDownloadRequestsFor(fileId)).assertEqual(1);
+      expect((player as FakeAudioPlayer).getCurrentUri()).assertEqual('');
+
+      const path: string = '/sandbox/files/audio-501.mp3';
+      const update: Record<string, TdWireValue> = {};
+      update['file'] = downloadedFileValue(fileId, path);
+      bridge.emitUpdate('updateFile', update);
+      await settle();
+
+      const done: ChatProfileUiState = coordinator.getState();
+      expect(done.sharedAudios[0].localPath).assertEqual(path);
+      expect(done.sharedPlayingFileId).assertEqual(fileId);
+      // 落盘后续播：等待中的 fileId 由 onSharedFileReady 兑现。
+      expect((player as FakeAudioPlayer).getCurrentUri()).assertEqual(path);
+      expect((player as FakeAudioPlayer).isPlaying()).assertTrue();
+
+      coordinator.dispatch(new ToggleSharedAudio(fileId));
+      await settle();
+      expect(coordinator.getState().sharedPlayingFileId).assertEqual(0);
+      expect((player as FakeAudioPlayer).isPlaying()).assertFalse();
       coordinator.destroy();
     });
   });

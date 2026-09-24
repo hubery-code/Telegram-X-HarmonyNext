@@ -3,7 +3,7 @@
  *
  * 对齐 Android ProfileController 的信息面：
  * 封面大图头部（头像全出血 + 遮罩上的展示名/在线状态）+ @username + 手机号 +
- * 简介 + 生日 + 通知 + ⋮ 动作菜单 + 下半页共享内容四 Tab（媒体/文件/链接/群组）。
+ * 简介 + 生日 + 通知 + ⋮ 动作菜单 + 下半页共享内容六 Tab（媒体/文件/链接/音乐/语音/群组）。
  *
  * 集成契约保持三 prop：uiState / onDispatch / onBack（entry 装配不变）。
  * 全部颜色/间距/字号走 design tokens（core-design-system）。
@@ -17,6 +17,7 @@ import {
   OnSharedTabSelected,
   LoadMoreSharedContent,
   OpenSharedChatRequested,
+  ToggleSharedAudio,
   NotificationRowTapped,
   ProfileMenuAction,
   PROFILE_MENU_SECRET_CHAT,
@@ -104,7 +105,10 @@ export struct ProfilePage {
       media: s.sharedMedia,
       files: s.sharedFiles,
       links: s.sharedLinks,
+      audios: s.sharedAudios,
+      voices: s.sharedVoices,
       groups: s.sharedGroups,
+      playingFileId: s.sharedPlayingFileId,
       showGroupsTab: true
     });
   }
@@ -434,6 +438,9 @@ export struct ProfilePage {
                 },
                 onOpenGroup: (chatId: number): void => {
                   this.onDispatch(new OpenSharedChatRequested(chatId));
+                },
+                onToggleAudio: (fileId: number): void => {
+                  this.onDispatch(new ToggleSharedAudio(fileId));
                 }
               })
             }

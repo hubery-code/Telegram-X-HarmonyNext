@@ -37,17 +37,21 @@ import {
   MessageSenderUser
 } from '@tgx/core-td-api-generated';
 import { TdWireObject, TdPendingRequest } from '@tgx/td-gateway';
-import { ClipboardPort, ToastPort, Subscription } from '@tgx/platform-ports';
+import { AudioPlayerPort, ClipboardPort, FakeAudioPlayer, ToastPort, Subscription } from '@tgx/platform-ports';
 import { Logger } from '@tgx/observability';
 import { ReducerResult, ReducerEnv } from '@tgx/feature-template';
 import { ChatProfileUiState, ChatMemberUiItem } from '../contract/ChatProfileUiState';
 import {
-  SharedFileItem,
-  SharedLinkItem,
+  SharedAudioItem,
+  SharedContentRows,
   SharedMediaItem
 } from '../contract/SharedContentItems';
-import { withSharedMediaPath } from '../model/SharedContentFormat';
-import { SharedContentPage, SharedContentSearcher } from '../model/SharedContentSearch';
+import { withSharedAudioPath, withSharedMediaPath } from '../model/SharedContentFormat';
+import {
+  mergeSharedRows,
+  SharedContentPage,
+  SharedContentSearcher
+} from '../model/SharedContentSearch';
 import {
   ChatProfileIntent,
   OpenChatProfile,
@@ -58,13 +62,16 @@ import {
   OnChatAvatarLoaded,
   OnChatProfileError,
   OnSharedContentLoaded,
-  OnSharedContentFailed
+  OnSharedContentFailed,
+  OnSharedAudioPlaying
 } from '../contract/ChatProfileIntent';
 import {
   ChatProfileEffect,
   FetchChatDetailsEffect,
   FetchSharedContentEffect,
   FetchMoreSharedContentEffect,
+  PlaySharedAudioEffect,
+  StopSharedAudioEffect,
   NavigateToUserProfileEffect,
   CopyInviteLinkEffect,
   NavigateBackEffect
@@ -73,12 +80,14 @@ import { chatProfileReducer } from '../reducer/ChatProfileReducer';
 
 const TAG: string = 'ChatProfileCoordinator';
 
-/** 共享媒体缩略图下载优先级（与用户资料页一致：预览级，不抢播放器带宽）。 */
+/** 共享媒体缩略图/音频下载优先级（与用户资料页一致：预览级，不抢播放器带宽）。 */
 const SHARED_THUMB_DOWNLOAD_PRIORITY: number = 2;
 
 export interface ChatProfileCoordinatorOptions {
   readonly onNavigateToUserProfile?: (userId: number) => void;
   readonly onNavigateBack?: () => void;
+  /** SHARED-AUDIO：音频播放器抽象；缺省 FakeAudioPlayer（无装配层注入时点按不外放）。 */
+  readonly audioPlayerPort?: AudioPlayerPort;
 }
 
 export class ChatProfileCoordinator {
@@ -89,6 +98,7 @@ export class ChatProfileCoordinator {
   private readonly fileRegistry: FileRegistry;
   private readonly clipboardPort: ClipboardPort;
   private readonly toastPort: ToastPort;
+  private readonly audioPlayerPort: AudioPlayerPort;
   private readonly logger: Logger;
   private readonly options: ChatProfileCoordinatorOptions;
   private readonly env: ReducerEnv;
@@ -97,10 +107,12 @@ export class ChatProfileCoordinator {
   private onStateChangedListener: ((state: ChatProfileUiState) => void) | null = null;
   private activeChatId: number = 0;
   private subscriptions: Subscription[] = [];
-  /** 共享内容媒体/文件/链接的分页拉取（与用户资料页共用 model/SharedContentSearch）。 */
+  /** 共享内容五个内容 Tab 的分页拉取（与用户资料页共用 model/SharedContentSearch）。 */
   private readonly sharedSearcher: SharedContentSearcher;
-  /** 已登记缩略图订阅的 fileId，防重复订阅。 */
+  /** 已登记本地路径订阅的 fileId，防重复订阅。 */
   private readonly subscribedSharedFileIds: Set<number> = new Set();
+  /** SHARED-AUDIO：文件还没下载完，落盘后自动续播的 fileId；0 = 无等待。 */
+  private pendingPlayFileId: number = 0;
   private destroyed: boolean = false;
 
   constructor(
@@ -120,6 +132,9 @@ export class ChatProfileCoordinator {
     this.toastPort = toastPort;
     this.logger = logger;
     this.options = options !== undefined ? options : {};
+    this.audioPlayerPort = this.options.audioPlayerPort !== undefined
+      ? this.options.audioPlayerPort
+      : new FakeAudioPlayer();
     this.groupRegistry = groupRegistry !== undefined ? groupRegistry : new GroupRegistry(scope);
     this.userRegistry = userRegistry !== undefined ? userRegistry : new UserRegistry(scope);
     this.fileRegistry = fileRegistry !== undefined ? fileRegistry : new FileRegistry(scope);
@@ -132,9 +147,28 @@ export class ChatProfileCoordinator {
       request: (name: string, payload: TdWireObject): Result<TdPendingRequest, AppError> =>
         this.scope.request(name, payload),
       localPathOf: (fileId: number): string | null => self.sharedLocalPathOf(fileId),
+      audioLocalPathOf: (fileId: number): string | null => self.fileRegistry.getLocalPath(fileId),
+      senderNameOf: (userId: number): string => self.sharedSenderNameOf(userId),
       logger: this.logger,
       tag: TAG
     });
+  }
+
+  /**
+   * 语音行的发送者昵称。
+   * 本页成员列表已经把所有发言人 getUser 过，正常都在缓存里；没命中时补一次请求，
+   * 本行先显示「语音消息」，下一页起就有名字。
+   */
+  private sharedSenderNameOf(userId: number): string {
+    if (userId === 0) {
+      return '';
+    }
+    const user: User | null = this.userRegistry.getUser(userId);
+    if (user === null) {
+      this.userRegistry.requestUser(userId);
+      return '';
+    }
+    return formatFullName(user);
   }
 
   getState(): ChatProfileUiState {
@@ -156,6 +190,8 @@ export class ChatProfileCoordinator {
   destroy(): void {
     this.destroyed = true;
     this.sharedSearcher.destroy();
+    this.pendingPlayFileId = 0;
+    this.audioPlayerPort.stop().catch((): void => {});
     for (let i = 0; i < this.subscriptions.length; i++) {
       this.subscriptions[i].unsubscribe();
     }
@@ -190,6 +226,15 @@ export class ChatProfileCoordinator {
       case 'fetchMoreSharedContentEffect': {
         const fetchMore: FetchMoreSharedContentEffect = effect as FetchMoreSharedContentEffect;
         this.fetchSharedContent(fetchMore.tab, true);
+        break;
+      }
+      case 'playSharedAudioEffect': {
+        const play: PlaySharedAudioEffect = effect as PlaySharedAudioEffect;
+        this.playSharedAudio(play.fileId);
+        break;
+      }
+      case 'stopSharedAudioEffect': {
+        this.stopSharedAudio();
         break;
       }
       case 'navigateToUserProfileEffect': {
@@ -399,7 +444,7 @@ export class ChatProfileCoordinator {
   }
 
   // ------------------------------------------------------------------
-  // CHATPROF-SHARED：共享内容（媒体/文件/链接），与用户资料页共用 model/SharedContentSearch
+  // CHATPROF-SHARED：共享内容（媒体/文件/链接/音乐/语音），与用户资料页共用 model/SharedContentSearch
   // ------------------------------------------------------------------
 
   /** 本页的 chatId 由入口给出，不像私聊页还要先 createPrivateChat 解析。 */
@@ -425,56 +470,138 @@ export class ChatProfileCoordinator {
       this.dispatch(new OnSharedContentFailed(page.tab));
       return;
     }
-    const s: ChatProfileUiState = this.state;
-    if (page.tab === 0) {
-      const combined: SharedMediaItem[] = isLoadMore ? [...s.sharedMedia, ...page.media] : page.media;
-      this.dispatch(new OnSharedContentLoaded(0, combined, s.sharedFiles, s.sharedLinks, page.hasMore));
-      return;
-    }
-    if (page.tab === 1) {
-      const combined: SharedFileItem[] = isLoadMore ? [...s.sharedFiles, ...page.files] : page.files;
-      this.dispatch(new OnSharedContentLoaded(1, s.sharedMedia, combined, s.sharedLinks, page.hasMore));
-      return;
-    }
-    const combined: SharedLinkItem[] = isLoadMore ? [...s.sharedLinks, ...page.links] : page.links;
-    this.dispatch(new OnSharedContentLoaded(2, s.sharedMedia, s.sharedFiles, combined, page.hasMore));
+    const next: SharedContentRows =
+      mergeSharedRows(this.currentSharedRows(), page.tab, page.rows, isLoadMore);
+    this.dispatch(new OnSharedContentLoaded(page.tab, next, page.hasMore));
   }
 
-  /** 本地路径未就绪时顺手登记 updateFile 订阅，落盘后局部重写网格里该条目的 localPath。 */
+  /** 当前状态里的五个内容 Tab 数组 → 一个集合（回灌时要按 Tab 局部替换）。 */
+  private currentSharedRows(): SharedContentRows {
+    const s: ChatProfileUiState = this.state;
+    return new SharedContentRows({
+      media: s.sharedMedia,
+      files: s.sharedFiles,
+      links: s.sharedLinks,
+      audios: s.sharedAudios,
+      voices: s.sharedVoices
+    });
+  }
+
+  /** 本地路径未就绪时顺手登记 updateFile 订阅，落盘后原位回灌缩略图/音频路径。 */
   private sharedLocalPathOf(fileId: number): string | null {
     const cached: string | null = this.fileRegistry.getLocalPath(fileId);
-    return cached !== null ? cached : this.resolveSharedMediaFile(fileId);
+    return cached !== null ? cached : this.subscribeSharedFile(fileId);
   }
 
-  /** 缩略图本地路径未就绪：订阅 updateFile，落盘后局部重写 media 数组中该条目的 localPath。 */
-  private resolveSharedMediaFile(fileId: number): string | null {
-    if (this.subscribedSharedFileIds.has(fileId)) {
-      return null;
+  /** 订阅一次 fileId 的本地路径变化，并发起下载（缩略图与音频共用这条通道）。 */
+  private subscribeSharedFile(fileId: number): string | null {
+    if (!this.subscribedSharedFileIds.has(fileId)) {
+      this.subscribedSharedFileIds.add(fileId);
+      this.subscriptions.push(this.fileRegistry.subscribeFile(fileId, (file: File): void => {
+        this.onSharedFileReady(file);
+      }));
+      const res: Result<TdPendingRequest, AppError> =
+        this.fileRegistry.downloadFile(fileId, SHARED_THUMB_DOWNLOAD_PRIORITY);
+      if (res.err) {
+        this.logger.logError(TAG, res.error);
+      }
     }
-    this.subscribedSharedFileIds.add(fileId);
-    this.subscriptions.push(this.fileRegistry.subscribeFile(fileId, (file: File): void => {
-      if (this.destroyed) {
-        return;
+    return null;
+  }
+
+  /** 文件落盘：原位回灌网格缩略图与音频行的 localPath；有等待播放的顺带续播。 */
+  private onSharedFileReady(file: File): void {
+    if (this.destroyed) {
+      return;
+    }
+    const path: string | null = this.fileRegistry.getLocalPath(file.id);
+    if (path === null || path.length === 0) {
+      return;
+    }
+    const rows: SharedContentRows = this.currentSharedRows();
+    const media: SharedMediaItem[] | null = withSharedMediaPath(rows.media, file.id, path);
+    const audios: SharedAudioItem[] | null = withSharedAudioPath(rows.audios, file.id, path);
+    const voices: SharedAudioItem[] | null = withSharedAudioPath(rows.voices, file.id, path);
+    if (media !== null || audios !== null || voices !== null) {
+      this.dispatch(new OnSharedContentLoaded(
+        this.state.activeSharedTab,
+        new SharedContentRows({
+          media: media !== null ? media : rows.media,
+          files: rows.files,
+          links: rows.links,
+          audios: audios !== null ? audios : rows.audios,
+          voices: voices !== null ? voices : rows.voices
+        }),
+        this.state.sharedHasMore
+      ));
+    }
+    if (this.pendingPlayFileId === file.id) {
+      this.pendingPlayFileId = 0;
+      this.startSharedAudioPlayback(path);
+    }
+  }
+
+  // ------------------------------------------------------------------
+  // SHARED-AUDIO：点行播放（复用 VOICE-101 的 AudioPlayerPort 抽象）
+  // ------------------------------------------------------------------
+
+  private playSharedAudio(fileId: number): void {
+    const item: SharedAudioItem | null = this.findSharedAudio(fileId);
+    if (item === null) {
+      this.dispatch(new OnSharedAudioPlaying(0));
+      return;
+    }
+    if (item.localPath !== null && item.localPath.length > 0) {
+      this.startSharedAudioPlayback(item.localPath);
+      return;
+    }
+    // 音频没落盘：先触发下载，路径回来后由 onSharedFileReady 续播；
+    // 播放态已由 reducer 乐观置位，这里不退回，避免图标闪一下。
+    this.pendingPlayFileId = fileId;
+    this.subscribeSharedFile(fileId);
+    this.toastPort.showToast('正在下载音频...');
+  }
+
+  private startSharedAudioPlayback(path: string): void {
+    const fileId: number = this.state.sharedPlayingFileId;
+    this.audioPlayerPort.play(
+      path,
+      (_currentMs: number, _totalMs: number): void => {},
+      (): void => {
+        if (!this.destroyed) {
+          this.dispatch(new OnSharedAudioPlaying(0));
+        }
+      },
+      (errMsg: string): void => {
+        this.logger.error(TAG, 'shared_audio_play_error', `fileId=${fileId},msg=${errMsg}`);
+        if (!this.destroyed) {
+          this.dispatch(new OnSharedAudioPlaying(0));
+        }
       }
-      const path: string | null = this.fileRegistry.getLocalPath(file.id);
-      if (path === null || path.length === 0) {
-        return;
+    ).catch((e: Error): void => {
+      this.logger.error(TAG, 'shared_audio_play_failed', String(e));
+      if (!this.destroyed) {
+        this.dispatch(new OnSharedAudioPlaying(0));
       }
-      const updated: SharedMediaItem[] | null = withSharedMediaPath(this.state.sharedMedia, file.id, path);
-      if (updated !== null) {
-        this.dispatch(new OnSharedContentLoaded(
-          0,
-          updated,
-          this.state.sharedFiles,
-          this.state.sharedLinks,
-          this.state.sharedHasMore
-        ));
+    });
+  }
+
+  private stopSharedAudio(): void {
+    this.pendingPlayFileId = 0;
+    this.audioPlayerPort.stop().catch((): void => {});
+  }
+
+  private findSharedAudio(fileId: number): SharedAudioItem | null {
+    const rows: SharedContentRows = this.currentSharedRows();
+    for (let i = 0; i < rows.audios.length; i++) {
+      if (rows.audios[i].fileId === fileId) {
+        return rows.audios[i];
       }
-    }));
-    const res: Result<TdPendingRequest, AppError> =
-      this.fileRegistry.downloadFile(fileId, SHARED_THUMB_DOWNLOAD_PRIORITY);
-    if (res.err) {
-      this.logger.logError(TAG, res.error);
+    }
+    for (let i = 0; i < rows.voices.length; i++) {
+      if (rows.voices[i].fileId === fileId) {
+        return rows.voices[i];
+      }
     }
     return null;
   }

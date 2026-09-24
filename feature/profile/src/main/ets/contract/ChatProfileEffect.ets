@@ -48,6 +48,21 @@ export class FetchMoreSharedContentEffect {
   }
 }
 
+/** SHARED-AUDIO：播放指定 fileId 的音频/语音（本地没有则先下载）。 */
+export class PlaySharedAudioEffect {
+  readonly type: 'playSharedAudioEffect' = 'playSharedAudioEffect';
+  readonly fileId: number;
+
+  constructor(fileId: number) {
+    this.fileId = fileId;
+  }
+}
+
+/** SHARED-AUDIO：停止当前播放（切到别的行、再次点同一行、页面销毁）。 */
+export class StopSharedAudioEffect {
+  readonly type: 'stopSharedAudioEffect' = 'stopSharedAudioEffect';
+}
+
 export class NavigateBackEffect {
   readonly type: 'navigateBackEffect' = 'navigateBackEffect';
 }
@@ -58,4 +73,6 @@ export type ChatProfileEffect =
   | CopyInviteLinkEffect
   | FetchSharedContentEffect
   | FetchMoreSharedContentEffect
+  | PlaySharedAudioEffect
+  | StopSharedAudioEffect
   | NavigateBackEffect;

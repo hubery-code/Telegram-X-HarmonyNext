@@ -97,6 +97,57 @@ export class TestNativeBridge implements TdNativeBridgeLike {
     this.respondTo(requestId, fields);
   }
 
+  /**
+   * 主动推一条 update（无 @extra）：SHARED-AUDIO 的「音频落盘后回灌路径并续播」
+   * 只能靠 updateFile 触发，光靠回包无法把那半条链路测到。
+   */
+  emitUpdate(type: string, fields: Record<string, TdWireValue>): void {
+    const payload: TdWireObject = {};
+    for (const key of Object.keys(fields)) {
+      payload[key] = fields[key];
+    }
+    payload['@type'] = type;
+    const seq: string = String(this.nextSeq);
+    this.nextSeq += 1;
+    const rawEvent: TdNativeEvent = {
+      schemaVersion: 1,
+      clientId: 1,
+      sequence: seq,
+      payloadUtf8: JSON.stringify(payload),
+      receivedAtMonotonicMs: 0
+    };
+    for (const id of Array.from(this.sinks.keys())) {
+      const sink: TdNativeEventSink | undefined = this.sinks.get(id);
+      if (sink !== undefined) {
+        sink(rawEvent);
+      }
+    }
+  }
+
+  /** 某类请求的发出条数：守住「解析音频行不得批量发起下载」这条设计约束。 */
+  countRequests(type: string): number {
+    let n: number = 0;
+    for (const raw of this.sent) {
+      const req: Record<string, TdWireValue> = JSON.parse(raw) as Record<string, TdWireValue>;
+      if (req['@type'] === type) {
+        n += 1;
+      }
+    }
+    return n;
+  }
+
+  /** 指定 file_id 的 downloadFile 条数（0 = 从没为它发过下载）。 */
+  countDownloadRequestsFor(fileId: number): number {
+    let n: number = 0;
+    for (const raw of this.sent) {
+      const req: Record<string, TdWireValue> = JSON.parse(raw) as Record<string, TdWireValue>;
+      if (req['@type'] === 'downloadFile' && Number(req['file_id']) === fileId) {
+        n += 1;
+      }
+    }
+    return n;
+  }
+
   /** 最近一条 @type 匹配的请求里的 @extra.requestId；没有则空串。 */
   lastRequestIdOf(type: string): string {
     for (let i = this.sent.length - 1; i >= 0; i--) {
@@ -199,6 +250,35 @@ export function fileValue(fileId: number): Record<string, TdWireValue> {
   return fields;
 }
 
+/**
+ * 已落盘的 file：`local.path` + `is_downloading_completed`（TDLib 的真实字段名）。
+ * updateFile 回灌路径的用例只能靠这条报文把文件从「未下载」翻成「已下载」。
+ */
+export function downloadedFileValue(fileId: number, path: string): Record<string, TdWireValue> {
+  const remote: Record<string, TdWireValue> = {};
+  remote['@type'] = 'remoteFileId';
+  remote['id'] = String(fileId);
+  remote['is_upload_active_completed'] = true;
+  remote['uploaded_size'] = 1024;
+  remote['download_size'] = 1024;
+  const local: Record<string, TdWireValue> = {};
+  local['@type'] = 'localFile';
+  local['path'] = path;
+  local['downloaded_prefix_size'] = 1024;
+  local['downloaded_size'] = 1024;
+  local['is_downloading_active'] = false;
+  local['is_downloading_completed'] = true;
+  local['is_downloading_outside'] = false;
+  const fields: Record<string, TdWireValue> = {};
+  fields['@type'] = 'file';
+  fields['id'] = fileId;
+  fields['size'] = 1024;
+  fields['expected_remote_file_id'] = String(fileId);
+  fields['remote'] = remote;
+  fields['local'] = local;
+  return fields;
+}
+
 export function photoSizeValue(fileId: number, width: number): Record<string, TdWireValue> {
   const size: Record<string, TdWireValue> = {};
   size['@type'] = 'photoSize';
@@ -281,6 +361,56 @@ export function documentMessage(messageId: number, fileName: string,
   msg['@type'] = 'message';
   msg['id'] = messageId;
   msg['chat_id'] = 4242;
+  msg['date'] = date;
+  msg['content'] = content;
+  return msg;
+}
+
+/** messageAudio → 音乐行；fileId 走 messageId*11，便于断言 localPath 回灌目标。 */
+export function audioMessage(messageId: number, title: string, performer: string,
+  date: number = 1700000000): Record<string, TdWireValue> {
+  const audio: Record<string, TdWireValue> = {};
+  audio['@type'] = 'audio';
+  audio['duration'] = 214;
+  audio['title'] = title;
+  audio['performer'] = performer;
+  audio['file_name'] = `${messageId}.mp3`;
+  audio['mime_type'] = 'audio/mpeg';
+  audio['audio'] = fileValue(messageId * 11);
+  const content: Record<string, TdWireValue> = {};
+  content['@type'] = 'messageAudio';
+  content['audio'] = audio;
+  content['caption'] = null;
+  const msg: Record<string, TdWireValue> = {};
+  msg['@type'] = 'message';
+  msg['id'] = messageId;
+  msg['chat_id'] = 4242;
+  msg['date'] = date;
+  msg['content'] = content;
+  return msg;
+}
+
+/** messageVoiceNote → 语音行；发送者用 messageSenderUser，昵称由调用方的 UserRegistry 解析。 */
+export function voiceMessage(messageId: number, senderUserId: number, duration: number,
+  date: number = 1700000000): Record<string, TdWireValue> {
+  const voice: Record<string, TdWireValue> = {};
+  voice['@type'] = 'voiceNote';
+  voice['duration'] = duration;
+  voice['waveform'] = '';
+  voice['voice'] = fileValue(messageId * 13);
+  const content: Record<string, TdWireValue> = {};
+  content['@type'] = 'messageVoiceNote';
+  content['voice_note'] = voice;
+  content['caption'] = null;
+  content['is_listened'] = true;
+  const sender: Record<string, TdWireValue> = {};
+  sender['@type'] = 'messageSenderUser';
+  sender['user_id'] = senderUserId;
+  const msg: Record<string, TdWireValue> = {};
+  msg['@type'] = 'message';
+  msg['id'] = messageId;
+  msg['chat_id'] = 4242;
+  msg['sender_id'] = sender;
   msg['date'] = date;
   msg['content'] = content;
   return msg;

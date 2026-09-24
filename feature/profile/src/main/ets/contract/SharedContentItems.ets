@@ -1,8 +1,8 @@
 /**
  * feature/profile — 资料页「共享内容」条目模型（PROFILE-103）。
  *
- * 四个 Tab（媒体/文件/链接/群组）的 UI 无关不可变条目，由 ProfileCoordinator
- * 从 searchChatMessages / getGroupsInCommon 的解码结果映射而来。
+ * 内容型 Tab（媒体/文件/链接/音乐/语音）+ 共同群组的 UI 无关不可变条目，
+ * 由 coordinator 从 searchChatMessages / getGroupsInCommon 的解码结果映射而来。
  */
 
 /** 媒体 Tab 条目：fileId 用于下载回灌时定位；localPath 为空表示缩略图未就绪。 */
@@ -65,5 +65,61 @@ export class SharedGroupItem {
     this.chatId = chatId;
     this.title = title;
     this.subtitle = subtitle;
+  }
+}
+
+/**
+ * 音乐 / 语音 Tab 条目（SHARED-AUDIO，对齐 TGX `SharedCommonController` 的行构成）：
+ * - 音乐：title=`audio.title`（缺省回落到文件名），subtitle=表演者 + 时长；
+ * - 语音：title=发送者昵称，subtitle=时长 + 发送时间。
+ * `fileId`/`localPath` 与媒体 Tab 同一套下载回灌规则：路径没回来时点按先触发下载。
+ */
+export class SharedAudioItem {
+  readonly fileId: number;
+  readonly localPath: string | null;
+  readonly title: string;
+  readonly subtitle: string;
+  /** 时长（秒）；0 表示源消息没给。仅用于日志与后续进度条。 */
+  readonly duration: number;
+  readonly date: number;
+
+  constructor(fileId: number, localPath: string | null, title: string, subtitle: string,
+    duration: number = 0, date: number = 0) {
+    this.fileId = fileId;
+    this.localPath = localPath;
+    this.title = title;
+    this.subtitle = subtitle;
+    this.duration = duration;
+    this.date = date;
+  }
+}
+
+export interface SharedContentRowsOptions {
+  readonly media?: SharedMediaItem[];
+  readonly files?: SharedFileItem[];
+  readonly links?: SharedLinkItem[];
+  readonly audios?: SharedAudioItem[];
+  readonly voices?: SharedAudioItem[];
+}
+
+/**
+ * 五个内容型 Tab 的条目集合。
+ *
+ * 回灌意图原本按位置传三个数组，加两个 Tab 就要五个参数、且调用方极易把顺序写反而
+ * 编译器毫无察觉；换成一个集合对象后，coordinator 只需换掉自己那一段、其余透传。
+ */
+export class SharedContentRows {
+  readonly media: SharedMediaItem[];
+  readonly files: SharedFileItem[];
+  readonly links: SharedLinkItem[];
+  readonly audios: SharedAudioItem[];
+  readonly voices: SharedAudioItem[];
+
+  constructor(options: SharedContentRowsOptions = {}) {
+    this.media = options.media ?? [];
+    this.files = options.files ?? [];
+    this.links = options.links ?? [];
+    this.audios = options.audios ?? [];
+    this.voices = options.voices ?? [];
   }
 }

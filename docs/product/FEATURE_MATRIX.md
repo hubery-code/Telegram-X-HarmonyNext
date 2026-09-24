@@ -143,7 +143,7 @@
 > 即 FEAT-UI-004）、CONTACT-101（联系人页）、SELF-101（我的资料页）；
 > 执行顺序与并行泳道见 `PROGRESS.md`「TGX 对齐缺口」。反应投票话题/CameraPicker/深链维持 P2 原序；
 > 通话/视频（FEAT-P3-001/002）、Stories/礼物维持 P3 不提前。
-> **2026-09-24 进度**：PROFILE-103 的**共享内容四 Tab**（媒体/文件/链接/群组，含首屏自动拉取、失败态与点页签重试、共同群组行跳转聊天）已交付并在模拟器对着真实 TDLib 回包取证，
+> **2026-09-24 进度**：PROFILE-103 的**共享内容 Tab 组**（媒体/文件/链接/音乐/语音/群组，含首屏自动拉取、失败态与点页签重试、共同群组行跳转聊天）已交付并在模拟器对着真实 TDLib 回包取证，
 > 证据见 `PROGRESS.md`「已完成」表；该包的 ⋮ 头部菜单 / 通知行 / 封面大图头部仍未做。
 > **同日追加（PROF-ENTRY-001）**：私聊头部标题直达「用户资料页」（peer `user_id` 取自 `getChat.type_.user_id`，非 chatId 顶替），
 > 由此首次取到共享内容**非空条目**的设备证据，并修掉「缩略图未缓存时媒体条目被静默丢掉」的缺陷（改为占位瓦片）。
@@ -244,6 +244,23 @@
 > `星期一` / `上周` 且群组 Tab 无头；日志 `page=20,kept=20,placeholder=20` 即新口径生效的直接证据。
 > `feature_profile` 92/92 PASS（新增 10 例日期分段 + 1 例协调器端日期贯通）。遗留：共享内容仍无「音乐 / 语音」两个 Tab
 > （TGX `SharedCommonController` 有 audio、voiceNote 两档）。
+> **同日追加（SHARED-AUDIO，FEAT-P2-002/006 共享内容音乐与语音 Tab）**：那条遗留清掉 —— 两个资料页的共享内容补成
+> **五个内容 Tab**（媒体/文件/链接/音乐/语音，私聊再多一个「群组」共六个），Tab 编号从 `model/SharedContentSearch.ets`
+> 单点导出（`SHARED_TAB_*`），reducer、组件、用例都按常量走，不再各处写魔法数字；顺序照 Android
+> `ProfileController.getFiltersOrder()`（PhotoAndVideo → Document → Url → Audio →（Animation 本端无）→ VoiceNote）。
+> 行文案照 `TD.getTitle` / `TD.getSubtitle`：音乐标题 = `audio.title` 否则文件名去扩展名，副标题三条分支
+> `performer - title` / 时长 / 文件大小；语音标题 = 发送者昵称，昵称没到时**自己发的显「我」**（直接用 `Message.is_outgoing`，
+> 不必等 getMe），其余留空由组件回落「语音消息」—— 不印裸 user id。日期不重复写进副标题（CHATPROF-DATE 的段头已经说了）。
+> 播放复用 VOICE-101 的 `AudioPlayerPort`：装配层把**同一个** `HarmonyAudioPlayerAdapter` 注入聊天页与两个资料页
+> （一个 AVPlayer = 一条音频流，对齐 Android 的单例 AudioPlayer），切 Tab、点第二行、页面 destroy 都会 stop。
+> **一处刻意的不对称**：解析阶段音频/语音走只查缓存的 `audioLocalPathOf`，媒体缩略图走带订阅的 `localPathOf`。
+> 前者若复用后者，翻一次 Tab 会给整页 20 条音频同时下 —— 改成点按才下载，落盘后由 `onSharedFileReady` 续播等待中的 fileId。
+> 设备实证（模拟器 127.0.0.1:5555，真实数据、未发送任何内容）：私聊资料页六 Tab 齐、语音 Tab 出 `我 / 0:25 · 48.6 KB`
+> 与 `我 / 0:03 · 45 B` 两行并带 `星期一` 段头；点播放 → hilog `initialized → prepared → playing → completed`（25 秒整），
+> 播放中该行圆形按钮翻成实心 accent + ⏸、另一行保持灰底 ▶；音乐 Tab 空态「暂无音乐文件」+ 引导文案；
+> 群资料页（El CLUB）只有五个 Tab（无「群组」）且语音/音乐均走空态。`feature_profile` **105/105 PASS**
+> （新增 `SharedAudioRows.test.ets` 5 例纯函数 + 协调器端 3 例：过滤器选型、行映射、点按下载→回灌→续播）。
+> 遗留：语音行昵称晚到不回灌（下一页起才有名字）；「后台音频 / AVSession 锁屏控制」仍属 FEAT-P2-006 未做部分。
 
 | 功能 ID | 功能名 |
 |---|---|

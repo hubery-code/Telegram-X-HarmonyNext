@@ -17,7 +17,8 @@ import {
   CopyInviteLinkRequested,
   BackRequested,
   OnSharedTabSelected,
-  LoadMoreSharedContent
+  LoadMoreSharedContent,
+  ToggleSharedAudio
 } from '../contract/ChatProfileIntent';
 import {
   sandboxFileUri,
@@ -45,7 +46,7 @@ export struct ChatProfilePage {
   onBack: () => void = (): void => {};
 
   /**
-   * 共享内容分区视图数据：本页只有媒体/文件/链接三 Tab —— 「共同群组」是私聊
+   * 共享内容分区视图数据：本页五个内容 Tab —— 「共同群组」是私聊
    * 概念（getGroupsInCommon），群组/频道资料页没有它。
    */
   private sharedView(): SharedContentViewData {
@@ -59,6 +60,9 @@ export struct ChatProfilePage {
       media: s.sharedMedia,
       files: s.sharedFiles,
       links: s.sharedLinks,
+      audios: s.sharedAudios,
+      voices: s.sharedVoices,
+      playingFileId: s.sharedPlayingFileId,
       showGroupsTab: false
     });
   }
@@ -323,6 +327,9 @@ export struct ChatProfilePage {
             },
             onLoadMore: (): void => {
               this.onDispatch(new LoadMoreSharedContent(this.uiState.activeSharedTab));
+            },
+            onToggleAudio: (fileId: number): void => {
+              this.onDispatch(new ToggleSharedAudio(fileId));
             }
           })
         }

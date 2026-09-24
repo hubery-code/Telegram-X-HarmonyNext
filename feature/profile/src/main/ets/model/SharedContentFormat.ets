@@ -16,14 +16,25 @@ import {
   MessagePhoto,
   MessageDocument,
   MessageVideo,
+  MessageAudio,
+  MessageVoiceNote,
+  Audio,
+  VoiceNote,
   Photo,
   PhotoSize,
   File,
   LinkPreview,
   TdChatType,
+  TdMessageSender,
+  MessageSenderUser,
   ChatTypeSupergroup
 } from '@tgx/core-td-api-generated';
-import { SharedFileItem, SharedLinkItem, SharedMediaItem } from '../contract/SharedContentItems';
+import {
+  SharedAudioItem,
+  SharedFileItem,
+  SharedLinkItem,
+  SharedMediaItem
+} from '../contract/SharedContentItems';
 
 /** 文件大小文案（与 feature/chat 的 formatFileSize 同规则，feature 间不可互引故本地实现）。 */
 export function formatFileSizeText(bytes: number): string {
@@ -285,6 +296,166 @@ export function fileItemOf(msg: Message): SharedFileItem | null {
   const sizeText: string = file !== null ? formatFileSizeText(file.size) : '';
   const name: string = docMsg.document.file_name.length > 0 ? docMsg.document.file_name : 'File';
   return new SharedFileItem(name, sizeText, formatSharedDate(msg.date), localPath, msg.date);
+}
+
+/** 音频/语音行的副标题拼接：跳过空段，避免出现「 · 」这种半截分隔。 */
+function joinRowParts(parts: string[]): string {
+  const kept: string[] = [];
+  for (let i = 0; i < parts.length; i++) {
+    if (parts[i].length > 0) {
+      kept.push(parts[i]);
+    }
+  }
+  return kept.join(' · ');
+}
+
+/** 时长文案（TGX `Strings.buildDuration`）：不足一小时 m:ss，超过 h:mm:ss。 */
+export function formatSharedDuration(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds <= 0) {
+    return '0:00';
+  }
+  const total: number = Math.floor(seconds);
+  const h: number = Math.floor(total / 3600);
+  const m: number = Math.floor((total % 3600) / 60);
+  const s: number = total % 60;
+  if (h <= 0) {
+    return `${m}:${pad2(s)}`;
+  }
+  return `${h}:${pad2(m)}:${pad2(s)}`;
+}
+
+/** 消息发送者用户 id；非用户发送者（如频道本身）返回 0。 */
+export function messageSenderUserId(msg: Message): number {
+  const sender: TdMessageSender | null = msg.sender_id;
+  if (sender === null || sender === undefined || sender.type !== 'messageSenderUser') {
+    return 0;
+  }
+  return (sender as MessageSenderUser).user_id;
+}
+
+/**
+ * TD.getTitle（音乐行）：audio.title 优先；没有则取文件名去扩展名（TD.getTitle
+ * 同规则，Android 的哈希名判定本端口不做）。两者都空时留空串。
+ */
+export function audioTitleOf(fileName: string, title: string): string {
+  if (title.length > 0) {
+    return title;
+  }
+  if (fileName.length === 0) {
+    return '';
+  }
+  const dot: number = fileName.lastIndexOf('.');
+  return dot > 0 ? fileName.substring(0, dot) : fileName;
+}
+
+/**
+ * TD.getTitle 的音频副标题（三条分支照搬 Android）：有 performer 就是
+ * `performer - title`；只有 title 就是时长；两个都没有就是文件大小。
+ */
+export function audioSubtitleOf(performer: string, title: string, duration: number, size: number): string {
+  if (performer.length > 0) {
+    return title.length > 0 ? `${performer} - ${title}` : performer;
+  }
+  if (title.length > 0) {
+    return formatSharedDuration(duration);
+  }
+  return formatFileSizeText(size);
+}
+
+/**
+ * TD.getTitle（语音行）：有昵称用昵称；自己发的直接「我」（TDLib 的 is_outgoing，
+ * 不必等 getMe）；对方昵称还没回读到时留空串，由组件回落到「语音消息」。
+ * 不用 `id 12345` 兜底：共享语音来自本页成员表已加载的会话，miss 只是昵称晚到，
+ * 把裸 id 印在界面上比留空更糟。
+ */
+export function voiceTitleOf(senderName: string, isOutgoing: boolean): string {
+  if (senderName.length > 0) {
+    return senderName;
+  }
+  return isOutgoing ? '我' : '';
+}
+
+/**
+ * messageAudio → 音乐行（SHARED-AUDIO）。标题/副标题口径见 audioTitleOf / audioSubtitleOf。
+ */
+export function audioItemOf(
+  msg: Message,
+  localPathOf: (fileId: number) => string | null
+): SharedAudioItem | null {
+  const content: TdMessageContent | null = msg.content;
+  if (content === null || content.type !== 'messageAudio') {
+    return null;
+  }
+  const audio: Audio | null = (content as MessageAudio).audio;
+  if (audio === null || audio.audio === null) {
+    return null;
+  }
+  const file: File = audio.audio;
+  const title: string = audioTitleOf(audio.file_name, audio.title);
+  return new SharedAudioItem(
+    file.id,
+    localPathOf(file.id),
+    title,
+    // 日期不重复写进副标题：本 Tab 按日期分段，段头已经说了哪天。
+    audioSubtitleOf(audio.performer, audio.title, audio.duration, file.size),
+    audio.duration,
+    msg.date
+  );
+}
+
+/**
+ * messageVoiceNote → 语音行（SHARED-AUDIO）。
+ * 标题是发送者（TD.getTitle：昵称 → 自己发的「我」→ 空串由组件回落「语音消息」），
+ * 副标题是「时长, 文件大小」，对齐 Android `AudioCell` 在共享语音 Tab 的三条分支。
+ * 日期不重复写进副标题：本 Tab 按日期分段，段头已经说了哪天。
+ */
+export function voiceItemOf(
+  msg: Message,
+  localPathOf: (fileId: number) => string | null,
+  senderNameOf: (userId: number) => string
+): SharedAudioItem | null {
+  const content: TdMessageContent | null = msg.content;
+  if (content === null || content.type !== 'messageVoiceNote') {
+    return null;
+  }
+  const voice: VoiceNote | null = (content as MessageVoiceNote).voice_note;
+  if (voice === null || voice.voice === null) {
+    return null;
+  }
+  const file: File = voice.voice;
+  const senderId: number = messageSenderUserId(msg);
+  return new SharedAudioItem(
+    file.id,
+    localPathOf(file.id),
+    voiceTitleOf(senderNameOf(senderId), msg.is_outgoing),
+    joinRowParts([formatSharedDuration(voice.duration), formatFileSizeText(file.size)]),
+    voice.duration,
+    msg.date
+  );
+}
+
+/**
+ * 音频/语音文件落盘后原位回填 localPath（点按播放要用）。
+ * 与媒体缩略图同一套规则：没命中返回 null，调用方据此不刷状态。
+ */
+export function withSharedAudioPath(
+  items: SharedAudioItem[],
+  fileId: number,
+  path: string
+): SharedAudioItem[] | null {
+  let touched: boolean = false;
+  const updated: SharedAudioItem[] = [];
+  for (let i = 0; i < items.length; i++) {
+    const item: SharedAudioItem = items[i];
+    if (item.fileId === fileId && (item.localPath === null || item.localPath.length === 0)) {
+      updated.push(new SharedAudioItem(item.fileId, path, item.title, item.subtitle,
+        item.duration, item.date));
+      touched = true;
+    } else {
+      updated.push(item);
+    }
+  }
+  return touched ? updated : null;
 }
 
 /** messageText → SharedLinkItem：优先 link_preview 的 url/site_name/description，无则取文本中的 URL。 */

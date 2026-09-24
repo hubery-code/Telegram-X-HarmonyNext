@@ -20,6 +20,8 @@ import {
   OnSharedGroupsLoaded,
   OnSharedContentFailed,
   OpenSharedChatRequested,
+  ToggleSharedAudio,
+  OnSharedAudioPlaying,
   NotificationRowTapped,
   OnChatNotificationLoaded,
   OnChatNotificationFailed,
@@ -38,14 +40,23 @@ import {
   OpenSharedChatEffect,
   SetChatNotification,
   CreateSecretChatEffect,
-  SetPeerBlock
+  SetPeerBlock,
+  PlaySharedAudio,
+  StopSharedAudio
 } from '../main/ets/contract/ProfileEffect';
 import {
   SharedMediaItem,
   SharedFileItem,
   SharedLinkItem,
-  SharedGroupItem
+  SharedGroupItem,
+  SharedAudioItem,
+  SharedContentRows
 } from '../main/ets/contract/SharedContentItems';
+import {
+  SHARED_TAB_AUDIO,
+  SHARED_TAB_GROUPS,
+  SHARED_TAB_VOICE
+} from '../main/ets/model/SharedContentSearch';
 import { profileReducer } from '../main/ets/reducer/ProfileReducer';
 
 function makeEnv(): ReducerEnv {
@@ -256,7 +267,9 @@ export default function profileReducerTest(): void {
       });
       const result: ReducerResult<ProfileUiState, ProfileEffect> = profileReducer(
         state,
-        new OnSharedContentLoaded(0, [new SharedMediaItem(1, null, true)], [], [], false),
+        new OnSharedContentLoaded(0, new SharedContentRows({
+          media: [new SharedMediaItem(1, null, true)]
+        }), false),
         makeEnv()
       );
       expect(result.state.sharedLoadFailed).assertFalse();
@@ -346,15 +359,36 @@ export default function profileReducerTest(): void {
       const state: ProfileUiState = makeState(42);
       const result: ReducerResult<ProfileUiState, ProfileEffect> = profileReducer(
         state,
-        new OnSharedTabSelected(3),
+        new OnSharedTabSelected(SHARED_TAB_GROUPS),
         makeEnv()
       );
-      expect(result.state.activeSharedTab).assertEqual(3);
+      expect(result.state.activeSharedTab).assertEqual(SHARED_TAB_GROUPS);
       expect(result.state.sharedLoading).assertTrue();
       expect(result.effects.length).assertEqual(1);
       expect(result.effects[0].kind).assertEqual('fetchSharedGroups');
       const effect: FetchSharedGroups = result.effects[0] as FetchSharedGroups;
       expect(effect !== null).assertTrue();
+    });
+
+    it('onSharedTabSelected_audioAndVoiceTabsFetchByIndex', 0, () => {
+      // SHARED-AUDIO：音乐/语音是普通内容 Tab，编号不能再按「0..3 顺序」推。
+      const state: ProfileUiState = makeState(42);
+      const audio: ReducerResult<ProfileUiState, ProfileEffect> = profileReducer(
+        state,
+        new OnSharedTabSelected(SHARED_TAB_AUDIO),
+        makeEnv()
+      );
+      expect(audio.effects.length).assertEqual(1);
+      expect(audio.effects[0].kind).assertEqual('fetchSharedContent');
+      expect((audio.effects[0] as FetchSharedContent).tab).assertEqual(SHARED_TAB_AUDIO);
+
+      const voice: ReducerResult<ProfileUiState, ProfileEffect> = profileReducer(
+        state,
+        new OnSharedTabSelected(SHARED_TAB_VOICE),
+        makeEnv()
+      );
+      expect((voice.effects[0] as FetchSharedContent).tab).assertEqual(SHARED_TAB_VOICE);
+      expect(voice.state.sharedLoading).assertTrue();
     });
 
     it('onSharedTabSelected_alreadyLoadedTabEmitsNoEffect', 0, () => {
@@ -375,11 +409,97 @@ export default function profileReducerTest(): void {
       const state: ProfileUiState = makeState(42);
       const result: ReducerResult<ProfileUiState, ProfileEffect> = profileReducer(
         state,
-        new OnSharedTabSelected(4),
+        // 六个 Tab 的编号是 0..5；6 越界（SHARED-AUDIO 加了两个 Tab 后不能再写 4）。
+        new OnSharedTabSelected(6),
         makeEnv()
       );
       expect(result.state === state).assertTrue();
       expect(result.effects.length).assertEqual(0);
+    });
+
+    it('toggleSharedAudio_optimisticPlayThenPause', 0, () => {
+      const idle: ProfileUiState = makeState(42).copyWith({ activeSharedTab: SHARED_TAB_AUDIO });
+      const play: ReducerResult<ProfileUiState, ProfileEffect> = profileReducer(
+        idle,
+        new ToggleSharedAudio(701),
+        makeEnv()
+      );
+      // 真正出声前图标就要变成暂停态，否则下载几秒内页面看着像没反应。
+      expect(play.state.sharedPlayingFileId).assertEqual(701);
+      expect(play.effects.length).assertEqual(1);
+      expect(play.effects[0].kind).assertEqual('playSharedAudio');
+      expect((play.effects[0] as PlaySharedAudio).fileId).assertEqual(701);
+
+      const pause: ReducerResult<ProfileUiState, ProfileEffect> = profileReducer(
+        play.state,
+        new ToggleSharedAudio(701),
+        makeEnv()
+      );
+      expect(pause.state.sharedPlayingFileId).assertEqual(0);
+      expect(pause.effects[0].kind).assertEqual('stopSharedAudio');
+
+      // 点别的行 = 换轨：直接乐观切到新 fileId。
+      const swap: ReducerResult<ProfileUiState, ProfileEffect> = profileReducer(
+        play.state,
+        new ToggleSharedAudio(702),
+        makeEnv()
+      );
+      expect(swap.state.sharedPlayingFileId).assertEqual(702);
+      expect((swap.effects[0] as PlaySharedAudio).fileId).assertEqual(702);
+
+      const noop: ReducerResult<ProfileUiState, ProfileEffect> = profileReducer(
+        idle,
+        new ToggleSharedAudio(0),
+        makeEnv()
+      );
+      expect(noop.state === idle).assertTrue();
+      expect(noop.effects.length).assertEqual(0);
+    });
+
+    it('onSharedAudioPlaying_isTheAuthoritativeReset', 0, () => {
+      const playing: ProfileUiState = makeState(42).copyWith({ sharedPlayingFileId: 701 });
+      const stopped: ReducerResult<ProfileUiState, ProfileEffect> = profileReducer(
+        playing,
+        new OnSharedAudioPlaying(0),
+        makeEnv()
+      );
+      expect(stopped.state.sharedPlayingFileId).assertEqual(0);
+      expect(stopped.effects.length).assertEqual(0);
+    });
+
+    it('onSharedTabSelected_stopsPlaybackWhenLeavingTab', 0, () => {
+      // 播放器还在响、行已经滚出页面 = 用户以为播放器坏了。切 Tab 必须停。
+      const state: ProfileUiState = makeState(42).copyWith({
+        activeSharedTab: SHARED_TAB_AUDIO,
+        sharedPlayingFileId: 701,
+        sharedAudios: [new SharedAudioItem(701, '/data/a.mp3', 'A', 'Performer · 3:34', 214)]
+      });
+      const result: ReducerResult<ProfileUiState, ProfileEffect> = profileReducer(
+        state,
+        new OnSharedTabSelected(1),
+        makeEnv()
+      );
+      expect(result.state.sharedPlayingFileId).assertEqual(0);
+      // 停播在前、拉新 Tab 在后：目标 Tab 还没数据时两件事都要做。
+      expect(result.effects.length).assertEqual(2);
+      expect(result.effects[0].kind).assertEqual('stopSharedAudio');
+      expect((result.effects[1] as FetchSharedContent).tab).assertEqual(1);
+      expect(result.state.activeSharedTab).assertEqual(1);
+    });
+
+    it('onSharedContentLoaded_takesAudioAndVoiceRows', 0, () => {
+      const state: ProfileUiState = makeState(42).copyWith({ activeSharedTab: SHARED_TAB_VOICE });
+      const result: ReducerResult<ProfileUiState, ProfileEffect> = profileReducer(
+        state,
+        new OnSharedContentLoaded(SHARED_TAB_VOICE, new SharedContentRows({
+          voices: [new SharedAudioItem(801, null, 'Peer', '0:07, 昨天', 7)]
+        }), false),
+        makeEnv()
+      );
+      expect(result.state.sharedVoices.length).assertEqual(1);
+      expect(result.state.sharedVoices[0].fileId).assertEqual(801);
+      expect(result.state.sharedLoading).assertFalse();
+      expect(result.state.sharedHasMore).assertFalse();
     });
 
     it('onSharedContentLoaded_replacesArraysAndStopsSharedLoading', 0, () => {
@@ -389,7 +509,9 @@ export default function profileReducerTest(): void {
       const links: SharedLinkItem[] = [new SharedLinkItem('https://example.com', 'Example', 'desc')];
       const result: ReducerResult<ProfileUiState, ProfileEffect> = profileReducer(
         loading,
-        new OnSharedContentLoaded(0, media, files, links),
+        new OnSharedContentLoaded(0, new SharedContentRows({
+          media: media, files: files, links: links
+        })),
         makeEnv()
       );
       expect(result.state.sharedMedia.length).assertEqual(1);
@@ -409,7 +531,9 @@ export default function profileReducerTest(): void {
       });
       const result: ReducerResult<ProfileUiState, ProfileEffect> = profileReducer(
         loading,
-        new OnSharedContentLoaded(2, [], [], [new SharedLinkItem('https://a.b', '', '')]),
+        new OnSharedContentLoaded(2, new SharedContentRows({
+          links: [new SharedLinkItem('https://a.b', '', '')]
+        })),
         makeEnv()
       );
       expect(result.state.sharedLinks.length).assertEqual(1);
@@ -487,7 +611,7 @@ export default function profileReducerTest(): void {
       });
       const result: ReducerResult<ProfileUiState, ProfileEffect> = profileReducer(
         state,
-        new OnSharedContentLoaded(0, [], [], [], false),
+        new OnSharedContentLoaded(0, new SharedContentRows(), false),
         makeEnv()
       );
       expect(result.state.sharedLoadingMore).assertFalse();

@@ -64,7 +64,7 @@ import {
   TdWireObject
 } from '@tgx/td-gateway';
 import { Logger } from '@tgx/observability';
-import { Subscription, ToastPort, FakeToast } from '@tgx/platform-ports';
+import { Subscription, ToastPort, FakeToast, AudioPlayerPort, FakeAudioPlayer } from '@tgx/platform-ports';
 import { ReducerEnv, ReducerResult } from '@tgx/feature-template';
 import { ProfileUiState } from '../contract/ProfileUiState';
 import {
@@ -78,6 +78,7 @@ import {
   OnSharedContentLoaded,
   OnSharedGroupsLoaded,
   OnSharedContentFailed,
+  OnSharedAudioPlaying,
   OpenSharedChatRequested,
   OnChatNotificationLoaded,
   OnChatNotificationFailed,
@@ -94,11 +95,29 @@ import {
   FetchChatNotification,
   SetChatNotification,
   CreateSecretChatEffect,
-  SetPeerBlock
+  SetPeerBlock,
+  PlaySharedAudio,
+  StopSharedAudio
 } from '../contract/ProfileEffect';
-import { SharedMediaItem, SharedFileItem, SharedLinkItem, SharedGroupItem } from '../contract/SharedContentItems';
-import { chatTypeLabel, messageContentSummary, withSharedMediaPath } from '../model/SharedContentFormat';
-import { SHARED_PAGE_LIMIT, SharedContentPage, SharedContentSearcher } from '../model/SharedContentSearch';
+import {
+  SharedAudioItem,
+  SharedContentRows,
+  SharedGroupItem,
+  SharedMediaItem
+} from '../contract/SharedContentItems';
+import {
+  chatTypeLabel,
+  messageContentSummary,
+  withSharedAudioPath,
+  withSharedMediaPath
+} from '../model/SharedContentFormat';
+import {
+  mergeSharedRows,
+  SHARED_PAGE_LIMIT,
+  SHARED_TAB_GROUPS,
+  SharedContentPage,
+  SharedContentSearcher
+} from '../model/SharedContentSearch';
 import { profileReducer } from '../reducer/ProfileReducer';
 
 const TAG: string = 'ProfileCoordinator';
@@ -145,6 +164,8 @@ export interface ProfileCoordinatorOptions {
   readonly logger?: Logger;
   /** ⋮ 菜单动作的结果提示（屏蔽写失败、对方不支持密聊等），缺省 FakeToast。 */
   readonly toastPort?: ToastPort;
+  /** SHARED-AUDIO：音频播放器抽象；缺省 FakeAudioPlayer（无装配层注入时点按不外放）。 */
+  readonly audioPlayerPort?: AudioPlayerPort;
 }
 
 export type ProfileUiStateListener = (uiState: ProfileUiState) => void;
@@ -220,6 +241,7 @@ export class ProfileCoordinator {
   private readonly fileRegistry: FileRegistry;
   private readonly onOpenChat: (chatId: number) => void;
   private readonly toastPort: ToastPort;
+  private readonly audioPlayerPort: AudioPlayerPort;
   private readonly logger: Logger;
   private readonly env: ReducerEnv;
   private currentState: ProfileUiState;
@@ -227,11 +249,13 @@ export class ProfileCoordinator {
   private readonly subscriptions: Subscription[] = [];
   /** 已订阅下载回调的头像 fileId，防重复订阅。 */
   private subscribedAvatarFileId: number = -1;
-  /** PROFILE-103：已订阅下载回调的共享媒体缩略图 fileId，防重复订阅。 */
+  /** PROFILE-103：已登记本地路径订阅的共享 fileId（缩略图与音频共用），防重复订阅。 */
   private readonly subscribedSharedFileIds: Set<number> = new Set();
-  /** PROFILE-103：共同群组 Tab 的分页游标（offset_chat_id）；媒体/文件/链接的游标在 searcher 内。 */
+  /** SHARED-AUDIO：音频还没落盘，落盘后自动续播的 fileId；0 = 无等待。 */
+  private pendingPlayFileId: number = 0;
+  /** PROFILE-103：共同群组 Tab 的分页游标（offset_chat_id）；内容 Tab 的游标在 searcher 内。 */
   private readonly nextOffsets: Map<number, number> = new Map();
-  /** 共享内容媒体/文件/链接的分页拉取（与群/频道资料页共用同一套规则，见 model/SharedContentSearch）。 */
+  /** 共享内容媒体/文件/链接/音乐/语音的分页拉取（与群/频道资料页共用同一套规则，见 model/SharedContentSearch）。 */
   private readonly sharedSearcher: SharedContentSearcher;
   /** 缓存目标用户的 private chatId，避免重复调用 createPrivateChat。 */
   private cachedPrivateChatId: number = 0;
@@ -257,6 +281,9 @@ export class ProfileCoordinator {
     this.toastPort = options !== undefined && options.toastPort !== undefined
       ? options.toastPort
       : new FakeToast();
+    this.audioPlayerPort = options !== undefined && options.audioPlayerPort !== undefined
+      ? options.audioPlayerPort
+      : new FakeAudioPlayer();
     this.logger = options !== undefined && options.logger !== undefined
       ? options.logger
       : new Logger();
@@ -269,10 +296,28 @@ export class ProfileCoordinator {
       request: (name: string, payload: TdWireObject): Result<TdPendingRequest, AppError> =>
         this.scope.request(name, payload),
       localPathOf: (fileId: number): string | null => self.sharedLocalPathOf(fileId),
+      audioLocalPathOf: (fileId: number): string | null => self.fileRegistry.getLocalPath(fileId),
+      senderNameOf: (userId: number): string => self.sharedSenderNameOf(userId),
       logger: this.logger,
       tag: TAG
     });
     this.currentState = ProfileUiState.initial(userId);
+  }
+
+  /**
+   * SHARED-AUDIO：语音行的发送者昵称。私聊里发言人基本只有对方与自己，
+   * 首屏 getUser 已经把两方拉进缓存；没命中时补一次请求，本行先回落到「语音消息」。
+   */
+  private sharedSenderNameOf(userId: number): string {
+    if (userId === 0) {
+      return '';
+    }
+    const user: User | null = this.userRegistry.getUser(userId);
+    if (user === null) {
+      this.userRegistry.requestUser(userId);
+      return '';
+    }
+    return formatFullName(user);
   }
 
   get state(): ProfileUiState {
@@ -346,6 +391,8 @@ export class ProfileCoordinator {
     }
     this.destroyed = true;
     this.sharedSearcher.destroy();
+    this.pendingPlayFileId = 0;
+    this.audioPlayerPort.stop().catch((): void => {});
     for (let i = 0; i < this.subscriptions.length; i++) {
       this.subscriptions[i].unsubscribe();
     }
@@ -455,6 +502,17 @@ export class ProfileCoordinator {
         break;
       }
 
+      case 'playSharedAudio': {
+        const play: PlaySharedAudio = effect as PlaySharedAudio;
+        this.playSharedAudio(play.fileId);
+        break;
+      }
+
+      case 'stopSharedAudio': {
+        this.stopSharedAudio();
+        break;
+      }
+
       case 'openSharedChat': {
         const open: OpenSharedChatEffect = effect as OpenSharedChatEffect;
         this.logger.info(TAG, 'open_shared_chat', `chatId=${open.chatId}`);
@@ -490,11 +548,11 @@ export class ProfileCoordinator {
   }
 
   // ------------------------------------------------------------------
-  // PROFILE-103：共享内容（媒体/文件/链接/群组）
+  // PROFILE-103：共享内容（媒体/文件/链接/音乐/语音/群组）
   // ------------------------------------------------------------------
 
   private fetchMoreSharedContent(tab: number): void {
-    if (tab === 3) {
+    if (tab === SHARED_TAB_GROUPS) {
       this.fetchSharedGroups(true);
       return;
     }
@@ -502,9 +560,9 @@ export class ProfileCoordinator {
   }
 
   /**
-   * Tab 0..2：先 createPrivateChat 拿 chatId，再 searchChatMessages 按
-   * 照片视频/文件/链接过滤器检索。失败只 logError，并以当前数组回灌
-   * OnSharedContentLoaded 仅用于复位 sharedLoading（不打扰 UI）。
+   * 内容 Tab（媒体/文件/链接/音乐/语音）：先 createPrivateChat 拿 chatId，再
+   * searchChatMessages 按对应过滤器检索。失败只 logError，并退回 OnSharedContentFailed
+   * 复位 sharedLoading（不打扰 UI）。
    */
   private fetchSharedContent(tab: number, isLoadMore: boolean = false): void {
     this.logger.info(TAG, 'fetch_shared_content', `userId=${this.userId},tab=${tab},isLoadMore=${isLoadMore}`);
@@ -605,49 +663,137 @@ export class ProfileCoordinator {
       this.failSharedContent(page.tab);
       return;
     }
-    const s: ProfileUiState = this.currentState;
-    if (page.tab === 0) {
-      const combined: SharedMediaItem[] = isLoadMore ? [...s.sharedMedia, ...page.media] : page.media;
-      this.dispatch(new OnSharedContentLoaded(0, combined, s.sharedFiles, s.sharedLinks, page.hasMore));
-      return;
-    }
-    if (page.tab === 1) {
-      const combined: SharedFileItem[] = isLoadMore ? [...s.sharedFiles, ...page.files] : page.files;
-      this.dispatch(new OnSharedContentLoaded(1, s.sharedMedia, combined, s.sharedLinks, page.hasMore));
-      return;
-    }
-    const combined: SharedLinkItem[] = isLoadMore ? [...s.sharedLinks, ...page.links] : page.links;
-    this.dispatch(new OnSharedContentLoaded(2, s.sharedMedia, s.sharedFiles, combined, page.hasMore));
+    const next: SharedContentRows =
+      mergeSharedRows(this.currentSharedRows(), page.tab, page.rows, isLoadMore);
+    this.dispatch(new OnSharedContentLoaded(page.tab, next, page.hasMore));
   }
 
-  /** 本地路径未就绪时顺手登记 updateFile 订阅，落盘后局部重写网格里该条目的 localPath。 */
+  /** 当前状态里的五个内容 Tab 数组 → 一个集合（回灌时要按 Tab 局部替换）。 */
+  private currentSharedRows(): SharedContentRows {
+    const s: ProfileUiState = this.currentState;
+    return new SharedContentRows({
+      media: s.sharedMedia,
+      files: s.sharedFiles,
+      links: s.sharedLinks,
+      audios: s.sharedAudios,
+      voices: s.sharedVoices
+    });
+  }
+
+  /** 本地路径未就绪时顺手登记 updateFile 订阅，落盘后原位回灌缩略图/音频路径。 */
   private sharedLocalPathOf(fileId: number): string | null {
     const cached: string | null = this.fileRegistry.getLocalPath(fileId);
-    return cached !== null ? cached : this.resolveSharedMediaFile(fileId);
+    return cached !== null ? cached : this.subscribeSharedFile(fileId);
   }
 
-  /** 缩略图本地路径未就绪：订阅 updateFile，落盘后局部重写 media 数组中该条目的 localPath。 */
-  private resolveSharedMediaFile(fileId: number): string | null {
+  /** 订阅一次 fileId 的本地路径变化，并发起下载（缩略图与音频共用这条通道）。 */
+  private subscribeSharedFile(fileId: number): string | null {
     if (!this.subscribedSharedFileIds.has(fileId)) {
       this.subscribedSharedFileIds.add(fileId);
       this.subscriptions.push(this.fileRegistry.subscribeFile(fileId, (file: File): void => {
-        if (this.destroyed) {
-          return;
-        }
-        const path: string | null = this.fileRegistry.getLocalPath(file.id);
-        if (path === null || path.length === 0) {
-          return;
-        }
-        const updated: SharedMediaItem[] | null =
-          withSharedMediaPath(this.currentState.sharedMedia, file.id, path);
-        if (updated !== null) {
-          this.dispatch(new OnSharedContentLoaded(0, updated, this.currentState.sharedFiles, this.currentState.sharedLinks, this.currentState.sharedHasMore));
-        }
+        this.onSharedFileReady(file);
       }));
       const res: Result<TdPendingRequest, AppError> =
         this.fileRegistry.downloadFile(fileId, SHARED_THUMB_DOWNLOAD_PRIORITY);
       if (res.err) {
         this.logger.logError(TAG, res.error);
+      }
+    }
+    return null;
+  }
+
+  /** 文件落盘：原位回灌网格缩略图与音频行的 localPath；有等待播放的顺带续播。 */
+  private onSharedFileReady(file: File): void {
+    if (this.destroyed) {
+      return;
+    }
+    const path: string | null = this.fileRegistry.getLocalPath(file.id);
+    if (path === null || path.length === 0) {
+      return;
+    }
+    const rows: SharedContentRows = this.currentSharedRows();
+    const media: SharedMediaItem[] | null = withSharedMediaPath(rows.media, file.id, path);
+    const audios: SharedAudioItem[] | null = withSharedAudioPath(rows.audios, file.id, path);
+    const voices: SharedAudioItem[] | null = withSharedAudioPath(rows.voices, file.id, path);
+    if (media !== null || audios !== null || voices !== null) {
+      this.dispatch(new OnSharedContentLoaded(
+        this.currentState.activeSharedTab,
+        new SharedContentRows({
+          media: media !== null ? media : rows.media,
+          files: rows.files,
+          links: rows.links,
+          audios: audios !== null ? audios : rows.audios,
+          voices: voices !== null ? voices : rows.voices
+        }),
+        this.currentState.sharedHasMore
+      ));
+    }
+    if (this.pendingPlayFileId === file.id) {
+      this.pendingPlayFileId = 0;
+      this.startSharedAudioPlayback(path);
+    }
+  }
+
+  // ------------------------------------------------------------------
+  // SHARED-AUDIO：点行播放（复用 VOICE-101 的 AudioPlayerPort 抽象）
+  // ------------------------------------------------------------------
+
+  private playSharedAudio(fileId: number): void {
+    const item: SharedAudioItem | null = this.findSharedAudio(fileId);
+    if (item === null) {
+      this.dispatch(new OnSharedAudioPlaying(0));
+      return;
+    }
+    if (item.localPath !== null && item.localPath.length > 0) {
+      this.startSharedAudioPlayback(item.localPath);
+      return;
+    }
+    // 音频没落盘：先触发下载，路径回来后由 onSharedFileReady 续播；
+    // 播放态已由 reducer 乐观置位，这里不退回，避免图标闪一下。
+    this.pendingPlayFileId = fileId;
+    this.subscribeSharedFile(fileId);
+    this.toastPort.showToast('正在下载音频...');
+  }
+
+  private startSharedAudioPlayback(path: string): void {
+    const fileId: number = this.currentState.sharedPlayingFileId;
+    this.audioPlayerPort.play(
+      path,
+      (_currentMs: number, _totalMs: number): void => {},
+      (): void => {
+        if (!this.destroyed) {
+          this.dispatch(new OnSharedAudioPlaying(0));
+        }
+      },
+      (errMsg: string): void => {
+        this.logger.error(TAG, 'shared_audio_play_error', `fileId=${fileId},msg=${errMsg}`);
+        if (!this.destroyed) {
+          this.dispatch(new OnSharedAudioPlaying(0));
+        }
+      }
+    ).catch((e: Error): void => {
+      this.logger.error(TAG, 'shared_audio_play_failed', String(e));
+      if (!this.destroyed) {
+        this.dispatch(new OnSharedAudioPlaying(0));
+      }
+    });
+  }
+
+  private stopSharedAudio(): void {
+    this.pendingPlayFileId = 0;
+    this.audioPlayerPort.stop().catch((): void => {});
+  }
+
+  private findSharedAudio(fileId: number): SharedAudioItem | null {
+    const rows: SharedContentRows = this.currentSharedRows();
+    for (let i = 0; i < rows.audios.length; i++) {
+      if (rows.audios[i].fileId === fileId) {
+        return rows.audios[i];
+      }
+    }
+    for (let i = 0; i < rows.voices.length; i++) {
+      if (rows.voices[i].fileId === fileId) {
+        return rows.voices[i];
       }
     }
     return null;
@@ -913,10 +1059,10 @@ export class ProfileCoordinator {
     this.dispatch(new OnPeerBlockFailed());
   }
 
-  /** Tab 3：getGroupsInCommon → 逐 id getChat 解析标题/副标题，全部回灌。 */
+  /** 共同群组 Tab：getGroupsInCommon → 逐 id getChat 解析标题/副标题，全部回灌。 */
   private fetchSharedGroups(isLoadMore: boolean = false): void {
     this.logger.info(TAG, 'fetch_shared_groups', `userId=${this.userId},isLoadMore=${isLoadMore}`);
-    const offsetChatId: number = isLoadMore ? (this.nextOffsets.get(3) ?? 0) : 0;
+    const offsetChatId: number = isLoadMore ? (this.nextOffsets.get(SHARED_TAB_GROUPS) ?? 0) : 0;
     const req: GetGroupsInCommon = new GetGroupsInCommon();
     req.user_id = this.userId;
     req.offset_chat_id = offsetChatId;
@@ -941,7 +1087,7 @@ export class ProfileCoordinator {
             return;
           }
           const hasMore: boolean = chats.chat_ids.length >= SHARED_PAGE_LIMIT;
-          this.nextOffsets.set(3, chats.chat_ids[chats.chat_ids.length - 1]);
+          this.nextOffsets.set(SHARED_TAB_GROUPS, chats.chat_ids[chats.chat_ids.length - 1]);
           this.resolveSharedGroupChats(chats.chat_ids, isLoadMore, hasMore);
         }
       }).catch((): void => {
@@ -1035,6 +1181,6 @@ export class ProfileCoordinator {
   }
 
   private failSharedGroups(): void {
-    this.dispatch(new OnSharedContentFailed(3));
+    this.dispatch(new OnSharedContentFailed(SHARED_TAB_GROUPS));
   }
 }

@@ -29,7 +29,7 @@ export class FetchSharedGroups implements Effect {
   readonly kind: 'fetchSharedGroups' = 'fetchSharedGroups';
 }
 
-/** PROFILE-103：拉取更多共享内容（Tab 0..3 分页拉取）。 */
+/** PROFILE-103：拉取更多共享内容（各内容 Tab 分页拉取）。 */
 export class FetchMoreSharedContent implements Effect {
   readonly kind: 'fetchMoreSharedContent' = 'fetchMoreSharedContent';
   readonly tab: number;
@@ -37,6 +37,21 @@ export class FetchMoreSharedContent implements Effect {
   constructor(tab: number) {
     this.tab = tab;
   }
+}
+
+/** SHARED-AUDIO：播放指定 fileId 的音频/语音（本地没有则先下载）。 */
+export class PlaySharedAudio implements Effect {
+  readonly kind: 'playSharedAudio' = 'playSharedAudio';
+  readonly fileId: number;
+
+  constructor(fileId: number) {
+    this.fileId = fileId;
+  }
+}
+
+/** SHARED-AUDIO：停止当前播放。 */
+export class StopSharedAudio implements Effect {
+  readonly kind: 'stopSharedAudio' = 'stopSharedAudio';
 }
 
 /** PROFILE-103：打开共同群组会话（chatId 已在列表里，无需再 createPrivateChat）。 */
@@ -84,4 +99,4 @@ export class SetPeerBlock implements Effect {
 
 export type ProfileEffect = CreatePrivateChatEffect | FetchSharedContent | FetchSharedGroups |
   FetchMoreSharedContent | OpenSharedChatEffect | FetchChatNotification | SetChatNotification |
-  CreateSecretChatEffect | SetPeerBlock;
+  CreateSecretChatEffect | SetPeerBlock | PlaySharedAudio | StopSharedAudio;

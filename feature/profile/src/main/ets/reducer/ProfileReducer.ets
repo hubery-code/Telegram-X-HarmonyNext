@@ -20,6 +20,8 @@ import {
   OnSharedContentLoaded,
   OnSharedGroupsLoaded,
   OnSharedContentFailed,
+  ToggleSharedAudio,
+  OnSharedAudioPlaying,
   OpenSharedChatRequested,
   OnChatNotificationLoaded,
   OnChatNotificationFailed,
@@ -40,21 +42,37 @@ import {
   SetChatNotification,
   CreateSecretChatEffect,
   SetPeerBlock,
+  PlaySharedAudio,
+  StopSharedAudio,
   ProfileEffect
 } from '../contract/ProfileEffect';
+import {
+  SHARED_TAB_AUDIO,
+  SHARED_TAB_FILES,
+  SHARED_TAB_GROUPS,
+  SHARED_TAB_LINKS,
+  SHARED_TAB_MEDIA,
+  SHARED_TAB_VOICE
+} from '../model/SharedContentSearch';
 
-/** 共享内容 Tab 数（媒体/文件/链接/群组）。 */
-const SHARED_TAB_COUNT: number = 4;
+/** 共享内容 Tab 数（媒体/文件/链接/音乐/语音/群组）。 */
+const SHARED_TAB_COUNT: number = 6;
 
 /** 该 Tab 当前是否一条都没拉到（用于「失败后点同一 Tab 重试」的判定）。 */
 function isSharedTabEmpty(state: ProfileUiState, tab: number): boolean {
-  if (tab === 0) {
+  if (tab === SHARED_TAB_MEDIA) {
     return state.sharedMedia.length === 0;
   }
-  if (tab === 1) {
+  if (tab === SHARED_TAB_FILES) {
     return state.sharedFiles.length === 0;
   }
-  if (tab === 2) {
+  if (tab === SHARED_TAB_AUDIO) {
+    return state.sharedAudios.length === 0;
+  }
+  if (tab === SHARED_TAB_VOICE) {
+    return state.sharedVoices.length === 0;
+  }
+  if (tab === SHARED_TAB_LINKS) {
     return state.sharedLinks.length === 0;
   }
   return state.sharedGroups.length === 0;
@@ -201,6 +219,14 @@ export const profileReducer: Reducer<ProfileUiState, ProfileIntent, ProfileEffec
       if (selected.tab < 0 || selected.tab >= SHARED_TAB_COUNT) {
         return reduced(state);
       }
+      // 切走就把声音停掉：共享音频的行不在当前页面上，继续放只会让用户以为播放器坏了。
+      const stopEffects: ProfileEffect[] = [];
+      if (state.sharedPlayingFileId !== 0) {
+        stopEffects.push(new StopSharedAudio());
+      }
+      const clearedPlaying: ProfileUiState = state.sharedPlayingFileId !== 0
+        ? state.copyWith({ sharedPlayingFileId: 0 })
+        : state;
       // 「未加载过」以该 Tab 条目非空判定（空结果会在下次进入时重试）。
       const tabIsEmpty: boolean = isSharedTabEmpty(state, selected.tab);
       if (!tabIsEmpty) {
@@ -209,27 +235,27 @@ export const profileReducer: Reducer<ProfileUiState, ProfileIntent, ProfileEffec
           return reduced(state);
         }
         // 已有内容：仅切 Tab，不触发请求也不转圈。
-        return reduced(state.copyWith({
+        return reduced(clearedPlaying.copyWith({
           activeSharedTab: selected.tab,
           sharedLoading: false,
           sharedLoadingMore: false,
           sharedLoadFailed: false,
           sharedHasMore: true
-        }));
+        }), stopEffects);
       }
-      const next: ProfileUiState = state.copyWith({
+      const next: ProfileUiState = clearedPlaying.copyWith({
         activeSharedTab: selected.tab,
         sharedLoading: true,
         sharedLoadingMore: false,
         sharedLoadFailed: false,
         sharedHasMore: true
       });
-      if (selected.tab === 3) {
-        const effect: FetchSharedGroups = new FetchSharedGroups();
-        return reduced(next, [effect]);
+      if (selected.tab === SHARED_TAB_GROUPS) {
+        stopEffects.push(new FetchSharedGroups());
+        return reduced(next, stopEffects);
       }
-      const effect: FetchSharedContent = new FetchSharedContent(selected.tab);
-      return reduced(next, [effect]);
+      stopEffects.push(new FetchSharedContent(selected.tab));
+      return reduced(next, stopEffects);
     }
 
     case 'loadMoreSharedContent': {
@@ -248,14 +274,34 @@ export const profileReducer: Reducer<ProfileUiState, ProfileIntent, ProfileEffec
     case 'onSharedContentLoaded': {
       const loaded: OnSharedContentLoaded = intent as OnSharedContentLoaded;
       return reduced(state.copyWith({
-        sharedMedia: loaded.media,
-        sharedFiles: loaded.files,
-        sharedLinks: loaded.links,
+        sharedMedia: loaded.rows.media,
+        sharedFiles: loaded.rows.files,
+        sharedLinks: loaded.rows.links,
+        sharedAudios: loaded.rows.audios,
+        sharedVoices: loaded.rows.voices,
         sharedLoading: false,
         sharedLoadingMore: false,
         sharedLoadFailed: false,
         sharedHasMore: loaded.hasMore
       }));
+    }
+
+    case 'toggleSharedAudio': {
+      const toggle: ToggleSharedAudio = intent as ToggleSharedAudio;
+      if (toggle.fileId === 0) {
+        return reduced(state);
+      }
+      if (state.sharedPlayingFileId === toggle.fileId) {
+        return reduced(state.copyWith({ sharedPlayingFileId: 0 }), [new StopSharedAudio()]);
+      }
+      // 乐观置位：真正出声前图标已是暂停态；下载/播放失败由 OnSharedAudioPlaying(0) 退回。
+      return reduced(state.copyWith({ sharedPlayingFileId: toggle.fileId }),
+        [new PlaySharedAudio(toggle.fileId)]);
+    }
+
+    case 'onSharedAudioPlaying': {
+      const playing: OnSharedAudioPlaying = intent as OnSharedAudioPlaying;
+      return reduced(state.copyWith({ sharedPlayingFileId: playing.fileId }));
     }
 
     case 'onSharedGroupsLoaded': {

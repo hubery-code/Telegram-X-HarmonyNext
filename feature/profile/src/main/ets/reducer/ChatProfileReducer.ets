@@ -20,6 +20,8 @@ import {
   LoadMoreSharedContent,
   OnSharedContentLoaded,
   OnSharedContentFailed,
+  ToggleSharedAudio,
+  OnSharedAudioPlaying,
   SelectChatMember
 } from '../contract/ChatProfileIntent';
 import {
@@ -27,23 +29,38 @@ import {
   FetchChatDetailsEffect,
   FetchSharedContentEffect,
   FetchMoreSharedContentEffect,
+  PlaySharedAudioEffect,
+  StopSharedAudioEffect,
   NavigateToUserProfileEffect,
   CopyInviteLinkEffect,
   NavigateBackEffect
 } from '../contract/ChatProfileEffect';
 import { getGroupAvatarLetters, formatMemberCount } from '@tgx/core-domain';
 import { ChatTypeSupergroup } from '@tgx/core-td-api-generated';
+import {
+  SHARED_TAB_AUDIO,
+  SHARED_TAB_FILES,
+  SHARED_TAB_LINKS,
+  SHARED_TAB_MEDIA,
+  SHARED_TAB_VOICE
+} from '../model/SharedContentSearch';
 
-/** 共享内容 Tab 数（媒体/文件/链接；「共同群组」只在私聊资料页有）。 */
-const SHARED_TAB_COUNT: number = 3;
+/** 共享内容 Tab 数（媒体/文件/链接/音乐/语音；「共同群组」只在私聊资料页有）。 */
+const SHARED_TAB_COUNT: number = 5;
 
 /** 该 Tab 当前是否一条都没拉到（用于「失败后点同一 Tab 重试」的判定）。 */
 function isSharedTabEmpty(state: ChatProfileUiState, tab: number): boolean {
-  if (tab === 0) {
+  if (tab === SHARED_TAB_MEDIA) {
     return state.sharedMedia.length === 0;
   }
-  if (tab === 1) {
+  if (tab === SHARED_TAB_FILES) {
     return state.sharedFiles.length === 0;
+  }
+  if (tab === SHARED_TAB_AUDIO) {
+    return state.sharedAudios.length === 0;
+  }
+  if (tab === SHARED_TAB_VOICE) {
+    return state.sharedVoices.length === 0;
   }
   return state.sharedLinks.length === 0;
 }
@@ -65,6 +82,9 @@ export const chatProfileReducer: Reducer<ChatProfileUiState, ChatProfileIntent, 
         sharedMedia: [],
         sharedFiles: [],
         sharedLinks: [],
+        sharedAudios: [],
+        sharedVoices: [],
+        sharedPlayingFileId: 0,
         sharedLoading: false,
         sharedHasMore: true,
         sharedLoadingMore: false,
@@ -177,6 +197,14 @@ export const chatProfileReducer: Reducer<ChatProfileUiState, ChatProfileIntent, 
       if (selected.tab < 0 || selected.tab >= SHARED_TAB_COUNT) {
         return reduced(state);
       }
+      // 切走就把声音停掉：共享音频的行不在当前页面上，继续放只会让用户以为播放器坏了。
+      const stopEffects: ChatProfileEffect[] = [];
+      if (state.sharedPlayingFileId !== 0) {
+        stopEffects.push(new StopSharedAudioEffect());
+      }
+      const clearedPlaying: ChatProfileUiState = state.sharedPlayingFileId !== 0
+        ? state.copyWith({ sharedPlayingFileId: 0 })
+        : state;
       // 「未加载过」以该 Tab 条目非空判定（空结果会在下次进入时重试）。
       if (!isSharedTabEmpty(state, selected.tab)) {
         if (selected.tab === state.activeSharedTab) {
@@ -184,22 +212,23 @@ export const chatProfileReducer: Reducer<ChatProfileUiState, ChatProfileIntent, 
           return reduced(state);
         }
         // 已有内容：仅切 Tab，不触发请求也不转圈。
-        return reduced(state.copyWith({
+        return reduced(clearedPlaying.copyWith({
           activeSharedTab: selected.tab,
           sharedLoading: false,
           sharedLoadingMore: false,
           sharedLoadFailed: false,
           sharedHasMore: true
-        }));
+        }), stopEffects);
       }
-      const next: ChatProfileUiState = state.copyWith({
+      const next: ChatProfileUiState = clearedPlaying.copyWith({
         activeSharedTab: selected.tab,
         sharedLoading: true,
         sharedLoadingMore: false,
         sharedLoadFailed: false,
         sharedHasMore: true
       });
-      return reduced(next, [new FetchSharedContentEffect(selected.tab)]);
+      stopEffects.push(new FetchSharedContentEffect(selected.tab));
+      return reduced(next, stopEffects);
     }
 
     case 'loadMoreSharedContent': {
@@ -217,14 +246,35 @@ export const chatProfileReducer: Reducer<ChatProfileUiState, ChatProfileIntent, 
     case 'onSharedContentLoaded': {
       const loaded: OnSharedContentLoaded = intent as OnSharedContentLoaded;
       return reduced(state.copyWith({
-        sharedMedia: loaded.media,
-        sharedFiles: loaded.files,
-        sharedLinks: loaded.links,
+        sharedMedia: loaded.rows.media,
+        sharedFiles: loaded.rows.files,
+        sharedLinks: loaded.rows.links,
+        sharedAudios: loaded.rows.audios,
+        sharedVoices: loaded.rows.voices,
         sharedLoading: false,
         sharedLoadingMore: false,
         sharedLoadFailed: false,
         sharedHasMore: loaded.hasMore
       }));
+    }
+
+    case 'toggleSharedAudio': {
+      const toggle: ToggleSharedAudio = intent as ToggleSharedAudio;
+      if (toggle.fileId === 0) {
+        return reduced(state);
+      }
+      if (state.sharedPlayingFileId === toggle.fileId) {
+        return reduced(state.copyWith({ sharedPlayingFileId: 0 }), [new StopSharedAudioEffect()]);
+      }
+      // 乐观置位：播放器真正出声前图标就已经是暂停态，下载中失败由
+      // OnSharedAudioPlaying(0) 退回，不会出现「图标一直转但没声」。
+      return reduced(state.copyWith({ sharedPlayingFileId: toggle.fileId }),
+        [new PlaySharedAudioEffect(toggle.fileId)]);
+    }
+
+    case 'onSharedAudioPlaying': {
+      const playing: OnSharedAudioPlaying = intent as OnSharedAudioPlaying;
+      return reduced(state.copyWith({ sharedPlayingFileId: playing.fileId }));
     }
 
     case 'onSharedContentFailed': {

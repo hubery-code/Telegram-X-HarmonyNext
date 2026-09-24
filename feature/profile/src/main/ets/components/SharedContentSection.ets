@@ -1,19 +1,27 @@
 /**
- * feature/profile — 共享内容分区（PROFILE-103 UI，CHATPROF-SHARED 抽为组件）。
+ * feature/profile — 共享内容分区（PROFILE-103 UI，CHATPROF-SHARED 抽为组件，SHARED-AUDIO 扩音乐/语音）。
  *
- * 用户资料页与群/频道资料页共用同一片「媒体 / 文件 / 链接（+ 共同群组）」网格与列表：
- * 两处各写一份的话，空态文案、缩略图占位、加载更多这三处一定会开始分叉。
- * 组件只吃一份 SharedContentViewData + 三个回调，不读任何页面的 UiState。
+ * 用户资料页与群/频道资料页共用同一片「媒体 / 文件 / 链接 / 音乐 / 语音（+ 共同群组）」
+ * 网格与列表：两处各写一份的话，空态文案、缩略图占位、加载更多这三处一定会开始分叉。
+ * 组件只吃一份 SharedContentViewData + 四个回调，不读任何页面的 UiState。
  *
  * 群组 Tab 是私聊资料页专属（数据来自 getGroupsInCommon）；群/频道资料页传
- * showGroupsTab: false，Tab 栏只剩三项。
+ * showGroupsTab: false，Tab 栏只剩五项。
  */
 
 import { LightTheme, Theme } from '@tgx/core-design-system';
 import { getAvatarColorIndex } from '@tgx/core-domain';
 import { fileUri } from '@kit.CoreFileKit';
-import { SharedFileItem, SharedGroupItem, SharedLinkItem, SharedMediaItem } from '../contract/SharedContentItems';
+import { SharedAudioItem, SharedFileItem, SharedGroupItem, SharedLinkItem, SharedMediaItem } from '../contract/SharedContentItems';
 import { avatarColorOf, avatarLetterOf, SharedDateSpan, splitSharedDateSpans } from '../model/SharedContentFormat';
+import {
+  SHARED_TAB_AUDIO,
+  SHARED_TAB_FILES,
+  SHARED_TAB_GROUPS,
+  SHARED_TAB_LINKS,
+  SHARED_TAB_MEDIA,
+  SHARED_TAB_VOICE
+} from '../model/SharedContentSearch';
 
 /** 本地沙箱绝对路径 → 可渲染 uri（与 feature/chat、feature/chat_list 的同名助手一致）。 */
 export function sandboxFileUri(path: string | null): string {
@@ -40,7 +48,11 @@ export interface SharedContentViewDataOptions {
   readonly media?: SharedMediaItem[];
   readonly files?: SharedFileItem[];
   readonly links?: SharedLinkItem[];
+  readonly audios?: SharedAudioItem[];
+  readonly voices?: SharedAudioItem[];
   readonly groups?: SharedGroupItem[];
+  /** 正在播放的音频 fileId；0 = 未在播。行图标与点按切换都读它。 */
+  readonly playingFileId?: number;
   readonly showGroupsTab?: boolean;
 }
 
@@ -54,7 +66,10 @@ export class SharedContentViewData {
   readonly media: SharedMediaItem[];
   readonly files: SharedFileItem[];
   readonly links: SharedLinkItem[];
+  readonly audios: SharedAudioItem[];
+  readonly voices: SharedAudioItem[];
   readonly groups: SharedGroupItem[];
+  readonly playingFileId: number;
   readonly showGroupsTab: boolean;
 
   constructor(options: SharedContentViewDataOptions) {
@@ -66,36 +81,53 @@ export class SharedContentViewData {
     this.media = options.media ?? [];
     this.files = options.files ?? [];
     this.links = options.links ?? [];
+    this.audios = options.audios ?? [];
+    this.voices = options.voices ?? [];
     this.groups = options.groups ?? [];
+    this.playingFileId = options.playingFileId ?? 0;
     this.showGroupsTab = options.showGroupsTab ?? true;
   }
 
   /** 当前 Tab 是否有内容；决定底部「加载更多」是否出现（空列表不该挂一个死按钮）。 */
   hasItems(): boolean {
-    if (this.activeTab === 0) {
+    if (this.activeTab === SHARED_TAB_MEDIA) {
       return this.media.length > 0;
     }
-    if (this.activeTab === 1) {
+    if (this.activeTab === SHARED_TAB_FILES) {
       return this.files.length > 0;
     }
-    if (this.activeTab === 2) {
+    if (this.activeTab === SHARED_TAB_LINKS) {
       return this.links.length > 0;
+    }
+    if (this.activeTab === SHARED_TAB_AUDIO) {
+      return this.audios.length > 0;
+    }
+    if (this.activeTab === SHARED_TAB_VOICE) {
+      return this.voices.length > 0;
     }
     return this.groups.length > 0;
   }
 }
 
-/** 共享内容 Tab 描述（图标 + 文案）。 */
+/** 共享内容 Tab 描述（编号 + 图标 + 文案）。 */
 interface SharedTabSpec {
+  tab: number;
   icon: Resource;
   label: string;
 }
 
+/**
+ * Tab 顺序照 Android `ProfileController.getFiltersOrder()`（照片视频 → 文件 → 链接 →
+ * 音乐 → 语音），「共同群组」是私聊资料页专属所以固定最后。编号与
+ * model/SharedContentSearch 的 SHARED_TAB_* 一致，缺一项就会点错 Tab。
+ */
 const SHARED_TABS: SharedTabSpec[] = [
-  { icon: $r('app.media.ic_photo'), label: '媒体' },
-  { icon: $r('app.media.ic_file'), label: '文件' },
-  { icon: $r('app.media.ic_link'), label: '链接' },
-  { icon: $r('app.media.ic_group'), label: '群组' }
+  { tab: SHARED_TAB_MEDIA, icon: $r('app.media.ic_photo'), label: '媒体' },
+  { tab: SHARED_TAB_FILES, icon: $r('app.media.ic_file'), label: '文件' },
+  { tab: SHARED_TAB_LINKS, icon: $r('app.media.ic_link'), label: '链接' },
+  { tab: SHARED_TAB_AUDIO, icon: $r('app.media.ic_music'), label: '音乐' },
+  { tab: SHARED_TAB_VOICE, icon: $r('app.media.ic_mic'), label: '语音' },
+  { tab: SHARED_TAB_GROUPS, icon: $r('app.media.ic_group'), label: '群组' }
 ];
 
 @Component
@@ -105,13 +137,18 @@ export struct SharedContentSection {
   onSelectTab: (tab: number) => void = (): void => {};
   onLoadMore: () => void = (): void => {};
   onOpenGroup: (chatId: number) => void = (): void => {};
+  /** 点音乐/语音行：同一行再点一次是暂停，切换行由 reducer 负责换轨。 */
+  onToggleAudio: (fileId: number) => void = (): void => {};
 
   private tabs(): SharedTabSpec[] {
-    return this.view.showGroupsTab ? SHARED_TABS : SHARED_TABS.slice(0, 3);
+    if (this.view.showGroupsTab) {
+      return SHARED_TABS;
+    }
+    return SHARED_TABS.filter((spec: SharedTabSpec): boolean => spec.tab !== SHARED_TAB_GROUPS);
   }
 
   /**
-   * 日期分段（CHATPROF-DATE）。只有媒体/文件/链接三个 Tab 分段 —— 共同群组 Tab 不分，
+   * 日期分段（CHATPROF-DATE）。四个内容 Tab 分段 —— 共同群组 Tab 不分，
    * 对齐 Android `SharedChatsController.needDateSectionSplitting() = false`。
    * 每次渲染现算：条目是逐页 append 进来的，段边界会随翻页移动，缓存反而容易漏更。
    */
@@ -127,6 +164,16 @@ export struct SharedContentSection {
 
   private linkSpans(): SharedDateSpan[] {
     const dates: number[] = this.view.links.map((item: SharedLinkItem): number => item.date);
+    return splitSharedDateSpans(dates, Date.now());
+  }
+
+  private audioSpans(): SharedDateSpan[] {
+    const dates: number[] = this.view.audios.map((item: SharedAudioItem): number => item.date);
+    return splitSharedDateSpans(dates, Date.now());
+  }
+
+  private voiceSpans(): SharedDateSpan[] {
+    const dates: number[] = this.view.voices.map((item: SharedAudioItem): number => item.date);
     return splitSharedDateSpans(dates, Date.now());
   }
 
@@ -163,31 +210,31 @@ export struct SharedContentSection {
   @Builder
   TabBar() {
     Row() {
-      ForEach(this.tabs(), (tab: SharedTabSpec, index: number) => {
+      ForEach(this.tabs(), (spec: SharedTabSpec) => {
         Column({ space: this.T.spacing.xs }) {
-          Image(tab.icon)
+          Image(spec.icon)
             .width(20)
             .height(20)
-            .fillColor(this.view.activeTab === index
+            .fillColor(this.view.activeTab === spec.tab
               ? this.T.colors.accent
               : this.T.colors.textSecondary)
-          Text(tab.label)
+          Text(spec.label)
             .fontSize(this.T.typography.footnote.fontSize)
-            .fontColor(this.view.activeTab === index
+            .fontColor(this.view.activeTab === spec.tab
               ? this.T.colors.accent
               : this.T.colors.textSecondary)
           Blank()
             .width(24)
             .height(2)
-            .backgroundColor(this.view.activeTab === index
+            .backgroundColor(this.view.activeTab === spec.tab
               ? this.T.colors.accent
               : this.T.colors.background)
         }
         .layoutWeight(1)
         .onClick(() => {
-          this.onSelectTab(index);
+          this.onSelectTab(spec.tab);
         })
-      }, (tab: SharedTabSpec, index: number) => `${index}`)
+      }, (spec: SharedTabSpec) => `${spec.tab}`)
     }
     .width('100%')
     .padding({ top: this.T.spacing.sm, bottom: this.T.spacing.sm })
@@ -414,6 +461,112 @@ export struct SharedContentSection {
     }
   }
 
+  private isPlaying(fileId: number): boolean {
+    return fileId !== 0 && this.view.playingFileId === fileId;
+  }
+
+  /**
+   * 音乐 / 语音行（SHARED-AUDIO）：左侧圆形播放按钮 + 标题 + 副标题，
+   * 对齐 Android `AudioCell`/`MusicCell`。未落盘时图标照常显示，点按由 coordinator
+   * 先触发下载、落盘后续播（播放态由 reducer 乐观置位，这里不判 localPath）。
+   */
+  @Builder
+  AudioRow(item: SharedAudioItem) {
+    Row() {
+      Column() {
+        Image(this.isPlaying(item.fileId) ? $r('app.media.ic_pause') : $r('app.media.ic_play'))
+          .width(18)
+          .height(18)
+          .fillColor(this.isPlaying(item.fileId) ? this.T.colors.textOnAccent : this.T.colors.accent)
+      }
+      .width(36)
+      .height(36)
+      .borderRadius(this.T.radius.full)
+      .backgroundColor(this.isPlaying(item.fileId) ? this.T.colors.accent : this.T.colors.surfaceVariant)
+      .justifyContent(FlexAlign.Center)
+      .alignItems(HorizontalAlign.Center)
+      Column() {
+        Text(item.title.length > 0 ? item.title : '语音消息')
+          .fontSize(this.T.typography.body.fontSize)
+          .fontColor(this.T.colors.textPrimary)
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+        Text(item.subtitle)
+          .fontSize(this.T.typography.footnote.fontSize)
+          .fontColor(this.T.colors.textSecondary)
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .margin({ top: this.T.spacing.hairline })
+      }
+      .margin({ left: this.T.spacing.sm })
+      .layoutWeight(1)
+      .alignItems(HorizontalAlign.Start)
+    }
+    .width('100%')
+    .alignItems(VerticalAlign.Center)
+    .padding({
+      left: this.T.spacing.screenInset,
+      right: this.T.spacing.screenInset,
+      top: this.T.spacing.sm,
+      bottom: this.T.spacing.sm
+    })
+    .onClick(() => {
+      this.onToggleAudio(item.fileId);
+    })
+  }
+
+  @Builder
+  AudioList() {
+    if (this.view.audios.length === 0) {
+      if (this.view.loadFailed) {
+        this.LoadFailed()
+      } else {
+        this.Empty('暂无音乐文件', '在此聊天中分享音频文件，并在您所有的设备上访问。')
+      }
+    } else {
+      Column() {
+        ForEach(this.audioSpans(), (span: SharedDateSpan) => {
+          Column() {
+            if (span.header.length > 0) {
+              this.SectionHeader(span.header)
+            }
+            ForEach(this.view.audios.slice(span.start, span.end), (item: SharedAudioItem, index: number) => {
+              this.AudioRow(item)
+            }, (item: SharedAudioItem, index: number) => `${span.start}_${index}_${item.fileId}`)
+          }
+          .width('100%')
+        }, (span: SharedDateSpan) => `${span.start}_${span.header}`)
+      }
+      .width('100%')
+    }
+  }
+
+  @Builder
+  VoiceList() {
+    if (this.view.voices.length === 0) {
+      if (this.view.loadFailed) {
+        this.LoadFailed()
+      } else {
+        this.Empty('暂无语音消息', '在此聊天中分享语音消息，并在您所有的设备上访问。')
+      }
+    } else {
+      Column() {
+        ForEach(this.voiceSpans(), (span: SharedDateSpan) => {
+          Column() {
+            if (span.header.length > 0) {
+              this.SectionHeader(span.header)
+            }
+            ForEach(this.view.voices.slice(span.start, span.end), (item: SharedAudioItem, index: number) => {
+              this.AudioRow(item)
+            }, (item: SharedAudioItem, index: number) => `${span.start}_${index}_${item.fileId}`)
+          }
+          .width('100%')
+        }, (span: SharedDateSpan) => `${span.start}_${span.header}`)
+      }
+      .width('100%')
+    }
+  }
+
   /** 共同群组列表（仅私聊资料页；点按交给装配层导航）。 */
   @Builder
   GroupList() {
@@ -473,12 +626,16 @@ export struct SharedContentSection {
 
   @Builder
   Content() {
-    if (this.view.activeTab === 0) {
+    if (this.view.activeTab === SHARED_TAB_MEDIA) {
       this.MediaGrid()
-    } else if (this.view.activeTab === 1) {
+    } else if (this.view.activeTab === SHARED_TAB_FILES) {
       this.FileList()
-    } else if (this.view.activeTab === 2) {
+    } else if (this.view.activeTab === SHARED_TAB_LINKS) {
       this.LinkList()
+    } else if (this.view.activeTab === SHARED_TAB_AUDIO) {
+      this.AudioList()
+    } else if (this.view.activeTab === SHARED_TAB_VOICE) {
+      this.VoiceList()
     } else {
       this.GroupList()
     }

@@ -4,7 +4,7 @@
 
 import { Intent } from '@tgx/feature-template';
 import { AppError } from '@tgx/core-common';
-import { SharedMediaItem, SharedFileItem, SharedLinkItem, SharedGroupItem } from './SharedContentItems';
+import { SharedContentRows, SharedGroupItem } from './SharedContentItems';
 
 /** 点「发消息」→ 创建/打开与该用户的私聊。 */
 export class MessageUserRequested implements Intent {
@@ -91,7 +91,7 @@ export class OnBirthdayLoaded implements Intent {
   }
 }
 
-/** PROFILE-103：用户点选共享内容 Tab（0 媒体 / 1 文件 / 2 链接 / 3 群组）。 */
+/** PROFILE-103：用户点选共享内容 Tab（0 媒体 / 1 文件 / 2 链接 / 3 音乐 / 4 语音 / 5 群组）。 */
 export class OnSharedTabSelected implements Intent {
   readonly kind: 'onSharedTabSelected' = 'onSharedTabSelected';
   readonly tab: number;
@@ -112,24 +112,40 @@ export class LoadMoreSharedContent implements Intent {
 }
 
 /**
- * PROFILE-103：searchChatMessages 回灌（Tab 0..2）。
- * media/files/links 为全量缓存：协调器只覆盖本次拉取的 Tab，其余透传旧数组，
+ * PROFILE-103：searchChatMessages 回灌（媒体/文件/链接/音乐/语音）。
+ * rows 为全量缓存：协调器只覆盖本次拉取的 Tab，其余透传旧数组，
  * reducer 原样整体替换并清 sharedLoading。
  */
 export class OnSharedContentLoaded implements Intent {
   readonly kind: 'onSharedContentLoaded' = 'onSharedContentLoaded';
   readonly tab: number;
-  readonly media: SharedMediaItem[];
-  readonly files: SharedFileItem[];
-  readonly links: SharedLinkItem[];
+  readonly rows: SharedContentRows;
   readonly hasMore: boolean;
 
-  constructor(tab: number, media: SharedMediaItem[], files: SharedFileItem[], links: SharedLinkItem[], hasMore: boolean = false) {
+  constructor(tab: number, rows: SharedContentRows, hasMore: boolean = false) {
     this.tab = tab;
-    this.media = media;
-    this.files = files;
-    this.links = links;
+    this.rows = rows;
     this.hasMore = hasMore;
+  }
+}
+
+/** SHARED-AUDIO：点音乐/语音行；reducer 按当前播放态决定播还是停。 */
+export class ToggleSharedAudio implements Intent {
+  readonly kind: 'toggleSharedAudio' = 'toggleSharedAudio';
+  readonly fileId: number;
+
+  constructor(fileId: number) {
+    this.fileId = fileId;
+  }
+}
+
+/** SHARED-AUDIO：播放态回灌，fileId=0 表示已停止。 */
+export class OnSharedAudioPlaying implements Intent {
+  readonly kind: 'onSharedAudioPlaying' = 'onSharedAudioPlaying';
+  readonly fileId: number;
+
+  constructor(fileId: number) {
+    this.fileId = fileId;
   }
 }
 
@@ -240,6 +256,8 @@ export type ProfileIntent =
   | OnSharedContentLoaded
   | OnSharedGroupsLoaded
   | OnSharedContentFailed
+  | ToggleSharedAudio
+  | OnSharedAudioPlaying
   | OpenSharedChatRequested
   | NotificationRowTapped
   | OnChatNotificationLoaded

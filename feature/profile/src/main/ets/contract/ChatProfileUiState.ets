@@ -8,10 +8,10 @@
  * - 简介 Description；
  * - 邀请链接 Invite Link；
  * - 成员列表第一页（头像、昵称、在线状态、管理员身份标记）；
- * - 共享内容三 Tab（媒体/文件/链接；「共同群组」是私聊资料页专属，本页没有）。
+ * - 共享内容五个 Tab（媒体/文件/链接/音乐/语音；「共同群组」是私聊资料页专属，本页没有）。
  */
 
-import { SharedFileItem, SharedLinkItem, SharedMediaItem } from './SharedContentItems';
+import { SharedAudioItem, SharedFileItem, SharedLinkItem, SharedMediaItem } from './SharedContentItems';
 
 export interface ChatMemberUiItem {
   readonly userId: number;
@@ -40,11 +40,15 @@ export interface ChatProfileUiStateOptions {
   members?: ChatMemberUiItem[];
   isLoading?: boolean;
   errorMessage?: string;
-  /** 共享内容当前选中 Tab：0 媒体 / 1 文件 / 2 链接。 */
+  /** 共享内容当前选中 Tab：0 媒体 / 1 文件 / 2 链接 / 3 音乐 / 4 语音。 */
   activeSharedTab?: number;
   sharedMedia?: SharedMediaItem[];
   sharedFiles?: SharedFileItem[];
   sharedLinks?: SharedLinkItem[];
+  sharedAudios?: SharedAudioItem[];
+  sharedVoices?: SharedAudioItem[];
+  /** 正在播放的共享音频 fileId；0 = 没在播。 */
+  sharedPlayingFileId?: number;
   /** 共享内容加载中（切 Tab 触发请求后为 true，回灌后 false）。 */
   sharedLoading?: boolean;
   /** 当前共享内容 Tab 是否还有下一页。 */
@@ -76,6 +80,10 @@ export class ChatProfileUiState {
   readonly sharedMedia: SharedMediaItem[];
   readonly sharedFiles: SharedFileItem[];
   readonly sharedLinks: SharedLinkItem[];
+  readonly sharedAudios: SharedAudioItem[];
+  readonly sharedVoices: SharedAudioItem[];
+  /** SHARED-AUDIO：正在播放的行 fileId；0 = 未在播放。 */
+  readonly sharedPlayingFileId: number;
   readonly sharedLoading: boolean;
   readonly sharedHasMore: boolean;
   readonly sharedLoadingMore: boolean;
@@ -105,7 +113,10 @@ export class ChatProfileUiState {
     sharedHasMore: boolean = true,
     sharedLoadingMore: boolean = false,
     sharedInitialRequested: boolean = false,
-    sharedLoadFailed: boolean = false
+    sharedLoadFailed: boolean = false,
+    sharedAudios: SharedAudioItem[] = [],
+    sharedVoices: SharedAudioItem[] = [],
+    sharedPlayingFileId: number = 0
   ) {
     this.chatId = chatId;
     this.title = title;
@@ -130,6 +141,9 @@ export class ChatProfileUiState {
     this.sharedLoadingMore = sharedLoadingMore;
     this.sharedInitialRequested = sharedInitialRequested;
     this.sharedLoadFailed = sharedLoadFailed;
+    this.sharedAudios = sharedAudios;
+    this.sharedVoices = sharedVoices;
+    this.sharedPlayingFileId = sharedPlayingFileId;
   }
 
   static initial(): ChatProfileUiState {
@@ -160,7 +174,10 @@ export class ChatProfileUiState {
       patch.sharedHasMore !== undefined ? patch.sharedHasMore : this.sharedHasMore,
       patch.sharedLoadingMore !== undefined ? patch.sharedLoadingMore : this.sharedLoadingMore,
       patch.sharedInitialRequested !== undefined ? patch.sharedInitialRequested : this.sharedInitialRequested,
-      patch.sharedLoadFailed !== undefined ? patch.sharedLoadFailed : this.sharedLoadFailed
+      patch.sharedLoadFailed !== undefined ? patch.sharedLoadFailed : this.sharedLoadFailed,
+      patch.sharedAudios !== undefined ? patch.sharedAudios : this.sharedAudios,
+      patch.sharedVoices !== undefined ? patch.sharedVoices : this.sharedVoices,
+      patch.sharedPlayingFileId !== undefined ? patch.sharedPlayingFileId : this.sharedPlayingFileId
     );
   }
 }

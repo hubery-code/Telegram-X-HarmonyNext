@@ -5,7 +5,7 @@
 import { AppError } from '@tgx/core-common';
 import { Chat, BasicGroupFullInfo, SupergroupFullInfo } from '@tgx/core-td-api-generated';
 import { ChatMemberUiItem } from './ChatProfileUiState';
-import { SharedFileItem, SharedLinkItem, SharedMediaItem } from './SharedContentItems';
+import { SharedContentRows } from './SharedContentItems';
 
 export class OpenChatProfile {
   readonly type: 'openChatProfile' = 'openChatProfile';
@@ -108,22 +108,12 @@ export class LoadMoreSharedContent {
 export class OnSharedContentLoaded {
   readonly type: 'onSharedContentLoaded' = 'onSharedContentLoaded';
   readonly tab: number;
-  readonly media: SharedMediaItem[];
-  readonly files: SharedFileItem[];
-  readonly links: SharedLinkItem[];
+  readonly rows: SharedContentRows;
   readonly hasMore: boolean;
 
-  constructor(
-    tab: number,
-    media: SharedMediaItem[],
-    files: SharedFileItem[],
-    links: SharedLinkItem[],
-    hasMore: boolean = false
-  ) {
+  constructor(tab: number, rows: SharedContentRows, hasMore: boolean = false) {
     this.tab = tab;
-    this.media = media;
-    this.files = files;
-    this.links = links;
+    this.rows = rows;
     this.hasMore = hasMore;
   }
 }
@@ -134,6 +124,26 @@ export class OnSharedContentFailed {
 
   constructor(tab: number) {
     this.tab = tab;
+  }
+}
+
+/** 点音乐/语音行（SHARED-AUDIO）：由 reducer 决定是播还是停，coordinator 只执行。 */
+export class ToggleSharedAudio {
+  readonly type: 'toggleSharedAudio' = 'toggleSharedAudio';
+  readonly fileId: number;
+
+  constructor(fileId: number) {
+    this.fileId = fileId;
+  }
+}
+
+/** 播放态回灌：fileId=0 表示已停止（下载失败、播放器出错、页面销毁都会回到 0）。 */
+export class OnSharedAudioPlaying {
+  readonly type: 'onSharedAudioPlaying' = 'onSharedAudioPlaying';
+  readonly fileId: number;
+
+  constructor(fileId: number) {
+    this.fileId = fileId;
   }
 }
 
@@ -149,6 +159,8 @@ export type ChatProfileIntent =
   | LoadMoreSharedContent
   | OnSharedContentLoaded
   | OnSharedContentFailed
+  | ToggleSharedAudio
+  | OnSharedAudioPlaying
   | SelectChatMember
   | CopyInviteLinkRequested
   | BackRequested;
