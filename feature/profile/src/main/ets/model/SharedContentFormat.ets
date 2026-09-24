@@ -65,6 +65,132 @@ export function formatSharedDate(unixSeconds: number): string {
   return `${pad2(date.getDate())}.${pad2(date.getMonth() + 1)}`;
 }
 
+const DAY_MS: number = 24 * 60 * 60 * 1000;
+
+/** 星期名（`Lang.weekFull` = `"cccc"` 的中文全写），下标即 `Date.getDay()`。 */
+const SHARED_WEEKDAY_NAMES: string[] = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];
+
+function startOfDayMs(ms: number): number {
+  const d: Date = new Date(ms);
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+}
+
+/**
+ * 自然周序号（周日为一周起点）。用「绝对周」而不是 Java 的 `WEEK_OF_YEAR`，
+ * 因为后者还要配 `years == 0` 才判得出上周，年末跨年（12/31 vs 1/1）会算错。
+ */
+function weekIndexOf(dayStartMs: number): number {
+  const weekday: number = new Date(dayStartMs).getDay();
+  const weekStartDays: number = Math.round((dayStartMs - weekday * DAY_MS) / DAY_MS);
+  return Math.floor(weekStartDays / 7);
+}
+
+/**
+ * 日期分组的锚点档位，逐条对齐 Android `TD.getAnchorMode(date)` + `Lang.getRelativeMonth(…, true)`：
+ * `1` 今天、`2` 昨天、`4..10` 本周内其它天（`3 + 星期序号`）、`11` 上周、`0` 更早（按自然月再切）。
+ * 判断顺序与 Android 一致：**先判上周再判 7 天内**，所以 8~13 天前落在上一个自然周的内容归「上周」。
+ */
+export function sharedDateAnchorKey(unixSeconds: number, nowMs: number): number {
+  if (unixSeconds <= 0) {
+    return -1;
+  }
+  const nowDay: number = startOfDayMs(nowMs);
+  const targetDay: number = startOfDayMs(unixSeconds * 1000);
+  const nowWeekday: number = new Date(nowDay).getDay();
+  const targetWeekday: number = new Date(targetDay).getDay();
+  const weekDiff: number = weekIndexOf(nowDay) - weekIndexOf(targetDay);
+  if (weekDiff === 1 || (weekDiff === 0 && nowWeekday !== 0 && targetWeekday === 0)) {
+    return 11;
+  }
+  const days: number = Math.round((nowDay - targetDay) / DAY_MS);
+  if (days >= 0 && days < 7) {
+    if (days === 0) {
+      return 1;
+    }
+    if (days === 1) {
+      return 2;
+    }
+    return 3 + targetWeekday;
+  }
+  return 0;
+}
+
+/**
+ * 分组键：锚点档位相同的连续条目并成一段；档位 `0`（更早）再按自然月切开 ——
+ * 对应 `TD.shouldSplitDatesByMonth(anchorMode, prev, source)`：只有出了 7 天才按月分。
+ */
+export function sharedDateSectionKey(unixSeconds: number, nowMs: number): string {
+  const anchor: number = sharedDateAnchorKey(unixSeconds, nowMs);
+  if (anchor === -1) {
+    return 'unknown';
+  }
+  if (anchor !== 0) {
+    return `a${anchor}`;
+  }
+  const d: Date = new Date(unixSeconds * 1000);
+  return `m${d.getFullYear()}-${d.getMonth()}`;
+}
+
+/** 分组头文案：今天 / 昨天 / 星期日…星期六 / 上周 / `2026年8月`。源消息没给日期时为空串（不渲染头）。 */
+export function formatSharedDateHeader(unixSeconds: number, nowMs: number): string {
+  const anchor: number = sharedDateAnchorKey(unixSeconds, nowMs);
+  if (anchor === -1) {
+    return '';
+  }
+  if (anchor === 11) {
+    return '上周';
+  }
+  if (anchor === 1) {
+    return '今天';
+  }
+  if (anchor === 2) {
+    return '昨天';
+  }
+  if (anchor >= 4 && anchor <= 10) {
+    return SHARED_WEEKDAY_NAMES[anchor - 3];
+  }
+  const d: Date = new Date(unixSeconds * 1000);
+  return `${d.getFullYear()}年${d.getMonth() + 1}月`;
+}
+
+/** 一段同日期分组的条目区间（左闭右开），组件按它渲染「分组头 + 该段内容」。 */
+export class SharedDateSpan {
+  readonly header: string;
+  readonly start: number;
+  readonly end: number;
+
+  constructor(header: string, start: number, end: number) {
+    this.header = header;
+    this.start = start;
+    this.end = end;
+  }
+}
+
+/**
+ * 把按时间倒序排列的条目切成日期分段（Android `SharedBaseController` 的
+ * `needDateSectionSplitting`：首条必给头，其后只在分组键变化时插新头）。
+ * 输入是纯日期数组，所以媒体宫格 / 文件 / 链接三种条目共用一份切分逻辑。
+ */
+export function splitSharedDateSpans(dates: number[], nowMs: number): SharedDateSpan[] {
+  const spans: SharedDateSpan[] = [];
+  let start: number = 0;
+  let key: string = '';
+  for (let i = 0; i < dates.length; i++) {
+    const current: string = sharedDateSectionKey(dates[i], nowMs);
+    if (i === 0 || current !== key) {
+      if (i > 0) {
+        spans.push(new SharedDateSpan(formatSharedDateHeader(dates[start], nowMs), start, i));
+      }
+      key = current;
+      start = i;
+    }
+  }
+  if (dates.length > 0) {
+    spans.push(new SharedDateSpan(formatSharedDateHeader(dates[start], nowMs), start, dates.length));
+  }
+  return spans;
+}
+
 /** 从文本中提取首个 http(s) URL；无则空串。 */
 export function firstUrlInText(text: string): string {
   if (text.length === 0) {
@@ -158,11 +284,11 @@ export function fileItemOf(msg: Message): SharedFileItem | null {
     (file !== null && file.local !== null && file.local.path.length > 0) ? file.local.path : null;
   const sizeText: string = file !== null ? formatFileSizeText(file.size) : '';
   const name: string = docMsg.document.file_name.length > 0 ? docMsg.document.file_name : 'File';
-  return new SharedFileItem(name, sizeText, formatSharedDate(msg.date), localPath);
+  return new SharedFileItem(name, sizeText, formatSharedDate(msg.date), localPath, msg.date);
 }
 
 /** messageText → SharedLinkItem：优先 link_preview 的 url/site_name/description，无则取文本中的 URL。 */
-export function linkItemOf(content: TdMessageContent | null): SharedLinkItem | null {
+export function linkItemOf(content: TdMessageContent | null, date: number = 0): SharedLinkItem | null {
   if (content === null || content.type !== 'messageText') {
     return null;
   }
@@ -173,13 +299,13 @@ export function linkItemOf(content: TdMessageContent | null): SharedLinkItem | n
     const desc: string = preview.description !== null && preview.description !== undefined
       ? preview.description.text
       : '';
-    return new SharedLinkItem(preview.url, preview.site_name, desc);
+    return new SharedLinkItem(preview.url, preview.site_name, desc, date);
   }
   const url: string = firstUrlInText(body);
   if (url.length === 0) {
     return null;
   }
-  return new SharedLinkItem(url, '', '');
+  return new SharedLinkItem(url, '', '', date);
 }
 
 /**
@@ -191,7 +317,8 @@ export function linkItemOf(content: TdMessageContent | null): SharedLinkItem | n
  */
 export function sharedMediaItemOf(
   content: TdMessageContent | null,
-  localPathOf: (fileId: number) => string | null
+  localPathOf: (fileId: number) => string | null,
+  date: number = 0
 ): SharedMediaItem | null {
   if (content === null) {
     return null;
@@ -203,9 +330,9 @@ export function sharedMediaItemOf(
     }
     const size: PhotoSize | null = pickThumbPhotoSize(photo.photo.sizes);
     if (size === null || size.photo === null) {
-      return new SharedMediaItem(0, null, true);
+      return new SharedMediaItem(0, null, true, date);
     }
-    return sharedMediaItemOfFile(size.photo, true, localPathOf);
+    return sharedMediaItemOfFile(size.photo, true, localPathOf, date);
   }
   if (content.type === 'messageVideo') {
     const videoMsg: MessageVideo = content as MessageVideo;
@@ -213,15 +340,15 @@ export function sharedMediaItemOf(
     if (videoMsg.cover !== null) {
       const coverSize: PhotoSize | null = pickThumbPhotoSize(videoMsg.cover.sizes);
       if (coverSize !== null && coverSize.photo !== null) {
-        return sharedMediaItemOfFile(coverSize.photo, false, localPathOf);
+        return sharedMediaItemOfFile(coverSize.photo, false, localPathOf, date);
       }
     }
     if (videoMsg.video !== null &&
       videoMsg.video.thumbnail !== null &&
       videoMsg.video.thumbnail.file !== null) {
-      return sharedMediaItemOfFile(videoMsg.video.thumbnail.file, false, localPathOf);
+      return sharedMediaItemOfFile(videoMsg.video.thumbnail.file, false, localPathOf, date);
     }
-    return new SharedMediaItem(0, null, false);
+    return new SharedMediaItem(0, null, false, date);
   }
   return null;
 }
@@ -229,9 +356,10 @@ export function sharedMediaItemOf(
 function sharedMediaItemOfFile(
   file: File,
   isPhoto: boolean,
-  localPathOf: (fileId: number) => string | null
+  localPathOf: (fileId: number) => string | null,
+  date: number
 ): SharedMediaItem {
-  return new SharedMediaItem(file.id, localPathOf(file.id), isPhoto);
+  return new SharedMediaItem(file.id, localPathOf(file.id), isPhoto, date);
 }
 
 /**
@@ -248,7 +376,7 @@ export function withSharedMediaPath(
   for (let i = 0; i < media.length; i++) {
     const item: SharedMediaItem = media[i];
     if (item.fileId === fileId && (item.localPath === null || item.localPath.length === 0)) {
-      updated.push(new SharedMediaItem(item.fileId, path, item.isPhoto));
+      updated.push(new SharedMediaItem(item.fileId, path, item.isPhoto, item.date));
       touched = true;
     } else {
       updated.push(item);

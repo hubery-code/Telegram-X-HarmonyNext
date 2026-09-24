@@ -209,7 +209,8 @@ export function photoSizeValue(fileId: number, width: number): Record<string, Td
   return size;
 }
 
-export function photoMessage(messageId: number, sizes: Record<string, TdWireValue>[]): Record<string, TdWireValue> {
+export function photoMessage(messageId: number, sizes: Record<string, TdWireValue>[],
+  date: number = 1700000000): Record<string, TdWireValue> {
   const photo: Record<string, TdWireValue> = {};
   photo['@type'] = 'photo';
   photo['id'] = messageId * 10;
@@ -221,12 +222,13 @@ export function photoMessage(messageId: number, sizes: Record<string, TdWireValu
   msg['@type'] = 'message';
   msg['id'] = messageId;
   msg['chat_id'] = 4242;
-  msg['date'] = 1700000000;
+  msg['date'] = date;
   msg['content'] = content;
   return msg;
 }
 
-export function videoMessageWithoutThumb(messageId: number): Record<string, TdWireValue> {
+export function videoMessageWithoutThumb(messageId: number,
+  date: number = 1700000000): Record<string, TdWireValue> {
   const video: Record<string, TdWireValue> = {};
   video['@type'] = 'video';
   video['duration'] = 12;
@@ -241,12 +243,32 @@ export function videoMessageWithoutThumb(messageId: number): Record<string, TdWi
   msg['@type'] = 'message';
   msg['id'] = messageId;
   msg['chat_id'] = 4242;
-  msg['date'] = 1700000000;
+  msg['date'] = date;
   msg['content'] = content;
   return msg;
 }
 
-export function documentMessage(messageId: number, fileName: string): Record<string, TdWireValue> {
+/** 带 URL 的文本消息（链接 Tab 用）；不带 link_preview，走「从正文里抠首个 URL」兜底。 */
+export function textUrlMessage(messageId: number, url: string,
+  date: number = 1700000000): Record<string, TdWireValue> {
+  const text: Record<string, TdWireValue> = {};
+  text['@type'] = 'formattedText';
+  text['text'] = url;
+  const content: Record<string, TdWireValue> = {};
+  content['@type'] = 'messageText';
+  content['text'] = text;
+  content['link_preview'] = null;
+  const msg: Record<string, TdWireValue> = {};
+  msg['@type'] = 'message';
+  msg['id'] = messageId;
+  msg['chat_id'] = 4242;
+  msg['date'] = date;
+  msg['content'] = content;
+  return msg;
+}
+
+export function documentMessage(messageId: number, fileName: string,
+  date: number = 1700000000): Record<string, TdWireValue> {
   const doc: Record<string, TdWireValue> = {};
   doc['@type'] = 'document';
   doc['file_name'] = fileName;
@@ -259,7 +281,7 @@ export function documentMessage(messageId: number, fileName: string): Record<str
   msg['@type'] = 'message';
   msg['id'] = messageId;
   msg['chat_id'] = 4242;
-  msg['date'] = 1700000000;
+  msg['date'] = date;
   msg['content'] = content;
   return msg;
 }

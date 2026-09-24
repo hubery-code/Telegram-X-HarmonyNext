@@ -4,6 +4,7 @@ import sharedMediaPlaceholderTest from './SharedMediaPlaceholder.test';
 import profileNotificationTest from './ProfileNotification.test';
 import profileMenuTest from './ProfileMenu.test';
 import chatProfileSharedContentTest from './ChatProfileSharedContent.test';
+import sharedDateSectionsTest from './SharedDateSections.test';
 
 export default function testsuite(): void {
   profileReducerTest();
@@ -12,4 +13,5 @@ export default function testsuite(): void {
   profileNotificationTest();
   profileMenuTest();
   chatProfileSharedContentTest();
+  sharedDateSectionsTest();
 }

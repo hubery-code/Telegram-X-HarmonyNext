@@ -13,7 +13,7 @@ import { LightTheme, Theme } from '@tgx/core-design-system';
 import { getAvatarColorIndex } from '@tgx/core-domain';
 import { fileUri } from '@kit.CoreFileKit';
 import { SharedFileItem, SharedGroupItem, SharedLinkItem, SharedMediaItem } from '../contract/SharedContentItems';
-import { avatarColorOf, avatarLetterOf } from '../model/SharedContentFormat';
+import { avatarColorOf, avatarLetterOf, SharedDateSpan, splitSharedDateSpans } from '../model/SharedContentFormat';
 
 /** 本地沙箱绝对路径 → 可渲染 uri（与 feature/chat、feature/chat_list 的同名助手一致）。 */
 export function sandboxFileUri(path: string | null): string {
@@ -110,6 +110,55 @@ export struct SharedContentSection {
     return this.view.showGroupsTab ? SHARED_TABS : SHARED_TABS.slice(0, 3);
   }
 
+  /**
+   * 日期分段（CHATPROF-DATE）。只有媒体/文件/链接三个 Tab 分段 —— 共同群组 Tab 不分，
+   * 对齐 Android `SharedChatsController.needDateSectionSplitting() = false`。
+   * 每次渲染现算：条目是逐页 append 进来的，段边界会随翻页移动，缓存反而容易漏更。
+   */
+  private mediaSpans(): SharedDateSpan[] {
+    const dates: number[] = this.view.media.map((item: SharedMediaItem): number => item.date);
+    return splitSharedDateSpans(dates, Date.now());
+  }
+
+  private fileSpans(): SharedDateSpan[] {
+    const dates: number[] = this.view.files.map((item: SharedFileItem): number => item.date);
+    return splitSharedDateSpans(dates, Date.now());
+  }
+
+  private linkSpans(): SharedDateSpan[] {
+    const dates: number[] = this.view.links.map((item: SharedLinkItem): number => item.date);
+    return splitSharedDateSpans(dates, Date.now());
+  }
+
+  /** 分组头（对齐 TGX `ListItem.TYPE_HEADER`：左对齐小字、次要色，非吸顶）。 */
+  @Builder
+  SectionHeader(text: string) {
+    Text(text)
+      .fontSize(this.T.typography.footnote.fontSize)
+      .fontWeight(FontWeight.Medium)
+      .fontColor(this.T.colors.textSecondary)
+      .width('100%')
+      .textAlign(TextAlign.Start)
+      .padding({
+        left: this.T.spacing.screenInset,
+        right: this.T.spacing.screenInset,
+        top: this.T.spacing.sm,
+        bottom: this.T.spacing.xs
+      })
+  }
+
+  /** 链接 Tab 的外层容器已经带 screenInset，这里再带一次会双倍缩进。 */
+  @Builder
+  SectionHeaderFlush(text: string) {
+    Text(text)
+      .fontSize(this.T.typography.footnote.fontSize)
+      .fontWeight(FontWeight.Medium)
+      .fontColor(this.T.colors.textSecondary)
+      .width('100%')
+      .textAlign(TextAlign.Start)
+      .padding({ top: this.T.spacing.sm, bottom: this.T.spacing.xs })
+  }
+
   /** 共享内容 Tab 栏（选中 accent + 下划线）。 */
   @Builder
   TabBar() {
@@ -183,6 +232,31 @@ export struct SharedContentSection {
   }
 
   @Builder
+  MediaTile(item: SharedMediaItem) {
+    Column() {
+      if (item.localPath !== null && item.localPath.length > 0) {
+        Image(sandboxFileUri(item.localPath))
+          .width('100%')
+          .aspectRatio(1)
+          .objectFit(ImageFit.Cover)
+      } else {
+        Column() {
+          Image(item.isPhoto ? $r('app.media.ic_photo') : $r('app.media.ic_video'))
+            .width(24)
+            .height(24)
+            .fillColor(this.T.colors.textSecondary)
+        }
+        .width('100%')
+        .aspectRatio(1)
+        .justifyContent(FlexAlign.Center)
+        .backgroundColor(this.T.colors.surfaceVariant)
+      }
+    }
+    .width('33.33%')
+    .padding(this.T.spacing.hairline)
+  }
+
+  @Builder
   MediaGrid() {
     if (this.view.media.length === 0) {
       if (this.view.loadFailed) {
@@ -191,33 +265,59 @@ export struct SharedContentSection {
         this.Empty('暂无媒体文件', '在此聊天中分享图片和视频，并在您所有的设备上访问。')
       }
     } else {
-      Flex({ wrap: FlexWrap.Wrap }) {
-        ForEach(this.view.media.slice(), (item: SharedMediaItem, index: number) => {
+      // 一段一个宫格：分组头要独占一行，所以不能全塞进同一个 wrap Flex。
+      Column() {
+        ForEach(this.mediaSpans(), (span: SharedDateSpan) => {
           Column() {
-            if (item.localPath !== null && item.localPath.length > 0) {
-              Image(sandboxFileUri(item.localPath))
-                .width('100%')
-                .aspectRatio(1)
-                .objectFit(ImageFit.Cover)
-            } else {
-              Column() {
-                Image(item.isPhoto ? $r('app.media.ic_photo') : $r('app.media.ic_video'))
-                  .width(24)
-                  .height(24)
-                  .fillColor(this.T.colors.textSecondary)
-              }
-              .width('100%')
-              .aspectRatio(1)
-              .justifyContent(FlexAlign.Center)
-              .backgroundColor(this.T.colors.surfaceVariant)
+            if (span.header.length > 0) {
+              this.SectionHeader(span.header)
             }
+            Flex({ wrap: FlexWrap.Wrap }) {
+              ForEach(this.view.media.slice(span.start, span.end), (item: SharedMediaItem, index: number) => {
+                this.MediaTile(item)
+              }, (item: SharedMediaItem, index: number) => `${span.start}_${index}_${item.fileId}`)
+            }
+            .width('100%')
           }
-          .width('33.33%')
-          .padding(this.T.spacing.hairline)
-        }, (item: SharedMediaItem, index: number) => `${item.fileId}_${index}`)
+          .width('100%')
+        }, (span: SharedDateSpan) => `${span.start}_${span.header}`)
       }
       .width('100%')
     }
+  }
+
+  @Builder
+  FileRow(item: SharedFileItem) {
+    Row() {
+      Image($r('app.media.ic_file'))
+        .width(28)
+        .height(28)
+        .fillColor(this.T.colors.accent)
+      Column() {
+        Text(item.fileName)
+          .fontSize(this.T.typography.body.fontSize)
+          .fontColor(this.T.colors.textPrimary)
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+        Text(item.fileSizeText.length > 0 && item.dateText.length > 0
+          ? `${item.fileSizeText} · ${item.dateText}`
+          : (item.fileSizeText.length > 0 ? item.fileSizeText : item.dateText))
+          .fontSize(this.T.typography.footnote.fontSize)
+          .fontColor(this.T.colors.textSecondary)
+          .margin({ top: this.T.spacing.hairline })
+      }
+      .margin({ left: this.T.spacing.sm })
+      .layoutWeight(1)
+      .alignItems(HorizontalAlign.Start)
+    }
+    .width('100%')
+    .alignItems(VerticalAlign.Center)
+    .padding({
+      left: this.T.spacing.screenInset,
+      right: this.T.spacing.screenInset,
+      top: this.T.spacing.sm,
+      bottom: this.T.spacing.sm
+    })
   }
 
   @Builder
@@ -230,41 +330,56 @@ export struct SharedContentSection {
       }
     } else {
       Column() {
-        ForEach(this.view.files.slice(), (item: SharedFileItem, index: number) => {
-          Row() {
-            Image($r('app.media.ic_file'))
-              .width(28)
-              .height(28)
-              .fillColor(this.T.colors.accent)
-            Column() {
-              Text(item.fileName)
-                .fontSize(this.T.typography.body.fontSize)
-                .fontColor(this.T.colors.textPrimary)
-                .maxLines(1)
-                .textOverflow({ overflow: TextOverflow.Ellipsis })
-              Text(item.fileSizeText.length > 0 && item.dateText.length > 0
-                ? `${item.fileSizeText} · ${item.dateText}`
-                : (item.fileSizeText.length > 0 ? item.fileSizeText : item.dateText))
-                .fontSize(this.T.typography.footnote.fontSize)
-                .fontColor(this.T.colors.textSecondary)
-                .margin({ top: this.T.spacing.hairline })
+        ForEach(this.fileSpans(), (span: SharedDateSpan) => {
+          Column() {
+            if (span.header.length > 0) {
+              this.SectionHeader(span.header)
             }
-            .margin({ left: this.T.spacing.sm })
-            .layoutWeight(1)
-            .alignItems(HorizontalAlign.Start)
+            ForEach(this.view.files.slice(span.start, span.end), (item: SharedFileItem, index: number) => {
+              this.FileRow(item)
+            }, (item: SharedFileItem, index: number) => `${span.start}_${index}`)
           }
           .width('100%')
-          .alignItems(VerticalAlign.Center)
-          .padding({
-            left: this.T.spacing.screenInset,
-            right: this.T.spacing.screenInset,
-            top: this.T.spacing.sm,
-            bottom: this.T.spacing.sm
-          })
-        }, (item: SharedFileItem, index: number) => `${index}`)
+        }, (span: SharedDateSpan) => `${span.start}_${span.header}`)
       }
       .width('100%')
     }
+  }
+
+  @Builder
+  LinkCard(item: SharedLinkItem) {
+    Column() {
+      if (item.siteName.length > 0) {
+        Text(item.siteName)
+          .fontSize(this.T.typography.body.fontSize)
+          .fontWeight(FontWeight.Medium)
+          .fontColor(this.T.colors.textPrimary)
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .width('100%')
+      }
+      if (item.description.length > 0) {
+        Text(item.description)
+          .fontSize(this.T.typography.subheadline.fontSize)
+          .fontColor(this.T.colors.textSecondary)
+          .maxLines(2)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .width('100%')
+          .margin({ top: item.siteName.length > 0 ? this.T.spacing.hairline : 0 })
+      }
+      Text(item.url)
+        .fontSize(this.T.typography.footnote.fontSize)
+        .fontColor(this.T.colors.link)
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+        .width('100%')
+        .margin({ top: this.T.spacing.xs })
+    }
+    .width('100%')
+    .padding(this.T.spacing.md)
+    .backgroundColor(this.T.colors.surfaceVariant)
+    .borderRadius(this.T.radius.md)
+    .alignItems(HorizontalAlign.Start)
   }
 
   @Builder
@@ -276,41 +391,18 @@ export struct SharedContentSection {
         this.Empty('暂无链接', '在此聊天中分享链接，并在您所有的设备上访问。')
       }
     } else {
-      Column({ space: this.T.spacing.sm }) {
-        ForEach(this.view.links.slice(), (item: SharedLinkItem, index: number) => {
-          Column() {
-            if (item.siteName.length > 0) {
-              Text(item.siteName)
-                .fontSize(this.T.typography.body.fontSize)
-                .fontWeight(FontWeight.Medium)
-                .fontColor(this.T.colors.textPrimary)
-                .maxLines(1)
-                .textOverflow({ overflow: TextOverflow.Ellipsis })
-                .width('100%')
+      Column() {
+        ForEach(this.linkSpans(), (span: SharedDateSpan) => {
+          Column({ space: this.T.spacing.sm }) {
+            if (span.header.length > 0) {
+              this.SectionHeaderFlush(span.header)
             }
-            if (item.description.length > 0) {
-              Text(item.description)
-                .fontSize(this.T.typography.subheadline.fontSize)
-                .fontColor(this.T.colors.textSecondary)
-                .maxLines(2)
-                .textOverflow({ overflow: TextOverflow.Ellipsis })
-                .width('100%')
-                .margin({ top: item.siteName.length > 0 ? this.T.spacing.hairline : 0 })
-            }
-            Text(item.url)
-              .fontSize(this.T.typography.footnote.fontSize)
-              .fontColor(this.T.colors.link)
-              .maxLines(1)
-              .textOverflow({ overflow: TextOverflow.Ellipsis })
-              .width('100%')
-              .margin({ top: this.T.spacing.xs })
+            ForEach(this.view.links.slice(span.start, span.end), (item: SharedLinkItem, index: number) => {
+              this.LinkCard(item)
+            }, (item: SharedLinkItem, index: number) => `${span.start}_${index}`)
           }
           .width('100%')
-          .padding(this.T.spacing.md)
-          .backgroundColor(this.T.colors.surfaceVariant)
-          .borderRadius(this.T.radius.md)
-          .alignItems(HorizontalAlign.Start)
-        }, (item: SharedLinkItem, index: number) => `${index}`)
+        }, (span: SharedDateSpan) => `${span.start}_${span.header}`)
       }
       .width('100%')
       .padding({

@@ -226,6 +226,24 @@
 > `core_domain` 124/124（新增 8 例，含九位映射矩阵防位序写错）、`feature_chat` 281/281，三守卫 0 违规。
 > 遗留：`can_send_other_messages` 尚未驱动 `EmojiBoard` 里的贴纸/GIF 页签；`can_send_audios` 本端附件菜单无「音乐」入口可置灰；
 > 「可发言但禁部分媒体」的真实会话账号内不存在，受限态只有注入证据；`updateChatPermissions` 推送链仍未设备实证。
+> **2026-09-24（CHATPROF-DATE，FEAT-P2-002/005 共享内容日期分组）**：共享内容三个 Tab 补上**按日期分组头**，并修掉
+> CHATPROF-SHARED 记的 `placeholder=` 统计口径。分组规则照 Android `SharedBaseController.needDateSectionSplitting()`
+> \+ `TD.getAnchorMode` + `TD.shouldSplitDatesByMonth`：**滚动 7 天内按天**（今天 / 昨天 / 星期全名，
+> `Lang.getRelativeMonth(…, SECONDS, true)`）、**上一个自然周整段并成「上周」**、**再往前按自然月切**（`LLLL yyyy` →
+> 「2026年9月」），首条必给头，分组头是 inline 行而非吸顶（`ListItem.TYPE_HEADER` 走 `SettingsAdapter`）。
+> 纯函数 `sharedDateAnchorKey` / `sharedDateSectionKey` / `formatSharedDateHeader` / `splitSharedDateSpans`
+> 落 `feature/profile/model/SharedContentFormat.ets`（`model/` 不在架构守卫的 Kit-free 范围内，且只用 `Date` 本地数学、不引 `intl`）。
+> **关键一处不是「加个 UI」**：条目原先根本没带日期 —— 日期在 `Message.date` 上而解析器只收 `content`，整条链路丢掉，
+> 所以三个条目类各加 `date`（末位可选参、老调用点不破）、`sharedMediaItemOf` / `linkItemOf` 补形参、searcher 传
+> `found.messages[i].date`，并且 `withSharedMediaPath` 换真图时必须把 `date` 原样带过去，否则缩略图一回灌分组头就跳位（有用例守住）。
+> 共同群组 Tab 不分段（对齐 `SharedChatsController.needDateSectionSplitting() = false`）。两处刻意偏离写进注释：周序号用「绝对周」
+> 替代 Java 的 `WEEK_OF_YEAR + years == 0`（年末跨年会算错），并保留「本周的周日算上周」这一 Android 行为。
+> 日志口径：`shared_media_ok` 的 `placeholder=` 原来数 `fileId === 0`，「fileId 有值但缩略图还没落盘」的下载中态根本不计，
+> 改成 `localPath === null`。设备实证（真实数据、无需注入）：群资料页媒体 Tab 依次出 `星期一` / `上周` / `2026年9月` 三段宫格
+> （`date_media.png`），文件 Tab 出 `2026年9月` + `Bcore.zip` 行、链接 Tab 出 `上周`；私聊资料页四 Tab 同样出
+> `星期一` / `上周` 且群组 Tab 无头；日志 `page=20,kept=20,placeholder=20` 即新口径生效的直接证据。
+> `feature_profile` 92/92 PASS（新增 10 例日期分段 + 1 例协调器端日期贯通）。遗留：共享内容仍无「音乐 / 语音」两个 Tab
+> （TGX `SharedCommonController` 有 audio、voiceNote 两档）。
 
 | 功能 ID | 功能名 |
 |---|---|

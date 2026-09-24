@@ -168,9 +168,11 @@ export class SharedContentSearcher {
       let placeholders: number = 0;
       for (let i = 0; i < found.messages.length; i++) {
         const item: SharedMediaItem | null =
-          sharedMediaItemOf(found.messages[i].content, this.localPathOf);
+          sharedMediaItemOf(found.messages[i].content, this.localPathOf, found.messages[i].date);
         if (item !== null) {
-          if (item.fileId === 0) {
+          // 占位=「缩略图还没落盘」，含 fileId 有值但本地路径没回来的下载中态；
+          // 只统计 fileId === 0 会漏掉这一整类，日志上看不出页面为什么是灰块。
+          if (item.localPath === null) {
             placeholders++;
           }
           media.push(item);
@@ -195,7 +197,7 @@ export class SharedContentSearcher {
 
     const links: SharedLinkItem[] = [];
     for (let i = 0; i < found.messages.length; i++) {
-      const item: SharedLinkItem | null = linkItemOf(found.messages[i].content);
+      const item: SharedLinkItem | null = linkItemOf(found.messages[i].content, found.messages[i].date);
       if (item !== null) {
         links.push(item);
       }

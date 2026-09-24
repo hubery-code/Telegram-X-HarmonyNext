@@ -49,6 +49,7 @@ import {
   photoMessage,
   photoSizeValue,
   settle,
+  textUrlMessage,
   videoMessageWithoutThumb
 } from './ProfileTestHarness';
 
@@ -304,6 +305,41 @@ export default function chatProfileSharedContentTest(): void {
       // 媒体数组不受文件页影响。
       expect(state.sharedMedia.length).assertEqual(1);
       expect(state.sharedHasMore).assertFalse();
+      coordinator.destroy();
+    });
+
+    it('coordinator_itemsCarryMessageDateForDateSections', 0, async (): Promise<void> => {
+      // 分组头吃的是条目日期，而日期挂在 Message 上、不在 content 上：
+      // 解析器原先只收 content，日期整条链路丢失，分段永远只剩一段。
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const coordinator: ChatProfileCoordinator = openCoordinator(bridge);
+      coordinator.start(CHAT_ID);
+      bridge.respondTo(bridge.lastRequestIdOf('getChat'), basicGroupChatResponse(CHAT_ID));
+      await settle();
+      const sizesA: Record<string, TdWireValue>[] = [photoSizeValue(9001, 640)];
+      const sizesB: Record<string, TdWireValue>[] = [photoSizeValue(9002, 640)];
+      bridge.respondTo(bridge.lastRequestIdOf('searchChatMessages'), foundMessages(
+        [photoMessage(101, sizesA, 1758633600), photoMessage(102, sizesB, 1756000000)], 0));
+      await settle();
+
+      const state: ChatProfileUiState = coordinator.getState();
+      expect(state.sharedMedia.length).assertEqual(2);
+      expect(state.sharedMedia[0].date).assertEqual(1758633600);
+      expect(state.sharedMedia[1].date).assertEqual(1756000000);
+
+      coordinator.dispatch(new OnSharedTabSelected(1));
+      await settle();
+      bridge.respondTo(bridge.lastRequestIdOf('searchChatMessages'),
+        foundMessages([documentMessage(303, 'spec.pdf', 1756000000)], 0));
+      await settle();
+      expect(coordinator.getState().sharedFiles[0].date).assertEqual(1756000000);
+
+      coordinator.dispatch(new OnSharedTabSelected(2));
+      await settle();
+      bridge.respondTo(bridge.lastRequestIdOf('searchChatMessages'),
+        foundMessages([textUrlMessage(404, 'https://example.com/a', 1758633600)], 0));
+      await settle();
+      expect(coordinator.getState().sharedLinks[0].date).assertEqual(1758633600);
       coordinator.destroy();
     });
 

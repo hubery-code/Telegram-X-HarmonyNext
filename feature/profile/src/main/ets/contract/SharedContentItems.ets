@@ -11,11 +11,14 @@ export class SharedMediaItem {
   readonly localPath: string | null;
   /** true=照片，false=视频（缩略图来自 video.thumbnail）。 */
   readonly isPhoto: boolean;
+  /** 消息时间（unix 秒），CHATPROF-DATE 的日期分组依据；0 表示源消息没给日期。 */
+  readonly date: number;
 
-  constructor(fileId: number, localPath: string | null, isPhoto: boolean) {
+  constructor(fileId: number, localPath: string | null, isPhoto: boolean, date: number = 0) {
     this.fileId = fileId;
     this.localPath = localPath;
     this.isPhoto = isPhoto;
+    this.date = date;
   }
 }
 
@@ -25,12 +28,15 @@ export class SharedFileItem {
   readonly fileSizeText: string;
   readonly dateText: string;
   readonly localPath: string | null;
+  readonly date: number;
 
-  constructor(fileName: string, fileSizeText: string, dateText: string, localPath: string | null) {
+  constructor(fileName: string, fileSizeText: string, dateText: string, localPath: string | null,
+    date: number = 0) {
     this.fileName = fileName;
     this.fileSizeText = fileSizeText;
     this.dateText = dateText;
     this.localPath = localPath;
+    this.date = date;
   }
 }
 
@@ -39,11 +45,13 @@ export class SharedLinkItem {
   readonly url: string;
   readonly siteName: string;
   readonly description: string;
+  readonly date: number;
 
-  constructor(url: string, siteName: string, description: string) {
+  constructor(url: string, siteName: string, description: string, date: number = 0) {
     this.url = url;
     this.siteName = siteName;
     this.description = description;
+    this.date = date;
   }
 }
 
