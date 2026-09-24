@@ -13,6 +13,11 @@ import { NotificationScopeKey } from '../model/NotificationSettings';
 import { ActiveSessionItem } from '../model/ActiveSessionItem';
 import { PrivacyChoice, PrivacySettingItem, PrivacySettingKey } from '../model/PrivacySettings';
 import { ProxyForm, ProxyItem } from '../model/ProxySettings';
+import {
+  AutoDownloadChatScope,
+  AutoDownloadMediaKind,
+  AutoDownloadPolicy
+} from '@tgx/core-domain';
 
 export interface UserProfileData {
   readonly userId: number;
@@ -413,6 +418,45 @@ export class RemoveProxyRequested implements Intent {
   }
 }
 
+/** AUTODL-101：打开「自动媒体下载」子页（同时读取本地策略）。 */
+export class OpenAutoDownloadPage implements Intent {
+  readonly kind: 'openAutoDownloadPage' = 'openAutoDownloadPage';
+}
+
+/** AUTODL-101：关闭「自动媒体下载」子页。 */
+export class CloseAutoDownloadPage implements Intent {
+  readonly kind: 'closeAutoDownloadPage' = 'closeAutoDownloadPage';
+}
+
+/** AUTODL-101：读取自动下载策略（设置页首帧也要读，行副标题依赖它）。 */
+export class LoadAutoDownloadPolicy implements Intent {
+  readonly kind: 'loadAutoDownloadPolicy' = 'loadAutoDownloadPolicy';
+}
+
+/** AUTODL-101：策略读取完成；写回后同样以该意图回灌，界面恒以存储返回值为准。 */
+export class AutoDownloadPolicyLoaded implements Intent {
+  readonly kind: 'autoDownloadPolicyLoaded' = 'autoDownloadPolicyLoaded';
+  readonly policy: AutoDownloadPolicy;
+
+  constructor(policy: AutoDownloadPolicy) {
+    this.policy = policy;
+  }
+}
+
+/** AUTODL-101：勾选某一分区内的一类媒体。 */
+export class SetAutoDownloadKind implements Intent {
+  readonly kind: 'setAutoDownloadKind' = 'setAutoDownloadKind';
+  readonly scope: AutoDownloadChatScope;
+  readonly mediaKind: AutoDownloadMediaKind;
+  readonly enabled: boolean;
+
+  constructor(scope: AutoDownloadChatScope, mediaKind: AutoDownloadMediaKind, enabled: boolean) {
+    this.scope = scope;
+    this.mediaKind = mediaKind;
+    this.enabled = enabled;
+  }
+}
+
 export type SettingsIntent =
   | LoadUserProfile
   | ToggleNotifications
@@ -462,4 +506,9 @@ export type SettingsIntent =
   | SelectProxy
   | SaveProxy
   | RemoveProxyRequested
+  | OpenAutoDownloadPage
+  | CloseAutoDownloadPage
+  | LoadAutoDownloadPolicy
+  | AutoDownloadPolicyLoaded
+  | SetAutoDownloadKind
   | SectionFocused;

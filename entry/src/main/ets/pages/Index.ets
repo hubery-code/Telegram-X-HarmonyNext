@@ -27,6 +27,7 @@
 
 import { LightTheme, Theme, ThemeManager, parseChatFontSize, CHAT_FONT_SIZE_DEFAULT } from '@tgx/core-design-system';
 import { saveChatFontSize } from '../store/SettingsStore';
+import { PreferencesAutoDownloadPolicyStore } from '../store/AutoDownloadStore';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { common } from '@kit.AbilityKit';
 import { AccountDescriptor, AccountScope } from '@tgx/core-account';
@@ -108,7 +109,7 @@ import {
   SelfProfileCoordinator
 } from '@tgx/feature-self';
 import type { TdPendingRequest, TdWireObject } from '@tgx/td-gateway';
-import { ChatRegistry } from '@tgx/core-domain';
+import { AutoDownloadPolicy, ChatRegistry } from '@tgx/core-domain';
 import { BootstrapResult } from '../Bootstrap';
 import { ScopeAuthAdapter } from '../ScopeAuthAdapter';
 import { TELEGRAM_CREDENTIALS } from '../config/AppCredentials';
@@ -177,6 +178,8 @@ struct Index {
   private unsubscribeChatFn: (() => void) | null = null;
   private settingsCoordinator: SettingsCoordinator | null = null;
   private unsubscribeSettingsFn: (() => void) | null = null;
+  /** AUTODL-101：设置页写、聊天页读的同一份策略存储（进程内单例，带账号级缓存）。 */
+  private autoDownloadStore: PreferencesAutoDownloadPolicyStore | null = null;
   private searchCoordinator: SearchCoordinator | null = null;
   private unsubscribeSearchFn: (() => void) | null = null;
   // PROFILE-101：用户资料页（群聊点头像进入）。
@@ -1007,6 +1010,17 @@ struct Index {
     this.navController.replaceRoot({ name: 'auth' });
   }
 
+  /**
+   * AUTODL-101：懒建策略存储。accountKey 走闭包而不是构造参数，
+   * 这样切换账号后存储自己会按新 key 重读一次，装配层不用管失效。
+   */
+  private getAutoDownloadStore(): PreferencesAutoDownloadPolicyStore {
+    if (this.autoDownloadStore === null) {
+      this.autoDownloadStore = new PreferencesAutoDownloadPolicyStore((): string => this.currentAccountKey);
+    }
+    return this.autoDownloadStore;
+  }
+
   private openSettings(): void {
     if (this.accountScope === null || this.settingsCoordinator !== null) {
       return;
@@ -1030,6 +1044,7 @@ struct Index {
       this.getAvailableAccounts()
     );
     this.settingsCoordinator = coordinator;
+    coordinator.setAutoDownloadStore(this.getAutoDownloadStore());
     this.unsubscribeSettingsFn = coordinator.subscribe((uiState: SettingsUiState) => {
       this.settingsUiState = uiState;
     });
@@ -1072,6 +1087,8 @@ struct Index {
         audioRecorderPort: this.audioRecorderAdapter,
         cacheDir: this.cacheDir,
         logger: this.logger,
+        // AUTODL-101：聊天页读同一份策略存储；用闭包而不是快照，设置页改完下一条即可生效。
+        autoDownloadPolicyProvider: (): AutoDownloadPolicy | null => this.getAutoDownloadStore().current(),
         // PROFILE-101：群聊点头像 → 压栈用户资料页。
         onOpenUserProfile: (userId: number): void => {
           this.navController.navigateTo({ name: 'userProfile', userId: userId });

@@ -183,7 +183,19 @@ const EN_DICTIONARY: Record<string, string> = {
   'Port must be 1-65535': 'Port must be a number from 1 to 65535',
   'Secret must be hexadecimal': 'Secret must be hexadecimal, e.g. ee1234…',
   'Remove proxy': 'Remove proxy',
-  'Delete this proxy configuration?': 'Delete this proxy configuration?'
+  'Delete this proxy configuration?': 'Delete this proxy configuration?',
+
+  // Automatic media download (AUTODL-101)
+  'Automatic Media Download': 'Automatic Media Download',
+  'Automatic download': 'Automatic download',
+  'Tap to choose what downloads on its own': 'Tap to choose what downloads on its own',
+  'Media still downloads when you tap it.': 'Media still downloads when you tap it.',
+  'Varies by chat type': 'Varies by chat type',
+  'Download nothing automatically': 'Download nothing automatically',
+  'Videos': 'Videos',
+  'Music': 'Music',
+  'GIFs': 'GIFs',
+  'Off': 'Off'
 };
 
 const ZH_DICTIONARY: Record<string, string> = {
@@ -289,7 +301,19 @@ const ZH_DICTIONARY: Record<string, string> = {
   'Port must be 1-65535': '端口需为 1 到 65535 之间的数字',
   'Secret must be hexadecimal': '密钥需为十六进制字符串，例如 ee1234…',
   'Remove proxy': '移除代理',
-  'Delete this proxy configuration?': '确定删除这条代理配置吗？'
+  'Delete this proxy configuration?': '确定删除这条代理配置吗？',
+
+  // Automatic media download (AUTODL-101)
+  'Automatic Media Download': '自动媒体下载',
+  'Automatic download': '自动下载',
+  'Tap to choose what downloads on its own': '点按选择在哪些会话里自动下载哪些媒体',
+  'Media still downloads when you tap it.': '关闭后点按媒体仍会下载，只是不再自动下载。',
+  'Varies by chat type': '按会话类型分别设置',
+  'Download nothing automatically': '不自动下载',
+  'Videos': '视频',
+  'Music': '音乐',
+  'GIFs': '动图',
+  'Off': '关闭'
 };
 
 export class Lang {

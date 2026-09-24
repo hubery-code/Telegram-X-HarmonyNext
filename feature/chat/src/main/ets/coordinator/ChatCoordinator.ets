@@ -157,7 +157,11 @@ import {
   MessageListState,
   MessageProjection,
   UserRegistry,
-  withChatMuteFor
+  withChatMuteFor,
+  autoDownloadScopeForChatKind,
+  AutoDownloadMediaKind,
+  AutoDownloadPolicy,
+  shouldAutoDownloadMedia
 } from '@tgx/core-domain';
 import { TdPendingRequest, TdRoutedEvent, TdUpdateFilter, TdUpdateSubscription, TdWireObject, TdWireValue } from '@tgx/td-gateway';
 import { Subscription } from '@tgx/platform-ports';
@@ -441,6 +445,12 @@ export interface ChatCoordinatorOptions {
   readonly audioRecorderPort?: AudioRecorderPort;
   /** VOICE-101：录音临时文件存放目录。 */
   readonly cacheDir?: string;
+  /**
+   * AUTODL-101：自动下载策略的来源，由装配层给一个读本地偏好的闭包。
+   * 传闭包而不是传一份快照：设置页改完策略、回到仍然开着的会话时，
+   * 下一批媒体要按新策略放行，而会话协调器不会因为设置页关掉而重建。
+   */
+  readonly autoDownloadPolicyProvider?: () => AutoDownloadPolicy | null;
 }
 
 class ParsedDraft {
@@ -465,6 +475,8 @@ export class ChatCoordinator {
   private readonly audioPlayerPort: AudioPlayerPort;
   private readonly audioRecorderPort: AudioRecorderPort;
   private readonly cacheDir: string;
+  /** AUTODL-101：自动下载策略来源；没注入时按 TGX 兜底默认走，与设置页同一份来源。 */
+  private readonly autoDownloadPolicyProvider: () => AutoDownloadPolicy | null;
   private recordTimerId: number = -1;
   private recordingSeconds: number = 0;
   private readonly logger: Logger;
@@ -604,6 +616,9 @@ export class ChatCoordinator {
     this.cacheDir = (options !== undefined && options.cacheDir !== undefined && options.cacheDir.length > 0)
       ? options.cacheDir
       : '/data/storage/el2/base/cache';
+    this.autoDownloadPolicyProvider = (options !== undefined && options.autoDownloadPolicyProvider !== undefined)
+      ? options.autoDownloadPolicyProvider
+      : (): AutoDownloadPolicy | null => null;
     this.logger = (options !== undefined && options.logger !== undefined)
       ? options.logger
       : new Logger();
@@ -1287,6 +1302,32 @@ export class ChatCoordinator {
     }, BACKFILL_DELAY_MS);
   }
 
+  /**
+   * AUTODL-101：这一类媒体在当前会话是否该自动下载。
+   *
+   * 只用于「进入会话即自动拉」的路径；用户点下载按钮、点开播放器这类显式动作
+   * 一律不走这道门 —— 那是请求，不是自动下载。
+   * provider 没注入或读盘失败时按 Android 的兜底默认（照片 / 语音 / 视频便签 / 动图开）走，
+   * 这样设置页显示的默认与聊天页实际放行的是一套东西。
+   *
+   * `chatKind` 还没解析出来（getChat 未回）时**一律不放行**：首轮投影通常早于 getChat
+   * 回包，若沿用「未知分区即放行」，用户刚把某类关掉，冷进会话的那一刻仍会被整屏下载，
+   * 这道门在最该生效的时候形同虚设。等 `chat_kind_resolved` 后那次
+   * `scheduleSyncFromProjection()` 再按真实分区放行。
+   */
+  private canAutoDownload(kind: AutoDownloadMediaKind, sizeBytes: number): boolean {
+    if (autoDownloadScopeForChatKind(this.chatKind) === null) {
+      return false;
+    }
+    const provided: AutoDownloadPolicy | null = this.autoDownloadPolicyProvider();
+    return shouldAutoDownloadMedia(
+      provided !== null ? provided : AutoDownloadPolicy.defaultPolicy(),
+      this.chatKind,
+      kind,
+      sizeBytes
+    );
+  }
+
   public requestMediaDownload(fileId: number, priority: number = 1): void {
     if (this.destroyed || fileId <= 0) {
       return;
@@ -1422,7 +1463,10 @@ export class ChatCoordinator {
         this.fileSubscriptions.set(fileId, sub);
       }
 
-      if (!isDownloaded && !isDownloading && !isUploading) {
+      // AUTODL-101：入站照片按「照片」这一类的勾选放行；出站不走这道门
+      // （我们自己发出去的本就该在本地，走门只会让刚发的图迟迟显不出来）。
+      if (!isDownloaded && !isDownloading && !isUploading &&
+        this.canAutoDownload('photo', targetFile.size)) {
         this.requestMediaDownload(fileId, 1);
       }
 
@@ -1476,7 +1520,8 @@ export class ChatCoordinator {
         }
       }
 
-      if (!isDownloaded && !isDownloading) {
+      if (!isDownloaded && !isDownloading && this.canAutoDownload('gif', targetFile.size)) {
+        // messageAnimation 在我们的会话里就是动图，归「动图」这一类。
         this.requestMediaDownload(fileId, 1);
       }
 
@@ -1562,9 +1607,9 @@ export class ChatCoordinator {
         this.fileSubscriptions.set(fileId, sub);
       }
 
-      // 视频较小（<= 10MB）自动下载，便于直接播放
-      const videoSize: number = targetFile.size;
-      if (!isDownloaded && !isDownloading && !isUploading && videoSize > 0 && videoSize <= 10 * 1024 * 1024) {
+      // 视频较小（<= 10MB）才自动下载，便于直接播放；尺寸闸门与类型勾选都在模型层。
+      if (!isDownloaded && !isDownloading && !isUploading &&
+        this.canAutoDownload('video', targetFile.size)) {
         this.requestMediaDownload(fileId, 1);
       }
 
@@ -1618,7 +1663,7 @@ export class ChatCoordinator {
         }
       }
 
-      if (!isDownloaded && !isDownloading) {
+      if (!isDownloaded && !isDownloading && this.canAutoDownload('videoNote', targetFile.size)) {
         this.requestMediaDownload(fileId, 1);
       }
 
@@ -1743,6 +1788,12 @@ export class ChatCoordinator {
         }
       }
 
+      // 文件勾选且尺寸在闸门内才自动缓存；否则等用户点下载。
+      if (!isDownloaded && !isDownloading && !isUploading &&
+        this.canAutoDownload('file', targetFile.size)) {
+        this.requestMediaDownload(fileId, 1);
+      }
+
       const captionText: string = docMsg.caption !== null ? docMsg.caption.text : '';
       const captionSpans: MessageTextSpan[] = docMsg.caption !== null ? parseFormattedText(docMsg.caption) : [];
 
@@ -1808,6 +1859,12 @@ export class ChatCoordinator {
       const captionText: string = voiceContent.caption !== null ? voiceContent.caption.text : '';
       const captionSpans: MessageTextSpan[] = voiceContent.caption !== null ? parseFormattedText(voiceContent.caption) : [];
       const waveform: number[] = decodeWaveform(vn.waveform);
+
+      // 语音勾选后自动下载，列表里的波形与时长才能直接播；尺寸闸门不管语音。
+      if (!isDownloaded && !isDownloading && !isUploading &&
+        this.canAutoDownload('voice', targetFile.size)) {
+        this.requestMediaDownload(fileId, 1);
+      }
 
       return new MediaAttachment(
         'voiceNote',
@@ -1882,6 +1939,12 @@ export class ChatCoordinator {
 
       const captionText: string = audioContent.caption !== null ? audioContent.caption.text : '';
       const captionSpans: MessageTextSpan[] = audioContent.caption !== null ? parseFormattedText(audioContent.caption) : [];
+
+      // 音乐勾选且尺寸在闸门内才自动缓存；封面缩略图不受策略约束。
+      if (!isDownloaded && !isDownloading && !isUploading &&
+        this.canAutoDownload('audio', targetFile.size)) {
+        this.requestMediaDownload(fileId, 1);
+      }
 
       return new MediaAttachment(
         'audio',

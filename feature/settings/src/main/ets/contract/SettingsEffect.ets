@@ -11,6 +11,7 @@ import { Effect } from '@tgx/feature-template';
 import { NotificationScopeKey } from '../model/NotificationSettings';
 import { PrivacyChoice, PrivacySettingKey } from '../model/PrivacySettings';
 import { ProxyForm } from '../model/ProxySettings';
+import { AutoDownloadPolicy } from '@tgx/core-domain';
 
 export class LoadProfileEffect implements Effect {
   readonly kind: 'loadProfile' = 'loadProfile';
@@ -156,6 +157,24 @@ export class RemoveProxyEffect implements Effect {
   }
 }
 
+/** AUTODL-101：读取自动下载策略（本地偏好，同步返回）。 */
+export class LoadAutoDownloadPolicyEffect implements Effect {
+  readonly kind: 'loadAutoDownloadPolicy' = 'loadAutoDownloadPolicy';
+}
+
+/**
+ * AUTODL-101：写回自动下载策略。
+ * 勾选即落盘（对齐 TGX：对话框里没有「应用」按钮），所以这里带的是整份策略而不是单项。
+ */
+export class PersistAutoDownloadPolicyEffect implements Effect {
+  readonly kind: 'persistAutoDownloadPolicy' = 'persistAutoDownloadPolicy';
+  readonly policy: AutoDownloadPolicy;
+
+  constructor(policy: AutoDownloadPolicy) {
+    this.policy = policy;
+  }
+}
+
 export type SettingsEffect =
   | LoadProfileEffect
   | LoadNotificationSettingsEffect
@@ -177,4 +196,6 @@ export type SettingsEffect =
   | EnableProxyEffect
   | DisableProxyEffect
   | SaveProxyEffect
-  | RemoveProxyEffect;
+  | RemoveProxyEffect
+  | LoadAutoDownloadPolicyEffect
+  | PersistAutoDownloadPolicyEffect;

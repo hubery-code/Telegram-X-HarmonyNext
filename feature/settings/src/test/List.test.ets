@@ -6,6 +6,7 @@ import privacySettingsTest from './PrivacySettings.test';
 import devicesSubPageTest from './DevicesSubPage.test';
 import settingsSectionTest from './SettingsSection.test';
 import proxySettingsTest from './ProxySettings.test';
+import autoDownloadRowsTest from './AutoDownloadRows.test';
 
 export default function testsuite(): void {
   settingsReducerTest();
@@ -16,4 +17,5 @@ export default function testsuite(): void {
   devicesSubPageTest();
   settingsSectionTest();
   proxySettingsTest();
+  autoDownloadRowsTest();
 }

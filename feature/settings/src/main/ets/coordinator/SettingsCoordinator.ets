@@ -22,7 +22,7 @@ import {
   ok
 } from '@tgx/core-common';
 import { AccountScope } from '@tgx/core-account';
-import { UserRegistry } from '@tgx/core-domain';
+import { AutoDownloadPolicy, AutoDownloadPolicyStore, UserRegistry } from '@tgx/core-domain';
 import {
   GetMe,
   GetScopeNotificationSettings,
@@ -135,7 +135,9 @@ import {
   SettingsIntent,
   StorageStatsLoaded,
   UserProfileData,
-  ProxiesLoaded
+  ProxiesLoaded,
+  LoadAutoDownloadPolicy,
+  AutoDownloadPolicyLoaded
 } from '../contract/SettingsIntent';
 import {
   ClearCacheEffect,
@@ -159,7 +161,9 @@ import {
   EnableProxyEffect,
   DisableProxyEffect,
   SaveProxyEffect,
-  RemoveProxyEffect
+  RemoveProxyEffect,
+  LoadAutoDownloadPolicyEffect,
+  PersistAutoDownloadPolicyEffect
 } from '../contract/SettingsEffect';
 import { settingsReducer } from '../reducer/SettingsReducer';
 import { Theme, ThemeManager } from '@tgx/core-design-system';
@@ -192,7 +196,18 @@ export class SettingsCoordinator {
   private unsubscribeLang: (() => void) | null = null;
   private subscribedUserId: number = 0;
   private notificationScopeSettings: ScopeNotificationSettings[] = [];
+  /**
+   * AUTODL-101：自动下载策略的落盘端口，由装配层（entry）注入。
+   * 用 setter 而不是构造参数：构造已经有 9 个位置参数，再加一位会让每个调用点都跟着改，
+   * 而这一位是可选能力（缺省时页面显示的就是默认策略，行为与 TGX 首装一致）。
+   */
+  private autoDownloadStore: AutoDownloadPolicyStore | null = null;
   private destroyed: boolean = false;
+
+  /** 注入策略存储；必须在 start() 之前调用。 */
+  setAutoDownloadStore(store: AutoDownloadPolicyStore | null): void {
+    this.autoDownloadStore = store;
+  }
 
   constructor(
     scope: AccountScope,
@@ -288,6 +303,8 @@ export class SettingsCoordinator {
     this.dispatch(new LoadNotificationSettings());
     // SET-104：进页即静默拉一次真实存储占用（此前 storageCacheSize 是硬编码占位）。
     this.dispatch(new LoadStorageStats());
+    // AUTODL-101：策略行在「数据与存储」卡片里，进页就要有真实副标题。
+    this.dispatch(new LoadAutoDownloadPolicy());
   }
 
   destroy(): void {
@@ -446,6 +463,16 @@ export class SettingsCoordinator {
       case 'removeProxy': {
         const removeEffect: RemoveProxyEffect = effect as RemoveProxyEffect;
         this.handleRemoveProxy(removeEffect.proxyId);
+        break;
+      }
+
+      case 'loadAutoDownloadPolicy':
+        this.handleLoadAutoDownloadPolicy();
+        break;
+
+      case 'persistAutoDownloadPolicy': {
+        const persistEffect: PersistAutoDownloadPolicyEffect = effect as PersistAutoDownloadPolicyEffect;
+        this.handlePersistAutoDownloadPolicy(persistEffect.policy);
         break;
       }
 
@@ -1481,5 +1508,38 @@ export class SettingsCoordinator {
       return `Unable to ${action} proxy. Check your connection.`;
     }
     return `Unable to ${action} proxy. Please try again.`;
+  }
+
+  // ---- AUTODL-101 自动媒体下载 ----
+
+  /**
+   * 读策略。端口没注入、盘上没值、值读坏了都回落默认策略 —— 与 TGX 首装一致，
+   * 页面因此永远有得显。
+   */
+  private handleLoadAutoDownloadPolicy(): void {
+    const store: AutoDownloadPolicyStore | null = this.autoDownloadStore;
+    const loaded: AutoDownloadPolicy | null = store !== null ? store.load() : null;
+    this.dispatch(new AutoDownloadPolicyLoaded(
+      loaded !== null ? loaded : AutoDownloadPolicy.defaultPolicy()
+    ));
+  }
+
+  /**
+   * 写策略。勾选项是乐观更新进状态的，所以写失败必须把界面回滚成盘上真实的那一份：
+   * 留着「看起来已开、其实没存」的开关，比报一次错更糟 —— 聊天页按盘上的策略下载。
+   */
+  private handlePersistAutoDownloadPolicy(policy: AutoDownloadPolicy): void {
+    const store: AutoDownloadPolicyStore | null = this.autoDownloadStore;
+    if (store === null) {
+      return;
+    }
+    if (store.save(policy)) {
+      return;
+    }
+    const restored: AutoDownloadPolicy | null = store.load();
+    this.dispatch(new AutoDownloadPolicyLoaded(
+      restored !== null ? restored : AutoDownloadPolicy.defaultPolicy()
+    ));
+    this.dispatch(new SetErrorMessage('Unable to save automatic download settings.'));
   }
 }

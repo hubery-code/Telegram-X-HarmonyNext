@@ -35,13 +35,21 @@ export default function settingsSectionTest(): void {
       expect(sectionShowsCard('notifications', 'profile')).assertFalse();
     });
 
-    it('cards_dataStorageSectionShowsStorageAndProxy', 0, () => {
+    it('cards_dataStorageSectionShowsStorageAutoDownloadAndProxy', 0, () => {
       // PROXY-101：TGX 把「代理」归在 Data and Storage 的 Connection 组。
+      // AUTODL-101：自动下载同样是 TGX 在该页的 AutomaticMediaDownload 组。
       const cards = settingsCardsForSection('data_and_storage');
-      expect(cards.length).assertEqual(2);
+      expect(cards.length).assertEqual(3);
       expect(cards[0]).assertEqual('storage');
-      expect(cards[1]).assertEqual('proxy');
+      expect(cards[1]).assertEqual('auto_download');
+      expect(cards[2]).assertEqual('proxy');
       expect(sectionShowsCard('data_and_storage', 'logout')).assertFalse();
+    });
+
+    it('cards_autoDownloadCardOnlyInDataStorageAndAll', 0, () => {
+      expect(sectionShowsCard('data_and_storage', 'auto_download')).assertTrue();
+      expect(sectionShowsCard('all', 'auto_download')).assertTrue();
+      expect(sectionShowsCard('notifications', 'auto_download')).assertFalse();
     });
 
     it('cards_proxyCardOnlyInDataStorageAndAll', 0, () => {
@@ -51,7 +59,7 @@ export default function settingsSectionTest(): void {
     });
 
     it('cards_allSectionShowsEveryBlock', 0, () => {
-      expect(settingsCardsForSection('all').length).assertEqual(10);
+      expect(settingsCardsForSection('all').length).assertEqual(11);
       expect(sectionShowsCard('all', 'logout')).assertTrue();
       // SELF-102：隐私行只在完整设置页出现，不单独成区（落点是整屏子页）。
       expect(sectionShowsCard('all', 'privacy')).assertTrue();

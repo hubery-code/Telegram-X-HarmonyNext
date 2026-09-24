@@ -21,6 +21,7 @@ import {
   chatTextSizeOf
 } from '@tgx/core-design-system';
 import { Lang, LanguagePreference, SupportedLanguage } from '@tgx/core-common';
+import { AutoDownloadPolicy } from '@tgx/core-domain';
 import { SettingsThemeMode, SettingsUiState } from '../contract/SettingsUiState';
 import {
   CancelLogout,
@@ -44,7 +45,9 @@ import {
   OpenPrivacyPage,
   CloseProxyPage,
   LoadProxies,
-  OpenProxyPage
+  OpenProxyPage,
+  CloseAutoDownloadPage,
+  OpenAutoDownloadPage
 } from '../contract/SettingsIntent';
 import { NotificationScopeKey } from '../model/NotificationSettings';
 import {
@@ -54,10 +57,12 @@ import {
   privacyChoiceLabel
 } from '../model/PrivacySettings';
 import { proxyRowSummary } from '../model/ProxySettings';
+import { AutoDownloadScopeSummary, autoDownloadRowSummary } from '../model/AutoDownloadRows';
 import { SettingsCardKey, sectionShowsCard, settingsSectionTitleKey } from '../model/SettingsSection';
 import { DevicesSubPage } from './DevicesSubPage';
 import { PrivacySubPage } from './PrivacySubPage';
 import { ProxySubPage } from './ProxySubPage';
+import { AutoDownloadSubPage } from './AutoDownloadSubPage';
 
 const AVATAR_SIZE: number = 64;
 const BACK_ARROW_SIZE: number = 44;
@@ -211,12 +216,18 @@ export struct SettingsPage {
               this.PrivacyCardView()
             }
 
-            if (this.showsCard('storage') || this.showsCard('proxy')) {
+            if (this.showsCard('storage') || this.showsCard('auto_download') || this.showsCard('proxy')) {
               if (this.showsSectionTitle()) {
                 this.SectionTitle(this.t('DATA AND STORAGE'))
               }
               if (this.showsCard('storage')) {
                 this.StorageCardView()
+              }
+              if (this.showsCard('auto_download')) {
+                Column() {
+                  this.AutoDownloadCardView()
+                }
+                .margin({ top: this.getTheme().spacing.md })
               }
               if (this.showsCard('proxy')) {
                 Column() {
@@ -295,6 +306,16 @@ export struct SettingsPage {
           onDispatch: this.onDispatch,
           onBack: (): void => {
             this.onDispatch(new CloseProxyPage());
+          }
+        })
+      }
+
+      if (this.uiState.showAutoDownloadPage) {
+        AutoDownloadSubPage({
+          uiState: this.uiState,
+          onDispatch: this.onDispatch,
+          onBack: (): void => {
+            this.onDispatch(new CloseAutoDownloadPage());
           }
         })
       }
@@ -659,6 +680,65 @@ export struct SettingsPage {
     .onClick((): void => {
       this.onDispatch(new OpenProxyPage());
     })
+  }
+
+  /**
+   * AUTODL-101：TGX 把「自动媒体下载」放在数据与存储分区的存储行下面。
+   * 副标题就是当前策略的一句话摘要；三区不一致时显「按会话类型分别设置」，
+   * 不假装一行能说完。
+   */
+  @Builder
+  AutoDownloadCardView() {
+    Row() {
+      Image($r('app.media.ic_download'))
+        .width(22)
+        .height(22)
+        .fillColor(this.getTheme().colors.accent)
+        .margin({ right: this.getTheme().spacing.sm })
+
+      Column() {
+        Text(this.t('Automatic Media Download'))
+          .fontSize(this.getTheme().typography.body.fontSize)
+          .fontColor(this.getTheme().colors.textPrimary)
+
+        Text(this.getAutoDownloadRowText())
+          .fontSize(this.getTheme().typography.footnote.fontSize)
+          .fontColor(this.getTheme().colors.textSecondary)
+          .margin({ top: this.getTheme().spacing.xs })
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+      }
+      .alignItems(HorizontalAlign.Start)
+      .layoutWeight(1)
+
+      Image($r('app.media.ic_chevron_right'))
+        .width(18)
+        .height(18)
+        .fillColor(this.getTheme().colors.textSecondary)
+    }
+    .width('100%')
+    .padding(this.getTheme().spacing.md)
+    .backgroundColor(this.getTheme().colors.surface)
+    .borderRadius(this.getTheme().radius.md)
+    .onClick((): void => {
+      this.onDispatch(new OpenAutoDownloadPage());
+    })
+  }
+
+  private getAutoDownloadRowText(): string {
+    const policy: AutoDownloadPolicy | null = this.uiState.autoDownloadPolicy;
+    if (policy === null) {
+      return this.t('Loading...');
+    }
+    const summary: AutoDownloadScopeSummary = autoDownloadRowSummary(policy);
+    if (summary.singleKey.length > 0) {
+      return this.t(summary.singleKey);
+    }
+    const labels: string[] = [];
+    for (const kindKey of summary.kindKeys) {
+      labels.push(this.t(kindKey));
+    }
+    return labels.join(' · ');
   }
 
   @Builder

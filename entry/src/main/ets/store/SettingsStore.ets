@@ -97,3 +97,47 @@ export function saveChatFontSize(fontSize: number | string): void {
     hilog.error(DOMAIN, TAG, 'chatFontSize write failed: %{public}s', JSON.stringify(e));
   }
 }
+
+/**
+ * 通用数值读取（AUTODL-101 的自动下载掩码用）。
+ *
+ * 区分「没存过」（null）与「存了 0」：掩码 0 是「这一类全不自动下」，是有效值，
+ * 不能用默认值代替，所以读取端必须能表达「无数据」这件事。
+ */
+export function readSettingsNumber(key: string): number | null {
+  if (store === undefined) {
+    return null;
+  }
+  try {
+    if (!store.hasSync(key)) {
+      return null;
+    }
+    const raw: preferences.ValueType = store.getSync(key, 0);
+    if (typeof raw === 'number') {
+      return raw;
+    }
+    if (typeof raw === 'string') {
+      const parsed: number = Number.parseInt(raw, 10);
+      return Number.isNaN(parsed) ? null : parsed;
+    }
+    return null;
+  } catch (e) {
+    hilog.error(DOMAIN, TAG, 'settings number read failed: %{public}s', `${key} ${JSON.stringify(e)}`);
+    return null;
+  }
+}
+
+/** 通用数值写入；返回是否落盘成功，调用方据此决定 UI 是回滚还是提示。 */
+export function writeSettingsNumber(key: string, value: number): boolean {
+  if (store === undefined) {
+    return false;
+  }
+  try {
+    store.putSync(key, value);
+    store.flush();
+    return true;
+  } catch (e) {
+    hilog.error(DOMAIN, TAG, 'settings number write failed: %{public}s', `${key} ${JSON.stringify(e)}`);
+    return false;
+  }
+}

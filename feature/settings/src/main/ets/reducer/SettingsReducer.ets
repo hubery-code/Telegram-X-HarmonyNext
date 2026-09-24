@@ -56,7 +56,12 @@ import {
   ProxiesLoaded,
   SelectProxy,
   SaveProxy,
-  RemoveProxyRequested
+  RemoveProxyRequested,
+  OpenAutoDownloadPage,
+  CloseAutoDownloadPage,
+  LoadAutoDownloadPolicy,
+  AutoDownloadPolicyLoaded,
+  SetAutoDownloadKind
 } from '../contract/SettingsIntent';
 import {
   ClearCacheEffect,
@@ -79,7 +84,9 @@ import {
   EnableProxyEffect,
   DisableProxyEffect,
   SaveProxyEffect,
-  RemoveProxyEffect
+  RemoveProxyEffect,
+  LoadAutoDownloadPolicyEffect,
+  PersistAutoDownloadPolicyEffect
 } from '../contract/SettingsEffect';
 import { NotificationScopeKey } from '../model/NotificationSettings';
 import {
@@ -94,6 +101,10 @@ import {
   ProxyItem,
   proxyFormError
 } from '../model/ProxySettings';
+import {
+  AutoDownloadFlags,
+  AutoDownloadPolicy
+} from '@tgx/core-domain';
 
 function notificationScopeEnabled(state: SettingsUiState, scope: NotificationScopeKey): boolean {
   if (scope === 'private') {
@@ -755,6 +766,64 @@ export const settingsReducer: Reducer<SettingsUiState, SettingsIntent, SettingsE
         updatingProxyId: removeIntent.proxyId
       };
       return reduced(state.copyWith(options), [new RemoveProxyEffect(removeIntent.proxyId)]);
+    }
+
+    // ---- AUTODL-101 自动媒体下载 ----
+
+    case 'openAutoDownloadPage': {
+      const options: SettingsUiStateOptions = {
+        showAutoDownloadPage: true,
+        errorMessage: null
+      };
+      // 每次进子页都重读一遍：策略是本机偏好，别处（聊天页）不会改，
+      // 但进程重启后首次进来必须拿到盘上的值，而不是 initial() 的 null。
+      return reduced(state.copyWith(options), [new LoadAutoDownloadPolicyEffect()]);
+    }
+
+    case 'closeAutoDownloadPage': {
+      if (!state.showAutoDownloadPage) {
+        return reduced(state);
+      }
+      const options: SettingsUiStateOptions = {
+        showAutoDownloadPage: false
+      };
+      return reduced(state.copyWith(options));
+    }
+
+    case 'loadAutoDownloadPolicy': {
+      return reduced(state, [new LoadAutoDownloadPolicyEffect()]);
+    }
+
+    case 'autoDownloadPolicyLoaded': {
+      const loadedIntent: AutoDownloadPolicyLoaded = intent as AutoDownloadPolicyLoaded;
+      const options: SettingsUiStateOptions = {
+        autoDownloadPolicy: loadedIntent.policy,
+        errorMessage: null
+      };
+      return reduced(state.copyWith(options));
+    }
+
+    case 'setAutoDownloadKind': {
+      const setIntent: SetAutoDownloadKind = intent as SetAutoDownloadKind;
+      const policy: AutoDownloadPolicy | null = state.autoDownloadPolicy;
+      // 还没读到盘上的策略就忽略勾选：此时写回等于用猜出来的默认覆盖用户偏好。
+      if (policy === null) {
+        return reduced(state);
+      }
+      const flags: AutoDownloadFlags = policy.flagsOf(setIntent.scope);
+      if (flags.of(setIntent.mediaKind) === setIntent.enabled) {
+        // Toggle 的 onChange 在挂载时会回调一次初值，同值不算变更、不该落盘。
+        return reduced(state);
+      }
+      const next: AutoDownloadPolicy = policy.withFlags(
+        setIntent.scope,
+        flags.with(setIntent.mediaKind, setIntent.enabled)
+      );
+      const options: SettingsUiStateOptions = {
+        autoDownloadPolicy: next,
+        errorMessage: null
+      };
+      return reduced(state.copyWith(options), [new PersistAutoDownloadPolicyEffect(next)]);
     }
 
     default:

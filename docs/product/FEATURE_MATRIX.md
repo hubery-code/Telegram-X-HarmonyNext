@@ -312,7 +312,42 @@
 > `SettingsSection` 卡位 3 处），三守卫 0 违规。
 > 遗留：代理 ping 延迟副标题与连接态（Android `ProxyListController` 的 `pingProxy` + `updateConnectionState`）、
 > "Switch automatically"、通话是否走代理、`tg://proxy` 分享链接的确认弹窗（`openProxyAlert`）、扫码导入、
-> 多端改代理的实时推送（本端只订阅不到 `updateProxy`）；FEAT-P2-007 的**下载与自动缓存策略半边**未动。
+> 多端改代理的实时推送（本端只订阅不到 `updateProxy`）；FEAT-P2-007 的**下载与自动缓存策略半边**当时未动（现已交付，见下方 AUTODL-101 追加段）。
+> **同日追加（AUTODL-101，FEAT-P2-007 下载与自动缓存策略半边）**：设置页新增整屏「自动媒体下载」子页，
+> 聊天页 7 类入站媒体全部接上下载门，策略按账号持久化。
+> **存储形状照 TGX 而不是照 UI**：Android 把这套策略存成一个整数 `settings_autodownload`
+> （`TdlibFilesManager.java:990-998`）—— 7 个媒体标志位各自左移到 private/groups/channels 三段，
+> 即「一个整数 = 三个分区 × 七类勾选」。本端 `core/domain/media/AutoDownloadPolicy.ets` 保持同一形状：
+> `toStorageValues()` / `fromStorageValues()` 出 3 个掩码，兜底默认与 Android 逐位一致
+> （照片 / 语音 / 视频便签 / 动图开，视频 / 文件 / 音乐关）。
+> **为什么在 `core/domain`**：写策略的是设置页、读策略的是聊天页，`feature/*` 之间不许互相 import（分层红线），
+> 所以策略与判定纯函数下沉共享（同 `ChatMute` / `ChatSendRights` 先例）。
+> **尺寸闸门是产品判断**：视频 / 文件 / 音乐单条可到几百 MB，勾了自动下载不该让 2GB 附件在打开会话时悄悄开跑 ——
+> 原先写死在聊天页的 10MB 收成 `isAutoDownloadSizeAllowed()`，且**服务端没给尺寸时放行**（不能因 `size` 缺省把用户勾了的类判死）。
+> **未知分区不阻塞**：`canAutoDownloadMedia()` 对 `private/group/channel` 之外的值或没设过策略返回放行 ——
+> 策略是「省流量的额外约束」，不该变成「读不到就什么都不下」。
+> 持久化按账号隔离：键 = `autodownload_<accountKey>:<scope>`，走 `@ohos.data.preferences` 同步读
+> （`PersistentStorage.persistProp` 在本 SDK 上恢复不可靠），适配器落 `entry`；`current()` 只回缓存、
+> 每账号每进程读一次盘（每条消息解析附件都要问一次策略，每条重算三键是纯浪费），`save()` 立刻刷新缓存 ——
+> 设置页刚勾完，还开着的聊天页下一次同步就按新策略放行。
+> 贴纸、头像、缩略图**不受策略管**（Android 同样无条件拉缩略图，那是占位渲染的必要材料）；
+> 用户点下载按钮、点开播放器、自己发出的出站上传一律不走门 —— 那是请求，不是自动下载。
+> **只有真跑设备才会暴露的缺陷**：`chatKind` 由 `getChat` 异步回包解析，而首轮投影通常早于它，
+> 「未知分区即放行」等于**冷进会话的那一刻门是敞开的**，用户刚把某类关掉照样整屏下载 ——
+> 改成 `canAutoDownload()` 在分区未解析时一律不放行，等 `chat_kind_resolved` 后的 `scheduleSyncFromProjection()` 再按真实分区判定。
+> 设备取证（模拟器 127.0.0.1:5555，真实 TDLib，全程未发送内容）：拿同一条 93 B 文档做 A/B ——
+> 私聊「文件」关（默认）+ 清理缓存 → 重进会话气泡仍是蓝底下载箭头、零下载请求；
+> 勾上「文件」→ 同一气泡重进即变灰底已下载图标。设置侧：分区摘要随勾选实时写穿、
+> 三类不一致时设置行显 `Varies by chat type`、强杀重开策略原样回读。
+> **收尾已还原账号状态**：动过的私聊「视频」「文件」与频道「照片」全部改回，三分区摘要回到默认
+> `Photos · Voice message · Video message · GIFs`，缓存回到 2.7 MB / 73 files 基线。
+> 测试：`core_domain` **138/138 PASS**（位序矩阵、掩码往返、尺寸闸门两条边界、勾选与尺寸双条件）、
+> `feature_settings` **166/166 PASS**（reducer 11 例 + `AutoDownloadRows` 9 例纯摘要 + `SettingsSection` 卡位）、
+> `feature_chat` **281/281**；三守卫 0 违规。
+> 遗留：省流量与网络类型条件（Android `DATASAVER_FLAG_ENABLED / _WHEN_MOBILE / _WHEN_ROAMING`，本端不分 Wi-Fi 与移动网络）、
+> 10MB 上限不可配、没有按会话单独覆盖的入口、策略变更不追溯已下载内容（清理仍归「存储与缓存」那包）。
+> FEAT-P2-007 的两半边（代理 + 下载与自动缓存策略）至此均已落地。
+
 
 | 功能 ID | 功能名 |
 |---|---|

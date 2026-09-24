@@ -52,6 +52,11 @@ import {
   SelectProxy,
   SaveProxy,
   RemoveProxyRequested,
+  OpenAutoDownloadPage,
+  CloseAutoDownloadPage,
+  LoadAutoDownloadPolicy,
+  AutoDownloadPolicyLoaded,
+  SetAutoDownloadKind,
   UserProfileData
 } from '../main/ets/contract/SettingsIntent';
 import {
@@ -73,8 +78,11 @@ import {
   EnableProxyEffect,
   DisableProxyEffect,
   SaveProxyEffect,
-  RemoveProxyEffect
+  RemoveProxyEffect,
+  LoadAutoDownloadPolicyEffect,
+  PersistAutoDownloadPolicyEffect
 } from '../main/ets/contract/SettingsEffect';
+import { AutoDownloadFlags, AutoDownloadPolicy } from '@tgx/core-domain';
 import { ActiveSessionItem } from '../main/ets/model/ActiveSessionItem';
 import { PrivacySettingItem } from '../main/ets/model/PrivacySettings';
 import {
@@ -123,6 +131,14 @@ function proxyRow(
 
 function proxyFormItem(id: number, server: string, port: string, kind: ProxyKind): ProxyForm {
   return new ProxyForm(id, kind, server, port, '', '', '', false, '', true);
+}
+
+/** AUTODL-101：已经读到盘上策略、子页已打开的起始态。 */
+function autoDownloadState(policy: AutoDownloadPolicy | null): SettingsUiState {
+  return SettingsUiState.initial().copyWith({
+    showAutoDownloadPage: true,
+    autoDownloadPolicy: policy
+  });
 }
 
 export default function settingsReducerTest(): void {
@@ -1079,6 +1095,117 @@ export default function settingsReducerTest(): void {
       expect(next.showProxyPage).assertTrue();
       expect(next.updatingProxyId).assertEqual(7);
       expect(next.isLoadingProxies).assertTrue();
+    });
+
+    // ---- AUTODL-101 自动媒体下载 ----
+
+    it('initialState_hasAutoDownloadDefaults', 0, () => {
+      const state = SettingsUiState.initial();
+      expect(state.showAutoDownloadPage).assertFalse();
+      // null 表示「还没读到盘上的策略」，与「读到但全关」是两回事
+      expect(state.autoDownloadPolicy === null).assertTrue();
+    });
+
+    it('openAutoDownloadPage_opensSubPage_andRequestsLoad', 0, () => {
+      const result = settingsReducer(SettingsUiState.initial(), new OpenAutoDownloadPage(), makeEnv());
+
+      expect(result.state.showAutoDownloadPage).assertTrue();
+      expect(result.state.errorMessage).assertNull();
+      expect(result.effects.length).assertEqual(1);
+      expect((result.effects[0] as LoadAutoDownloadPolicyEffect).kind).assertEqual('loadAutoDownloadPolicy');
+    });
+
+    it('closeAutoDownloadPage_keepsLoadedPolicy', 0, () => {
+      const state = autoDownloadState(AutoDownloadPolicy.defaultPolicy());
+      const result = settingsReducer(state, new CloseAutoDownloadPage(), makeEnv());
+
+      expect(result.state.showAutoDownloadPage).assertFalse();
+      // 设置主页的「自动媒体下载」行要靠这份缓存出副标题，关闭子页不能清空。
+      expect(result.state.autoDownloadPolicy !== null).assertTrue();
+      expect(result.effects.length).assertEqual(0);
+    });
+
+    it('closeAutoDownloadPage_whenAlreadyClosed_isNoop', 0, () => {
+      const state = SettingsUiState.initial();
+      const result = settingsReducer(state, new CloseAutoDownloadPage(), makeEnv());
+      expect(result.state === state).assertTrue();
+      expect(result.effects.length).assertEqual(0);
+    });
+
+    it('loadAutoDownloadPolicy_emitsEffectWithoutTouchingState', 0, () => {
+      const state = autoDownloadState(null);
+      const result = settingsReducer(state, new LoadAutoDownloadPolicy(), makeEnv());
+
+      expect(result.state === state).assertTrue();
+      expect(result.effects.length).assertEqual(1);
+      expect(result.effects[0].kind).assertEqual('loadAutoDownloadPolicy');
+    });
+
+    it('autoDownloadPolicyLoaded_storesPolicyAndClearsError', 0, () => {
+      const state = SettingsUiState.initial().copyWith({ errorMessage: 'boom' });
+      const policy: AutoDownloadPolicy = AutoDownloadPolicy.defaultPolicy();
+      const result = settingsReducer(state, new AutoDownloadPolicyLoaded(policy), makeEnv());
+
+      expect(result.state.autoDownloadPolicy === policy).assertTrue();
+      expect(result.state.errorMessage).assertNull();
+      expect(result.effects.length).assertEqual(0);
+    });
+
+    it('setAutoDownloadKind_withoutLoadedPolicy_isNoop', 0, () => {
+      const state = autoDownloadState(null);
+      const result = settingsReducer(state, new SetAutoDownloadKind('private', 'video', true), makeEnv());
+
+      // 没读盘就写回等于拿猜出来的默认覆盖用户偏好，必须整个忽略。
+      expect(result.state === state).assertTrue();
+      expect(result.effects.length).assertEqual(0);
+    });
+
+    it('setAutoDownloadKind_sameValue_isNoop', 0, () => {
+      // Toggle 挂载时会回调一次初值；同值不该落盘。
+      const policy: AutoDownloadPolicy = AutoDownloadPolicy.defaultPolicy();
+      const state = autoDownloadState(policy);
+      const result = settingsReducer(state, new SetAutoDownloadKind('private', 'photo', true), makeEnv());
+
+      expect(result.state === state).assertTrue();
+      expect(result.effects.length).assertEqual(0);
+    });
+
+    it('setAutoDownloadKind_updatesOnlyTargetScopeAndPersists', 0, () => {
+      const policy: AutoDownloadPolicy = AutoDownloadPolicy.defaultPolicy();
+      const state = autoDownloadState(policy);
+      const result = settingsReducer(state, new SetAutoDownloadKind('group', 'video', true), makeEnv());
+
+      expect(result.effects.length).assertEqual(1);
+      const effect: PersistAutoDownloadPolicyEffect = result.effects[0] as PersistAutoDownloadPolicyEffect;
+      expect(effect.kind).assertEqual('persistAutoDownloadPolicy');
+      const persisted: AutoDownloadPolicy = effect.policy;
+      expect(persisted.groupFlags.video).assertTrue();
+      // 其余分区不能被子页的单项勾选带跑
+      expect(persisted.privateFlags.equals(policy.privateFlags)).assertTrue();
+      expect(persisted.channelFlags.equals(policy.channelFlags)).assertTrue();
+      // 原策略也不该被就地改动（reducer 必须是纯函数）
+      expect(state.autoDownloadPolicy !== null && state.autoDownloadPolicy.groupFlags.video).assertFalse();
+      expect(result.state.autoDownloadPolicy !== null
+        && result.state.autoDownloadPolicy.groupFlags.toMask()).assertEqual(persisted.groupFlags.toMask());
+    });
+
+    it('setAutoDownloadKind_turningOffDefaultKind_persistsMask', 0, () => {
+      const policy: AutoDownloadPolicy = AutoDownloadPolicy.defaultPolicy();
+      const state = autoDownloadState(policy);
+      const result = settingsReducer(state, new SetAutoDownloadKind('channel', 'photo', false), makeEnv());
+
+      const persisted: AutoDownloadPolicy = (result.effects[0] as PersistAutoDownloadPolicyEffect).policy;
+      const expected: number = AutoDownloadFlags.defaultFlags().with('photo', false).toMask();
+      expect(persisted.channelFlags.toMask()).assertEqual(expected);
+      expect(persisted.privateFlags.toMask()).assertEqual(AutoDownloadFlags.defaultFlags().toMask());
+    });
+
+    it('copyWith_keepsAutoDownloadFieldsWhenUnspecified', 0, () => {
+      const state = autoDownloadState(AutoDownloadPolicy.defaultPolicy());
+      const next = state.copyWith({ displayName: 'hubery' });
+
+      expect(next.showAutoDownloadPage).assertTrue();
+      expect(next.autoDownloadPolicy !== null).assertTrue();
     });
   });
 }

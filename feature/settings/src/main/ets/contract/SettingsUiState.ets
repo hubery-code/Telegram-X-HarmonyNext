@@ -15,6 +15,7 @@ import { ActiveSessionItem } from '../model/ActiveSessionItem';
 import { SettingsSectionKey } from '../model/SettingsSection';
 import { PrivacySettingItem, PrivacySettingKey } from '../model/PrivacySettings';
 import { ProxyItem } from '../model/ProxySettings';
+import { AutoDownloadPolicy } from '@tgx/core-domain';
 
 export type SettingsThemeMode = ThemePreference;
 
@@ -69,6 +70,10 @@ export interface SettingsUiStateOptions {
   readonly isLoadingProxies?: boolean;
   /** PROXY-101：正在写回的代理 id；null 表示空闲，0 是「不使用代理」行。 */
   readonly updatingProxyId?: number | null;
+  /** AUTODL-101：是否展示「自动媒体下载」子页。 */
+  readonly showAutoDownloadPage?: boolean;
+  /** AUTODL-101：已读到的自动下载策略；null 表示还没读盘（行副标题显 Loading）。 */
+  readonly autoDownloadPolicy?: AutoDownloadPolicy | null;
 }
 
 export class SettingsUiState implements UiState {
@@ -125,6 +130,10 @@ export class SettingsUiState implements UiState {
   readonly isLoadingProxies: boolean;
   /** PROXY-101：正在写回的代理 id；null 表示空闲，0 是「不使用代理」行。 */
   readonly updatingProxyId: number | null;
+  /** AUTODL-101：是否展示「自动媒体下载」子页。 */
+  readonly showAutoDownloadPage: boolean;
+  /** AUTODL-101：自动下载策略；null 表示尚未读盘。 */
+  readonly autoDownloadPolicy: AutoDownloadPolicy | null;
 
   constructor(
     userId: number,
@@ -163,7 +172,9 @@ export class SettingsUiState implements UiState {
     showProxyPage: boolean = false,
     proxyItems: ProxyItem[] = [],
     isLoadingProxies: boolean = false,
-    updatingProxyId: number | null = null
+    updatingProxyId: number | null = null,
+    showAutoDownloadPage: boolean = false,
+    autoDownloadPolicy: AutoDownloadPolicy | null = null
   ) {
     this.userId = userId;
     this.displayName = displayName;
@@ -202,6 +213,8 @@ export class SettingsUiState implements UiState {
     this.proxyItems = proxyItems;
     this.isLoadingProxies = isLoadingProxies;
     this.updatingProxyId = updatingProxyId;
+    this.showAutoDownloadPage = showAutoDownloadPage;
+    this.autoDownloadPolicy = autoDownloadPolicy;
   }
 
   static initial(
@@ -292,7 +305,9 @@ export class SettingsUiState implements UiState {
       options.showProxyPage !== undefined ? options.showProxyPage : this.showProxyPage,
       options.proxyItems !== undefined ? options.proxyItems : this.proxyItems,
       options.isLoadingProxies !== undefined ? options.isLoadingProxies : this.isLoadingProxies,
-      options.updatingProxyId !== undefined ? options.updatingProxyId : this.updatingProxyId
+      options.updatingProxyId !== undefined ? options.updatingProxyId : this.updatingProxyId,
+      options.showAutoDownloadPage !== undefined ? options.showAutoDownloadPage : this.showAutoDownloadPage,
+      options.autoDownloadPolicy !== undefined ? options.autoDownloadPolicy : this.autoDownloadPolicy
     );
   }
 }
