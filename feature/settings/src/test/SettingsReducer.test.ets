@@ -45,6 +45,13 @@ import {
   TogglePrivacySetting,
   PrivacySettingUpdated,
   PrivacySettingUpdateFailed,
+  OpenProxyPage,
+  CloseProxyPage,
+  LoadProxies,
+  ProxiesLoaded,
+  SelectProxy,
+  SaveProxy,
+  RemoveProxyRequested,
   UserProfileData
 } from '../main/ets/contract/SettingsIntent';
 import {
@@ -61,10 +68,22 @@ import {
   SwitchAccountEffect,
   TerminateAllOtherSessionsEffect,
   TerminateSessionEffect,
-  SetPrivacySettingEffect
+  SetPrivacySettingEffect,
+  LoadProxiesEffect,
+  EnableProxyEffect,
+  DisableProxyEffect,
+  SaveProxyEffect,
+  RemoveProxyEffect
 } from '../main/ets/contract/SettingsEffect';
 import { ActiveSessionItem } from '../main/ets/model/ActiveSessionItem';
 import { PrivacySettingItem } from '../main/ets/model/PrivacySettings';
+import {
+  PROXY_NONE_ID,
+  PROXY_NEW_ID,
+  ProxyForm,
+  ProxyItem,
+  ProxyKind
+} from '../main/ets/model/ProxySettings';
 import { settingsReducer } from '../main/ets/reducer/SettingsReducer';
 
 function makeEnv(nowMillis: number = 1000, monotonicMillis: number = 500): ReducerEnv {
@@ -81,6 +100,29 @@ function privacyState(items: PrivacySettingItem[]): SettingsUiState {
     privacyItems: items,
     isLoadingPrivacy: false
   });
+}
+
+/** PROXY-101：已读到代理列表、首屏加载结束的起始态。 */
+function proxyState(items: ProxyItem[]): SettingsUiState {
+  return SettingsUiState.initial().copyWith({
+    proxyItems: items,
+    showProxyPage: true,
+    isLoadingProxies: false
+  });
+}
+
+function proxyRow(
+  id: number,
+  kind: ProxyKind,
+  server: string,
+  port: number,
+  isEnabled: boolean
+): ProxyItem {
+  return new ProxyItem(id, kind, server, port, '', '', '', false, '', isEnabled);
+}
+
+function proxyFormItem(id: number, server: string, port: string, kind: ProxyKind): ProxyForm {
+  return new ProxyForm(id, kind, server, port, '', '', '', false, '', true);
 }
 
 export default function settingsReducerTest(): void {
@@ -852,6 +894,191 @@ export default function settingsReducerTest(): void {
       expect(next.showPrivacyPage).assertTrue();
       expect(next.updatingPrivacyKey).assertEqual('show_bio');
       expect(next.isLoadingPrivacy).assertFalse();
+    });
+
+    // ---- PROXY-101 网络代理 ----
+
+    it('initialState_hasProxyDefaults', 0, () => {
+      const state = SettingsUiState.initial();
+      expect(state.showProxyPage).assertFalse();
+      expect(state.proxyItems.length).assertEqual(0);
+      expect(state.isLoadingProxies).assertFalse();
+      expect(state.updatingProxyId === null).assertTrue();
+    });
+
+    it('openProxyPage_opensSubPage_startsLoading_andEmitsEffect', 0, () => {
+      const result = settingsReducer(SettingsUiState.initial(), new OpenProxyPage(), makeEnv());
+
+      expect(result.state.showProxyPage).assertTrue();
+      expect(result.state.isLoadingProxies).assertTrue();
+      expect(result.state.errorMessage).assertNull();
+      expect(result.effects.length).assertEqual(1);
+      expect(result.effects[0].kind).assertEqual('loadProxies');
+    });
+
+    it('closeProxyPage_keepsLoadedItems', 0, () => {
+      const state = proxyState([proxyRow(3, 'socks5', 'a.com', 1080, true)]);
+      const result = settingsReducer(state, new CloseProxyPage(), makeEnv());
+
+      expect(result.state.showProxyPage).assertFalse();
+      // 设置主页「代理」行副标题要靠这份缓存，关闭子页不能清空。
+      expect(result.state.proxyItems.length).assertEqual(1);
+      expect(result.effects.length).assertEqual(0);
+    });
+
+    it('closeProxyPage_whenAlreadyClosed_isNoop', 0, () => {
+      const state = SettingsUiState.initial();
+      const result = settingsReducer(state, new CloseProxyPage(), makeEnv());
+
+      expect(result.state === state).assertTrue();
+      expect(result.effects.length).assertEqual(0);
+    });
+
+    it('loadProxies_setsLoadingAndEmitsEffect', 0, () => {
+      const state = proxyState([]);
+      const result = settingsReducer(state, new LoadProxies(), makeEnv());
+
+      expect(result.state.isLoadingProxies).assertTrue();
+      expect(result.effects.length).assertEqual(1);
+      const effect = result.effects[0] as LoadProxiesEffect;
+      expect(effect.kind).assertEqual('loadProxies');
+    });
+
+    it('proxiesLoaded_replacesItemsAndClearsBusy', 0, () => {
+      const state = proxyState([proxyRow(1, 'socks5', 'old.com', 1, false)])
+        .copyWith({ isLoadingProxies: true, updatingProxyId: 1 });
+      const items: ProxyItem[] = [
+        proxyRow(7, 'mtproto', 'new.com', 443, true),
+        proxyRow(8, 'http', 'b.com', 8080, false)
+      ];
+      const result = settingsReducer(state, new ProxiesLoaded(items), makeEnv());
+
+      expect(result.state.proxyItems.length).assertEqual(2);
+      expect(result.state.proxyItems[0].id).assertEqual(7);
+      expect(result.state.isLoadingProxies).assertFalse();
+      expect(result.state.updatingProxyId === null).assertTrue();
+      expect(result.effects.length).assertEqual(0);
+    });
+
+    it('selectProxy_unenabledRow_enablesAndMarksBusy', 0, () => {
+      const state = proxyState([
+        proxyRow(7, 'socks5', 'a.com', 1080, true),
+        proxyRow(8, 'socks5', 'b.com', 1080, false)
+      ]);
+      const result = settingsReducer(state, new SelectProxy(8), makeEnv());
+
+      expect(result.state.updatingProxyId).assertEqual(8);
+      expect(result.effects.length).assertEqual(1);
+      const effect = result.effects[0] as EnableProxyEffect;
+      expect(effect.kind).assertEqual('enableProxy');
+      expect(effect.proxyId).assertEqual(8);
+      // 单选态由写回后的回读校正，不在这里乐观改行。
+      expect(result.state.proxyItems[0].isEnabled).assertTrue();
+      expect(result.state.proxyItems[1].isEnabled).assertFalse();
+    });
+
+    it('selectProxy_noneRow_disables', 0, () => {
+      const state = proxyState([proxyRow(7, 'socks5', 'a.com', 1080, true)]);
+      const result = settingsReducer(state, new SelectProxy(PROXY_NONE_ID), makeEnv());
+
+      expect(result.state.updatingProxyId).assertEqual(PROXY_NONE_ID);
+      expect(result.effects.length).assertEqual(1);
+      expect((result.effects[0] as DisableProxyEffect).kind).assertEqual('disableProxy');
+    });
+
+    it('selectProxy_alreadyEnabledOrUnknown_isNoop', 0, () => {
+      const state = proxyState([proxyRow(7, 'socks5', 'a.com', 1080, true)]);
+      const same = settingsReducer(state, new SelectProxy(7), makeEnv());
+      expect(same.state === state).assertTrue();
+      expect(same.effects.length).assertEqual(0);
+
+      const missing = settingsReducer(state, new SelectProxy(99), makeEnv());
+      expect(missing.state === state).assertTrue();
+      expect(missing.effects.length).assertEqual(0);
+    });
+
+    it('selectProxy_whileBusy_isNoop', 0, () => {
+      const state = proxyState([proxyRow(8, 'socks5', 'b.com', 1080, false)])
+        .copyWith({ updatingProxyId: 8 });
+      const result = settingsReducer(state, new SelectProxy(8), makeEnv());
+
+      expect(result.state === state).assertTrue();
+      expect(result.effects.length).assertEqual(0);
+    });
+
+    it('saveProxy_valid_newForm_emitsSaveWithNewId', 0, () => {
+      const state = proxyState([]);
+      const form: ProxyForm = proxyFormItem(PROXY_NEW_ID, 'proxy.example.com', '1080', 'socks5');
+      const result = settingsReducer(state, new SaveProxy(form), makeEnv());
+
+      expect(result.state.updatingProxyId).assertEqual(PROXY_NEW_ID);
+      expect(result.state.errorMessage).assertNull();
+      expect(result.effects.length).assertEqual(1);
+      const effect = result.effects[0] as SaveProxyEffect;
+      expect(effect.kind).assertEqual('saveProxy');
+      expect(effect.form.id).assertEqual(PROXY_NEW_ID);
+      expect(effect.form.server).assertEqual('proxy.example.com');
+    });
+
+    it('saveProxy_invalidForm_reportsErrorWithoutEffect', 0, () => {
+      const state = proxyState([]);
+      const result = settingsReducer(state, new SaveProxy(proxyFormItem(PROXY_NEW_ID, '', '0', 'socks5')), makeEnv());
+
+      // 校验失败只出错误文案，绝不把半截表单写给 TDLib。
+      expect(result.effects.length).assertEqual(0);
+      expect(result.state.updatingProxyId === null).assertTrue();
+      expect(result.state.errorMessage).assertEqual('Server address required');
+    });
+
+    it('saveProxy_invalidMtprotoSecret_reportsSecretError', 0, () => {
+      const state = proxyState([]);
+      const form: ProxyForm = new ProxyForm(
+        PROXY_NEW_ID, 'mtproto', 'a.com', '443', '', '', 'zzzz', false, '', true
+      );
+      const result = settingsReducer(state, new SaveProxy(form), makeEnv());
+
+      expect(result.effects.length).assertEqual(0);
+      expect(result.state.errorMessage).assertEqual('Secret must be hexadecimal');
+    });
+
+    it('saveProxy_editForm_carriesRowId', 0, () => {
+      const state = proxyState([proxyRow(7, 'socks5', 'a.com', 1080, false)]);
+      const result = settingsReducer(state, new SaveProxy(proxyFormItem(7, 'a.com', '1080', 'socks5')), makeEnv());
+
+      expect(result.state.updatingProxyId).assertEqual(7);
+      expect((result.effects[0] as SaveProxyEffect).form.id).assertEqual(7);
+    });
+
+    it('removeProxyRequested_existingRow_emitsRemove', 0, () => {
+      const state = proxyState([proxyRow(7, 'socks5', 'a.com', 1080, false)]);
+      const result = settingsReducer(state, new RemoveProxyRequested(7), makeEnv());
+
+      expect(result.state.updatingProxyId).assertEqual(7);
+      expect(result.effects.length).assertEqual(1);
+      expect((result.effects[0] as RemoveProxyEffect).proxyId).assertEqual(7);
+    });
+
+    it('removeProxyRequested_missingRowOrBusy_isNoop', 0, () => {
+      const state = proxyState([proxyRow(7, 'socks5', 'a.com', 1080, false)]);
+      const missing = settingsReducer(state, new RemoveProxyRequested(21), makeEnv());
+      expect(missing.state === state).assertTrue();
+      expect(missing.effects.length).assertEqual(0);
+
+      const busy = state.copyWith({ updatingProxyId: 7 });
+      const busyResult = settingsReducer(busy, new RemoveProxyRequested(7), makeEnv());
+      expect(busyResult.state === busy).assertTrue();
+      expect(busyResult.effects.length).assertEqual(0);
+    });
+
+    it('copyWith_keepsProxyFieldsWhenUnspecified', 0, () => {
+      const state = proxyState([proxyRow(7, 'socks5', 'a.com', 1080, true)])
+        .copyWith({ updatingProxyId: 7, isLoadingProxies: true });
+      const next = state.copyWith({ displayName: 'hubery' });
+
+      expect(next.proxyItems.length).assertEqual(1);
+      expect(next.showProxyPage).assertTrue();
+      expect(next.updatingProxyId).assertEqual(7);
+      expect(next.isLoadingProxies).assertTrue();
     });
   });
 }

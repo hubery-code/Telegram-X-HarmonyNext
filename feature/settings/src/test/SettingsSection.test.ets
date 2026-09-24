@@ -35,15 +35,23 @@ export default function settingsSectionTest(): void {
       expect(sectionShowsCard('notifications', 'profile')).assertFalse();
     });
 
-    it('cards_dataStorageSectionShowsOnlyStorageCard', 0, () => {
+    it('cards_dataStorageSectionShowsStorageAndProxy', 0, () => {
+      // PROXY-101：TGX 把「代理」归在 Data and Storage 的 Connection 组。
       const cards = settingsCardsForSection('data_and_storage');
-      expect(cards.length).assertEqual(1);
-      expect(sectionShowsCard('data_and_storage', 'storage')).assertTrue();
+      expect(cards.length).assertEqual(2);
+      expect(cards[0]).assertEqual('storage');
+      expect(cards[1]).assertEqual('proxy');
       expect(sectionShowsCard('data_and_storage', 'logout')).assertFalse();
     });
 
+    it('cards_proxyCardOnlyInDataStorageAndAll', 0, () => {
+      expect(sectionShowsCard('data_and_storage', 'proxy')).assertTrue();
+      expect(sectionShowsCard('all', 'proxy')).assertTrue();
+      expect(sectionShowsCard('notifications', 'proxy')).assertFalse();
+    });
+
     it('cards_allSectionShowsEveryBlock', 0, () => {
-      expect(settingsCardsForSection('all').length).assertEqual(9);
+      expect(settingsCardsForSection('all').length).assertEqual(10);
       expect(sectionShowsCard('all', 'logout')).assertTrue();
       // SELF-102：隐私行只在完整设置页出现，不单独成区（落点是整屏子页）。
       expect(sectionShowsCard('all', 'privacy')).assertTrue();

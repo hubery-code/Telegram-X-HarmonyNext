@@ -49,7 +49,14 @@ import {
   PrivacySettingsLoaded,
   TogglePrivacySetting,
   PrivacySettingUpdated,
-  PrivacySettingUpdateFailed
+  PrivacySettingUpdateFailed,
+  OpenProxyPage,
+  CloseProxyPage,
+  LoadProxies,
+  ProxiesLoaded,
+  SelectProxy,
+  SaveProxy,
+  RemoveProxyRequested
 } from '../contract/SettingsIntent';
 import {
   ClearCacheEffect,
@@ -67,7 +74,12 @@ import {
   TerminateSessionEffect,
   TerminateAllOtherSessionsEffect,
   LoadPrivacySettingsEffect,
-  SetPrivacySettingEffect
+  SetPrivacySettingEffect,
+  LoadProxiesEffect,
+  EnableProxyEffect,
+  DisableProxyEffect,
+  SaveProxyEffect,
+  RemoveProxyEffect
 } from '../contract/SettingsEffect';
 import { NotificationScopeKey } from '../model/NotificationSettings';
 import {
@@ -77,6 +89,11 @@ import {
   PrivacySettingItem,
   PrivacySettingKey
 } from '../model/PrivacySettings';
+import {
+  PROXY_NONE_ID,
+  ProxyItem,
+  proxyFormError
+} from '../model/ProxySettings';
 
 function notificationScopeEnabled(state: SettingsUiState, scope: NotificationScopeKey): boolean {
   if (scope === 'private') {
@@ -111,6 +128,19 @@ function privacyItemsWithUpdated(
     next.push(items[i].key === key ? items[i].withChoice(choice) : items[i]);
   }
   return next;
+}
+
+/** 按 TDLib id 取代理行；列表里还没有该行时返回 null（调用方据此忽略点击）。 */
+function proxyItemById(
+  items: readonly ProxyItem[],
+  proxyId: number
+): ProxyItem | null {
+  for (let i = 0; i < items.length; i++) {
+    if (items[i].id === proxyId) {
+      return items[i];
+    }
+  }
+  return null;
 }
 
 export const settingsReducer: Reducer<SettingsUiState, SettingsIntent, SettingsEffect> = (
@@ -626,6 +656,105 @@ export const settingsReducer: Reducer<SettingsUiState, SettingsIntent, SettingsE
         errorMessage: failedIntent.errorMessage
       };
       return reduced(state.copyWith(options));
+    }
+
+    // ---- PROXY-101 网络代理 ----
+
+    case 'openProxyPage': {
+      const options: SettingsUiStateOptions = {
+        showProxyPage: true,
+        isLoadingProxies: true,
+        errorMessage: null
+      };
+      return reduced(state.copyWith(options), [new LoadProxiesEffect()]);
+    }
+
+    case 'closeProxyPage': {
+      if (!state.showProxyPage) {
+        return reduced(state);
+      }
+      const options: SettingsUiStateOptions = {
+        showProxyPage: false
+      };
+      return reduced(state.copyWith(options));
+    }
+
+    case 'loadProxies': {
+      const options: SettingsUiStateOptions = {
+        isLoadingProxies: true
+      };
+      return reduced(state.copyWith(options), [new LoadProxiesEffect()]);
+    }
+
+    case 'proxiesLoaded': {
+      const loadedIntent: ProxiesLoaded = intent as ProxiesLoaded;
+      const options: SettingsUiStateOptions = {
+        proxyItems: loadedIntent.items,
+        isLoadingProxies: false,
+        updatingProxyId: null
+      };
+      return reduced(state.copyWith(options));
+    }
+
+    case 'selectProxy': {
+      const selectIntent: SelectProxy = intent as SelectProxy;
+      if (state.updatingProxyId !== null) {
+        return reduced(state);
+      }
+      // 「不使用代理」这一行没有对应的 TDLib 对象，只能走 disableProxy。
+      if (selectIntent.proxyId === PROXY_NONE_ID) {
+        const options: SettingsUiStateOptions = {
+          updatingProxyId: PROXY_NONE_ID
+        };
+        return reduced(state.copyWith(options), [new DisableProxyEffect()]);
+      }
+      const item: ProxyItem | null = proxyItemById(state.proxyItems, selectIntent.proxyId);
+      // 列表还没读到该行时忽略点击，而不是凭 id 猜一个启用态出去。
+      if (item === null) {
+        return reduced(state);
+      }
+      // TDLib 只允许一个代理生效；点已选中的那行是空操作，不该再发请求。
+      if (item.isEnabled) {
+        return reduced(state);
+      }
+      const options: SettingsUiStateOptions = {
+        updatingProxyId: selectIntent.proxyId
+      };
+      return reduced(state.copyWith(options), [new EnableProxyEffect(selectIntent.proxyId)]);
+    }
+
+    case 'saveProxy': {
+      const saveIntent: SaveProxy = intent as SaveProxy;
+      if (state.updatingProxyId !== null) {
+        return reduced(state);
+      }
+      // 页面已经把「完成」置灰，这里再挡一道：表单不能凭空绕过校验写出去。
+      const errorKey: string = proxyFormError(saveIntent.form);
+      if (errorKey.length > 0) {
+        const options: SettingsUiStateOptions = {
+          errorMessage: errorKey
+        };
+        return reduced(state.copyWith(options));
+      }
+      const options: SettingsUiStateOptions = {
+        updatingProxyId: saveIntent.form.id,
+        errorMessage: null
+      };
+      return reduced(state.copyWith(options), [new SaveProxyEffect(saveIntent.form)]);
+    }
+
+    case 'removeProxyRequested': {
+      const removeIntent: RemoveProxyRequested = intent as RemoveProxyRequested;
+      if (state.updatingProxyId !== null) {
+        return reduced(state);
+      }
+      if (proxyItemById(state.proxyItems, removeIntent.proxyId) === null) {
+        return reduced(state);
+      }
+      const options: SettingsUiStateOptions = {
+        updatingProxyId: removeIntent.proxyId
+      };
+      return reduced(state.copyWith(options), [new RemoveProxyEffect(removeIntent.proxyId)]);
     }
 
     default:

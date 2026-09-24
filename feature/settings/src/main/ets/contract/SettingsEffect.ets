@@ -10,6 +10,7 @@
 import { Effect } from '@tgx/feature-template';
 import { NotificationScopeKey } from '../model/NotificationSettings';
 import { PrivacyChoice, PrivacySettingKey } from '../model/PrivacySettings';
+import { ProxyForm } from '../model/ProxySettings';
 
 export class LoadProfileEffect implements Effect {
   readonly kind: 'loadProfile' = 'loadProfile';
@@ -115,6 +116,46 @@ export class SetPrivacySettingEffect implements Effect {
   }
 }
 
+/** PROXY-101：读取代理列表（getProxies）。 */
+export class LoadProxiesEffect implements Effect {
+  readonly kind: 'loadProxies' = 'loadProxies';
+}
+
+/** PROXY-101：启用代理（enableProxy），随后回读列表校正单选态。 */
+export class EnableProxyEffect implements Effect {
+  readonly kind: 'enableProxy' = 'enableProxy';
+  readonly proxyId: number;
+
+  constructor(proxyId: number) {
+    this.proxyId = proxyId;
+  }
+}
+
+/** PROXY-101：停用当前代理（disableProxy）。 */
+export class DisableProxyEffect implements Effect {
+  readonly kind: 'disableProxy' = 'disableProxy';
+}
+
+/** PROXY-101：保存代理；`form.id === PROXY_NEW_ID` 走 addProxy，否则走 editProxy。 */
+export class SaveProxyEffect implements Effect {
+  readonly kind: 'saveProxy' = 'saveProxy';
+  readonly form: ProxyForm;
+
+  constructor(form: ProxyForm) {
+    this.form = form;
+  }
+}
+
+/** PROXY-101：删除代理（removeProxy）。 */
+export class RemoveProxyEffect implements Effect {
+  readonly kind: 'removeProxy' = 'removeProxy';
+  readonly proxyId: number;
+
+  constructor(proxyId: number) {
+    this.proxyId = proxyId;
+  }
+}
+
 export type SettingsEffect =
   | LoadProfileEffect
   | LoadNotificationSettingsEffect
@@ -131,4 +172,9 @@ export type SettingsEffect =
   | TerminateSessionEffect
   | TerminateAllOtherSessionsEffect
   | LoadPrivacySettingsEffect
-  | SetPrivacySettingEffect;
+  | SetPrivacySettingEffect
+  | LoadProxiesEffect
+  | EnableProxyEffect
+  | DisableProxyEffect
+  | SaveProxyEffect
+  | RemoveProxyEffect;

@@ -289,6 +289,30 @@
 > 播放态翻转穿透节流、release 幂等、会话不可用时既不申请任务也不上报、命令路由、文件名兜底）、`platform_ports` 47/47、
 > `feature_profile` **106/106**（+1 例元数据映射）、`feature_chat` 281/281；三守卫 0 违规。
 > 遗留：真锁屏界面未取证（模拟器无锁屏，验到的是同一张 AVSession 控制中心卡片）；会话进度只上报、不回驱动应用内进度条。
+> **同日追加（PROXY-101，FEAT-P2-007 代理半边）**：设置页「代理」行从假常量改成真实态 + 新增整屏 `ProxySubPage`。
+> **建模先跟 TDLib 对齐**：「哪个代理生效」在协议里不是一个 active id 字段，而是每条 `AddedProxy.is_enabled`，
+> 所以「不使用代理」不是第四条代理，而是**全部 `is_enabled` 为 false 时的呈现态** —— 用 `PROXY_NONE_ID = 0` 哨兵行表达，
+> 点它发 `disableProxy()`；点普通行只在「当前未生效」时发 `enableProxy(id)`（已生效或未知 id 一律 no-op，避免反复重连）。
+> **一条刻意的保守**：所有写操作（add/edit/enable/disable/remove）成功后**重新 `getProxies` 回读，不做乐观更新** ——
+> 单选态只有 TDLib 知道真相（启用失败它自己回滚），行内转圈用单一忙碌令牌 `updatingProxyId`
+> （`null` 空闲 / `0` 无代理行 / `-1` 新表单保存中 / 其余为行 id）。
+> DTO 三处坑写进注释：生成类 `ProxyValue` 的类型字段叫 `type_`（`type` 被判别器占了）、未知 `@type` 落 `TdUnknownObject`、
+> `proxyItemFromAdded` 对 `proxy === null` / 空 server / `type_ === null` / 未知判别器**返回 null 丢行**而不是渲染半截。
+> 表单按 kind 裁字段：mtproto 只要十六进制 secret 并丢掉 username/password/httpOnly，socks5/http 反之；
+> **密码不 trim**（两端空格可能是口令本身，trim 会把代理写成不可用），server 与 username 才 trim。
+> **两个只有真跑设备才会暴露的缺陷**：① ArkUI 的 `TextInput` 在**挂载时就以初值回调一次 `onChange`**，
+> 于是刚打开的添加表单顶着一行红字「Server address required」—— 改成 `markTouched(value)` 只在收到非空值时才算「碰过」；
+> ② 行标题原样拼「类型名 + 地址:端口」，1256px 屏上被挤成 `SOCKS5 …`，地址完全看不见 ——
+> `proxyTitle` 改成「没写备注就直接显地址:端口」，类型名让给副标题。
+> 设备取证（模拟器 127.0.0.1:5555，真实 TDLib 往返）：`getProxies` 空列表 → 设置行副标题 `Tap to set up`；
+> 添加 socks5 → 行出现且副标题变标题；选该行 → radio 落到行、设置行副标题同步；编辑 → 「Edit Proxy」+ Save + Enable 回填 ON；
+> 「不使用代理」→ 生效态收回；删除 → 确认对话框 → 回到空态。校验反向证据两例（port `70000`、`700001080` 均报
+> 「Port must be 1-65535」）。**收尾已恢复账号原状**：测试代理删除、无代理保持选中，设置行回到 `Tap to set up`。
+> 测试：`feature_settings` **145/145 PASS**（新增 `ProxySettings.test.ets` 15 例纯模型 + reducer 17 例意图/效果 +
+> `SettingsSection` 卡位 3 处），三守卫 0 违规。
+> 遗留：代理 ping 延迟副标题与连接态（Android `ProxyListController` 的 `pingProxy` + `updateConnectionState`）、
+> "Switch automatically"、通话是否走代理、`tg://proxy` 分享链接的确认弹窗（`openProxyAlert`）、扫码导入、
+> 多端改代理的实时推送（本端只订阅不到 `updateProxy`）；FEAT-P2-007 的**下载与自动缓存策略半边**未动。
 
 | 功能 ID | 功能名 |
 |---|---|

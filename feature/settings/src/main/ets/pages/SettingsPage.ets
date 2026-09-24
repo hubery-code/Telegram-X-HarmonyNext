@@ -41,7 +41,10 @@ import {
   ToggleNotificationScope,
   ToggleNotifications,
   ClosePrivacyPage,
-  OpenPrivacyPage
+  OpenPrivacyPage,
+  CloseProxyPage,
+  LoadProxies,
+  OpenProxyPage
 } from '../contract/SettingsIntent';
 import { NotificationScopeKey } from '../model/NotificationSettings';
 import {
@@ -50,9 +53,11 @@ import {
   PrivacySettingKey,
   privacyChoiceLabel
 } from '../model/PrivacySettings';
+import { proxyRowSummary } from '../model/ProxySettings';
 import { SettingsCardKey, sectionShowsCard, settingsSectionTitleKey } from '../model/SettingsSection';
 import { DevicesSubPage } from './DevicesSubPage';
 import { PrivacySubPage } from './PrivacySubPage';
+import { ProxySubPage } from './ProxySubPage';
 
 const AVATAR_SIZE: number = 64;
 const BACK_ARROW_SIZE: number = 44;
@@ -90,6 +95,9 @@ export struct SettingsPage {
     this.unsubscribeLang = Lang.getInstance().subscribe((lang: SupportedLanguage): void => {
       self.effectiveLang = lang;
     });
+    // 「代理」行的副标题要能区分「没配代理」和「配了但停用」，所以进页面就读一次列表；
+    // 不进 reducer 初始状态是因为只有这一行用它，别让通知/存储分区也背上一个请求。
+    this.onDispatch(new LoadProxies());
   }
 
   aboutToDisappear(): void {
@@ -203,11 +211,19 @@ export struct SettingsPage {
               this.PrivacyCardView()
             }
 
-            if (this.showsCard('storage')) {
+            if (this.showsCard('storage') || this.showsCard('proxy')) {
               if (this.showsSectionTitle()) {
                 this.SectionTitle(this.t('DATA AND STORAGE'))
               }
-              this.StorageCardView()
+              if (this.showsCard('storage')) {
+                this.StorageCardView()
+              }
+              if (this.showsCard('proxy')) {
+                Column() {
+                  this.ProxyCardView()
+                }
+                .margin({ top: this.getTheme().spacing.md })
+              }
             }
 
             if (this.showsCard('appearance')) {
@@ -269,6 +285,16 @@ export struct SettingsPage {
           onDispatch: this.onDispatch,
           onBack: (): void => {
             this.onDispatch(new ClosePrivacyPage());
+          }
+        })
+      }
+
+      if (this.uiState.showProxyPage) {
+        ProxySubPage({
+          uiState: this.uiState,
+          onDispatch: this.onDispatch,
+          onBack: (): void => {
+            this.onDispatch(new CloseProxyPage());
           }
         })
       }
@@ -592,6 +618,46 @@ export struct SettingsPage {
     .borderRadius(this.getTheme().radius.md)
     .onClick((): void => {
       this.onDispatch(new OpenPrivacyPage());
+    })
+  }
+
+  /** PROXY-101：TGX 的「代理」行落在数据与存储分区，副标题即当前启用态。 */
+  @Builder
+  ProxyCardView() {
+    Row() {
+      Image($r('app.media.ic_link'))
+        .width(22)
+        .height(22)
+        .fillColor(this.getTheme().colors.accent)
+        .margin({ right: this.getTheme().spacing.sm })
+
+      Column() {
+        Text(this.t('Proxies'))
+          .fontSize(this.getTheme().typography.body.fontSize)
+          .fontColor(this.getTheme().colors.textPrimary)
+
+        // 读回来之前不说「点按设置」：那一刻「没配代理」和「还没查到」是两回事。
+        Text(this.uiState.isLoadingProxies && this.uiState.proxyItems.length === 0
+          ? this.t('Loading...')
+          : this.t(proxyRowSummary(this.uiState.proxyItems)))
+          .fontSize(this.getTheme().typography.footnote.fontSize)
+          .fontColor(this.getTheme().colors.textSecondary)
+          .margin({ top: this.getTheme().spacing.xs })
+      }
+      .alignItems(HorizontalAlign.Start)
+      .layoutWeight(1)
+
+      Image($r('app.media.ic_chevron_right'))
+        .width(18)
+        .height(18)
+        .fillColor(this.getTheme().colors.textSecondary)
+    }
+    .width('100%')
+    .padding(this.getTheme().spacing.md)
+    .backgroundColor(this.getTheme().colors.surface)
+    .borderRadius(this.getTheme().radius.md)
+    .onClick((): void => {
+      this.onDispatch(new OpenProxyPage());
     })
   }
 

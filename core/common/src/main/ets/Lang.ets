@@ -157,7 +157,33 @@ const EN_DICTIONARY: Record<string, string> = {
   'Nobody': 'Nobody',
   'Custom': 'Custom',
   'Unknown': 'Unknown',
-  'Tap a row to change who can see it.': 'Tap a row to change who can see it.'
+  'Tap a row to change who can see it.': 'Tap a row to change who can see it.',
+
+  // Network proxies (PROXY-101)
+  'Proxies': 'Proxies',
+  'Tap to set up': 'Tap to set up',
+  'Proxy Disabled': 'Disabled',
+  'Do Not Use Proxy': 'Do Not Use Proxy',
+  'No proxies set up yet. Tap Add Proxy below.': 'No proxies set up yet. Tap Add Proxy below.',
+  'Tap a proxy to route Telegram through it.': 'Tap a proxy to route Telegram through it.',
+  'Add Proxy': 'Add Proxy',
+  'Edit Proxy': 'Edit Proxy',
+  'Proxy Type': 'Proxy Type',
+  'Server Address': 'Server Address',
+  'Port': 'Port',
+  'Username': 'Username',
+  'Password': 'Password',
+  'Secret (hex)': 'Secret (hex)',
+  'Comment': 'Comment (optional)',
+  'Optional': 'Optional',
+  'HTTP Only': 'HTTP Only',
+  'Enable Proxy': 'Enable Proxy',
+  'Route Telegram traffic through this proxy now.': 'Route Telegram traffic through this proxy now.',
+  'Server address required': 'Enter the proxy server address',
+  'Port must be 1-65535': 'Port must be a number from 1 to 65535',
+  'Secret must be hexadecimal': 'Secret must be hexadecimal, e.g. ee1234…',
+  'Remove proxy': 'Remove proxy',
+  'Delete this proxy configuration?': 'Delete this proxy configuration?'
 };
 
 const ZH_DICTIONARY: Record<string, string> = {
@@ -237,7 +263,33 @@ const ZH_DICTIONARY: Record<string, string> = {
   'Logging out...': '正在退出登录...',
   'English': 'English',
   'Simplified Chinese': '简体中文',
-  'Chinese': '简体中文'
+  'Chinese': '简体中文',
+
+  // Network proxies (PROXY-101)
+  'Proxies': '代理',
+  'Tap to set up': '点按设置',
+  'Proxy Disabled': '已停用',
+  'Do Not Use Proxy': '不使用代理',
+  'No proxies set up yet. Tap Add Proxy below.': '尚未添加代理，可点按下方「添加代理」。',
+  'Tap a proxy to route Telegram through it.': '点按某个代理即可让 Telegram 走它。',
+  'Add Proxy': '添加代理',
+  'Edit Proxy': '编辑代理',
+  'Proxy Type': '代理类型',
+  'Server Address': '服务器地址',
+  'Port': '端口',
+  'Username': '用户名',
+  'Password': '密码',
+  'Secret (hex)': '密钥（十六进制）',
+  'Comment': '备注（可选）',
+  'Optional': '可选',
+  'HTTP Only': '仅 HTTP',
+  'Enable Proxy': '启用代理',
+  'Route Telegram traffic through this proxy now.': '保存后立即让 Telegram 走这个代理。',
+  'Server address required': '请填写代理服务器地址',
+  'Port must be 1-65535': '端口需为 1 到 65535 之间的数字',
+  'Secret must be hexadecimal': '密钥需为十六进制字符串，例如 ee1234…',
+  'Remove proxy': '移除代理',
+  'Delete this proxy configuration?': '确定删除这条代理配置吗？'
 };
 
 export class Lang {

@@ -66,7 +66,23 @@ import {
   encodeSetUserPrivacySettingRules,
   UserPrivacySettingRules,
   TdUserPrivacySettingRule,
-  decodeUserPrivacySettingRules
+  decodeUserPrivacySettingRules,
+  AddedProxies,
+  AddedProxy,
+  DisableProxy,
+  EditProxy,
+  EnableProxy,
+  GetProxies,
+  RemoveProxy,
+  AddProxy,
+  ProxyValue,
+  decodeAddedProxies,
+  encodeAddProxy,
+  encodeDisableProxy,
+  encodeEditProxy,
+  encodeEnableProxy,
+  encodeGetProxies,
+  encodeRemoveProxy
 } from '@tgx/core-td-api-generated';
 import { TdPendingRequest, TdWireObject } from '@tgx/td-gateway';
 import { ReducerEnv, ReducerResult } from '@tgx/feature-template';
@@ -90,6 +106,14 @@ import {
   toUserPrivacySetting
 } from '../model/PrivacySettings';
 import {
+  PROXY_NEW_ID,
+  ProxyForm,
+  ProxyItem,
+  proxyEnabledCount,
+  proxyItemFromAdded,
+  proxyValueFromForm
+} from '../model/ProxySettings';
+import {
   ActiveSessionsLoaded,
   ActiveSessionsLoadFailed,
   CacheCleared,
@@ -110,7 +134,8 @@ import {
   SetErrorMessage,
   SettingsIntent,
   StorageStatsLoaded,
-  UserProfileData
+  UserProfileData,
+  ProxiesLoaded
 } from '../contract/SettingsIntent';
 import {
   ClearCacheEffect,
@@ -129,7 +154,12 @@ import {
   TerminateAllOtherSessionsEffect,
   TerminateSessionEffect,
   LoadPrivacySettingsEffect,
-  SetPrivacySettingEffect
+  SetPrivacySettingEffect,
+  LoadProxiesEffect,
+  EnableProxyEffect,
+  DisableProxyEffect,
+  SaveProxyEffect,
+  RemoveProxyEffect
 } from '../contract/SettingsEffect';
 import { settingsReducer } from '../reducer/SettingsReducer';
 import { Theme, ThemeManager } from '@tgx/core-design-system';
@@ -390,6 +420,32 @@ export class SettingsCoordinator {
       case 'setPrivacySetting': {
         const privacyEffect: SetPrivacySettingEffect = effect as SetPrivacySettingEffect;
         this.handleSetPrivacySetting(privacyEffect.key, privacyEffect.choice);
+        break;
+      }
+
+      case 'loadProxies':
+        this.handleLoadProxies();
+        break;
+
+      case 'enableProxy': {
+        const enableEffect: EnableProxyEffect = effect as EnableProxyEffect;
+        this.handleEnableProxy(enableEffect.proxyId);
+        break;
+      }
+
+      case 'disableProxy':
+        this.handleDisableProxy();
+        break;
+
+      case 'saveProxy': {
+        const saveEffect: SaveProxyEffect = effect as SaveProxyEffect;
+        this.handleSaveProxy(saveEffect.form);
+        break;
+      }
+
+      case 'removeProxy': {
+        const removeEffect: RemoveProxyEffect = effect as RemoveProxyEffect;
+        this.handleRemoveProxy(removeEffect.proxyId);
         break;
       }
 
@@ -1228,5 +1284,202 @@ export class SettingsCoordinator {
       return `Unable to ${action} privacy settings. Check your connection.`;
     }
     return `Unable to ${action} privacy settings. Please try again.`;
+  }
+
+  // ---- PROXY-101 网络代理 ----
+
+  private handleLoadProxies(): void {
+    this.loadProxies();
+  }
+
+  /**
+   * 读列表。
+   * 单条识别不出代理类型时丢掉那一行而不是整屏报错：TDLib 的 `proxyType` 是联合，
+   * 版本差异只会让一条行变未知，其余行照常可用。
+   */
+  private async loadProxies(): Promise<void> {
+    try {
+      const result: Result<ProxyItem[], AppError> = await this.fetchProxyItems();
+      if (this.destroyed) {
+        return;
+      }
+      if (result.ok) {
+        this.dispatch(new ProxiesLoaded(result.value));
+        return;
+      }
+      if (result.err) {
+        this.logger.logError(TAG, result.error);
+        this.dispatch(new ProxiesLoaded([]));
+        this.dispatch(new SetErrorMessage(this.proxyErrorMessage(result.error, 'load')));
+      }
+    } catch (e) {
+      if (this.destroyed) {
+        return;
+      }
+      const cause: string = e instanceof Error ? e.name : 'non-error';
+      const error: AppError = AppErrors.unknown(
+        'settings-proxy-load',
+        'Unexpected proxy list load failure',
+        cause
+      );
+      this.logger.logError(TAG, error);
+      this.dispatch(new ProxiesLoaded([]));
+      this.dispatch(new SetErrorMessage(this.proxyErrorMessage(error, 'load')));
+    }
+  }
+
+  private handleEnableProxy(proxyId: number): void {
+    const request: EnableProxy = new EnableProxy();
+    request.proxy_id = proxyId;
+    this.writeProxies('enableProxy', encodeEnableProxy(request) as TdWireObject, `id=${proxyId}`);
+  }
+
+  private handleDisableProxy(): void {
+    const request: DisableProxy = new DisableProxy();
+    this.writeProxies('disableProxy', encodeDisableProxy(request) as TdWireObject, 'none');
+  }
+
+  private handleRemoveProxy(proxyId: number): void {
+    const request: RemoveProxy = new RemoveProxy();
+    request.proxy_id = proxyId;
+    this.writeProxies('removeProxy', encodeRemoveProxy(request) as TdWireObject, `id=${proxyId}`);
+  }
+
+  /**
+   * 新增 / 编辑共用一条路径：表单里带 id 就是 editProxy，PROXY_NEW_ID 就是 addProxy。
+   * `enable` 取表单的「立即启用」，所以「添加并启用」是一条 addProxy(enable=true)，
+   * 不需要再补一发 enableProxy（TDLib 保证两者原子）。
+   */
+  private handleSaveProxy(form: ProxyForm): void {
+    const proxy: ProxyValue = proxyValueFromForm(form);
+    if (form.id === PROXY_NEW_ID) {
+      const request: AddProxy = new AddProxy();
+      request.proxy = proxy;
+      request.enable = form.enable;
+      request.comment = form.comment.trim();
+      this.writeProxies(
+        'addProxy',
+        encodeAddProxy(request) as TdWireObject,
+        `${proxy.server}:${proxy.port},enable=${request.enable}`
+      );
+      return;
+    }
+    const edit: EditProxy = new EditProxy();
+    edit.proxy_id = form.id;
+    edit.proxy = proxy;
+    edit.enable = form.enable;
+    edit.comment = form.comment.trim();
+    this.writeProxies(
+      'editProxy',
+      encodeEditProxy(edit) as TdWireObject,
+      `id=${edit.proxy_id},${proxy.server}:${proxy.port},enable=${edit.enable}`
+    );
+  }
+
+  /** 一条写请求 + 回读列表：单选态只有 TDLib 知道真相，不做乐观更新。 */
+  private async writeProxies(
+    op: string,
+    payload: TdWireObject,
+    detail: string
+  ): Promise<void> {
+    this.logger.info(TAG, 'proxy_write', `${op} ${detail}`);
+    try {
+      const pendingResult: Result<TdPendingRequest, AppError> = this.scope.request(op, payload);
+      if (pendingResult.err) {
+        if (!this.destroyed) {
+          this.logger.logError(TAG, pendingResult.error);
+          this.dispatch(new SetErrorMessage(this.proxyErrorMessage(pendingResult.error, op)));
+        }
+        return;
+      }
+      if (!pendingResult.ok) {
+        if (!this.destroyed) {
+          this.dispatch(new SetErrorMessage(`Unable to ${op}. Please try again.`));
+        }
+        return;
+      }
+      const response: Result<TdWireObject, AppError> = await pendingResult.value.promise;
+      if (response.err) {
+        if (!this.destroyed) {
+          this.logger.logError(TAG, response.error);
+          this.dispatch(new SetErrorMessage(this.proxyErrorMessage(response.error, op)));
+        }
+        return;
+      }
+      if (this.destroyed) {
+        return;
+      }
+      await this.loadProxies();
+    } catch (e) {
+      if (this.destroyed) {
+        return;
+      }
+      const cause: string = e instanceof Error ? e.name : 'non-error';
+      const error: AppError = AppErrors.unknown(
+        'settings-proxy-write',
+        `Unexpected ${op} failure`,
+        cause
+      );
+      this.logger.logError(TAG, error);
+      this.dispatch(new SetErrorMessage(this.proxyErrorMessage(error, op)));
+    }
+  }
+
+  private async fetchProxyItems(): Promise<Result<ProxyItem[], AppError>> {
+    const request: GetProxies = new GetProxies();
+    const pendingResult: Result<TdPendingRequest, AppError> = this.scope.request(
+      'getProxies',
+      encodeGetProxies(request) as TdWireObject
+    );
+    if (pendingResult.ok) {
+      const response: Result<TdWireObject, AppError> = await pendingResult.value.promise;
+      if (response.ok) {
+        const added: AddedProxies | null = decodeAddedProxies(response.value as TdJsonRaw);
+        if (added === null) {
+          return err<ProxyItem[], AppError>(
+            AppErrors.internal('settings_proxy_decode', 'TDLib proxy list could not be decoded')
+          );
+        }
+        const items: ProxyItem[] = [];
+        let skipped: number = 0;
+        for (let i = 0; i < added.proxies.length; i++) {
+          const row: AddedProxy = added.proxies[i];
+          const item: ProxyItem | null = proxyItemFromAdded(row);
+          if (item === null) {
+            skipped = skipped + 1;
+            continue;
+          }
+          items.push(item);
+        }
+        this.logger.info(
+          TAG,
+          'proxy_list_read',
+          `count=${items.length},skipped=${skipped},enabled=${proxyEnabledCount(items)}`
+        );
+        return ok<ProxyItem[], AppError>(items);
+      }
+      if (response.err) {
+        return err<ProxyItem[], AppError>(response.error);
+      }
+      return err<ProxyItem[], AppError>(
+        AppErrors.internal('settings_proxy_response', 'TDLib returned no proxy list result')
+      );
+    }
+    if (pendingResult.err) {
+      return err<ProxyItem[], AppError>(pendingResult.error);
+    }
+    return err<ProxyItem[], AppError>(
+      AppErrors.internal('settings_proxy_request', 'TDLib proxy list request was not created')
+    );
+  }
+
+  private proxyErrorMessage(error: AppError, action: string): string {
+    if (error.kind === 'tdlib' && error.code === 'too_many_requests') {
+      return 'Too many requests. Please wait and try again.';
+    }
+    if (error.kind === 'network') {
+      return `Unable to ${action} proxy. Check your connection.`;
+    }
+    return `Unable to ${action} proxy. Please try again.`;
   }
 }

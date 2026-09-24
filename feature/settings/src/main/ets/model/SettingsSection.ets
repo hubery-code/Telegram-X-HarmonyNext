@@ -15,15 +15,17 @@ export type SettingsSectionKey = 'all' | 'notifications' | 'data_and_storage';
 
 /** 分区页内渲染的卡片块。 */
 export type SettingsCardKey =
-  | 'profile' | 'notifications' | 'devices' | 'privacy' | 'storage'
+  | 'profile' | 'notifications' | 'devices' | 'privacy' | 'storage' | 'proxy'
   | 'appearance' | 'language' | 'about' | 'logout';
 
 const ALL_CARDS: SettingsCardKey[] = [
-  'profile', 'notifications', 'devices', 'privacy', 'storage', 'appearance', 'language', 'about', 'logout'
+  'profile', 'notifications', 'devices', 'privacy', 'storage', 'proxy',
+  'appearance', 'language', 'about', 'logout'
 ];
 
 const NOTIFICATIONS_CARDS: SettingsCardKey[] = ['notifications'];
-const DATA_STORAGE_CARDS: SettingsCardKey[] = ['storage'];
+// TGX 把「代理」放在 Data and Storage 的 Connection 组里，故与存储同分区。
+const DATA_STORAGE_CARDS: SettingsCardKey[] = ['storage', 'proxy'];
 
 /** 外部 section 字符串 → 受限键；未知值退回 'all'。 */
 export function parseSettingsSection(raw: string): SettingsSectionKey {

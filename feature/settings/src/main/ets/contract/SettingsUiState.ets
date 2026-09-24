@@ -14,6 +14,7 @@ import { NotificationScopeKey } from '../model/NotificationSettings';
 import { ActiveSessionItem } from '../model/ActiveSessionItem';
 import { SettingsSectionKey } from '../model/SettingsSection';
 import { PrivacySettingItem, PrivacySettingKey } from '../model/PrivacySettings';
+import { ProxyItem } from '../model/ProxySettings';
 
 export type SettingsThemeMode = ThemePreference;
 
@@ -60,6 +61,14 @@ export interface SettingsUiStateOptions {
   readonly isLoadingPrivacy?: boolean;
   /** SELF-102：正在写回的隐私项；null 表示空闲。 */
   readonly updatingPrivacyKey?: PrivacySettingKey | null;
+  /** PROXY-101：是否展示「代理」子页。 */
+  readonly showProxyPage?: boolean;
+  /** PROXY-101：已添加的代理列表（TDLib addedProxies 的页面投影）。 */
+  readonly proxyItems?: ProxyItem[];
+  /** PROXY-101：是否正在读取代理列表。 */
+  readonly isLoadingProxies?: boolean;
+  /** PROXY-101：正在写回的代理 id；null 表示空闲，0 是「不使用代理」行。 */
+  readonly updatingProxyId?: number | null;
 }
 
 export class SettingsUiState implements UiState {
@@ -108,6 +117,14 @@ export class SettingsUiState implements UiState {
   readonly isLoadingPrivacy: boolean;
   /** SELF-102：正在写回的隐私项。 */
   readonly updatingPrivacyKey: PrivacySettingKey | null;
+  /** PROXY-101：是否展示「代理」子页。 */
+  readonly showProxyPage: boolean;
+  /** PROXY-101：代理列表（TDLib addedProxies 的页面投影）。 */
+  readonly proxyItems: ProxyItem[];
+  /** PROXY-101：是否正在读取代理列表。 */
+  readonly isLoadingProxies: boolean;
+  /** PROXY-101：正在写回的代理 id；null 表示空闲，0 是「不使用代理」行。 */
+  readonly updatingProxyId: number | null;
 
   constructor(
     userId: number,
@@ -142,7 +159,11 @@ export class SettingsUiState implements UiState {
     showPrivacyPage: boolean = false,
     privacyItems: readonly PrivacySettingItem[] = [],
     isLoadingPrivacy: boolean = false,
-    updatingPrivacyKey: PrivacySettingKey | null = null
+    updatingPrivacyKey: PrivacySettingKey | null = null,
+    showProxyPage: boolean = false,
+    proxyItems: ProxyItem[] = [],
+    isLoadingProxies: boolean = false,
+    updatingProxyId: number | null = null
   ) {
     this.userId = userId;
     this.displayName = displayName;
@@ -177,6 +198,10 @@ export class SettingsUiState implements UiState {
     this.privacyItems = privacyItems;
     this.isLoadingPrivacy = isLoadingPrivacy;
     this.updatingPrivacyKey = updatingPrivacyKey;
+    this.showProxyPage = showProxyPage;
+    this.proxyItems = proxyItems;
+    this.isLoadingProxies = isLoadingProxies;
+    this.updatingProxyId = updatingProxyId;
   }
 
   static initial(
@@ -263,7 +288,11 @@ export class SettingsUiState implements UiState {
       options.showPrivacyPage !== undefined ? options.showPrivacyPage : this.showPrivacyPage,
       options.privacyItems !== undefined ? options.privacyItems : this.privacyItems,
       options.isLoadingPrivacy !== undefined ? options.isLoadingPrivacy : this.isLoadingPrivacy,
-      options.updatingPrivacyKey !== undefined ? options.updatingPrivacyKey : this.updatingPrivacyKey
+      options.updatingPrivacyKey !== undefined ? options.updatingPrivacyKey : this.updatingPrivacyKey,
+      options.showProxyPage !== undefined ? options.showProxyPage : this.showProxyPage,
+      options.proxyItems !== undefined ? options.proxyItems : this.proxyItems,
+      options.isLoadingProxies !== undefined ? options.isLoadingProxies : this.isLoadingProxies,
+      options.updatingProxyId !== undefined ? options.updatingProxyId : this.updatingProxyId
     );
   }
 }

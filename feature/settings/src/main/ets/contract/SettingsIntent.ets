@@ -12,6 +12,7 @@ import { SettingsThemeMode } from './SettingsUiState';
 import { NotificationScopeKey } from '../model/NotificationSettings';
 import { ActiveSessionItem } from '../model/ActiveSessionItem';
 import { PrivacyChoice, PrivacySettingItem, PrivacySettingKey } from '../model/PrivacySettings';
+import { ProxyForm, ProxyItem } from '../model/ProxySettings';
 
 export interface UserProfileData {
   readonly userId: number;
@@ -357,6 +358,61 @@ export class PrivacySettingUpdateFailed implements Intent {
   }
 }
 
+/** PROXY-101：打开「代理」子页（同时触发列表读取）。 */
+export class OpenProxyPage implements Intent {
+  readonly kind: 'openProxyPage' = 'openProxyPage';
+}
+
+/** PROXY-101：关闭「代理」子页。 */
+export class CloseProxyPage implements Intent {
+  readonly kind: 'closeProxyPage' = 'closeProxyPage';
+}
+
+/** PROXY-101：读取已添加的代理列表（getProxies）。 */
+export class LoadProxies implements Intent {
+  readonly kind: 'loadProxies' = 'loadProxies';
+}
+
+/** PROXY-101：列表读取完成；写回后也以该意图回灌，界面恒以 TDLib 返回值为准。 */
+export class ProxiesLoaded implements Intent {
+  readonly kind: 'proxiesLoaded' = 'proxiesLoaded';
+  readonly items: ProxyItem[];
+
+  constructor(items: ProxyItem[]) {
+    this.items = items;
+  }
+}
+
+/** PROXY-101：单选启用某个代理；`proxyId` 为 `PROXY_NONE_ID` 表示「不使用代理」。 */
+export class SelectProxy implements Intent {
+  readonly kind: 'selectProxy' = 'selectProxy';
+  readonly proxyId: number;
+
+  constructor(proxyId: number) {
+    this.proxyId = proxyId;
+  }
+}
+
+/** PROXY-101：保存代理；`form.id === PROXY_NEW_ID` 为新增，否则为编辑该行。 */
+export class SaveProxy implements Intent {
+  readonly kind: 'saveProxy' = 'saveProxy';
+  readonly form: ProxyForm;
+
+  constructor(form: ProxyForm) {
+    this.form = form;
+  }
+}
+
+/** PROXY-101：删除代理（页面已二次确认）。 */
+export class RemoveProxyRequested implements Intent {
+  readonly kind: 'removeProxyRequested' = 'removeProxyRequested';
+  readonly proxyId: number;
+
+  constructor(proxyId: number) {
+    this.proxyId = proxyId;
+  }
+}
+
 export type SettingsIntent =
   | LoadUserProfile
   | ToggleNotifications
@@ -399,4 +455,11 @@ export type SettingsIntent =
   | TogglePrivacySetting
   | PrivacySettingUpdated
   | PrivacySettingUpdateFailed
+  | OpenProxyPage
+  | CloseProxyPage
+  | LoadProxies
+  | ProxiesLoaded
+  | SelectProxy
+  | SaveProxy
+  | RemoveProxyRequested
   | SectionFocused;
