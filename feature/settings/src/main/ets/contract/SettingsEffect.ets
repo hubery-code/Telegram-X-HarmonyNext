@@ -11,7 +11,7 @@ import { Effect } from '@tgx/feature-template';
 import { NotificationScopeKey } from '../model/NotificationSettings';
 import { PrivacyChoice, PrivacySettingKey } from '../model/PrivacySettings';
 import { ProxyForm } from '../model/ProxySettings';
-import { AutoDownloadPolicy, DataSaverSettings } from '@tgx/core-domain';
+import { AutoDownloadPolicy, DataSaverSettings, DownloadLimitsByNetwork } from '@tgx/core-domain';
 
 export class LoadProfileEffect implements Effect {
   readonly kind: 'loadProfile' = 'loadProfile';
@@ -196,6 +196,27 @@ export class PersistDataSaverSettingsEffect implements Effect {
   }
 }
 
+/**
+ * AUTODL-103：读取按网络档的自动下载限制（本地偏好，同步返回）。
+ * 第三份独立设置：与前两者各自读盘、各自失败，不共用一个意图。
+ */
+export class LoadDownloadLimitsEffect implements Effect {
+  readonly kind: 'loadDownloadLimits' = 'loadDownloadLimits';
+}
+
+/**
+ * AUTODL-103：写回整份限制。
+ * 同样是「勾选即落盘」；一写就是三档六格，避免只写半套留下不一致的状态。
+ */
+export class PersistDownloadLimitsEffect implements Effect {
+  readonly kind: 'persistDownloadLimits' = 'persistDownloadLimits';
+  readonly limits: DownloadLimitsByNetwork;
+
+  constructor(limits: DownloadLimitsByNetwork) {
+    this.limits = limits;
+  }
+}
+
 export type SettingsEffect =
   | LoadProfileEffect
   | LoadNotificationSettingsEffect
@@ -221,4 +242,6 @@ export type SettingsEffect =
   | LoadAutoDownloadPolicyEffect
   | PersistAutoDownloadPolicyEffect
   | LoadDataSaverSettingsEffect
-  | PersistDataSaverSettingsEffect;
+  | PersistDataSaverSettingsEffect
+  | LoadDownloadLimitsEffect
+  | PersistDownloadLimitsEffect;

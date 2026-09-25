@@ -27,6 +27,8 @@ import {
   AutoDownloadPolicyStore,
   DataSaverSettings,
   DataSaverStore,
+  DownloadLimitsByNetwork,
+  DownloadLimitsStore,
   UserRegistry
 } from '@tgx/core-domain';
 import {
@@ -144,7 +146,8 @@ import {
   ProxiesLoaded,
   LoadAutoDownloadPolicy,
   AutoDownloadPolicyLoaded,
-  DataSaverSettingsLoaded
+  DataSaverSettingsLoaded,
+  DownloadLimitsLoaded
 } from '../contract/SettingsIntent';
 import {
   ClearCacheEffect,
@@ -172,7 +175,9 @@ import {
   LoadAutoDownloadPolicyEffect,
   PersistAutoDownloadPolicyEffect,
   LoadDataSaverSettingsEffect,
-  PersistDataSaverSettingsEffect
+  PersistDataSaverSettingsEffect,
+  LoadDownloadLimitsEffect,
+  PersistDownloadLimitsEffect
 } from '../contract/SettingsEffect';
 import { settingsReducer } from '../reducer/SettingsReducer';
 import { Theme, ThemeManager } from '@tgx/core-design-system';
@@ -216,6 +221,11 @@ export class SettingsCoordinator {
    * 没注入时页面显默认档（只勾「漫游」），与 Android 首装一致。
    */
   private dataSaverStore: DataSaverStore | null = null;
+  /**
+   * AUTODL-103：按网络档的自动下载限制落盘端口。同样 setter 注入、同样可选 ——
+   * 没注入时页面显 Android 默认（Wi-Fi 50MB / 移动 15MB / 漫游 5MB）。
+   */
+  private downloadLimitsStore: DownloadLimitsStore | null = null;
   private destroyed: boolean = false;
 
   /** 注入策略存储；必须在 start() 之前调用。 */
@@ -226,6 +236,11 @@ export class SettingsCoordinator {
   /** 注入省流量设置存储；必须在 start() 之前调用。 */
   setDataSaverStore(store: DataSaverStore | null): void {
     this.dataSaverStore = store;
+  }
+
+  /** 注入按网络档的限制存储；必须在 start() 之前调用。 */
+  setDownloadLimitsStore(store: DownloadLimitsStore | null): void {
+    this.downloadLimitsStore = store;
   }
 
   constructor(
@@ -502,6 +517,16 @@ export class SettingsCoordinator {
       case 'persistDataSaverSettings': {
         const persistEffect: PersistDataSaverSettingsEffect = effect as PersistDataSaverSettingsEffect;
         this.handlePersistDataSaverSettings(persistEffect.settings);
+        break;
+      }
+
+      case 'loadDownloadLimits':
+        this.handleLoadDownloadLimits();
+        break;
+
+      case 'persistDownloadLimits': {
+        const persistEffect: PersistDownloadLimitsEffect = effect as PersistDownloadLimitsEffect;
+        this.handlePersistDownloadLimits(persistEffect.limits);
         break;
       }
 
@@ -1600,5 +1625,35 @@ export class SettingsCoordinator {
       restored !== null ? restored : DataSaverSettings.defaultSettings()
     ));
     this.dispatch(new SetErrorMessage('Unable to save data saver settings.'));
+  }
+
+  // ---- AUTODL-103 按网络类型的自动下载限制 ----
+
+  /** 读限制；端口没注入或盘上没值都回落 Android 默认（Wi-Fi 50MB / 移动 15MB / 漫游 5MB）。 */
+  private handleLoadDownloadLimits(): void {
+    const store: DownloadLimitsStore | null = this.downloadLimitsStore;
+    const loaded: DownloadLimitsByNetwork | null = store !== null ? store.load() : null;
+    this.dispatch(new DownloadLimitsLoaded(
+      loaded !== null ? loaded : DownloadLimitsByNetwork.defaultLimits()
+    ));
+  }
+
+  /**
+   * 写限制。回滚同理：副标题显着「超过 1 MB」、盘上还是 50MB，聊天页按盘上的值放行，
+   * 用户会以为限制没生效而不是没存住。
+   */
+  private handlePersistDownloadLimits(limits: DownloadLimitsByNetwork): void {
+    const store: DownloadLimitsStore | null = this.downloadLimitsStore;
+    if (store === null) {
+      return;
+    }
+    if (store.save(limits)) {
+      return;
+    }
+    const restored: DownloadLimitsByNetwork | null = store.load();
+    this.dispatch(new DownloadLimitsLoaded(
+      restored !== null ? restored : DownloadLimitsByNetwork.defaultLimits()
+    ));
+    this.dispatch(new SetErrorMessage('Unable to save download limits.'));
   }
 }

@@ -13,15 +13,12 @@
 import { describe, it, expect } from '@ohos/hypium';
 import {
   AUTO_DOWNLOAD_KINDS,
-  AUTO_DOWNLOAD_SIZE_LIMIT_BYTES,
   AutoDownloadChatScope,
   AutoDownloadFlags,
   AutoDownloadMediaKind,
   AutoDownloadPolicy,
   autoDownloadScopeForChatKind,
-  canAutoDownloadMedia,
-  isAutoDownloadSizeAllowed,
-  shouldAutoDownloadMedia
+  canAutoDownloadMedia
 } from '../../main/ets/media/AutoDownloadPolicy';
 
 function flagsOf(photo: boolean, voice: boolean, videoNote: boolean,
@@ -151,47 +148,8 @@ export default function autoDownloadPolicyTest() {
       expect(canAutoDownloadMedia(policy, 'unknown', 'photo')).assertTrue();
     });
 
-    it('sizeGate_onlyLimitsContainerKinds', 0, () => {
-      const limit: number = AUTO_DOWNLOAD_SIZE_LIMIT_BYTES;
-      expect(isAutoDownloadSizeAllowed('video', limit)).assertTrue();
-      expect(isAutoDownloadSizeAllowed('video', limit + 1)).assertFalse();
-      expect(isAutoDownloadSizeAllowed('file', 2 * limit)).assertFalse();
-      expect(isAutoDownloadSizeAllowed('audio', 2 * limit)).assertFalse();
-      // 照片 / 语音 / 视频便签 / 动图本身有限，不受尺寸闸门约束
-      expect(isAutoDownloadSizeAllowed('photo', 2 * limit)).assertTrue();
-      expect(isAutoDownloadSizeAllowed('voice', 2 * limit)).assertTrue();
-      expect(isAutoDownloadSizeAllowed('videoNote', 2 * limit)).assertTrue();
-      expect(isAutoDownloadSizeAllowed('gif', 2 * limit)).assertTrue();
-    });
-
-    it('sizeGate_allowsWhenServerGivesNoSize', 0, () => {
-      // size<=0 表示服务端没给尺寸（远端未同步完），按放行处理而不是当成 0 字节超大
-      expect(isAutoDownloadSizeAllowed('video', 0)).assertTrue();
-      expect(isAutoDownloadSizeAllowed('file', -1)).assertTrue();
-      expect(isAutoDownloadSizeAllowed('audio', NaN)).assertTrue();
-      expect(isAutoDownloadSizeAllowed('video', Infinity)).assertTrue();
-    });
-
-    it('shouldAutoDownload_needsBothCheckAndSize', 0, () => {
-      const policy: AutoDownloadPolicy = AutoDownloadPolicy.defaultPolicy()
-        .withFlags('channel', new AutoDownloadFlags());
-      const limit: number = AUTO_DOWNLOAD_SIZE_LIMIT_BYTES;
-      // 默认勾了照片 → 小照片放行
-      expect(shouldAutoDownloadMedia(policy, 'private', 'photo', 1024)).assertTrue();
-      // 默认没勾视频 → 再小也不自动下
-      expect(shouldAutoDownloadMedia(policy, 'private', 'video', 1024)).assertFalse();
-      // 频道全关 → 连照片都不下
-      expect(shouldAutoDownloadMedia(policy, 'channel', 'photo', 1024)).assertFalse();
-      // 群组分区把视频打开后，尺寸闸门仍然生效
-      const videoOn: AutoDownloadPolicy = policy.withFlags('group', AutoDownloadFlags.defaultFlags().with('video', true));
-      expect(shouldAutoDownloadMedia(videoOn, 'group', 'video', limit)).assertTrue();
-      expect(shouldAutoDownloadMedia(videoOn, 'group', 'video', limit + 1)).assertFalse();
-      // 策略为 null 时走的是「放行 + 闸门」，与聊天页 provider 未注入的语义一致
-      expect(shouldAutoDownloadMedia(null, 'group', 'file', limit + 1)).assertFalse();
-      expect(shouldAutoDownloadMedia(null, 'group', 'photo', limit + 1)).assertTrue();
-      // NaN 尺寸：闸门放行，所以结果只由勾选决定
-      expect(shouldAutoDownloadMedia(policy, 'private', 'video', NaN)).assertFalse();
-      expect(shouldAutoDownloadMedia(videoOn, 'group', 'video', NaN)).assertTrue();
-    });
+    // AUTODL-103：尺寸上限不再是这一层的规则 —— 它按网络档存在
+    // `media/MediaDownloadLimits` 里（Android 的 settings_limit_* 三档），
+    // 由聊天页的下载门在分区勾选之前先判。这里只留「勾选」这一件事。
   });
 }

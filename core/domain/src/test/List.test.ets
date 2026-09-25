@@ -9,6 +9,7 @@ import userRegistryTest from './user/UserRegistry.test';
 import groupRegistryTest from './group/GroupRegistry.test';
 import autoDownloadPolicyTest from './media/AutoDownloadPolicy.test';
 import dataSaverTest from './media/DataSaver.test';
+import mediaDownloadLimitsTest from './media/MediaDownloadLimits.test';
 
 export default function testsuite() {
   chatRegistryTest();
@@ -21,4 +22,6 @@ export default function testsuite() {
   userRegistryTest();
   groupRegistryTest();
   autoDownloadPolicyTest();
+  dataSaverTest();
+  mediaDownloadLimitsTest();
 }

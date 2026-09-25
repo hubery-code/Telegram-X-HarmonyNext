@@ -29,6 +29,7 @@ import { LightTheme, Theme, ThemeManager, parseChatFontSize, CHAT_FONT_SIZE_DEFA
 import { saveChatFontSize } from '../store/SettingsStore';
 import { PreferencesAutoDownloadPolicyStore } from '../store/AutoDownloadStore';
 import { PreferencesDataSaverStore } from '../store/DataSaverStore';
+import { PreferencesDownloadLimitsStore } from '../store/DownloadLimitsStore';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { common } from '@kit.AbilityKit';
 import { AccountDescriptor, AccountScope } from '@tgx/core-account';
@@ -110,7 +111,14 @@ import {
   SelfProfileCoordinator
 } from '@tgx/feature-self';
 import type { TdPendingRequest, TdWireObject } from '@tgx/td-gateway';
-import { AutoDownloadPolicy, ChatRegistry, dataSaverNetworkOfSnapshot, isDataSaverActive } from '@tgx/core-domain';
+import {
+  AutoDownloadPolicy,
+  ChatRegistry,
+  dataSaverNetworkOfSnapshot,
+  DataSaverNetworkType,
+  DownloadLimitsByNetwork,
+  isDataSaverActive
+} from '@tgx/core-domain';
 import { NetworkSnapshot } from '@tgx/platform-ports';
 import { BootstrapResult } from '../Bootstrap';
 import { ScopeAuthAdapter } from '../ScopeAuthAdapter';
@@ -183,6 +191,8 @@ struct Index {
   /** AUTODL-101：设置页写、聊天页读的同一份策略存储（进程内单例，带账号级缓存）。 */
   private autoDownloadStore: PreferencesAutoDownloadPolicyStore | null = null;
   private dataSaverStore: PreferencesDataSaverStore | null = null;
+  /** AUTODL-103：按网络档的自动下载限制（第三套设置，同样按账号隔离）。 */
+  private downloadLimitsStore: PreferencesDownloadLimitsStore | null = null;
   private searchCoordinator: SearchCoordinator | null = null;
   private unsubscribeSearchFn: (() => void) | null = null;
   // PROFILE-101：用户资料页（群聊点头像进入）。
@@ -1033,18 +1043,34 @@ struct Index {
   }
 
   /**
-   * AUTODL-102：此刻省流量是否生效 —— 聊天页下载门的第一句。
-   *
-   * 两个来源都读缓存，所以每条附件调用它都是常数开销：设置走 `DataSaverStore.current()`，
-   * 网络走 `LifecycleCoordinator.lastNetworkSnapshot`（它是全应用唯一的网络观察者）。
-   * bootstrap 还没就绪时快照为 null → 档位 'none' → 只有主开关能拦，
-   * 这比「读不到网络就一律不放行」更符合用户预期：会话页都打开了，Wi-Fi 下不该不下图。
+   * AUTODL-103：当前网络档。读 `LifecycleCoordinator.lastNetworkSnapshot` 的缓存
+   * （它是全应用唯一的网络观察者），不在每条附件上同步问 Kit。
+   * bootstrap 还没就绪时快照为 null → 档位 'none' → 按 Android 的 default 分支落移动那一档。
    */
-  private isDataSaverActiveNow(): boolean {
+  private currentNetworkType(): DataSaverNetworkType {
     const snapshot: NetworkSnapshot | null = this.bootstrapResult === null
       ? null
       : this.bootstrapResult.lifecycle.lastNetworkSnapshot;
-    return isDataSaverActive(this.getDataSaverStore().current(), dataSaverNetworkOfSnapshot(snapshot));
+    return dataSaverNetworkOfSnapshot(snapshot);
+  }
+
+  /** AUTODL-103：按网络档的自动下载限制存储，与策略 / 省流量同一份账号键。 */
+  private getDownloadLimitsStore(): PreferencesDownloadLimitsStore {
+    if (this.downloadLimitsStore === null) {
+      this.downloadLimitsStore = new PreferencesDownloadLimitsStore((): string => this.currentAccountKey);
+    }
+    return this.downloadLimitsStore;
+  }
+
+  /**
+   * AUTODL-102：此刻省流量是否生效 —— 聊天页下载门的第一句。
+   *
+   * 两个来源都读缓存，所以每条附件调用它都是常数开销：设置走 `DataSaverStore.current()`，
+   * 网络走 `currentNetworkType()`。读不到网络时档位是 'none'，只有主开关能拦，
+   * 这比「读不到网络就一律不放行」更符合用户预期：会话页都打开了，Wi-Fi 下不该不下图。
+   */
+  private isDataSaverActiveNow(): boolean {
+    return isDataSaverActive(this.getDataSaverStore().current(), this.currentNetworkType());
   }
 
   private openSettings(): void {
@@ -1072,6 +1098,7 @@ struct Index {
     this.settingsCoordinator = coordinator;
     coordinator.setAutoDownloadStore(this.getAutoDownloadStore());
     coordinator.setDataSaverStore(this.getDataSaverStore());
+    coordinator.setDownloadLimitsStore(this.getDownloadLimitsStore());
     this.unsubscribeSettingsFn = coordinator.subscribe((uiState: SettingsUiState) => {
       this.settingsUiState = uiState;
     });
@@ -1119,6 +1146,9 @@ struct Index {
         // AUTODL-102：省流量是压在策略上面的那一票否决（Android `canAutomaticallyDownload()` 的第一句）。
         // 网络状态读 LifecycleCoordinator 的缓存快照，不在每条附件上同步问 Kit。
         dataSaverActiveProvider: (): boolean => this.isDataSaverActiveNow(),
+        // AUTODL-103：按当前网络档的尺寸上限与类型排除（Android 的第三层，压在分区勾选之前）。
+        downloadLimitsProvider: (): DownloadLimitsByNetwork | null => this.getDownloadLimitsStore().current(),
+        networkTypeProvider: (): DataSaverNetworkType => this.currentNetworkType(),
         // PROFILE-101：群聊点头像 → 压栈用户资料页。
         onOpenUserProfile: (userId: number): void => {
           this.navController.navigateTo({ name: 'userProfile', userId: userId });

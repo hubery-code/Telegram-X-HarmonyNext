@@ -205,6 +205,22 @@ const EN_DICTIONARY: Record<string, string> = {
   'Videos': 'Videos',
   'Music': 'Music',
   'GIFs': 'GIFs',
+
+  // Per-network download limits (AUTODL-103)
+  'Restrict on mobile data': 'Restrict on mobile data',
+  'Restrict on Wi-Fi': 'Restrict on Wi-Fi',
+  'Restrict on roaming': 'Restrict on roaming',
+  'No Photos': 'No Photos',
+  'No Voice messages': 'No Voice messages',
+  'No Video messages': 'No Video messages',
+  'No Videos': 'No Videos',
+  'No Files': 'No Files',
+  'No Music': 'No Music',
+  'No GIFs': 'No GIFs',
+  'Any media exceeding {0}': 'Any media exceeding {0}',
+  'Any media': 'Any media',
+  'No restrictions': 'No restrictions',
+  'No limit': 'No limit',
   'Off': 'Off'
 };
 
@@ -333,6 +349,22 @@ const ZH_DICTIONARY: Record<string, string> = {
   'Videos': '视频',
   'Music': '音乐',
   'GIFs': '动图',
+
+  // Per-network download limits (AUTODL-103)
+  'Restrict on mobile data': '移动网络限制',
+  'Restrict on Wi-Fi': 'Wi-Fi 限制',
+  'Restrict on roaming': '漫游限制',
+  'No Photos': '不下载照片',
+  'No Voice messages': '不下载语音消息',
+  'No Video messages': '不下载视频消息',
+  'No Videos': '不下载视频',
+  'No Files': '不下载文件',
+  'No Music': '不下载音乐',
+  'No GIFs': '不下载动图',
+  'Any media exceeding {0}': '任意媒体超过 {0}',
+  'Any media': '任意媒体',
+  'No restrictions': '无限制',
+  'No limit': '无上限',
   'Off': '关闭'
 };
 

@@ -17,7 +17,9 @@ import {
   AutoDownloadChatScope,
   AutoDownloadMediaKind,
   AutoDownloadPolicy,
-  DataSaverSettings
+  DataSaverNetworkType,
+  DataSaverSettings,
+  DownloadLimitsByNetwork
 } from '@tgx/core-domain';
 
 export interface UserProfileData {
@@ -491,6 +493,59 @@ export class SetDataSaverFlag implements Intent {
   }
 }
 
+/**
+ * AUTODL-103：读取按网络档的自动下载限制。
+ * 子页首帧也要读 —— 三行「按网络类型限制」的副标题就是这份设置的摘要，
+ * 与省流量、自动下载策略各读各的盘（三者存在三个不同的偏好键族里）。
+ */
+export class LoadDownloadLimits implements Intent {
+  readonly kind: 'loadDownloadLimits' = 'loadDownloadLimits';
+}
+
+/** AUTODL-103：限制读取完成；写回后同样以该意图回灌，界面恒以存储返回值为准。 */
+export class DownloadLimitsLoaded implements Intent {
+  readonly kind: 'downloadLimitsLoaded' = 'downloadLimitsLoaded';
+  readonly limits: DownloadLimitsByNetwork;
+
+  constructor(limits: DownloadLimitsByNetwork) {
+    this.limits = limits;
+  }
+}
+
+/**
+ * AUTODL-103：改某一档的尺寸上限。
+ * 带的是档位码（`DOWNLOAD_LIMIT_*`）而不是字节数 —— 档位才是设置的本体，
+ * 「无上限」没有对应的字节值，用码才不会把「无限」写成「0 字节全拦」。
+ */
+export class SetDownloadLimitSize implements Intent {
+  readonly kind: 'setDownloadLimitSize' = 'setDownloadLimitSize';
+  readonly network: DataSaverNetworkType;
+  readonly sizeCode: number;
+
+  constructor(network: DataSaverNetworkType, sizeCode: number) {
+    this.network = network;
+    this.sizeCode = sizeCode;
+  }
+}
+
+/**
+ * AUTODL-103：改某一档额外排除的媒体类型。
+ * 勾选语义与分区面板**相反** —— 这里勾上表示「这一类不自动下」
+ * （Android 的限制面板里那七行是 `No Photos / No Videos / …`）。
+ */
+export class SetDownloadLimitExclusion implements Intent {
+  readonly kind: 'setDownloadLimitExclusion' = 'setDownloadLimitExclusion';
+  readonly network: DataSaverNetworkType;
+  readonly mediaKind: AutoDownloadMediaKind;
+  readonly excluded: boolean;
+
+  constructor(network: DataSaverNetworkType, mediaKind: AutoDownloadMediaKind, excluded: boolean) {
+    this.network = network;
+    this.mediaKind = mediaKind;
+    this.excluded = excluded;
+  }
+}
+
 export type SettingsIntent =
   | LoadUserProfile
   | ToggleNotifications
@@ -548,4 +603,8 @@ export type SettingsIntent =
   | LoadDataSaverSettings
   | DataSaverSettingsLoaded
   | SetDataSaverFlag
+  | LoadDownloadLimits
+  | DownloadLimitsLoaded
+  | SetDownloadLimitSize
+  | SetDownloadLimitExclusion
   | SectionFocused;

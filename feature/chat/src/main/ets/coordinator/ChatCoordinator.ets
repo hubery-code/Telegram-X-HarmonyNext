@@ -161,7 +161,10 @@ import {
   autoDownloadScopeForChatKind,
   AutoDownloadMediaKind,
   AutoDownloadPolicy,
-  shouldAutoDownloadMedia
+  canAutoDownloadMedia,
+  DataSaverNetworkType,
+  DownloadLimitsByNetwork,
+  isMediaWithinDownloadLimits
 } from '@tgx/core-domain';
 import { TdPendingRequest, TdRoutedEvent, TdUpdateFilter, TdUpdateSubscription, TdWireObject, TdWireValue } from '@tgx/td-gateway';
 import { Subscription } from '@tgx/platform-ports';
@@ -460,6 +463,19 @@ export interface ChatCoordinatorOptions {
    * 传闭包而不是传快照：网络切换与设置页改动都要在下一条同步里立刻生效。
    */
   readonly dataSaverActiveProvider?: () => boolean;
+  /**
+   * AUTODL-103：按网络类型的自动下载限制（尺寸上限 + 类型排除）。
+   * 对齐 Android `canAutomaticallyDownload()` 里按 `getConnectionType()` 取
+   * `settings_limit_wifi|mobile|roaming` 的那一支（`TdlibFilesManager.java:1362-1383`）；
+   * 它排在省流量否决之后、会话分区勾选之前，所以 Wi-Fi 档调到 1MB 时，
+   * 一张 3MB 的照片不会因为「私聊勾了照片」就放过去。
+   */
+  readonly downloadLimitsProvider?: () => DownloadLimitsByNetwork | null;
+  /**
+   * AUTODL-103：当前网络档（Wi-Fi / 移动 / 漫游 / 其他 / 断网）。
+   * 与省流量共用装配层的缓存快照，不在每条附件上同步问 Kit。
+   */
+  readonly networkTypeProvider?: () => DataSaverNetworkType;
 }
 
 class ParsedDraft {
@@ -475,6 +491,11 @@ class ParsedDraft {
 /** AUTODL-102：未注入省流量判定时的兜底 —— 视为「未开启」。 */
 function neverDataSaverActive(): boolean {
   return false;
+}
+
+/** AUTODL-103：未注入网络档时的兜底 —— 未知网络，落移动那一档（Android switch 的 default 分支）。 */
+function unknownNetworkType(): DataSaverNetworkType {
+  return 'other';
 }
 
 export class ChatCoordinator {
@@ -496,6 +517,13 @@ export class ChatCoordinator {
    * 不会因为装配层漏接线而静默关掉自动下载。
    */
   private readonly dataSaverActiveProvider: () => boolean;
+  /**
+   * AUTODL-103：按网络档的限制与当前网络档；没注入时限制回落 Android 默认
+   * （Wi-Fi 50MB / 移动 15MB / 漫游 5MB），网络档回落 `other`（即看移动那一档），
+   * 与 Android switch 的 default 分支一致。
+   */
+  private readonly downloadLimitsProvider: () => DownloadLimitsByNetwork | null;
+  private readonly networkTypeProvider: () => DataSaverNetworkType;
   private recordTimerId: number = -1;
   private recordingSeconds: number = 0;
   private readonly logger: Logger;
@@ -641,6 +669,12 @@ export class ChatCoordinator {
     this.dataSaverActiveProvider = (options !== undefined && options.dataSaverActiveProvider !== undefined)
       ? options.dataSaverActiveProvider
       : neverDataSaverActive;
+    this.downloadLimitsProvider = (options !== undefined && options.downloadLimitsProvider !== undefined)
+      ? options.downloadLimitsProvider
+      : (): DownloadLimitsByNetwork | null => null;
+    this.networkTypeProvider = (options !== undefined && options.networkTypeProvider !== undefined)
+      ? options.networkTypeProvider
+      : unknownNetworkType;
     this.logger = (options !== undefined && options.logger !== undefined)
       ? options.logger
       : new Logger();
@@ -1370,8 +1404,9 @@ export class ChatCoordinator {
    *
    * 只用于「进入会话即自动拉」的路径；用户点下载按钮、点开播放器这类显式动作
    * 一律不走这道门 —— 那是请求，不是自动下载。
-   * provider 没注入或读盘失败时按 Android 的兜底默认（照片 / 语音 / 视频便签 / 动图开）走，
-   * 这样设置页显示的默认与聊天页实际放行的是一套东西。
+   * provider 没注入或读盘失败时按 Android 的兜底默认（照片 / 语音 / 视频便签 / 动图开，
+   * Wi-Fi 50MB / 移动 15MB / 漫游 5MB）走，这样设置页显示的默认与聊天页实际放行的是
+   * 一套东西。
    *
    * `chatKind` 还没解析出来（getChat 未回）时**一律不放行**：首轮投影通常早于 getChat
    * 回包，若沿用「未知分区即放行」，用户刚把某类关掉，冷进会话的那一刻仍会被整屏下载，
@@ -1385,12 +1420,21 @@ export class ChatCoordinator {
     if (autoDownloadScopeForChatKind(this.chatKind) === null) {
       return false;
     }
-    const provided: AutoDownloadPolicy | null = this.autoDownloadPolicyProvider();
-    return shouldAutoDownloadMedia(
-      provided !== null ? provided : AutoDownloadPolicy.defaultPolicy(),
-      this.chatKind,
+    // AUTODL-103：先按当前网络档卡尺寸与类型排除，再看分区勾没勾这一类
+    //（Android `:1381` 在 `:1407` 之前；顺序反了会让「超限的大文件」被记成「类型没勾」）。
+    if (!isMediaWithinDownloadLimits(
+      this.downloadLimitsProvider(),
+      this.networkTypeProvider(),
       kind,
       sizeBytes
+    )) {
+      return false;
+    }
+    const provided: AutoDownloadPolicy | null = this.autoDownloadPolicyProvider();
+    return canAutoDownloadMedia(
+      provided !== null ? provided : AutoDownloadPolicy.defaultPolicy(),
+      this.chatKind,
+      kind
     );
   }
 

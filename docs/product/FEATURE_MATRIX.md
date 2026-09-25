@@ -324,6 +324,7 @@
 > 所以策略与判定纯函数下沉共享（同 `ChatMute` / `ChatSendRights` 先例）。
 > **尺寸闸门是产品判断**：视频 / 文件 / 音乐单条可到几百 MB，勾了自动下载不该让 2GB 附件在打开会话时悄悄开跑 ——
 > 原先写死在聊天页的 10MB 收成 `isAutoDownloadSizeAllowed()`，且**服务端没给尺寸时放行**（不能因 `size` 缺省把用户勾了的类判死）。
+> （该固定闸门在 AUTODL-103 已换成按网络档可配，见下方追加段。）
 > **未知分区不阻塞**：`canAutoDownloadMedia()` 对 `private/group/channel` 之外的值或没设过策略返回放行 ——
 > 策略是「省流量的额外约束」，不该变成「读不到就什么都不下」。
 > 持久化按账号隔离：键 = `autodownload_<accountKey>:<scope>`，走 `@ohos.data.preferences` 同步读
@@ -441,6 +442,46 @@
 > 遗留：provider 那两行 glue 无 coordinator 级单测（要伪造整条 `getMessages` 回包链，改由设备 A/B 覆盖）、
 > 「自动开启」两档缺蜂窝/漫游可取证环境、省流量生效时不追溯取消已在途下载、per-network 尺寸上限
 > （Android `settings_limit_*`）另立一包。
+> **追加（AUTODL-103，FEAT-P2-007 按网络类型的下载限制）**：补上 AUTODL-102 遗留的那一包 ——
+> 三档网络各自的「尺寸上限 + 不下载哪些类型」，插在聊天页下载门里 Android 的那个位置。
+> **刻意不照抄 Android 的字节打包**：TGX 把一档网络的两个字段挤进一个 int —— `(exclude << 24) | size`
+> （`TdlibFilesManager.java:1133`），存进 `settings_limit_wifi|mobile|roaming` 三个按账号键。本端一个账号
+> × 一档网络 × 一个字段 = 一个键，共 3 × 2 = 6 个键（`medialimit_<accountKey>:<network>:<field>`）：
+> 打包 int 唯一的收益是少两个键，代价是任何一个字段读脏就会连带毁掉另一格，而这里没有跨字段不变式要守。
+> **门里的顺序照 Android 的求值顺序**：`canAutomaticallyDownloadFromServer()` 在会话类型之后、
+> 分区勾选之前判 `settings_limit_*`，所以本端 `canAutoDownload()` 是
+> 省流量硬否决 → 分区未解析不放行 → `isMediaWithinDownloadLimits(当前网络档)` → `canAutoDownloadMedia(分区勾选)`。
+> **上限存的是「档位码」不是字节**：`DOWNLOAD_LIMIT_OPTIONS = [1,2,3,4,5,6,0]`（15/5/… 与 Android 的
+> `MediaFileSource` 单选同序，`0` = 无上限末位），`downloadLimitBytes(code)` 才换算成字节，
+> **未知码 → 无上限** —— 档位码读脏了宁可放行，不能把用户勾了的类判死。
+> 尺寸缺省同样放行：`sizeBytes <= 0` 或非有限值（服务端还没给尺寸）不参与闸门，与 AUTODL-101 口径一致。
+> **网络档复用 AUTODL-102 的快照映射，不新造一套**：`dataSaverNetworkOfSnapshot` 里
+> `wifi|ethernet → 'wifi'`、蜂窝（含漫游）→ `roaming|mobile`，其余与读不到 → `'mobile'`；
+> `DownloadLimitsByNetwork.of()` 对 `'other'/'none'` 同样回落移动档 —— 兜底方向是「宁保守不越权」。
+> **排除位掩码与 AUTODL-101 同序**：`AUTO_DOWNLOAD_KINDS` 数组序取位，`fromStorageValues()` 里 `& 0x7f` 截断，
+> 脏高位直接丢弃，所以偏好文件被改坏也不会多出第七类以外的幽灵勾选。
+> **副标题四态照 `mediaDownloadDescription()`（`TdlibFilesManager.java:1413-1444`）**：全排除 → `Any media`；
+> 有上限 → `Any media exceeding {0}`；无上限且无排除 → `No restrictions`；随后 `, ` 拼**裸类型名**
+> （`Photos`，不是面板行标题那个 `No Photos`）—— 同一批词在两个位置是两种语法角色，翻译表分开登记。
+> **面板与行的顺序都照 TGX，不按直觉**：`SettingsDataController.java:520-568` 的对话框是 7 个 `No …` 勾选**在前**、
+> 尺寸单选在后；`:594-604` 三行是移动网络 → Wi-Fi → 漫游；`:1381` 让这三行排在三个分区卡**之前** ——
+> 「先按网络挡一道，再谈分区勾了什么」正是门里的顺序，界面顺序与求值顺序一致用户才推得出来。
+> 设备 A/B（模拟器 127.0.0.1:5555，真实 TDLib，全程只读未发送）：**唯一变量是 Wi-Fi 档上限** ——
+> 频道分区勾上「视频」后，同一条 0:25 视频在 `1 MB` 档仍是深色遮罩 + 下载箭头，改成 `No limit` 重进即变播放三角（已自动下完）。
+> 照片档不适合做这组 A/B：本账号会话里的照片在 AUTODL-101/102 取证时就已落盘，气泡直接渲染缓存、看不出闸门效果，
+> 而视频是首次放行、状态干净。**收尾已还原账号原状**：三档回到默认（移动 15 MB / Wi-Fi 50 MB / 漫游 5 MB、排除全 0），
+> 三分区摘要回到 `Photos · Voice message · Video message · GIFs`，设备偏好文件逐项核对一致。
+> 测试：`core_domain` **157/157**（新增 `MediaDownloadLimits.test.ets` 13 例：档位码表与未知码回落、
+> 默认 15/50/5 MB、`'other'/'none' → mobile`、`withNetwork` 只改一档、排除位序与 6 值存储往返、
+> 脏值按档分别回落 + 掩码截断、`<=` 边界含等号、排除无视尺寸一票否决、尺寸缺省放行）、
+> `feature_settings` **198/198**（新增 `DownloadLimitRows.test.ets` 8 例副标题四态 + reducer 10 例：
+> 未加载时 no-op、同值 no-op、只写目标档、两字段互不覆盖、关子页不清已加载限制）；
+> `feature_chat` **321/321**、`entry` **42/42** 无回归；三守卫 0 违规。
+> 顺带修掉一个既有缺口：`core/domain/src/test/List.test.ets` 里 `dataSaverTest` 只 import 未注册，
+> AUTODL-102 的 9 个用例其实从没跑过 —— 现已挂上。
+> 遗留：移动网络与漫游两档缺可取证环境（模拟器只有以太网，恰好让 Wi-Fi 档成为设备上的活档）、
+> 限制变更不追溯已在途下载、没有「按会话单独覆盖」的入口、Android 的「全部排除」快捷（本端只做逐类勾选，
+> 常量 `DOWNLOAD_EXCLUDE_ALL_KINDS` 已备但没有对应 UI）。
 
 
 | 功能 ID | 功能名 |

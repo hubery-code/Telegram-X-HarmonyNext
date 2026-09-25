@@ -14,7 +14,7 @@
  */
 
 /**
- * feature/settings — 「自动媒体下载」子页（AUTODL-101 + AUTODL-102 / FEAT-P2-007 下载策略部分）。
+ * feature/settings — 「自动媒体下载」子页（AUTODL-101 + AUTODL-102 + AUTODL-103 / FEAT-P2-007 下载策略部分）。
  *
  * 对齐 Telegram X 的 Automatic Media Download 页：三个会话分区各一行（私聊 / 群组 / 频道），
  * 副标题直接列出这一区当前会自动下载的媒体；点行进该分区的勾选面板。
@@ -28,8 +28,12 @@
  * 摘要恒按当前设置显示 Mobile / Roaming / both / None，与 TGX 的
  * `SettingsDataController.java:156-158` 一致。
  *
- * 刻意不做的是「文件大小上限」：Android 按 Wi-Fi / 移动 / 漫游各存一档
- * （`settings_limit_wifi|mobile|roaming`），要在下载侧加尺寸判定，另包处理。
+ * AUTODL-103 再补上底部三行「按网络类型限制」（Android 的 `Restrict on mobile data /
+ * Wi-Fi / roaming`）：每档一个尺寸上限 + 七类「不自动下」的排除项，存在第三套偏好键里。
+ * 判定压在分区策略**之前**（`TdlibFilesManager.java:1381` 早于 `:1407`），所以 Wi-Fi 上限
+ * 调到 1MB 时，3MB 的照片不会因为「私聊勾了照片」就放过去。
+ *
+ * 三套设置各自读盘、各自写回，互不覆盖 —— 这是 Android 的存法，本端照搬以免互相打架。
  */
 
 import { Theme, ThemeManager, LightTheme } from '@tgx/core-design-system';
@@ -41,14 +45,21 @@ import {
   AutoDownloadPolicy,
   DATA_SAVER_AUTO_ON_FLAGS,
   DATA_SAVER_FLAG_ENABLED,
-  DataSaverSettings
+  DOWNLOAD_LIMIT_OPTIONS,
+  DataSaverNetworkType,
+  DataSaverSettings,
+  DownloadLimitsByNetwork,
+  NetworkDownloadLimits
 } from '@tgx/core-domain';
 import { SettingsUiState } from '../contract/SettingsUiState';
 import {
   LoadAutoDownloadPolicy,
   LoadDataSaverSettings,
+  LoadDownloadLimits,
   SetAutoDownloadKind,
   SetDataSaverFlag,
+  SetDownloadLimitExclusion,
+  SetDownloadLimitSize,
   SettingsIntent
 } from '../contract/SettingsIntent';
 import {
@@ -61,6 +72,15 @@ import {
   autoDownloadScopeSummary
 } from '../model/AutoDownloadRows';
 import { dataSaverAutoOnLabelKey } from '../model/DataSaverRows';
+import {
+  DOWNLOAD_LIMIT_NETWORK_ORDER,
+  DownloadLimitSummary,
+  downloadLimitKindLabelKey,
+  downloadLimitNetworkLabelKey,
+  downloadLimitOfNetwork,
+  downloadLimitSizeLabelKey,
+  downloadLimitSummary
+} from '../model/DownloadLimitRows';
 
 @Component
 export struct AutoDownloadSubPage {
@@ -74,6 +94,8 @@ export struct AutoDownloadSubPage {
   @State private editingScope: AutoDownloadChatScope | null = null;
   /** AUTODL-102：「自动开启」面板是否打开。同样是页面私有的展开态。 */
   @State private showAutoOnSheet: boolean = false;
+  /** AUTODL-103：限制面板开在哪一档网络；null 表示关闭。 */
+  @State private editingLimitNetwork: DataSaverNetworkType | null = null;
 
   private unsubscribeTheme: (() => void) | null = null;
   private unsubscribeLang: (() => void) | null = null;
@@ -90,6 +112,7 @@ export struct AutoDownloadSubPage {
     });
     this.onDispatch(new LoadAutoDownloadPolicy());
     this.onDispatch(new LoadDataSaverSettings());
+    this.onDispatch(new LoadDownloadLimits());
   }
 
   aboutToDisappear(): void {
@@ -188,6 +211,68 @@ export struct AutoDownloadSubPage {
     return this.t(settings.autoOnSummaryKey());
   }
 
+  // ---- AUTODL-103 按网络类型的限制 ----
+
+  /**
+   * 一行的副标题：整句键 → 尺寸句 + 裸类型名列表（Android 用「, 」拼接，
+   * 如 `Any media exceeding 50 MB, Photos, Videos`）。
+   */
+  private limitSummaryText(network: DataSaverNetworkType): string {
+    const summary: DownloadLimitSummary =
+      downloadLimitSummary(downloadLimitOfNetwork(this.uiState.downloadLimits, network));
+    if (summary.singleKey.length > 0) {
+      return this.t(summary.singleKey);
+    }
+    const parts: string[] = [];
+    if (summary.exceedingKey.length > 0) {
+      parts.push(this.t(summary.exceedingKey, summary.sizeLabel));
+    }
+    for (const kindKey of summary.excludedKeys) {
+      parts.push(this.t(kindKey));
+    }
+    return parts.join(', ');
+  }
+
+  private editingLimitLabel(): string {
+    const network: DataSaverNetworkType | null = this.editingLimitNetwork;
+    return network === null ? '' : this.t(downloadLimitNetworkLabelKey(network));
+  }
+
+  /** 面板里某一类「不自动下」的勾选态；现读 this.uiState 才会点完立刻反映到开关上。 */
+  private isExclusionOn(kind: AutoDownloadMediaKind): boolean {
+    const network: DataSaverNetworkType | null = this.editingLimitNetwork;
+    if (network === null) {
+      return false;
+    }
+    const limits: NetworkDownloadLimits | null =
+      downloadLimitOfNetwork(this.uiState.downloadLimits, network);
+    return limits !== null && limits.isExcluded(kind);
+  }
+
+  private onExclusionToggled(kind: AutoDownloadMediaKind, isOn: boolean): void {
+    const network: DataSaverNetworkType | null = this.editingLimitNetwork;
+    if (network !== null) {
+      this.onDispatch(new SetDownloadLimitExclusion(network, kind, isOn));
+    }
+  }
+
+  private isSizeSelected(code: number): boolean {
+    const network: DataSaverNetworkType | null = this.editingLimitNetwork;
+    if (network === null) {
+      return false;
+    }
+    const limits: NetworkDownloadLimits | null =
+      downloadLimitOfNetwork(this.uiState.downloadLimits, network);
+    return limits !== null && limits.sizeCode === code;
+  }
+
+  private onSizePicked(code: number): void {
+    const network: DataSaverNetworkType | null = this.editingLimitNetwork;
+    if (network !== null) {
+      this.onDispatch(new SetDownloadLimitSize(network, code));
+    }
+  }
+
   build() {
     Stack() {
       Column() {
@@ -240,6 +325,23 @@ export struct AutoDownloadSubPage {
               .margin({ bottom: this.getTheme().spacing.md })
             }, (scope: AutoDownloadChatScope): string => scope)
 
+            // AUTODL-103：三档网络各一行（Android 的 advanced items 就在分区行的下面）。
+            Column() {
+              ForEach(DOWNLOAD_LIMIT_NETWORK_ORDER, (network: DataSaverNetworkType) => {
+                if (network !== DOWNLOAD_LIMIT_NETWORK_ORDER[0]) {
+                  Divider()
+                    .color(this.getTheme().colors.divider)
+                    .strokeWidth(0.5)
+                    .margin({ left: this.getTheme().spacing.md, right: this.getTheme().spacing.md })
+                }
+                this.DownloadLimitRow(network)
+              }, (network: DataSaverNetworkType): string => network)
+            }
+            .width('100%')
+            .backgroundColor(this.getTheme().colors.surface)
+            .borderRadius(this.getTheme().radius.md)
+            .margin({ bottom: this.getTheme().spacing.md })
+
             Text(this.t('Media still downloads when you tap it.'))
               .fontSize(this.getTheme().typography.footnote.fontSize)
               .fontColor(this.getTheme().colors.textSecondary)
@@ -272,6 +374,10 @@ export struct AutoDownloadSubPage {
 
       if (this.showAutoOnSheet) {
         this.AutoOnSheet()
+      }
+
+      if (this.editingLimitNetwork !== null) {
+        this.DownloadLimitSheet()
       }
     }
     .width('100%')
@@ -539,5 +645,181 @@ export struct AutoDownloadSubPage {
     .width('100%')
     .height(44)
     .alignItems(VerticalAlign.Center)
+  }
+
+  // ---- AUTODL-103 按网络类型的限制（Android `Restrict on …` 三行 + 其面板）----
+
+  @Builder
+  DownloadLimitRow(network: DataSaverNetworkType) {
+    Row() {
+      Column() {
+        Text(this.t(downloadLimitNetworkLabelKey(network)))
+          .fontSize(this.getTheme().typography.body.fontSize)
+          .fontColor(this.getTheme().colors.textPrimary)
+
+        Text(this.limitSummaryText(network))
+          .fontSize(this.getTheme().typography.footnote.fontSize)
+          .fontColor(this.getTheme().colors.textSecondary)
+          .margin({ top: this.getTheme().spacing.hairline })
+          .maxLines(2)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+      }
+      .alignItems(HorizontalAlign.Start)
+      .layoutWeight(1)
+
+      Image($r('app.media.ic_chevron_right'))
+        .width(18)
+        .height(18)
+        .fillColor(this.getTheme().colors.textSecondary)
+    }
+    .width('100%')
+    .padding(this.getTheme().spacing.md)
+    .alignItems(VerticalAlign.Center)
+    .onClick((): void => {
+      this.editingLimitNetwork = network;
+    })
+  }
+
+  /**
+   * 一档网络的限制面板。内容顺序照 Android `SettingsDataController.java:520-568`：
+   * 先七类「不自动下」的勾选，再尺寸档位单选。
+   *
+   * 与 Android 的差别只有交互：那边是关掉面板时统一 `onApplySettings` 写回，
+   * 本端沿用 AUTODL-101/102 的口径 —— 勾选即写盘，没有草稿态。
+   */
+  @Builder
+  DownloadLimitSheet() {
+    Stack({ alignContent: Alignment.Bottom }) {
+      Column()
+        .width('100%')
+        .height('100%')
+        .backgroundColor(this.getTheme().colors.scrim)
+        .onClick((): void => {
+          this.editingLimitNetwork = null;
+        })
+
+      Column() {
+        Row() {
+          Column() {
+            Text(this.t('Automatic download'))
+              .fontSize(this.getTheme().typography.title.fontSize)
+              .fontWeight(this.getTheme().typography.title.fontWeight)
+              .fontColor(this.getTheme().colors.textPrimary)
+
+            Text(this.editingLimitLabel())
+              .fontSize(this.getTheme().typography.footnote.fontSize)
+              .fontColor(this.getTheme().colors.textSecondary)
+              .margin({ top: this.getTheme().spacing.hairline })
+          }
+          .alignItems(HorizontalAlign.Start)
+          .layoutWeight(1)
+
+          Image($r('app.media.ic_close'))
+            .width(20)
+            .height(20)
+            .fillColor(this.getTheme().colors.textSecondary)
+            .onClick((): void => {
+              this.editingLimitNetwork = null;
+            })
+        }
+        .width('100%')
+        .alignItems(VerticalAlign.Center)
+        .margin({ bottom: this.getTheme().spacing.md })
+
+        // 十四行（七勾选 + 七档位）在小屏上会顶出屏幕，所以列表侧可滚、头部固定。
+        Scroll() {
+          Column() {
+            ForEach(AUTO_DOWNLOAD_KIND_ORDER, (kind: AutoDownloadMediaKind) => {
+              this.LimitExclusionRow(kind)
+            }, (kind: AutoDownloadMediaKind): string => kind)
+
+            Divider()
+              .color(this.getTheme().colors.divider)
+              .strokeWidth(0.5)
+              .margin({ top: this.getTheme().spacing.sm, bottom: this.getTheme().spacing.sm })
+
+            ForEach(DOWNLOAD_LIMIT_OPTIONS, (code: number) => {
+              this.LimitSizeRow(code)
+            }, (code: number): string => `${code}`)
+          }
+          .width('100%')
+        }
+        .constraintSize({ maxHeight: 420 })
+        .align(Alignment.Top)
+        .scrollBar(BarState.Off)
+      }
+      .width('100%')
+      .alignItems(HorizontalAlign.Start)
+      .padding(this.getTheme().spacing.lg)
+      .backgroundColor(this.getTheme().colors.background)
+      .borderRadius({
+        topLeft: this.getTheme().radius.xl,
+        topRight: this.getTheme().radius.xl
+      })
+    }
+    .width('100%')
+    .height('100%')
+  }
+
+  /** 勾选语义是「这一类不自动下」，所以开关向上等于排除（与分区面板相反）。 */
+  @Builder
+  LimitExclusionRow(kind: AutoDownloadMediaKind) {
+    Row() {
+      Text(this.t(downloadLimitKindLabelKey(kind)))
+        .fontSize(this.getTheme().typography.body.fontSize)
+        .fontColor(this.getTheme().colors.textPrimary)
+        .layoutWeight(1)
+
+      Toggle({
+        type: ToggleType.Switch,
+        isOn: this.isExclusionOn(kind)
+      })
+        .onChange((isOn: boolean): void => {
+          this.onExclusionToggled(kind, isOn);
+        })
+    }
+    .width('100%')
+    .height(44)
+    .alignItems(VerticalAlign.Center)
+  }
+
+  /**
+   * 尺寸档位单选。圆点直接内联：@Builder 的按值入参不参与状态观察，
+   * 抽成 `Radio(selected)` 会点完不变（同 `ProxySubPage` 的单选列表）。
+   */
+  @Builder
+  LimitSizeRow(code: number) {
+    Row() {
+      Stack() {
+        if (this.isSizeSelected(code)) {
+          Column()
+            .width(10)
+            .height(10)
+            .borderRadius(5)
+            .backgroundColor(this.getTheme().colors.accent)
+        }
+      }
+      .width(22)
+      .height(22)
+      .margin({ right: this.getTheme().spacing.md })
+      .borderRadius(11)
+      .border({
+        width: 2,
+        color: this.isSizeSelected(code)
+          ? this.getTheme().colors.accent
+          : this.getTheme().colors.textSecondary
+      })
+
+      Text(this.t(downloadLimitSizeLabelKey(code)))
+        .fontSize(this.getTheme().typography.body.fontSize)
+        .fontColor(this.getTheme().colors.textPrimary)
+        .layoutWeight(1)
+    }
+    .width('100%')
+    .height(52)
+    .alignItems(VerticalAlign.Center)
+    .onClick((): void => {
+      this.onSizePicked(code);
+    })
   }
 }

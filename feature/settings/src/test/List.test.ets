@@ -8,6 +8,7 @@ import settingsSectionTest from './SettingsSection.test';
 import proxySettingsTest from './ProxySettings.test';
 import autoDownloadRowsTest from './AutoDownloadRows.test';
 import dataSaverRowsTest from './DataSaverRows.test';
+import downloadLimitRowsTest from './DownloadLimitRows.test';
 
 export default function testsuite(): void {
   settingsReducerTest();
@@ -20,4 +21,5 @@ export default function testsuite(): void {
   proxySettingsTest();
   autoDownloadRowsTest();
   dataSaverRowsTest();
+  downloadLimitRowsTest();
 }

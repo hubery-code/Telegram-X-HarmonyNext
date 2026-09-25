@@ -63,7 +63,10 @@ import {
   AutoDownloadPolicyLoaded,
   SetAutoDownloadKind,
   DataSaverSettingsLoaded,
-  SetDataSaverFlag
+  SetDataSaverFlag,
+  DownloadLimitsLoaded,
+  SetDownloadLimitSize,
+  SetDownloadLimitExclusion
 } from '../contract/SettingsIntent';
 import {
   ClearCacheEffect,
@@ -90,7 +93,9 @@ import {
   LoadAutoDownloadPolicyEffect,
   PersistAutoDownloadPolicyEffect,
   LoadDataSaverSettingsEffect,
-  PersistDataSaverSettingsEffect
+  PersistDataSaverSettingsEffect,
+  LoadDownloadLimitsEffect,
+  PersistDownloadLimitsEffect
 } from '../contract/SettingsEffect';
 import { NotificationScopeKey } from '../model/NotificationSettings';
 import {
@@ -108,7 +113,9 @@ import {
 import {
   AutoDownloadFlags,
   AutoDownloadPolicy,
-  DataSaverSettings
+  DataSaverSettings,
+  DownloadLimitsByNetwork,
+  NetworkDownloadLimits
 } from '@tgx/core-domain';
 
 function notificationScopeEnabled(state: SettingsUiState, scope: NotificationScopeKey): boolean {
@@ -865,6 +872,69 @@ export const settingsReducer: Reducer<SettingsUiState, SettingsIntent, SettingsE
         errorMessage: null
       };
       return reduced(state.copyWith(options), [new PersistDataSaverSettingsEffect(next)]);
+    }
+
+    // ---- AUTODL-103 按网络类型的自动下载限制 ----
+    // 第三份独立设置（Android 的 settings_limit_wifi|mobile|roaming）：同一子页、
+    // 同一套「读盘 → 改即写回 → 以存储返回值回灌」，但每档网络各自一格，
+    // 一次写回整份三档六格，避免只写半套留下互相矛盾的限制。
+
+    case 'loadDownloadLimits': {
+      return reduced(state, [new LoadDownloadLimitsEffect()]);
+    }
+
+    case 'downloadLimitsLoaded': {
+      const loadedIntent: DownloadLimitsLoaded = intent as DownloadLimitsLoaded;
+      const options: SettingsUiStateOptions = {
+        downloadLimits: loadedIntent.limits,
+        errorMessage: null
+      };
+      return reduced(state.copyWith(options));
+    }
+
+    case 'setDownloadLimitSize': {
+      const sizeIntent: SetDownloadLimitSize = intent as SetDownloadLimitSize;
+      const limits: DownloadLimitsByNetwork | null = state.downloadLimits;
+      // 同 setAutoDownloadKind：没读到盘就不写，否则会用猜出来的默认覆盖用户偏好。
+      if (limits === null) {
+        return reduced(state);
+      }
+      const current: NetworkDownloadLimits = limits.of(sizeIntent.network);
+      if (current.sizeCode === sizeIntent.sizeCode) {
+        // 单选列表重选当前档不算变更、不该落盘。
+        return reduced(state);
+      }
+      const next: DownloadLimitsByNetwork = limits.withNetwork(
+        sizeIntent.network,
+        current.withSizeCode(sizeIntent.sizeCode)
+      );
+      const options: SettingsUiStateOptions = {
+        downloadLimits: next,
+        errorMessage: null
+      };
+      return reduced(state.copyWith(options), [new PersistDownloadLimitsEffect(next)]);
+    }
+
+    case 'setDownloadLimitExclusion': {
+      const excludeIntent: SetDownloadLimitExclusion = intent as SetDownloadLimitExclusion;
+      const limits: DownloadLimitsByNetwork | null = state.downloadLimits;
+      if (limits === null) {
+        return reduced(state);
+      }
+      const current: NetworkDownloadLimits = limits.of(excludeIntent.network);
+      if (current.isExcluded(excludeIntent.mediaKind) === excludeIntent.excluded) {
+        // Toggle 挂载时会回调一次初值，同值不算变更、不该落盘。
+        return reduced(state);
+      }
+      const next: DownloadLimitsByNetwork = limits.withNetwork(
+        excludeIntent.network,
+        current.withExcluded(excludeIntent.mediaKind, excludeIntent.excluded)
+      );
+      const options: SettingsUiStateOptions = {
+        downloadLimits: next,
+        errorMessage: null
+      };
+      return reduced(state.copyWith(options), [new PersistDownloadLimitsEffect(next)]);
     }
 
     default:

@@ -261,28 +261,12 @@ export function autoDownloadScopeForChatKind(chatKind: string): AutoDownloadChat
 }
 
 /**
- * 「容器」类媒体的自动下载尺寸闸门。
+ * 下载门：只有明确勾过这一类媒体才自动下。出站消息不走这道门（见调用点注释）。
  *
- * 视频 / 文件 / 音乐这三类的单条体积可以大到几百 MB，勾选「自动下载」不该让一个
- * 2GB 附件在打开会话时悄悄开跑；沿用聊天页此前对视频写死的 10MB 上限，收进模型层
- * 让三类共用一条规则。照片 / 语音 / 视频便签 / 动图本身有限，不受这条闸门约束。
+ * 尺寸限制不在这里 —— AUTODL-101 曾在本模块写死过一条「视频/文件/音乐 10MB」的临时上限，
+ * Android 并没有这个常量：尺寸上限是按网络类型配置的（`media/MediaDownloadLimits`），
+ * 已由聊天页那道门按 Android 的顺序串起来。
  */
-export const AUTO_DOWNLOAD_SIZE_LIMIT_BYTES: number = 10 * 1024 * 1024;
-
-const SIZE_LIMITED_KINDS: AutoDownloadMediaKind[] = ['video', 'file', 'audio'];
-
-/** 尺寸是否允许自动下载；`sizeBytes <= 0`（服务端没给尺寸）按放行处理。 */
-export function isAutoDownloadSizeAllowed(kind: AutoDownloadMediaKind, sizeBytes: number): boolean {
-  if (SIZE_LIMITED_KINDS.indexOf(kind) < 0) {
-    return true;
-  }
-  if (!Number.isFinite(sizeBytes) || sizeBytes <= 0) {
-    return true;
-  }
-  return sizeBytes <= AUTO_DOWNLOAD_SIZE_LIMIT_BYTES;
-}
-
-/** 下载门：只有明确勾过这一类媒体才自动下。出站消息不走这道门（见调用点注释）。 */
 export function canAutoDownloadMedia(
   policy: AutoDownloadPolicy | null,
   chatKind: string,
@@ -296,16 +280,6 @@ export function canAutoDownloadMedia(
     return true;
   }
   return policy.flagsOf(scope).of(kind);
-}
-
-/** 类型勾选 + 尺寸闸门合起来的答案；聊天页只用这一个入口。 */
-export function shouldAutoDownloadMedia(
-  policy: AutoDownloadPolicy | null,
-  chatKind: string,
-  kind: AutoDownloadMediaKind,
-  sizeBytes: number
-): boolean {
-  return canAutoDownloadMedia(policy, chatKind, kind) && isAutoDownloadSizeAllowed(kind, sizeBytes);
 }
 
 /** 策略读写面；实现方负责按账号隔离与落盘（entry 装配层）。 */

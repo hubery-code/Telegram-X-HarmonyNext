@@ -60,6 +60,10 @@ import {
   LoadDataSaverSettings,
   DataSaverSettingsLoaded,
   SetDataSaverFlag,
+  LoadDownloadLimits,
+  DownloadLimitsLoaded,
+  SetDownloadLimitSize,
+  SetDownloadLimitExclusion,
   UserProfileData
 } from '../main/ets/contract/SettingsIntent';
 import {
@@ -85,7 +89,9 @@ import {
   LoadAutoDownloadPolicyEffect,
   PersistAutoDownloadPolicyEffect,
   LoadDataSaverSettingsEffect,
-  PersistDataSaverSettingsEffect
+  PersistDataSaverSettingsEffect,
+  LoadDownloadLimitsEffect,
+  PersistDownloadLimitsEffect
 } from '../main/ets/contract/SettingsEffect';
 import {
   AutoDownloadFlags,
@@ -93,7 +99,12 @@ import {
   DATA_SAVER_FLAG_ENABLED,
   DATA_SAVER_FLAG_WHEN_MOBILE,
   DATA_SAVER_FLAG_WHEN_ROAMING,
-  DataSaverSettings
+  DataSaverSettings,
+  DOWNLOAD_LIMIT_1MB,
+  DOWNLOAD_LIMIT_50MB,
+  DOWNLOAD_LIMIT_NONE,
+  DownloadLimitsByNetwork,
+  NetworkDownloadLimits
 } from '@tgx/core-domain';
 import { ActiveSessionItem } from '../main/ets/model/ActiveSessionItem';
 import { PrivacySettingItem } from '../main/ets/model/PrivacySettings';
@@ -158,6 +169,14 @@ function dataSaverState(settings: DataSaverSettings | null): SettingsUiState {
   return SettingsUiState.initial().copyWith({
     showAutoDownloadPage: true,
     dataSaverSettings: settings
+  });
+}
+
+/** AUTODL-103：已经读到盘上按网络档限制的起始态（同一张子页）。 */
+function downloadLimitsState(limits: DownloadLimitsByNetwork | null): SettingsUiState {
+  return SettingsUiState.initial().copyWith({
+    showAutoDownloadPage: true,
+    downloadLimits: limits
   });
 }
 
@@ -1328,6 +1347,129 @@ export default function settingsReducerTest(): void {
 
       expect(result.state.showAutoDownloadPage).assertFalse();
       expect(result.state.dataSaverSettings !== null).assertTrue();
+    });
+
+    // ---- AUTODL-103 按网络类型的自动下载限制 ----
+
+    it('initialState_hasNoDownloadLimitsLoaded', 0, () => {
+      expect(SettingsUiState.initial().downloadLimits === null).assertTrue();
+    });
+
+    it('loadDownloadLimits_emitsEffectWithoutTouchingState', 0, () => {
+      const state = downloadLimitsState(null);
+      const result = settingsReducer(state, new LoadDownloadLimits(), makeEnv());
+
+      expect(result.effects.length).assertEqual(1);
+      expect((result.effects[0] as LoadDownloadLimitsEffect).kind).assertEqual('loadDownloadLimits');
+      expect(result.state.downloadLimits === null).assertTrue();
+    });
+
+    it('downloadLimitsLoaded_storesLimitsAndClearsError', 0, () => {
+      const state = downloadLimitsState(null).copyWith({ errorMessage: 'boom' });
+      const limits: DownloadLimitsByNetwork = DownloadLimitsByNetwork.defaultLimits();
+      const result = settingsReducer(state, new DownloadLimitsLoaded(limits), makeEnv());
+
+      expect(result.state.downloadLimits === limits).assertTrue();
+      expect(result.state.errorMessage === null).assertTrue();
+    });
+
+    it('setDownloadLimitSize_withoutLoadedLimits_isNoop', 0, () => {
+      // 没读到盘就不写：否则会用猜出来的默认覆盖用户偏好（聊天页按盘上的限制下载）
+      const state = downloadLimitsState(null);
+      const result = settingsReducer(state, new SetDownloadLimitSize('wifi', DOWNLOAD_LIMIT_1MB), makeEnv());
+
+      expect(result.effects.length).assertEqual(0);
+      expect(result.state.downloadLimits === null).assertTrue();
+    });
+
+    it('setDownloadLimitSize_sameValue_isNoop', 0, () => {
+      const state = downloadLimitsState(DownloadLimitsByNetwork.defaultLimits());
+      const result = settingsReducer(state, new SetDownloadLimitSize('wifi', DOWNLOAD_LIMIT_50MB), makeEnv());
+
+      expect(result.effects.length).assertEqual(0);
+      expect(result.state.downloadLimits === state.downloadLimits).assertTrue();
+    });
+
+    it('setDownloadLimitSize_writesOnlyThatBucket', 0, () => {
+      const source: DownloadLimitsByNetwork = DownloadLimitsByNetwork.defaultLimits();
+      const state = downloadLimitsState(source);
+      const result = settingsReducer(state, new SetDownloadLimitSize('wifi', DOWNLOAD_LIMIT_1MB), makeEnv());
+
+      expect(result.effects.length).assertEqual(1);
+      const effect: PersistDownloadLimitsEffect = result.effects[0] as PersistDownloadLimitsEffect;
+      expect(effect.kind).assertEqual('persistDownloadLimits');
+      expect(effect.limits.wifi.sizeCode).assertEqual(DOWNLOAD_LIMIT_1MB);
+      expect(effect.limits.mobile.sizeCode).assertEqual(source.mobile.sizeCode);
+      expect(effect.limits.roaming.sizeCode).assertEqual(source.roaming.sizeCode);
+      // reducer 必须是纯函数：盘上那份没被就地改掉
+      expect(source.wifi.sizeCode).assertEqual(DOWNLOAD_LIMIT_50MB);
+      expect(result.state.downloadLimits !== null
+        && result.state.downloadLimits.wifi.sizeCode).assertEqual(DOWNLOAD_LIMIT_1MB);
+    });
+
+    it('setDownloadLimitSize_onUnknownNetworkWritesThroughMobileBucket', 0, () => {
+      // 设置页只会显式写三档，但 of() 把未知网络读成移动档 —— 写侧必须同规则，
+      // 否则会出现「读的是移动、写不进移动」的错位。
+      const state = downloadLimitsState(DownloadLimitsByNetwork.defaultLimits());
+      const result = settingsReducer(state, new SetDownloadLimitSize('other', DOWNLOAD_LIMIT_1MB), makeEnv());
+
+      const written: DownloadLimitsByNetwork = (result.effects[0] as PersistDownloadLimitsEffect).limits;
+      expect(written.mobile.sizeCode).assertEqual(DOWNLOAD_LIMIT_1MB);
+    });
+
+    it('setDownloadLimitExclusion_togglesOnlyThatKind', 0, () => {
+      const source: DownloadLimitsByNetwork = DownloadLimitsByNetwork.defaultLimits();
+      const state = downloadLimitsState(source);
+      const result = settingsReducer(state,
+        new SetDownloadLimitExclusion('mobile', 'photo', true), makeEnv());
+
+      const effect: PersistDownloadLimitsEffect = result.effects[0] as PersistDownloadLimitsEffect;
+      expect(effect.limits.mobile.isExcluded('photo')).assertTrue();
+      expect(effect.limits.mobile.isExcluded('video')).assertFalse();
+      expect(effect.limits.wifi.excludedFlags.toMask()).assertEqual(0);
+      // 尺寸档不该被类型勾选带跑
+      expect(effect.limits.mobile.sizeCode).assertEqual(source.mobile.sizeCode);
+    });
+
+    it('setDownloadLimitExclusion_sameValue_isNoop', 0, () => {
+      // Toggle 挂载时会回调一次初值，同值不该落盘
+      const loaded: DownloadLimitsByNetwork = DownloadLimitsByNetwork.defaultLimits()
+        .withNetwork('roaming', new NetworkDownloadLimits(DOWNLOAD_LIMIT_NONE)
+          .withExcluded('gif', true));
+      const state = downloadLimitsState(loaded);
+      const result = settingsReducer(state,
+        new SetDownloadLimitExclusion('roaming', 'gif', true), makeEnv());
+
+      expect(result.effects.length).assertEqual(0);
+      expect(result.state.downloadLimits === loaded).assertTrue();
+    });
+
+    it('downloadLimitsAndDataSaver_doNotClobberEachOther', 0, () => {
+      // 同页三套设置各自写一位，另两套必须原样留着
+      const state = SettingsUiState.initial().copyWith({
+        showAutoDownloadPage: true,
+        autoDownloadPolicy: AutoDownloadPolicy.defaultPolicy(),
+        dataSaverSettings: DataSaverSettings.defaultSettings(),
+        downloadLimits: DownloadLimitsByNetwork.defaultLimits()
+      });
+      const afterLimits = settingsReducer(state,
+        new SetDownloadLimitSize('wifi', DOWNLOAD_LIMIT_1MB), makeEnv()).state;
+      expect(afterLimits.dataSaverSettings === state.dataSaverSettings).assertTrue();
+      expect(afterLimits.autoDownloadPolicy === state.autoDownloadPolicy).assertTrue();
+
+      const afterSaver = settingsReducer(afterLimits,
+        new SetDataSaverFlag(DATA_SAVER_FLAG_ENABLED, true), makeEnv()).state;
+      expect(afterSaver.downloadLimits !== null
+        && afterSaver.downloadLimits.wifi.sizeCode).assertEqual(DOWNLOAD_LIMIT_1MB);
+      expect(afterSaver.autoDownloadPolicy === state.autoDownloadPolicy).assertTrue();
+    });
+
+    it('closeAutoDownloadPage_keepsLoadedDownloadLimits', 0, () => {
+      const state = downloadLimitsState(DownloadLimitsByNetwork.defaultLimits());
+      const result = settingsReducer(state, new CloseAutoDownloadPage(), makeEnv());
+
+      expect(result.state.showAutoDownloadPage).assertFalse();
+      expect(result.state.downloadLimits !== null).assertTrue();
     });
   });
 }

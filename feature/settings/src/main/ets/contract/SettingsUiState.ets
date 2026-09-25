@@ -15,7 +15,7 @@ import { ActiveSessionItem } from '../model/ActiveSessionItem';
 import { SettingsSectionKey } from '../model/SettingsSection';
 import { PrivacySettingItem, PrivacySettingKey } from '../model/PrivacySettings';
 import { ProxyItem } from '../model/ProxySettings';
-import { AutoDownloadPolicy, DataSaverSettings } from '@tgx/core-domain';
+import { AutoDownloadPolicy, DataSaverSettings, DownloadLimitsByNetwork } from '@tgx/core-domain';
 
 export type SettingsThemeMode = ThemePreference;
 
@@ -76,6 +76,8 @@ export interface SettingsUiStateOptions {
   readonly autoDownloadPolicy?: AutoDownloadPolicy | null;
   /** AUTODL-102：省流量设置；null 表示还没读盘（此时行上按默认档显示）。 */
   readonly dataSaverSettings?: DataSaverSettings | null;
+  /** AUTODL-103：按网络档的自动下载限制；null 表示还没读盘（三行副标题显 Loading）。 */
+  readonly downloadLimits?: DownloadLimitsByNetwork | null;
 }
 
 export class SettingsUiState implements UiState {
@@ -138,6 +140,8 @@ export class SettingsUiState implements UiState {
   readonly autoDownloadPolicy: AutoDownloadPolicy | null;
   /** AUTODL-102：省流量设置；null 表示尚未读盘。 */
   readonly dataSaverSettings: DataSaverSettings | null;
+  /** AUTODL-103：按网络档的自动下载限制；null 表示尚未读盘。 */
+  readonly downloadLimits: DownloadLimitsByNetwork | null;
 
   constructor(
     userId: number,
@@ -179,7 +183,8 @@ export class SettingsUiState implements UiState {
     updatingProxyId: number | null = null,
     showAutoDownloadPage: boolean = false,
     autoDownloadPolicy: AutoDownloadPolicy | null = null,
-    dataSaverSettings: DataSaverSettings | null = null
+    dataSaverSettings: DataSaverSettings | null = null,
+    downloadLimits: DownloadLimitsByNetwork | null = null
   ) {
     this.userId = userId;
     this.displayName = displayName;
@@ -221,6 +226,7 @@ export class SettingsUiState implements UiState {
     this.showAutoDownloadPage = showAutoDownloadPage;
     this.autoDownloadPolicy = autoDownloadPolicy;
     this.dataSaverSettings = dataSaverSettings;
+    this.downloadLimits = downloadLimits;
   }
 
   static initial(
@@ -315,7 +321,8 @@ export class SettingsUiState implements UiState {
       options.showAutoDownloadPage !== undefined ? options.showAutoDownloadPage : this.showAutoDownloadPage,
       options.autoDownloadPolicy !== undefined ? options.autoDownloadPolicy : this.autoDownloadPolicy,
       // 显式传 null 表示「清空为未读盘」，与 undefined（不改动）区分开。
-      options.dataSaverSettings !== undefined ? options.dataSaverSettings : this.dataSaverSettings
+      options.dataSaverSettings !== undefined ? options.dataSaverSettings : this.dataSaverSettings,
+      options.downloadLimits !== undefined ? options.downloadLimits : this.downloadLimits
     );
   }
 }
