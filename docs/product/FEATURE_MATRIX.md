@@ -535,6 +535,66 @@
 > 遗留：错误态只说 `Error`，不给 TDLib 的原文（`AppError.message` 未进界面）；"Switch automatically" 与
 > 最佳代理徽标要先有一个「路由选择器」，本端目前是单选语义；`tg://proxy` 分享链接的确认弹窗（`openProxyAlert`）
 > 与扫码导入；本地没有探测超时，TDLib 若不回包一行会一直停在 `Checking...`。
+> **追加（DEEPLINK-101，FEAT-P2-010 深链半边）**：`t.me/…` 与 `tg://…` 从外部（系统选择器、`aa start -U`、
+> 聊天气泡里的正文链接）进来到落会话，整条链路第一次打通；FEAT-P2-010 的另一半 Share Extension 另包。
+> **解析权交给 TDLib，本端不写链接文法**：Android 的 `TdlibUi.openUrl:3172-3182` 是先 `openTelegramUrl`
+> （内部就是 `TdApi.GetInternalLinkType` + `openInternalLinkType` 分发，`:3483-3610`），问不出名堂才
+> `openExternalUrl`；TGX 里的 `parseTelegramUrl` 是**死代码**。所以 `entry/deeplink/AppLinkRouter.ets`
+> 只做「拿到判别式之后往哪压栈」，`t.me/durov` 是公开会话、邀请还是代理，一律由 TDLib 说了算。
+> **纯谓词层 `core/navigation/TelegramLink.ets` 只做「值不值得去问」**：host 白名单逐字对齐
+> `TdConstants.TME_HOSTS`（`t.me,tx.me,telegram.me,telegram.dog`，单测把这条字符串钉住），
+> `tg` / `telegram` 两个 scheme；`normalizeTelegramLink` 照 `preProcessTelegramUrl:3448-3477` 把
+> `durov.telegram.me` 降一级成 `telegram.me/durov` —— **父域名原样保留，不统统换成 `t.me`**。
+> 第一版单测按 `https://t.me/durov` 断言，是期望写错、实现是对的，改期望不改代码。
+> 同一层里修掉一个真实缺陷：裸链 `t.me/durov`（没有 scheme）在 `splitUri` 里解析不出 authority，
+> `host` 恒空 → `isTelegramLinkCandidate` 恒 false → 气泡里最常见的那种链接全部漏判；缺协议时先补 `//` 才对。
+> **冷启动时序用一个显式队列解决，不用 AppStorage 兜**：`EntryAbility.onCreate(want)` 跑的时候页面还没
+> `aboutToAppear`，而解析需要 `AccountScope` 与路由栈都在。`deeplink/DeepLinkQueue.ets` 是进程级队列，
+> 三条纪律：去重只针对**还没交出去的那部分**（已交付过的链接再来一次是真想再去一趟）、`MAX_PENDING=8`
+> 丢最旧（没消费者时不能无界攒着，否则恢复后一次性压出 N 层会话栈）、handler 抛异常逐条吞不卡队列。
+> 页面 `hasRoute('home')` 时 attach、登出时 detach。装配层还有一条**自喂环**要防：`resolveAppLink` 拿到
+> `not_ready` 时只有在「队列没挂 handler」的情况下才重新入队，否则 `enqueue` 会立即回调自己 → 无限递归。
+> **气泡内链接不逃逸，用的是窄拦截而不是全量转发**：`ChatPage.openLink()` 只问一个 Kit-free 谓词，
+> 命中才出 `OpenAppLink` 意图，coordinator 原样把 URL 交给装配层注入的回调 —— feature 不认识链接语义、
+> 也不认识路由；非 Telegram 链接继续走原来那条已验证的浏览器路径，这样路由器出 bug 也不会打挂全部链接。
+> **`domainVerify: false` 是刻意的**：置 `true` 需要 `scheme: "https"` 且**域名侧放 asset links**，
+> 而我们不拥有 `t.me`；置 true 的结果是这条 skill 永远匹配不上。false 时应用出现在系统「打开方式」选择器里，
+> `aa start -U` 也命中。`skills` 加第二条（`entity.system.browsable` + `ohos.want.action.viewData` +
+> `tg` 与四个 https host）。
+> **只有 `internalLinkTypePublicChat` 真落地**：`getInternalLinkType` → `searchPublicChat(username)`
+> （TDLib 顺手把这个公开会话建进本地库，与 Android 点公开链接的行为一致）→ `routeForChat`
+> （`open_profile` + 私聊/密聊 → `userProfile`，basic/supergroup → `chatInfo`，其余 `chat`）。
+> 失败一律**不猜 chatId**、不用用户名去拼。`invite` / `proxy` / `message` 等判别式回 `unsupported` →
+> 上层提示「暂不支持这种链接」，**绝不外溢浏览器**（那里只有登录墙，用户只会以为应用坏了）；
+> TDLib 比生成码新、`@type` 不在解码表里时 `decodeTdInternalLinkType` 给 `TdUnknownObject`，
+> 判别式原样透传、同样 fail-closed。自有 `tg://` 规则排在 TDLib 之前（一次 IPC 都不花），
+> 代价由单测钉死：`https://t.me/chat/{chatId}` 会把「用户名字面上叫 chat 且第二段是数字」判成内部会话。
+> **日志里没有链接正文**：链接可以携带邀请哈希（等同凭证），所以全链路只记 `length=`、判别式、chatId
+> （`want uri from onCreate, length=18` / `outcome=routed chatId=-1001006503122`）。
+> 设备取证（模拟器 127.0.0.1:5555，真实 TDLib，全程只读未发送）：**冷启动** `aa start -U https://t.me/durov`
+> → `want uri from onCreate, length=18` → `AppLinkRouter outcome=routed chatId=-1001006503122`，
+> `dumpLayout` 落在 Pavel Durov 会话正文（`Codeforces`、`10648974 位订阅者`）；**热启动** `https://t.me/telegram`
+> → `want uri from onNewWant, length=21` → routed `-1001005640892` → 页面是 `Telegram News`；
+> **内部规则** `tg://chat?chatId=-1001006503122` → `outcome=internal_route route=chat`，onNewWant 到压栈 3 ms、
+> 零 TDLib IPC；**外链不回归** `https://example.com/q?a=1` 真的把 `com.huawei.hmos.browser` 拉了起来。
+> 收尾 force-stop 浏览器、连按返回回 home（`dumpLayout` 见 `Chats` / `Search`），未发消息、未改账号。
+> 测试：`entry` **66/66 PASS**（新增 `AppLinkRouter.test.ets` 14 例：空/not_ready 短路零 IPC、非候选不进
+> TDLib、自有规则优先、`t.me/chat/{id}` 吞用户名会话、publicChat 两种调用序列、子域归一后进 TDLib 的链接形态、
+> `open_profile` 分流、`routeForChat` 含 `type_ = null`、`unknownDeepLink` 是唯一外溢口、认得未实现不外溢、
+> TDLib 报错与外来 `@type` 各自 fail-closed、`searchPublicChat` 失败不猜 id、空用户名先失败、`stripAtSign`
+> 含 `@@durov`、在途去重（gate 住的 promise）、自定义规则表整体替换默认表；`DeepLinkQueue.test.ets` 8 例：
+> 入队后 attach 按序冲刷、attach 后直投、去重只对未交付部分、空白拒收、上限丢最旧、handler 抛异常不连坐、
+> detach→重投→reattach、`pendingUris()` 返回副本），`core_navigation` **54/54**（`TelegramLink.test.ets` 8 例：
+> host 白名单逐字对齐、`nott.me` / `evil.com/t.me/…` / `mailto:` 判非、裸链与子域、`tg:settings`、
+> `splitUri` 的 authority/path/query/fragment、`HTTPS://T.ME.:443/…` 大写带端口、`www.` / `m.` / 二级子域不改写），
+> `feature_chat` **323/323**（`ChatAppLinkDispatch.test.ets` 2 例：URL 原样递出且不去重、空串不递、未注入不崩）；
+> 三守卫 `check_architecture` / `check_codegen` / `check_design_tokens` 0 违规。两个 ArkTS 编译坑：
+> 早退之后 `.value` 不收窄（改用 `getOrNull()`）、`{ ok: false, error }` 字面量不满足 `Result`（必须走 `err()`）。
+> 遗留（→ DEEPLINK-102）：`internalLinkTypeChatInvite`（`checkChatInviteLink` → 确认弹窗 → `joinChatByInviteLink`）、
+> `internalLinkTypeProxy`（→ `addProxy(enable: true)`，顺带结掉 PROXY-101 的 `tg://proxy` 遗留）、
+> `internalLinkTypeMessage` / `Post`（→ `getMessage` 定位跳转）、`internalLinkTypeBotStart`（`addContact` + 开会话）、
+> `tg://resolve?domain=`；Share Extension 另包；气泡内 `t.me` 链接的**真机点击**取证还缺一个可稳定命中的
+> span 热区（判定与递出已由单测覆盖）。
 
 
 | 功能 ID | 功能名 |

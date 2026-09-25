@@ -26,6 +26,40 @@
             "actions": [
               "ohos.want.action.home"
             ]
+          },
+          {
+            // DEEPLINK-101 / FEAT-P2-010：声明本应用可接的链接入口。
+            // scheme tg（自定义深链）+ 四个 t.me 系镜像域（照 TGX TdConstants.TME_HOSTS）。
+            // domainVerify 缺省 false：域名归属校验要 t.me 侧放 asset links 文件，
+            // 我们没有那个域，所以这些链接走「系统选择器里选本应用」而不是静默直达。
+            "entities": [
+              "entity.system.browsable"
+            ],
+            "actions": [
+              "ohos.want.action.viewData"
+            ],
+            "uris": [
+              {
+                "scheme": "tg"
+              },
+              {
+                "scheme": "https",
+                "host": "t.me"
+              },
+              {
+                "scheme": "https",
+                "host": "tx.me"
+              },
+              {
+                "scheme": "https",
+                "host": "telegram.me"
+              },
+              {
+                "scheme": "https",
+                "host": "telegram.dog"
+              }
+            ],
+            "domainVerify": false
           }
         ],
         "startWindowIcon": "$media:icon",

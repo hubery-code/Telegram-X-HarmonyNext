@@ -730,6 +730,7 @@ export type ChatIntent =
   | OnJumpToMessageReady
   | ClearJumpToMessage
   | OpenUserProfile
+  | OpenAppLink
   | OnHeaderSubtitleChanged
   | OnChatKindChanged
   | OnChatMuteStateChanged
@@ -1081,5 +1082,19 @@ export class VotePollOption implements Intent {
   constructor(messageId: number, optionIndex: number) {
     this.messageId = messageId;
     this.optionIndex = optionIndex;
+  }
+}
+
+/**
+ * DEEPLINK-101：点击气泡内链接时，判定为 Telegram 链接的那一批不走浏览器，
+ * 交给装配层用 `getInternalLinkType` 解析后应用内跳转。
+ * 纯导航意图：reducer 不改状态（default 分支），coordinator 转给注入的回调。
+ */
+export class OpenAppLink implements Intent {
+  readonly kind: 'openAppLink' = 'openAppLink';
+  readonly url: string;
+
+  constructor(url: string) {
+    this.url = url;
   }
 }

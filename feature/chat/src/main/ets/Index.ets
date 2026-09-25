@@ -103,6 +103,7 @@ export {
   OnJumpToMessageReady,
   ClearJumpToMessage,
   OpenUserProfile,
+  OpenAppLink,
   OnHeaderSubtitleChanged,
   OnChatKindChanged,
   OpenChatProfile,

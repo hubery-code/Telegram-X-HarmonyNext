@@ -210,6 +210,7 @@ import {
   OnChatSearchFailed,
   OnJumpToMessageReady,
   OpenUserProfile,
+  OpenAppLink,
   OnHeaderSubtitleChanged,
   OnChatKindChanged,
   OnChatMuteStateChanged,
@@ -443,6 +444,12 @@ export interface ChatCoordinatorOptions {
   readonly onOpenChatProfile?: (chatId: number) => void;
   /** CHANNEL-101：请求装配层打开帖子评论列表页（缺省 no-op）。 */
   readonly onOpenComments?: (chatId: number, messageId: number) => void;
+  /**
+   * DEEPLINK-101：请求装配层解析并应用内打开一条 Telegram 链接（缺省 no-op）。
+   * 解析要问 TDLib 的 `getInternalLinkType`，而 `feature/*` 不该知道链接语义，
+   * 所以这里只把 URL 递出去，路由由 entry 决定。
+   */
+  readonly onOpenAppLink?: (url: string) => void;
   /** VOICE-101：音频播放器抽象。 */
   readonly audioPlayerPort?: AudioPlayerPort;
   /** VOICE-101：音频录制器抽象。 */
@@ -536,6 +543,8 @@ export class ChatCoordinator {
   private readonly onOpenChatProfile: (chatId: number) => void;
   /** CHANNEL-101：请求装配层打开帖子评论列表页（缺省 no-op）。 */
   private readonly onOpenComments: (chatId: number, messageId: number) => void;
+  /** DEEPLINK-101：请求装配层应用内打开一条 Telegram 链接（缺省 no-op）。 */
+  private readonly onOpenAppLink: (url: string) => void;
   private currentState: ChatUiState;
   private readonly listeners: ChatUiStateListener[] = [];
   private syncScheduled: boolean = false;
@@ -641,6 +650,9 @@ export class ChatCoordinator {
     this.onOpenComments = (options !== undefined && options.onOpenComments !== undefined)
       ? options.onOpenComments
       : (chatId: number, messageId: number): void => {};
+    this.onOpenAppLink = (options !== undefined && options.onOpenAppLink !== undefined)
+      ? options.onOpenAppLink
+      : (url: string): void => {};
     this.env = env !== undefined ? env : {
       clock: new ManualClock(1000, 500),
       ids: new SequentialIdGenerator('chat-')
@@ -1067,6 +1079,14 @@ export class ChatCoordinator {
       if (profileIntent.userId > 0) {
         this.logger.info(TAG, 'open_user_profile', `userId=${profileIntent.userId}`);
         this.onOpenUserProfile(profileIntent.userId);
+      }
+    } else if (intent.kind === 'openAppLink') {
+      // DEEPLINK-101：气泡里的 Telegram 链接不进浏览器，递出去让装配层解析后应用内跳。
+      const linkIntent: OpenAppLink = intent as OpenAppLink;
+      if (linkIntent.url.length > 0) {
+        // 只记长度：链接可能携带邀请哈希，等同凭证。
+        this.logger.info(TAG, 'open_app_link', `urlLength=${linkIntent.url.length}`);
+        this.onOpenAppLink(linkIntent.url);
       }
     } else if (intent.kind === 'openChatProfile') {
       // MSG-109：纯导航意图——reducer 原样透传（default 分支），这里转给装配层路由。

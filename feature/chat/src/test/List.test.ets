@@ -18,6 +18,7 @@ import chatMuteStateTest from './ChatMuteState.test';
 import privateChatHeaderProfileTest from './PrivateChatHeaderProfile.test';
 import viewerTransformTest from './ViewerTransform.test';
 import viewerPlaybackTest from './ViewerPlayback.test';
+import chatAppLinkDispatchTest from './ChatAppLinkDispatch.test';
 
 export default function testsuite(): void {
   chatReducerTest();
@@ -40,5 +41,6 @@ export default function testsuite(): void {
   privateChatHeaderProfileTest();
   viewerTransformTest();
   viewerPlaybackTest();
+  chatAppLinkDispatchTest();
 }
 

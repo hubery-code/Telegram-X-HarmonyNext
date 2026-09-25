@@ -10,6 +10,7 @@
     "@tgx/core-design-system": "file:../../core/design_system",
     "@tgx/core-account": "file:../../core/account",
     "@tgx/core-domain": "file:../../core/domain",
+    "@tgx/core-navigation": "file:../../core/navigation",
     "@tgx/core-td-api-generated": "file:../../core/td_api_generated",
     "@tgx/td-gateway": "file:../../core/td_gateway",
     "@tgx/platform-ports": "file:../../platform/ports",

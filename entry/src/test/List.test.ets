@@ -5,6 +5,8 @@ import bootstrapKeystoreTest from './lifecycle/BootstrapKeystore.test';
 import entryNavigationTest from './navigation/EntryNavigation.test';
 import multiAccountFlowTest from './account/MultiAccountFlow.test';
 import audioSessionOrchestratorTest from './platform/AudioSessionOrchestrator.test';
+import appLinkRouterTest from './deeplink/AppLinkRouter.test';
+import deepLinkQueueTest from './deeplink/DeepLinkQueue.test';
 
 const DOMAIN: number = 0x0000;
 const TAG: string = 'ListTest';
@@ -25,4 +27,6 @@ export default function listTest() {
   entryNavigationTest();
   multiAccountFlowTest();
   audioSessionOrchestratorTest();
+  appLinkRouterTest();
+  deepLinkQueueTest();
 }

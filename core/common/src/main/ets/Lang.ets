@@ -231,7 +231,11 @@ const EN_DICTIONARY: Record<string, string> = {
   'Any media': 'Any media',
   'No restrictions': 'No restrictions',
   'No limit': 'No limit',
-  'Off': 'Off'
+  'Off': 'Off',
+
+  // Internal links (DEEPLINK-101)
+  'This link type is not supported yet': 'This link type is not supported yet',
+  'Failed to open link': 'Failed to open link'
 };
 
 const ZH_DICTIONARY: Record<string, string> = {
@@ -385,7 +389,11 @@ const ZH_DICTIONARY: Record<string, string> = {
   'Any media': '任意媒体',
   'No restrictions': '无限制',
   'No limit': '无上限',
-  'Off': '关闭'
+  'Off': '关闭',
+
+  // Internal links (DEEPLINK-101)
+  'This link type is not supported yet': '暂不支持这种链接',
+  'Failed to open link': '无法打开链接'
 };
 
 export class Lang {

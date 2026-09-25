@@ -28,3 +28,11 @@ export {
   defaultDeepLinkRules
 } from './RouteCodec';
 export { NavigationStack, StackEntry } from './NavigationStack';
+export {
+  UriParts,
+  TELEGRAM_LINK_HOSTS,
+  TELEGRAM_LINK_SCHEMES,
+  isTelegramLinkCandidate,
+  normalizeTelegramLink,
+  splitUri
+} from './TelegramLink';

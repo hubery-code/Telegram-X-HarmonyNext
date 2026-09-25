@@ -33,10 +33,13 @@ import { PreferencesDownloadLimitsStore } from '../store/DownloadLimitsStore';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { common } from '@kit.AbilityKit';
 import { AccountDescriptor, AccountScope } from '@tgx/core-account';
-import { AppError, ManualClock, Result, SequentialIdGenerator } from '@tgx/core-common';
+import { AppError, Lang, ManualClock, Result, SequentialIdGenerator } from '@tgx/core-common';
 import { ReducerEnv } from '@tgx/feature-template';
 import { AppRoute, ChatRoute, ChatInfoRoute, UserProfileRoute, CommentsRoute, SettingsSectionRoute } from '@tgx/core-navigation';
 import { EntryNavigationController } from '../navigation/EntryNavigationController';
+import { AppLinkResult, AppLinkRouter } from '../deeplink/AppLinkRouter';
+import { ScopeAppLinkPort } from '../deeplink/ScopeAppLinkPort';
+import { appDeepLinkQueue } from '../deeplink/DeepLinkQueue';
 import {
   AuthRootPage,
   AuthUiState,
@@ -242,6 +245,10 @@ struct Index {
   private accountScope: AccountScope | null = null;
   private bootstrapResult: BootstrapResult | null = null;
   private currentAccountKey: string = 'default';
+  /** DEEPLINK-101：链接解析器；只建一次，账号 scope 走提供者。 */
+  private appLinkRouter: AppLinkRouter | null = null;
+  /** DEEPLINK-101：冷启动 want 要等进过 home 才有人接，attach 只做一次。 */
+  private appLinkAttached: boolean = false;
 
 
   aboutToAppear(): void {
@@ -297,6 +304,8 @@ struct Index {
 
     this.initAuthCoordinatorSubscription(result.scope);
     this.updateAvailableAccounts();
+    // DEEPLINK-101：状态恢复可能直接落在 home（没走过 onRouteChanged），补一次挂载判定。
+    this.syncAppLinkHandler();
   }
 
   /**
@@ -311,6 +320,9 @@ struct Index {
   }
 
   aboutToDisappear(): void {
+    // DEEPLINK-101：页面要销毁了，别让队列继续往已销毁的协调器里投链接。
+    this.appLinkAttached = false;
+    appDeepLinkQueue.detach();
     if (this.unsubscribeNavFn !== null) {
       this.unsubscribeNavFn();
       this.unsubscribeNavFn = null;
@@ -370,6 +382,122 @@ struct Index {
       return this.navController.pop();
     }
     return this.navController.pop();
+  }
+
+  /**
+   * DEEPLINK-101：装配链接解析器（懒建，只建一次）。
+   *
+   * scope 走**提供者**而不是构造时快照：切账号会换 scope，未登录时根本没有 scope，
+   * 而两条入口（冷启动 want、气泡点击）都可能在任一时刻发生。
+   * isReady 用「栈里有 home」判定：auth 阶段没有可用会话库，`searchPublicChat` 必然失败。
+   */
+  private ensureAppLinkRouter(): AppLinkRouter | null {
+    if (this.appLinkRouter !== null) {
+      return this.appLinkRouter;
+    }
+    if (this.accountScope === null) {
+      return null;
+    }
+    this.appLinkRouter = new AppLinkRouter(
+      new ScopeAppLinkPort((): AccountScope | null => this.accountScope),
+      {
+        navigate: (route: AppRoute): void => {
+          this.navController.navigateTo(route);
+        },
+        isReady: (): boolean => this.navController.hasRoute('home'),
+        logger: this.logger
+      }
+    );
+    return this.appLinkRouter;
+  }
+
+  /**
+   * DEEPLINK-101：把一条链接交给解析器，并按结果决定去留。
+   *
+   * 冷启动时 want 比页面早到（`EntryAbility.onCreate` → `loadContent`），
+   * 所以链接先进 `appDeepLinkQueue`，进过 home 才挂处理器把积压补投。
+   */
+  private dispatchAppLink(uri: string): void {
+    this.resolveAppLink(uri);
+  }
+
+  private async resolveAppLink(uri: string): Promise<void> {
+    const router: AppLinkRouter | null = this.ensureAppLinkRouter();
+    if (router === null) {
+      this.deferAppLink(uri, 'no router');
+      return;
+    }
+    try {
+      const res: AppLinkResult = await router.handle(uri);
+      if (res.outcome === 'not_ready') {
+        this.deferAppLink(uri, 'account not ready');
+        return;
+      }
+      if (res.outcome === 'external') {
+        // TDLib 判定不是 Telegram 链接（Android `internalLinkTypeUnknownDeepLink`）→ 浏览器。
+        this.openInBrowser(uri);
+        return;
+      }
+      if (res.outcome === 'unsupported') {
+        // 是 Telegram 链接但本端这一步还没做（邀请/代理/消息…）；不丢进浏览器登录墙。
+        this.toastAdapter.showToast(Lang.getInstance().getString('This link type is not supported yet'));
+        return;
+      }
+      if (res.outcome === 'failed') {
+        this.toastAdapter.showToast(Lang.getInstance().getString('Failed to open link'));
+      }
+    } catch (e) {
+      // 只记事件，不记链接正文（可携带邀请哈希）。
+      hilog.warn(DOMAIN, TAG, 'app link resolution threw');
+    }
+  }
+
+  /** DEEPLINK-101：外部链接落浏览器（与 feature/chat 的气泡链接口径一致）。 */
+  private openInBrowser(url: string): void {
+    const hostContext = this.getUIContext().getHostContext();
+    if (hostContext === undefined) {
+      hilog.warn(DOMAIN, TAG, 'openInBrowser failed: no host context');
+      return;
+    }
+    const context = hostContext as common.UIAbilityContext;
+    context.openLink(url, { appLinkingOnly: false }).catch((e: Object) => {
+      hilog.warn(DOMAIN, TAG, 'openInBrowser failed');
+      this.toastAdapter.showToast(Lang.getInstance().getString('Failed to open link'));
+    });
+  }
+
+  /**
+   * 解析还来不及（未登录 / 没 scope）时的去路：**只有队列没有消费者时才回队**，
+   * 否则 `enqueue` 会立刻回调本方法 —— 自喂死循环。
+   * 有消费者却仍然 not_ready，说明链接是在登出清栈的间隙里进来的，丢掉并记一条原因。
+   */
+  private deferAppLink(uri: string, reason: string): void {
+    if (!appDeepLinkQueue.isAttached()) {
+      appDeepLinkQueue.enqueue(uri);
+      return;
+    }
+    // 只记原因与长度，不记链接正文。
+    hilog.warn(DOMAIN, TAG, 'app link dropped: %{public}s', reason);
+  }
+
+  /**
+   * 处理器只在「栈里有 home」时挂上 —— 挂上就会立刻补投积压，而补投需要可用的
+   * 会话库；登出清栈时反向卸掉，之后进来的链接重新排队，等下一次进 home 补投。
+   */
+  private syncAppLinkHandler(): void {
+    const ready: boolean = this.navController.hasRoute('home');
+    if (ready && !this.appLinkAttached) {
+      this.appLinkAttached = true;
+      const flushed: number = appDeepLinkQueue.attach((uri: string): void => {
+        this.dispatchAppLink(uri);
+      });
+      if (flushed > 0) {
+        hilog.info(DOMAIN, TAG, 'app link handler attached, flushed %{public}d queued link(s)', flushed);
+      }
+    } else if (!ready && this.appLinkAttached) {
+      this.appLinkAttached = false;
+      appDeepLinkQueue.detach();
+    }
   }
 
   private onRouteChanged(route: AppRoute, _prev: AppRoute | null): void {
@@ -448,6 +576,9 @@ struct Index {
         this.openSearch();
       }
     }
+
+    // 3. DEEPLINK-101：链接处理器跟着「是否已进过 home」走。
+    this.syncAppLinkHandler();
   }
 
   private dispatch(intent: AuthIntent): void {
@@ -1160,6 +1291,10 @@ struct Index {
         // CHANNEL-101：频道帖子底栏点击「评论」→ 压栈评论页。
         onOpenComments: (targetChatId: number, targetMessageId: number): void => {
           this.navController.navigateTo({ name: 'comments', chatId: targetChatId, messageId: targetMessageId });
+        },
+        // DEEPLINK-101：气泡里的 Telegram 链接 → 交装配层解析后应用内跳（不进浏览器）。
+        onOpenAppLink: (url: string): void => {
+          this.dispatchAppLink(url);
         }
       }
     );

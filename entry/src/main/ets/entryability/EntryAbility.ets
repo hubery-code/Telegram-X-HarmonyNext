@@ -2,6 +2,7 @@ import { AbilityConstant, UIAbility, Want } from '@kit.AbilityKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { window } from '@kit.ArkUI';
 import { bootstrap, BootstrapResult } from '../Bootstrap';
+import { appDeepLinkQueue } from '../deeplink/DeepLinkQueue';
 import { TdlibParametersConfig } from '@tgx/feature-auth';
 import { TELEGRAM_CREDENTIALS } from '../config/AppCredentials';
 import { initSettingsStore, loadChatFontSize, KEY_CHAT_FONT_SIZE } from '../store/SettingsStore';
@@ -12,6 +13,10 @@ const TAG: string = 'EntryAbility';
 export default class EntryAbility extends UIAbility {
   onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): void {
     hilog.info(DOMAIN, TAG, 'onCreate — bootstrapping TDLib + AuthCoordinator');
+
+    // DEEPLINK-101：冷启动的链接比页面早到（loadContent 还没跑），先入队，
+    // 等 pages/Index 进过 home 再补投。这里只记长度——uri 可携带邀请哈希。
+    this.captureWantUri(want, 'onCreate');
 
     const filesDir: string = this.context.filesDir;
     const cacheDir: string = this.context.cacheDir;
@@ -44,6 +49,27 @@ export default class EntryAbility extends UIAbility {
       result.coordinator.destroy();
       result.lifecycle.onDestroy();
     }
+  }
+
+  onNewWant(want: Want, launchParam: AbilityConstant.LaunchParam): void {
+    // DEEPLINK-101：热启动（应用已在后台，从别处点 Telegram 链接进来）。
+    hilog.info(DOMAIN, TAG, 'onNewWant');
+    this.captureWantUri(want, 'onNewWant');
+  }
+
+  /**
+   * 把 want 里的链接交给深链队列。
+   *
+   * 日志只记长度与来源，**不记 uri 正文**：`t.me/+inviteHash` 里的哈希等同凭证，
+   * 与本仓 `openLink failed` 只记事件不记 URL 的既有口径一致。
+   */
+  private captureWantUri(want: Want, source: string): void {
+    const uri: string | undefined = want.uri;
+    if (uri === undefined || uri === null || uri.trim().length === 0) {
+      return;
+    }
+    hilog.info(DOMAIN, TAG, 'want uri from %{public}s, length=%{public}d', source, uri.trim().length);
+    appDeepLinkQueue.enqueue(uri);
   }
 
   onWindowStageCreate(windowStage: window.WindowStage): void {

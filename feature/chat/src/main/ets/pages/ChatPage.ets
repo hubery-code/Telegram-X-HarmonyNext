@@ -45,6 +45,7 @@
 
 import { LightTheme, Theme, chatTextSizeOf } from '@tgx/core-design-system';
 import { Lang } from '@tgx/core-common';
+import { isTelegramLinkCandidate } from '@tgx/core-navigation';
 import {
   AttachmentEntry,
   ATTACHMENT_FILE,
@@ -144,6 +145,7 @@ import {
   JumpToSearchResult,
   ClearJumpToMessage,
   OpenUserProfile,
+  OpenAppLink,
   OpenChatProfile,
   ChatMenuAction,
   ConfirmMenuAction,
@@ -4818,6 +4820,13 @@ export struct ChatPage {
     // MSG-105：协议前缀容错（若既无 :// 且非 mailto:/tel:，自动补全 https://）
     if (!targetUrl.includes('://') && !targetUrl.startsWith('mailto:') && !targetUrl.startsWith('tel:')) {
       targetUrl = 'https://' + targetUrl;
+    }
+    // DEEPLINK-101：Telegram 自家的链接不交给浏览器 —— 浏览器只会给出一个登录墙。
+    // 判据只有 scheme + host（见 core/navigation/TelegramLink），真正的语义由装配层
+    // 问 TDLib 的 getInternalLinkType 决定；这里不做解析，避免两套真相。
+    if (isTelegramLinkCandidate(targetUrl)) {
+      this.onDispatch(new OpenAppLink(targetUrl));
+      return;
     }
     const hostContext = this.getUIContext().getHostContext();
     if (hostContext === undefined) {
