@@ -283,6 +283,11 @@ export class OpenCommentsEffect implements Effect {
 }
 
 /** STICKER-PREVIEW-101：向 TDLib 请求贴纸包详情。 */
+/** STICKER-BOARD-101：向 TDLib 取已安装贴纸包（getInstalledStickerSets, regular）。 */
+export class FetchStickerBoard implements Effect {
+  readonly kind: 'fetchStickerBoard' = 'fetchStickerBoard';
+}
+
 export class FetchStickerSet implements Effect {
   readonly kind: 'fetchStickerSet' = 'fetchStickerSet';
   readonly setId: string;
@@ -452,6 +457,7 @@ export type ChatEffect =
   | JoinChannelEffect
   | ToggleReactionEffect
   | OpenCommentsEffect
+  | FetchStickerBoard
   | FetchStickerSet
   | ChangeStickerSetEffect
   | SendStickerMessage

@@ -97,6 +97,9 @@ import {
   DeleteLastEmojiChar,
   ClearRecentEmojis,
   OpenStickerSet,
+  OpenStickerBoard,
+  OnStickerBoardLoaded,
+  OnStickerBoardFailed,
   OnStickerSetLoaded,
   OnStickerSetLoadFailed,
   CloseStickerSetPreview,
@@ -158,6 +161,7 @@ import {
   ToggleReactionEffect,
   OpenCommentsEffect,
   FetchStickerSet,
+  FetchStickerBoard,
   ChangeStickerSetEffect,
   SendStickerMessage,
   SendAnimationMessage,
@@ -1270,6 +1274,49 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
       );
     }
 
+    case 'openStickerBoard': {
+      // 语义是「要看」不是「刷新」：同一次会话内反复切页签不重复打 TDLib。
+      // 失败过的盘保持 isLoaded=false，下一次进来会再试一次（Android 也是进入即拉、
+      // 之后靠监听器增量更新，不做轮询）。
+      if (state.stickerBoard.isLoading || state.stickerBoard.isLoaded) {
+        return reduced(state);
+      }
+      return reduced(
+        state.copyWith({
+          stickerBoard: state.stickerBoard.copyWith({ isLoading: true, errorMessage: null })
+        }),
+        [new FetchStickerBoard()]
+      );
+    }
+
+    case 'onStickerBoardLoaded': {
+      const loadedBoard: OnStickerBoardLoaded = intent as OnStickerBoardLoaded;
+      return reduced(
+        state.copyWith({
+          stickerBoard: state.stickerBoard.copyWith({
+            packs: loadedBoard.packs,
+            isLoading: false,
+            isLoaded: true,
+            errorMessage: null
+          })
+        })
+      );
+    }
+
+    case 'onStickerBoardFailed': {
+      const failedBoard: OnStickerBoardFailed = intent as OnStickerBoardFailed;
+      // 已经装过盘时只记错误、不清包：上一次的内容比一片空白有用，也让用户知道
+      // 不是「没有贴纸包」而是「这次没读到」。
+      return reduced(
+        state.copyWith({
+          stickerBoard: state.stickerBoard.copyWith({
+            isLoading: false,
+            errorMessage: failedBoard.error
+          })
+        })
+      );
+    }
+
     case 'openStickerSet': {
       const openIntent: OpenStickerSet = intent as OpenStickerSet;
       const initialPreview: StickerSetPreviewState = new StickerSetPreviewState(
@@ -1383,7 +1430,11 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
           false,
           null
         );
-        return reduced(state.copyWith({ stickerSetPreview: nextPreview }));
+        // 装/卸一包会让已装的盘失效：下一次开板重新拉，否则新装的包要等到杀进程才看得到。
+        return reduced(state.copyWith({
+          stickerSetPreview: nextPreview,
+          stickerBoard: state.stickerBoard.copyWith({ isLoaded: false })
+        }));
       }
       return reduced(state);
     }

@@ -124,6 +124,12 @@ import {
   encodeGetStickerSet,
   decodeStickerSet,
   StickerSet,
+  GetInstalledStickerSets,
+  encodeGetInstalledStickerSets,
+  decodeStickerSets,
+  StickerSets,
+  StickerSetInfo,
+  StickerTypeRegular,
   ChangeStickerSet,
   encodeChangeStickerSet,
   InputMessageSticker,
@@ -225,6 +231,8 @@ import {
   OnStickerSetChanged,
   OnStickerSetActionFailed,
   OnStickerPreviewFileUpdated,
+  OnStickerBoardLoaded,
+  OnStickerBoardFailed,
   StartVoiceRecord,
   StopAndSendVoiceRecord,
   CancelVoiceRecord,
@@ -259,6 +267,7 @@ import {
   ToggleReactionEffect,
   OpenCommentsEffect,
   FetchStickerSet,
+  FetchStickerBoard,
   ChangeStickerSetEffect,
   SendStickerMessage,
   SendAnimationMessage,
@@ -271,6 +280,11 @@ import {
   SetPollAnswerEffect
 } from '../contract/ChatEffect';
 import { StickerSetPreviewState, StickerSetItem, isUnicodeEmojiSticker } from '../model/StickerSetPreviewState';
+import {
+  StickerBoardDeps,
+  StickerBoardPack,
+  stickerBoardPacksFromSetInfos
+} from '../model/StickerBoard';
 import { isOutgoingMessageRead, ReadReportThrottle } from '../model/ReadReceipt';
 import { chatReducer } from '../reducer/ChatReducer';
 
@@ -596,6 +610,16 @@ export class ChatCoordinator {
    * 下载按钮 —— 用户既不知道失败了，也没有区别于「首次下载」的重试入口。
    */
   private readonly failedFileIds: Set<number> = new Set();
+  /**
+   * STICKER-BOARD-101：`getInstalledStickerSets` 的原始回包。
+   *
+   * 板卡上的格子只带缩略图的**路径**、不带缩略图 fileId，所以「某张图到货了」这件事没法
+   * 在 reducer 里按 id 补（补不出匹配）。这里留一份 DTO 缓存，到货时重新装一次盘 ——
+   * 与预览弹层靠 `onStickerPreviewFileUpdated` 回灌是同一思路的两种落地。
+   */
+  private stickerBoardSets: StickerSetInfo[] = [];
+  /** 本次装盘为贴纸板登记过下载的文件 id；哪个到货就要重装一次盘。 */
+  private readonly stickerBoardFiles: Set<number> = new Set();
   /**
    * MEDIA-105：待发送视频的**本地缩略图**缓存，key = 送进 TDLib 的视频沙箱物理路径。
    *
@@ -1483,6 +1507,7 @@ export class ChatCoordinator {
             this.scheduleSyncFromProjection();
             if (file.local.path.length > 0) {
               this.dispatch(new OnStickerPreviewFileUpdated(fileId, file.local.path));
+              this.refreshStickerBoardOnArrival(fileId);
             }
           } else {
             // SET-104：TDLib 停止下载（清理缓存把文件重置 / 下载失败）时释放去重闩，
@@ -3632,6 +3657,11 @@ export class ChatCoordinator {
         break;
       }
 
+      case 'fetchStickerBoard': {
+        this.handleFetchStickerBoard();
+        break;
+      }
+
       case 'fetchStickerSet': {
         const fetchSticker: FetchStickerSet = effect as FetchStickerSet;
         this.handleFetchStickerSet(fetchSticker.setId);
@@ -3889,6 +3919,73 @@ export class ChatCoordinator {
     }).catch((err: Object) => {
       this.logger.warn(TAG, 'clipboard_set_exception', String(err));
     });
+  }
+
+  /**
+   * STICKER-BOARD-101：拉「已安装的普通贴纸包」并装成表情板的包列表。
+   *
+   * 只用 `stickerSetInfo.covers`（TDLib 给的前 5 张封面），不逐包再发 `getStickerSet`：
+   * 一屏小图要的就是这 5 张，整包内容留给点标题行后的预览弹层 —— 同 Android 的
+   * `EmojiMediaListController`（贴纸页铺 installed sets，点包名才开整包页）。
+   */
+  private handleFetchStickerBoard(): void {
+    const req: GetInstalledStickerSets = new GetInstalledStickerSets();
+    req.sticker_type = new StickerTypeRegular();
+    const result: Result<TdPendingRequest, AppError> =
+      this.scope.request('getInstalledStickerSets', encodeGetInstalledStickerSets(req) as TdWireObject);
+    if (result.err) {
+      this.logger.logError(TAG, result.error);
+      this.dispatch(new OnStickerBoardFailed(result.error.message));
+      return;
+    }
+    if (result.ok) {
+      result.value.promise.then((res: Result<TdWireObject, AppError>) => {
+        if (this.destroyed) {
+          return;
+        }
+        if (res.err) {
+          this.logger.logError(TAG, res.error);
+          this.dispatch(new OnStickerBoardFailed(res.error.message));
+        }
+        if (res.ok) {
+          const sets: StickerSets | null = decodeStickerSets(res.value as TdJsonRaw);
+          if (sets === null) {
+            this.dispatch(new OnStickerBoardFailed('Failed to decode sticker sets'));
+            return;
+          }
+          this.stickerBoardSets = sets.sets;
+          this.logger.info(TAG, 'sticker_board_loaded', `rows=${sets.sets.length},total=${sets.total_count}`);
+          this.dispatch(new OnStickerBoardLoaded(this.mapStickerBoard()));
+        }
+      }).catch(() => {});
+    }
+  }
+
+  /**
+   * DTO 缓存 → 板卡包列表。
+   *
+   * `download` 回调顺手记下本次登记过的 fileId：图到货那一刻用它决定要不要重装一次盘
+   * （格子只带路径、不带缩略图 fileId，reducer 里没法按 id 补）。
+   */
+  private mapStickerBoard(): StickerBoardPack[] {
+    const deps: StickerBoardDeps = {
+      localPathOf: (fileId: number): string | null => this.fileRegistry.getLocalPath(fileId),
+      download: (fileId: number): void => {
+        if (!this.fileRegistry.isDownloaded(fileId)) {
+          this.stickerBoardFiles.add(fileId);
+          this.requestMediaDownload(fileId, 2);
+        }
+      }
+    };
+    return stickerBoardPacksFromSetInfos(this.stickerBoardSets, deps);
+  }
+
+  /** 贴纸板某张缩略图下载完成：从 DTO 缓存重装一次盘，让刚到货的图立刻上屏。 */
+  private refreshStickerBoardOnArrival(fileId: number): void {
+    if (!this.stickerBoardFiles.delete(fileId) || this.stickerBoardSets.length === 0) {
+      return;
+    }
+    this.dispatch(new OnStickerBoardLoaded(this.mapStickerBoard()));
   }
 
   private handleFetchStickerSet(setId: string): void {

@@ -35,6 +35,7 @@ import { ChatSearchResultItem } from '../model/ChatSearchResultItem';
 import { ChatKind } from '../model/SenderInfo';
 import { StickerSetPreviewState, StickerSetItem } from '../model/StickerSetPreviewState';
 import { GifItem } from '../model/GifItem';
+import { StickerBoardPack } from '../model/StickerBoard';
 import { ChatSendRights } from '@tgx/core-domain';
 
 export class LoadInitialMessages implements Intent {
@@ -763,6 +764,9 @@ export type ChatIntent =
   | ClearRecentGifs
   | SearchGifs
   | OnStickerPreviewFileUpdated
+  | OpenStickerBoard
+  | OnStickerBoardLoaded
+  | OnStickerBoardFailed
   | StartVoiceRecord
   | StopAndSendVoiceRecord
   | CancelVoiceRecord
@@ -860,6 +864,34 @@ export class OnStickerSetActionFailed implements Intent {
 
   constructor(setId: string, error: string) {
     this.setId = setId;
+    this.error = error;
+  }
+}
+
+/**
+ * STICKER-BOARD-101：表情板切到贴纸页签时请求装盘（读真实 installed sticker sets）。
+ * 语义是「要看」而不是「刷新」：reducer 只在没装过且不在途中才发请求，避免每次切页签打一次 TDLib。
+ */
+export class OpenStickerBoard implements Intent {
+  readonly kind: 'openStickerBoard' = 'openStickerBoard';
+}
+
+/** STICKER-BOARD-101：装盘成功回灌（包列表由 model 层的纯映射从 TDLib DTO 折算而来）。 */
+export class OnStickerBoardLoaded implements Intent {
+  readonly kind: 'onStickerBoardLoaded' = 'onStickerBoardLoaded';
+  readonly packs: StickerBoardPack[];
+
+  constructor(packs: StickerBoardPack[]) {
+    this.packs = packs;
+  }
+}
+
+/** STICKER-BOARD-101：装盘失败回灌。只留一句可显示的说明，异常原文进日志。 */
+export class OnStickerBoardFailed implements Intent {
+  readonly kind: 'onStickerBoardFailed' = 'onStickerBoardFailed';
+  readonly error: string;
+
+  constructor(error: string) {
     this.error = error;
   }
 }

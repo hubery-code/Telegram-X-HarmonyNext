@@ -14,8 +14,24 @@
  */
 
 import { LightTheme, Theme } from '@tgx/core-design-system';
-import { StickerSetItem, StickerPack, DEFAULT_STICKER_PACKS } from '../model/StickerSetPreviewState';
+import { StickerSetItem } from '../model/StickerSetPreviewState';
 import { GifItem, GIF_CATEGORIES, DEFAULT_RECENT_GIFS, DEFAULT_GIF_PACKS } from '../model/GifItem';
+import {
+  StickerBoardPack,
+  STICKER_BOARD_RECENT_SET_ID,
+  stickerBoardBlocks,
+  stickerCellImagePath,
+  stickerCellKey
+} from '../model/StickerBoard';
+
+
+/** 沙箱路径 → Image 可吃的 uri（与贴纸包预览弹层同一口径）。 */
+function toSandboxUri(path: string | null): string {
+  if (path === null || path.length === 0) {
+    return '';
+  }
+  return path.startsWith('file://') ? path : `file://${path}`;
+}
 
 
 export interface StickerPreviewItem {
@@ -140,9 +156,6 @@ const SAMPLE_GIFS: GifPreviewItem[] = [
   { id: 'g6', title: 'Applause', tag: '👏' }
 ];
 
-/** STICKER-101：贴纸包 Tab 图标（0 为 Recent 最近使用） */
-const STICKER_PACK_TABS: string[] = ['🕒', '🔥', '🐱', '😎'];
-
 @Component
 export struct EmojiBoard {
   /**
@@ -161,7 +174,17 @@ export struct EmojiBoard {
   onSendGif?: (item: GifItem) => void;
   onClearRecentGifs?: () => void;
   onOpenStickerSet: (setId: string) => void = () => {};
+  /**
+   * STICKER-BOARD-101：切到贴纸页签时通知父层「要看贴纸板」。
+   * 父层收到后派发 `OpenStickerBoard`；重复派发无害（reducer 里已装过盘就不再请求）。
+   */
+  onStickerBoardVisible: () => void = () => {};
   onClearRecent?: () => void;
+
+  /** STICKER-BOARD-101：`getInstalledStickerSets` 装出来的真实贴纸包（空 = 账号没装任何包）。 */
+  @Prop stickerPacks: StickerBoardPack[] = [];
+  @Prop stickerBoardLoading: boolean = false;
+  @Prop stickerBoardError: string | null = null;
 
   /** EMOJI-101：由父层回灌的最近使用表情列表 */
   @Prop recentEmojis: string[] = [];
@@ -173,6 +196,8 @@ export struct EmojiBoard {
   @State currentMainTab: string = 'emoji';
   @State currentEmojiCategory: number = 0;
   @State currentStickerPackIndex: number = 0;
+  /** 贴纸包连续列表的滚动器：顶部包条点一下滚到对应那一包。 */
+  private stickerScroller: Scroller = new Scroller();
   @State currentGifCategoryIndex: number = 0;
   @State gifSearchQuery: string = '';
 
@@ -223,6 +248,7 @@ export struct EmojiBoard {
           .alignItems(VerticalAlign.Center)
           .onClick(() => {
             this.currentMainTab = 'sticker';
+            this.onStickerBoardVisible();
           })
 
           // GIF Tab
@@ -431,205 +457,221 @@ export struct EmojiBoard {
     .height('100%')
   }
 
-  /** 贴纸视图（STICKER-101）：贴纸包横向导航 + 5列大图网格 / 最近贴纸双模 */
+  /**
+   * 贴纸视图（STICKER-BOARD-101）：**真实**已安装贴纸包 + 最近使用伪包。
+   *
+   * 版式照 Android 的贴纸页：一整张连续列表，每包 = 整宽标题行 + 包内封面贴纸内联
+   * （`MediaStickersAdapter.java:682-698`），顶部横向包缩略图条点一下滚到那一包
+   * （`MediaHeaderView.java:223-248`）；点标题行开整包页（同一处 `:268-270`）。
+   * 之前这里是四包预置数据 + emoji 占位，看不出账号里到底装了哪些包。
+   */
   @Builder
   StickerView() {
     Column() {
-      // 贴纸包分类横向滚动选择条：🕒 Recent + 🔥 Hot Cherry + 🐱 Cute Animals + 😎 Cool Moods
+      // 包缩略图条：最近使用在最前（它没有 thumbnail，退回第一颗贴纸的图）
       Scroll() {
         Row() {
-          ForEach(STICKER_PACK_TABS, (icon: string, index: number) => {
+          ForEach(this.stickerBlocks(), (pack: StickerBoardPack, index: number) => {
             Column() {
-              Row() {
-                Text(icon)
-                  .fontSize(18)
-                  .opacity(this.currentStickerPackIndex === index ? 1.0 : 0.45)
+              if (pack.thumbnailPath !== null && pack.thumbnailPath.length > 0) {
+                Image(toSandboxUri(pack.thumbnailPath))
+                  .width(28)
+                  .height(28)
+                  .objectFit(ImageFit.Contain)
+              } else {
+                // 没缩略图退回包名首字母：Android 的包条也是「图为底、字母兜底」，
+                // 而不是再画一个 emoji —— 这里已经有真实贴纸图可显示，不需要假图标。
+                Text(pack.title.length > 0 ? pack.title.substring(0, 1).toUpperCase() : '★')
+                  .fontSize(16)
+                  .fontColor(this.T.colors.textSecondary)
               }
-              .height(34)
-              .justifyContent(FlexAlign.Center)
-              .alignItems(VerticalAlign.Center)
-
-              // 选中高亮指示条
-              Row()
-                .width(28)
-                .height(2)
-                .backgroundColor(this.currentStickerPackIndex === index ? this.T.colors.accent : Color.Transparent)
-                .borderRadius(1)
             }
-            .padding({ left: this.T.spacing.sm, right: this.T.spacing.sm })
+            .width(36)
             .height(36)
             .justifyContent(FlexAlign.Center)
             .alignItems(HorizontalAlign.Center)
+            .borderRadius(this.T.radius.sm)
+            .backgroundColor(this.currentStickerPackIndex === index ? this.T.colors.surfaceVariant : Color.Transparent)
             .onClick(() => {
               this.currentStickerPackIndex = index;
+              this.stickerScroller.scrollToIndex(index, true);
             })
-          })
+          }, (pack: StickerBoardPack, index: number) => `${index}_${pack.setId}_${pack.thumbnailPath ?? ''}`)
         }
         .alignItems(VerticalAlign.Center)
       }
       .width('100%')
-      .height(36)
+      .height(44)
       .scrollable(ScrollDirection.Horizontal)
       .scrollBar(BarState.Off)
       .borderWidth({ bottom: 1 })
       .borderColor(this.T.colors.divider)
 
-      // 贴纸主体展示区（分类 0 为 Recent，分类 1..3 为内置贴纸包）
-      if (this.currentStickerPackIndex === 0) {
-        if (this.recentStickers.length > 0) {
-          Column() {
-            // Recent 顶栏（展示标题与清空入口）
-            Row() {
-              Text('Recent Stickers')
-                .fontSize(this.T.typography.caption.fontSize)
-                .fontWeight(FontWeight.Medium)
-                .fontColor(this.T.colors.textSecondary)
-
-              Blank()
-
-              Text('Clear')
-                .fontSize(this.T.typography.caption.fontSize)
-                .fontWeight(FontWeight.Medium)
-                .fontColor(this.T.colors.accent)
-                .padding({ left: this.T.spacing.sm, right: this.T.spacing.sm, top: 4, bottom: 4 })
-                .borderRadius(this.T.radius.sm)
-                .onClick(() => {
-                  if (this.onClearRecentStickers) {
-                    this.onClearRecentStickers();
-                  }
-                })
-            }
-            .width('100%')
-            .padding({ left: this.T.spacing.md, right: this.T.spacing.md, top: this.T.spacing.xs, bottom: this.T.spacing.xs })
-
-            // 最近使用贴纸网格 (5列，72vp高度)
-            Grid() {
-              ForEach(this.recentStickers.slice(), (item: StickerSetItem) => {
-                GridItem() {
-                  Row() {
-                    Text(item.emoji)
-                      .fontSize(44)
-                  }
-                  .width('100%')
-                  .height(72)
-                  .justifyContent(FlexAlign.Center)
-                  .alignItems(VerticalAlign.Center)
-                  .borderRadius(this.T.radius.sm)
-                  .onClick(() => {
-                    if (this.onSendSticker) {
-                      this.onSendSticker(item);
-                    }
-                    this.onSelectSticker(item.emoji);
-                  })
-                }
-              })
-            }
-            .columnsTemplate('1fr 1fr 1fr 1fr 1fr')
-            .rowsGap(4)
-            .columnsGap(4)
-            .padding({
-              left: this.T.spacing.xs,
-              right: this.T.spacing.xs,
-              bottom: this.T.spacing.xs
-            })
-            .layoutWeight(1)
-            .scrollBar(BarState.Off)
-          }
-          .width('100%')
-          .height('100%')
-        } else {
-          // 最近贴纸为空时的优雅提示
-          Column() {
-            Text('🕒')
-              .fontSize(38)
-              .opacity(0.4)
-              .margin({ bottom: this.T.spacing.sm })
-            Text('No Recent Stickers')
-              .fontSize(this.T.typography.body.fontSize)
-              .fontWeight(FontWeight.Medium)
-              .fontColor(this.T.colors.textPrimary)
-            Text('Stickers you send will appear here')
-              .fontSize(this.T.typography.caption.fontSize)
-              .fontColor(this.T.colors.textSecondary)
-              .margin({ top: this.T.spacing.xs })
-          }
-          .width('100%')
-          .height('100%')
-          .justifyContent(FlexAlign.Center)
-          .alignItems(HorizontalAlign.Center)
-        }
+      if (this.stickerBlocks().length === 0) {
+        this.StickerBoardEmptyView()
       } else {
-        // 内置贴纸包展示
-        Column() {
-          // 贴纸包顶部快捷预览条
-          Row() {
-            Row() {
-              Text(DEFAULT_STICKER_PACKS[this.currentStickerPackIndex - 1].icon)
-                .fontSize(18)
-                .margin({ right: this.T.spacing.xs })
-              Text(`${DEFAULT_STICKER_PACKS[this.currentStickerPackIndex - 1].title} · ${DEFAULT_STICKER_PACKS[this.currentStickerPackIndex - 1].stickers.length} stickers`)
-                .fontSize(this.T.typography.caption.fontSize)
-                .fontWeight(FontWeight.Medium)
-                .fontColor(this.T.colors.textPrimary)
-            }
-            .layoutWeight(1)
-
-            Row() {
-              Text('查看贴纸包')
-                .fontSize(this.T.typography.caption.fontSize)
-                .fontWeight(FontWeight.Medium)
-                .fontColor(this.T.colors.accent)
-            }
-            .padding({ left: this.T.spacing.sm, right: this.T.spacing.sm, top: 4, bottom: 4 })
-            .backgroundColor(this.T.colors.surfaceVariant)
-            .borderRadius(this.T.radius.full)
-            .onClick(() => {
-              this.onOpenStickerSet(DEFAULT_STICKER_PACKS[this.currentStickerPackIndex - 1].id);
-            })
-          }
-          .width('100%')
-          .padding({ left: this.T.spacing.md, right: this.T.spacing.md, top: this.T.spacing.xs, bottom: this.T.spacing.xs })
-          .alignItems(VerticalAlign.Center)
-
-          // 贴纸大图网格 (5列，72vp高度)
-          Grid() {
-            ForEach(DEFAULT_STICKER_PACKS[this.currentStickerPackIndex - 1].stickers.slice(), (item: StickerSetItem) => {
-              GridItem() {
+        List({ space: this.T.spacing.xs, scroller: this.stickerScroller }) {
+          ForEach(this.stickerBlocks(), (pack: StickerBoardPack) => {
+            ListItem() {
+              Column() {
+                // 整宽标题行：真实包可点开整包（TDLib covers 只给前 5 张，整包内容在弹层里）
                 Row() {
-                  Text(item.emoji)
-                    .fontSize(44)
+                  Text(pack.title)
+                    .fontSize(this.T.typography.caption.fontSize)
+                    .fontWeight(FontWeight.Medium)
+                    .fontColor(this.T.colors.textSecondary)
+                    .maxLines(1)
+                    .textOverflow({ overflow: TextOverflow.Ellipsis })
+                    .layoutWeight(1)
+
+                  if (pack.setId === STICKER_BOARD_RECENT_SET_ID) {
+                    if (this.onClearRecentStickers) {
+                      Text('清空')
+                        .fontSize(this.T.typography.caption.fontSize)
+                        .fontWeight(FontWeight.Medium)
+                        .fontColor(this.T.colors.accent)
+                        .padding({ left: this.T.spacing.sm, right: this.T.spacing.sm, top: 2, bottom: 2 })
+                        .onClick(() => {
+                          if (this.onClearRecentStickers) {
+                            this.onClearRecentStickers();
+                          }
+                        })
+                    }
+                  } else {
+                    Text(pack.hasMore ? `查看其余 ${pack.totalSize - pack.covers.length} 张` : '查看贴纸包')
+                      .fontSize(this.T.typography.caption.fontSize)
+                      .fontWeight(FontWeight.Medium)
+                      .fontColor(this.T.colors.accent)
+                      .padding({ left: this.T.spacing.sm, right: this.T.spacing.sm, top: 2, bottom: 2 })
+                      .onClick(() => {
+                        this.onOpenStickerSet(pack.setId);
+                      })
+                  }
                 }
                 .width('100%')
-                .height(72)
-                .justifyContent(FlexAlign.Center)
-                .alignItems(VerticalAlign.Center)
-                .borderRadius(this.T.radius.sm)
-                .onClick(() => {
-                  if (this.onSendSticker) {
-                    this.onSendSticker(item);
-                  }
-                  this.onSelectSticker(item.emoji);
+                .padding({
+                  left: this.T.spacing.md,
+                  right: this.T.spacing.md,
+                  top: this.T.spacing.xs,
+                  bottom: 2
                 })
+                .onClick(() => {
+                  if (pack.setId !== STICKER_BOARD_RECENT_SET_ID) {
+                    this.onOpenStickerSet(pack.setId);
+                  }
+                })
+
+                // 封面贴纸：一包一行，取不到本地图的格子退回该贴纸自己的 emoji
+                Grid() {
+                  ForEach(pack.covers.slice(), (item: StickerSetItem) => {
+                    GridItem() {
+                      Row() {
+                        if (stickerCellImagePath(item) !== null) {
+                          Image(toSandboxUri(stickerCellImagePath(item)))
+                            .width(56)
+                            .height(56)
+                            .objectFit(ImageFit.Contain)
+                        } else {
+                          Text(item.emoji.length > 0 ? item.emoji : '⭐️')
+                            .fontSize(40)
+                        }
+                      }
+                      .width('100%')
+                      .height(68)
+                      .justifyContent(FlexAlign.Center)
+                      .alignItems(VerticalAlign.Center)
+                      .borderRadius(this.T.radius.sm)
+                      .onClick(() => {
+                        if (this.onSendSticker) {
+                          this.onSendSticker(item);
+                        }
+                      })
+                    }
+                  }, (item: StickerSetItem) => stickerCellKey(item))
+                }
+                .columnsTemplate('1fr 1fr 1fr 1fr 1fr')
+                .rowsGap(2)
+                .columnsGap(2)
+                .width('100%')
+                .height(72)
+                .scrollBar(BarState.Off)
+                .enableScrollInteraction(false)
               }
-            })
-          }
-          .columnsTemplate('1fr 1fr 1fr 1fr 1fr')
-          .rowsGap(4)
-          .columnsGap(4)
-          .padding({
-            left: this.T.spacing.xs,
-            right: this.T.spacing.xs,
-            bottom: this.T.spacing.xs
-          })
-          .layoutWeight(1)
-          .scrollBar(BarState.Off)
+              .width('100%')
+            }
+          }, (pack: StickerBoardPack) => pack.setId)
         }
+        .layoutWeight(1)
         .width('100%')
-        .height('100%')
+        .scrollBar(BarState.Off)
+        .edgeEffect(EdgeEffect.Spring)
       }
     }
     .width('100%')
     .height('100%')
+  }
+
+  /**
+   * 空板卡：加载中 / 读取失败 / 账号确实没装包，三种得说不同的话 ——
+   * 把「请求失败」显示成「还没有安装贴纸包」会把用户支去完全错误的方向。
+   */
+  @Builder
+  StickerBoardEmptyView() {
+    Column() {
+      if (this.stickerBoardLoading) {
+        LoadingProgress()
+          .width(28)
+          .height(28)
+          .color(this.T.colors.accent)
+        Text('正在读取贴纸包…')
+          .fontSize(this.T.typography.caption.fontSize)
+          .fontColor(this.T.colors.textSecondary)
+          .margin({ top: this.T.spacing.xs })
+      } else if (this.stickerBoardError !== null) {
+        Text('贴纸包读取失败')
+          .fontSize(this.T.typography.body.fontSize)
+          .fontWeight(FontWeight.Medium)
+          .fontColor(this.T.colors.textPrimary)
+        Text(this.stickerBoardError)
+          .fontSize(this.T.typography.caption.fontSize)
+          .fontColor(this.T.colors.textSecondary)
+          .maxLines(2)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .textAlign(TextAlign.Center)
+          .margin({ top: this.T.spacing.xs })
+        Text('重试')
+          .fontSize(this.T.typography.caption.fontSize)
+          .fontWeight(FontWeight.Medium)
+          .fontColor(this.T.colors.accent)
+          .padding({ left: this.T.spacing.sm, right: this.T.spacing.sm, top: 4, bottom: 4 })
+          .margin({ top: this.T.spacing.sm })
+          .onClick(() => {
+            this.onStickerBoardVisible();
+          })
+      } else {
+        Text('★')
+          .fontSize(34)
+          .opacity(0.35)
+          .margin({ bottom: this.T.spacing.sm })
+        Text('还没有安装贴纸包')
+          .fontSize(this.T.typography.body.fontSize)
+          .fontWeight(FontWeight.Medium)
+          .fontColor(this.T.colors.textPrimary)
+        Text('在贴纸包页面安装后，这里会显示你的贴纸')
+          .fontSize(this.T.typography.caption.fontSize)
+          .fontColor(this.T.colors.textSecondary)
+          .margin({ top: this.T.spacing.xs })
+      }
+    }
+    .layoutWeight(1)
+    .width('100%')
+    .justifyContent(FlexAlign.Center)
+    .alignItems(HorizontalAlign.Center)
+  }
+
+  /** 板卡实际渲染的块：最近使用（非空时）在最前，其后是真实包。 */
+  private stickerBlocks(): StickerBoardPack[] {
+    return stickerBoardBlocks(this.stickerPacks, this.recentStickers);
   }
 
   private getActiveGifs(): GifItem[] {

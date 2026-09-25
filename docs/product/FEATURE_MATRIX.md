@@ -746,6 +746,40 @@
 > 遗留：真实贴纸包与动图的**实际发送链路**（非占位 fileId）仍未接，这条否决目前吃到真内容的场景只有贴纸包预览；
 > 受限态依旧只有注入证据（账号内不存在「可发言但禁贴纸」的会话）；`updateChatPermissions` 推送链仍未设备实证。
 
+> **2026-09-25（STICKER-BOARD-101，FEAT-P2-004 贴纸页签接真实已装贴纸包）**：表情板的贴纸页签原先渲染的是
+> `DEFAULT_STICKER_PACKS` 四包预置数据 + emoji 占位格 —— 也就是说**账号里装了哪些包，界面上永远看不出来**。
+> **读码先纠正一处假设**：仓库里的 TDLib schema 比「1.8.67」新，`getStickerSets` **不存在**，
+> 能用的只有 `getInstalledStickerSets(sticker_type)`（**必须给类型**，regular/mask/customEmoji 各一次）
+> 与 `getTrendingStickerSets`；返回的 `stickerSetInfo` 只带 `covers`（**最多前 5 张**）+ `size`，
+> 所以「整包还有多少张」只能靠 `size > covers.length` 差值说 —— 界面上那句「查看其余 N 张」吃的是这个差，
+> 而不是再发一次 `getStickerSet`（一包一次请求，八个包就是八次往返，而用户大概率只看前两包）。
+> **取图口径**：装盘只登记**缩略图**（包 thumbnail + 封面 thumbnail，全局预算 30），贴纸整图点了要发才下 ——
+> 在 Wi-Fi 之外一次性拉 40 张贴纸整图是流量事故。
+> **懒加载与失效**：请求只在页签可见时发（`OpenStickerBoard`），reducer 用 `isLoading || isLoaded` 去重
+> （页签反复进出不会打爆 TDLib），而 `onStickerSetChanged` 把 `isLoaded` 打掉 ——
+> 装/卸一包后下一次开板就该重读，否则新装的包要等到杀进程才看得见。
+> **到货回灌**是这里唯一不显然的地方：格子上带的是**路径**不是 fileId（reducer 里按 id 补不了），
+> 所以协调器留着原始 `StickerSetInfo[]` 和它登记过的 fileId 集合，某张缩略图下载完成时**重新映射整块板卡**
+> （`refreshStickerBoardOnArrival`），`ForEach` 的键里带路径，图到货才会重建那一格。
+> **三种空态说三种话**：正在读取 / 读取失败（带重试）/ 确实没装包 —— 把「请求失败」显示成「还没有安装贴纸包」
+> 会把用户支去完全错误的方向；失败时**保留上一次的内容**、只清 `isLoading` 并把 `isLoaded` 留成 false，
+> 于是这一屏不空、下一次进页签还会重试。
+> 测试：`feature_chat` **346/346**（+12 例纯模型：DTO→包映射跳过无封面项、下载预算有界、缩略图取值顺序、
+> 最近使用伪包在最前且不可点开整包、格子取图回退链、键随图到货变化；+5 例 reducer：去重、失败保包、
+> 装卸包失效；+3 例 coordinator：只请求 regular 一次、只下缩略图不下整图、失败后下次重发），三守卫 0 违规。
+> 设备取证（模拟器 127.0.0.1:5555，真实 TDLib）：本账号 `getInstalledStickerSets(regular)` 回
+> `rows=0,total=0` → 负路径实证（页签只剩 Recent Stickers + 清空，四包假数据确实不在了）。
+> **正路径用一次性取证包补证**（验完删除重建，不进提交）：把同一份映射喂给 `stickerTypeMask` 的已装包，
+> 拿到 6 包真实数据 → 屏上出现 `Concerned Frog…`/`Lady Noir` 两行真包标题与「查看其余 20 张 / 15 张」，
+> 封面格在缩略图到货后由 emoji 兜底变成**真贴纸图**（日志 `media_download_completed fileId=98/108/118/128/138`），
+> 点一格发出**真 fileId** 的贴纸消息（Saved Messages 内，验完长按删除回 `No messages yet`）。
+> 结案 CHAN-SEND-3 遗留 ①「真实贴纸包的实际发送链路未接」的一半：贴纸侧已通，GIF/动图侧仍全是占位 fileId
+> （本端没有 GIF 数据源，TDLib 无 GIF API）。
+> 遗留：① 板卡上**没有装包的入口** —— `tg://addstickers` 未接、trending 榜没露出，而账号恰好 0 个已装 regular 包，
+> 于是真实用户在这里只能看到「还没有安装贴纸包」；② 最近使用仍来自 `DEFAULT_RECENT_STICKERS` 假数据
+> （TDLib 的 `getRecentStickers` 尚未接）；③ 取证时看到发出的贴纸**气泡不出图**（整图没下、也没有占位），
+> 属于贴纸消息渲染的独立缺口。
+
 
 | 功能 ID | 功能名 |
 |---|---|

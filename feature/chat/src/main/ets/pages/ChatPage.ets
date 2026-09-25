@@ -161,6 +161,7 @@ import {
   OpenMessageComments,
   ToggleMessageReaction,
   OpenStickerSet,
+  OpenStickerBoard,
   CloseStickerSetPreview,
   InstallStickerSet,
   UninstallStickerSet,
@@ -926,6 +927,13 @@ export struct ChatPage {
             recentEmojis: this.uiState.recentEmojis.slice(),
             recentStickers: this.uiState.recentStickers.slice(),
             recentGifs: this.uiState.recentGifs.slice(),
+            // STICKER-BOARD-101：真实贴纸包（getInstalledStickerSets 装盘结果）
+            stickerPacks: this.uiState.stickerBoard.packs.slice(),
+            stickerBoardLoading: this.uiState.stickerBoard.isLoading,
+            stickerBoardError: this.uiState.stickerBoard.errorMessage,
+            onStickerBoardVisible: () => {
+              this.onDispatch(new OpenStickerBoard());
+            },
             onSelectEmoji: (emoji: string) => {
               this.onDispatch(new InsertEmoji(emoji));
             },

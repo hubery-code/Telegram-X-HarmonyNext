@@ -20,6 +20,8 @@ import viewerTransformTest from './ViewerTransform.test';
 import viewerPlaybackTest from './ViewerPlayback.test';
 import chatAppLinkDispatchTest from './ChatAppLinkDispatch.test';
 import stickerSendVetoTest from './StickerSendVeto.test';
+import stickerBoardTest from './StickerBoard.test';
+import stickerBoardFetchTest from './StickerBoardFetch.test';
 
 export default function testsuite(): void {
   chatReducerTest();
@@ -44,5 +46,7 @@ export default function testsuite(): void {
   viewerPlaybackTest();
   chatAppLinkDispatchTest();
   stickerSendVetoTest();
+  stickerBoardTest();
+  stickerBoardFetchTest();
 }
 

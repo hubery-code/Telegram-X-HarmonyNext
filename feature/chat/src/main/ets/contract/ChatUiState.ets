@@ -32,6 +32,7 @@ import { ChatSearchResultItem } from '../model/ChatSearchResultItem';
 import { ChatKind } from '../model/SenderInfo';
 import { PinnedMessageInfo } from '../model/PinnedMessageInfo';
 import { StickerSetPreviewState, StickerSetItem, DEFAULT_RECENT_STICKERS } from '../model/StickerSetPreviewState';
+import { StickerBoardState } from '../model/StickerBoard';
 import { GifItem, DEFAULT_RECENT_GIFS } from '../model/GifItem';
 import { PollComposerState } from '../model/PollView';
 
@@ -173,6 +174,8 @@ export interface ChatUiStateOptions {
   readonly showEmojiBoard?: boolean;
   /** STICKER-PREVIEW-101：贴纸包详情预览状态（null=不显示弹窗）。 */
   readonly stickerSetPreview?: StickerSetPreviewState | null;
+  /** STICKER-BOARD-101：表情板贴纸页签的真实贴纸包（installed sticker sets 装盘结果）。 */
+  readonly stickerBoard?: StickerBoardState;
   /** VOICE-101：是否正在录制语音消息。 */
   readonly isRecordingVoice?: boolean;
   /** VOICE-101：录制时长（秒）。 */
@@ -252,6 +255,8 @@ export class ChatUiState implements UiState {
   readonly showEmojiBoard: boolean;
   /** STICKER-PREVIEW-101：贴纸包详情预览状态（null=不显示弹窗）。 */
   readonly stickerSetPreview: StickerSetPreviewState | null;
+  /** STICKER-BOARD-101：表情板贴纸页签的真实贴纸包（installed sticker sets 装盘结果）。 */
+  readonly stickerBoard: StickerBoardState;
   /** VOICE-101：是否正在录制语音消息。 */
   readonly isRecordingVoice: boolean;
   /** VOICE-101：录制时长（秒）。 */
@@ -309,6 +314,7 @@ export class ChatUiState implements UiState {
     sendRights: ChatSendRights = new ChatSendRights(),
     showEmojiBoard: boolean = false,
     stickerSetPreview: StickerSetPreviewState | null = null,
+    stickerBoard: StickerBoardState = StickerBoardState.initial(),
     isRecordingVoice: boolean = false,
     recordingDurationSec: number = 0,
     playingVoiceMessageId: number | null = null,
@@ -352,6 +358,7 @@ export class ChatUiState implements UiState {
     this.sendRights = sendRights;
     this.showEmojiBoard = showEmojiBoard;
     this.stickerSetPreview = stickerSetPreview;
+    this.stickerBoard = stickerBoard;
     this.isRecordingVoice = isRecordingVoice;
     this.recordingDurationSec = recordingDurationSec;
     this.playingVoiceMessageId = playingVoiceMessageId;
@@ -368,7 +375,7 @@ export class ChatUiState implements UiState {
   }
 
   static initial(): ChatUiState {
-    return new ChatUiState(0, '', [], false, true, null, '', null, null, -1, [], 0, 0, false, [], false, false, '', [], false, 0, '', 'unknown', null, false, true, new ChatSendRights(), false, null, false, 0, null, 0, 0, DEFAULT_RECENT_EMOJIS, DEFAULT_RECENT_STICKERS, DEFAULT_RECENT_GIFS, '', false, '', null);
+    return new ChatUiState(0, '', [], false, true, null, '', null, null, -1, [], 0, 0, false, [], false, false, '', [], false, 0, '', 'unknown', null, false, true, new ChatSendRights(), false, null, StickerBoardState.initial(), false, 0, null, 0, 0, DEFAULT_RECENT_EMOJIS, DEFAULT_RECENT_STICKERS, DEFAULT_RECENT_GIFS, '', false, '', null);
   }
 
   copyWith(options: ChatUiStateOptions): ChatUiState {
@@ -402,6 +409,7 @@ export class ChatUiState implements UiState {
       options.sendRights !== undefined ? options.sendRights : this.sendRights,
       options.showEmojiBoard !== undefined ? options.showEmojiBoard : this.showEmojiBoard,
       options.stickerSetPreview !== undefined ? options.stickerSetPreview : this.stickerSetPreview,
+      options.stickerBoard !== undefined ? options.stickerBoard : this.stickerBoard,
       options.isRecordingVoice !== undefined ? options.isRecordingVoice : this.isRecordingVoice,
       options.recordingDurationSec !== undefined ? options.recordingDurationSec : this.recordingDurationSec,
       options.playingVoiceMessageId !== undefined ? options.playingVoiceMessageId : this.playingVoiceMessageId,

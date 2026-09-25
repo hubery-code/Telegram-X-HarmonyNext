@@ -72,6 +72,9 @@ import {
   OpenMessageComments,
   ToggleMessageReaction,
   OpenStickerSet,
+  OpenStickerBoard,
+  OnStickerBoardLoaded,
+  OnStickerBoardFailed,
   OnStickerSetLoaded,
   OnStickerSetLoadFailed,
   CloseStickerSetPreview,
@@ -112,6 +115,7 @@ import { PinnedMessageInfo } from '../main/ets/model/PinnedMessageInfo';
 import { PollComposerState, PollOptionView, PollView } from '../main/ets/model/PollView';
 import { ReactionChip } from '../main/ets/model/ReactionChip';
 import { StickerSetPreviewState, StickerSetItem } from '../main/ets/model/StickerSetPreviewState';
+import { StickerBoardPack, StickerBoardState } from '../main/ets/model/StickerBoard';
 import { GifItem } from '../main/ets/model/GifItem';
 import {
   ChatEffect,
@@ -135,6 +139,7 @@ import {
   OpenCommentsEffect,
   ToggleReactionEffect,
   FetchStickerSet,
+  FetchStickerBoard,
   ChangeStickerSetEffect,
   SendStickerMessage,
   SendAnimationMessage,
@@ -165,6 +170,22 @@ function makeEnv(nowMillis: number = 1000, monotonicMillis: number = 500): Reduc
 
 function makeState(composerText: string = '', errorMessage: string | null = null): ChatUiState {
   return new ChatUiState(42, 'chat', [], false, true, errorMessage, composerText, null, null);
+}
+
+/** 板卡上的一包：reducer 只看数组与标志位，格子内容无所谓。 */
+function makeBoardPack(setId: string): StickerBoardPack {
+  const item: StickerSetItem = {
+    id: 500,
+    fileId: 500,
+    emoji: '🐼',
+    width: 512,
+    height: 512,
+    localPath: null,
+    thumbnailPath: null,
+    isDownloaded: false,
+    isDownloading: false
+  };
+  return new StickerBoardPack(setId, 'Pandamonium ' + setId, null, [item], 20, true);
 }
 
 function makeStateWith(
@@ -1945,6 +1966,99 @@ export default function chatReducerTest() {
       expect(fetch.setId).assertEqual('12345');
     });
 
+
+    // --- STICKER-BOARD-101：贴纸页签装盘的四处语义 ---
+
+    it('openStickerBoard_setsLoadingAndEmitsFetchEffect', 0, () => {
+      const initial: ChatUiState = makeState('');
+      expect(initial.stickerBoard.isLoading).assertFalse();
+      expect(initial.stickerBoard.isLoaded).assertFalse();
+
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        initial,
+        new OpenStickerBoard(),
+        makeEnv()
+      );
+
+      expect(result.state.stickerBoard.isLoading).assertTrue();
+      expect(result.effects.length).assertEqual(1);
+      expect(result.effects[0].kind).assertEqual('fetchStickerBoard');
+    });
+
+    it('openStickerBoard_whileLoadingOrLoaded_doesNotRefetch', 0, () => {
+      const loading: ChatUiState = makeState('').copyWith({
+        stickerBoard: new StickerBoardState([], true, false, null)
+      });
+      const loadingRes: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        loading, new OpenStickerBoard(), makeEnv()
+      );
+      expect(loadingRes.state === loading).assertTrue();
+      expect(loadingRes.effects.length).assertEqual(0);
+
+      const loaded: ChatUiState = makeState('').copyWith({
+        stickerBoard: new StickerBoardState([makeBoardPack('21')], false, true, null)
+      });
+      const loadedRes: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        loaded, new OpenStickerBoard(), makeEnv()
+      );
+      expect(loadedRes.effects.length).assertEqual(0);
+      expect(loadedRes.state.stickerBoard.packs.length).assertEqual(1);
+    });
+
+    it('onStickerBoardLoaded_setsPacksAndMarksLoaded', 0, () => {
+      const initial: ChatUiState = makeState('').copyWith({
+        stickerBoard: new StickerBoardState([], true, false, '上一次失败')
+      });
+
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        initial,
+        new OnStickerBoardLoaded([makeBoardPack('21'), makeBoardPack('22')]),
+        makeEnv()
+      );
+
+      expect(result.state.stickerBoard.packs.length).assertEqual(2);
+      expect(result.state.stickerBoard.packs[0].title).assertEqual('Pandamonium 21');
+      expect(result.state.stickerBoard.isLoading).assertFalse();
+      expect(result.state.stickerBoard.isLoaded).assertTrue();
+      expect(result.state.stickerBoard.errorMessage).assertNull();
+      expect(result.effects.length).assertEqual(0);
+    });
+
+    it('onStickerBoardFailed_keepsLoadedPacksAndClearsOnlyLoading', 0, () => {
+      const initial: ChatUiState = makeState('').copyWith({
+        stickerBoard: new StickerBoardState([makeBoardPack('21')], true, true, null)
+      });
+
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        initial,
+        new OnStickerBoardFailed('network unavailable'),
+        makeEnv()
+      );
+
+      expect(result.state.stickerBoard.errorMessage).assertEqual('network unavailable');
+      expect(result.state.stickerBoard.isLoading).assertFalse();
+      // 上一次的包比一片空白有用；但 isLoaded 留 false 会被下次开板当成「没读过」重拉，
+      // 所以这里必须仍是 true —— 清空它等于每次切页签都打一次 TDLib。
+      expect(result.state.stickerBoard.isLoaded).assertTrue();
+      expect(result.state.stickerBoard.packs.length).assertEqual(1);
+    });
+
+    it('onStickerSetChanged_invalidatesLoadedBoard', 0, () => {
+      const initial: ChatUiState = makeState('').copyWith({
+        stickerSetPreview: new StickerSetPreviewState('21', 'Pandamonium 21', 'panda', false, false, false, [], false, true),
+        stickerBoard: new StickerBoardState([makeBoardPack('21')], false, true, null)
+      });
+
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        initial,
+        new OnStickerSetChanged('21', true),
+        makeEnv()
+      );
+
+      // 装/卸包后下一次开板要重拉，否则新装的包要等到杀进程才看得到。
+      expect(result.state.stickerBoard.isLoaded).assertFalse();
+      expect(result.state.stickerBoard.packs.length).assertEqual(1);
+    });
     it('onStickerSetLoaded_updatesPreviewState', 0, () => {
       const initial: ChatUiState = makeState('');
       const item: StickerSetItem = {
