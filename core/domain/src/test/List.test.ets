@@ -8,6 +8,7 @@ import fileStoreTest from './file/FileStore.test';
 import userRegistryTest from './user/UserRegistry.test';
 import groupRegistryTest from './group/GroupRegistry.test';
 import autoDownloadPolicyTest from './media/AutoDownloadPolicy.test';
+import dataSaverTest from './media/DataSaver.test';
 
 export default function testsuite() {
   chatRegistryTest();

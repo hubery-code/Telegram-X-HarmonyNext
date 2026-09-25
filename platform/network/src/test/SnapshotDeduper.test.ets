@@ -20,18 +20,18 @@ export default function snapshotDeduperTest() {
 
     it('consecutive_duplicates_dropped', 0, () => {
       const deduper: SnapshotDeduper = new SnapshotDeduper();
-      const wifi: NetworkSnapshot = { connected: true, transport: 'wifi', metered: false };
+      const wifi: NetworkSnapshot = { connected: true, transport: 'wifi', metered: false, roaming: false };
       deduper.next(wifi);
       // Kit 重复上报同值 → 去重
-      expect(deduper.next({ connected: true, transport: 'wifi', metered: false }) === null).assertTrue();
-      expect(deduper.next({ connected: true, transport: 'wifi', metered: false }) === null).assertTrue();
+      expect(deduper.next({ connected: true, transport: 'wifi', metered: false, roaming: false }) === null).assertTrue();
+      expect(deduper.next({ connected: true, transport: 'wifi', metered: false, roaming: false }) === null).assertTrue();
     });
 
     it('field_level_change_emitted', 0, () => {
       const deduper: SnapshotDeduper = new SnapshotDeduper();
-      deduper.next({ connected: true, transport: 'wifi', metered: false });
+      deduper.next({ connected: true, transport: 'wifi', metered: false, roaming: false });
       // 仅 metered 变化也算新快照
-      const out: NetworkSnapshot | null = deduper.next({ connected: true, transport: 'wifi', metered: true });
+      const out: NetworkSnapshot | null = deduper.next({ connected: true, transport: 'wifi', metered: true, roaming: false });
       expect(out === null).assertFalse();
       expect(out!.metered).assertTrue();
     });
@@ -45,12 +45,12 @@ export default function snapshotDeduperTest() {
         }
       };
       feed(DISCONNECTED_SNAPSHOT); // 1
-      feed({ connected: true, transport: 'wifi', metered: false }); // 2
-      feed({ connected: true, transport: 'wifi', metered: false }); // 去重
-      feed({ connected: true, transport: 'cellular', metered: true }); // 3
+      feed({ connected: true, transport: 'wifi', metered: false, roaming: false }); // 2
+      feed({ connected: true, transport: 'wifi', metered: false, roaming: false }); // 去重
+      feed({ connected: true, transport: 'cellular', metered: true, roaming: false }); // 3
       feed(DISCONNECTED_SNAPSHOT); // 4
       feed(DISCONNECTED_SNAPSHOT); // 去重
-      feed({ connected: true, transport: 'wifi', metered: false }); // 5
+      feed({ connected: true, transport: 'wifi', metered: false, roaming: false }); // 5
       expect(count).assertEqual(5);
     });
   });

@@ -11,7 +11,7 @@ import { Effect } from '@tgx/feature-template';
 import { NotificationScopeKey } from '../model/NotificationSettings';
 import { PrivacyChoice, PrivacySettingKey } from '../model/PrivacySettings';
 import { ProxyForm } from '../model/ProxySettings';
-import { AutoDownloadPolicy } from '@tgx/core-domain';
+import { AutoDownloadPolicy, DataSaverSettings } from '@tgx/core-domain';
 
 export class LoadProfileEffect implements Effect {
   readonly kind: 'loadProfile' = 'loadProfile';
@@ -175,6 +175,27 @@ export class PersistAutoDownloadPolicyEffect implements Effect {
   }
 }
 
+/**
+ * AUTODL-102：读取省流量设置（本地偏好，同步返回）。
+ * 与自动下载策略分开两个意图：两者存在两个不同的偏好键里，读盘也各自失败。
+ */
+export class LoadDataSaverSettingsEffect implements Effect {
+  readonly kind: 'loadDataSaverSettings' = 'loadDataSaverSettings';
+}
+
+/**
+ * AUTODL-102：写回省流量设置。
+ * 同样是「勾选即落盘」，一份整数掩码（对齐 Android 的 `settings_datasaver`）。
+ */
+export class PersistDataSaverSettingsEffect implements Effect {
+  readonly kind: 'persistDataSaverSettings' = 'persistDataSaverSettings';
+  readonly settings: DataSaverSettings;
+
+  constructor(settings: DataSaverSettings) {
+    this.settings = settings;
+  }
+}
+
 export type SettingsEffect =
   | LoadProfileEffect
   | LoadNotificationSettingsEffect
@@ -198,4 +219,6 @@ export type SettingsEffect =
   | SaveProxyEffect
   | RemoveProxyEffect
   | LoadAutoDownloadPolicyEffect
-  | PersistAutoDownloadPolicyEffect;
+  | PersistAutoDownloadPolicyEffect
+  | LoadDataSaverSettingsEffect
+  | PersistDataSaverSettingsEffect;

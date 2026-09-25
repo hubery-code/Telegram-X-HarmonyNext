@@ -16,7 +16,8 @@ import { ProxyForm, ProxyItem } from '../model/ProxySettings';
 import {
   AutoDownloadChatScope,
   AutoDownloadMediaKind,
-  AutoDownloadPolicy
+  AutoDownloadPolicy,
+  DataSaverSettings
 } from '@tgx/core-domain';
 
 export interface UserProfileData {
@@ -457,6 +458,39 @@ export class SetAutoDownloadKind implements Intent {
   }
 }
 
+/**
+ * AUTODL-102：读取省流量设置。子页首帧也要读 —— 「自动开启」那行的副标题
+ * 直接是 Mobile / Roaming / both / None 摘要，跟自动下载行的副标题同一套道理。
+ */
+export class LoadDataSaverSettings implements Intent {
+  readonly kind: 'loadDataSaverSettings' = 'loadDataSaverSettings';
+}
+
+/** AUTODL-102：省流量设置读取完成；写回后同样以该意图回灌，界面恒以存储返回值为准。 */
+export class DataSaverSettingsLoaded implements Intent {
+  readonly kind: 'dataSaverSettingsLoaded' = 'dataSaverSettingsLoaded';
+  readonly settings: DataSaverSettings;
+
+  constructor(settings: DataSaverSettings) {
+    this.settings = settings;
+  }
+}
+
+/**
+ * AUTODL-102：改省流量的某一位（`DATA_SAVER_FLAG_ENABLED` / `WHEN_MOBILE` / `WHEN_ROAMING`）。
+ * 带位而不是带整份设置：一行一个开关，勾哪个改哪个；reducer 负责不可变替换。
+ */
+export class SetDataSaverFlag implements Intent {
+  readonly kind: 'setDataSaverFlag' = 'setDataSaverFlag';
+  readonly flag: number;
+  readonly enabled: boolean;
+
+  constructor(flag: number, enabled: boolean) {
+    this.flag = flag;
+    this.enabled = enabled;
+  }
+}
+
 export type SettingsIntent =
   | LoadUserProfile
   | ToggleNotifications
@@ -511,4 +545,7 @@ export type SettingsIntent =
   | LoadAutoDownloadPolicy
   | AutoDownloadPolicyLoaded
   | SetAutoDownloadKind
+  | LoadDataSaverSettings
+  | DataSaverSettingsLoaded
+  | SetDataSaverFlag
   | SectionFocused;

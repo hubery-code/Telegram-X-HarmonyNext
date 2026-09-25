@@ -15,7 +15,7 @@ import { ActiveSessionItem } from '../model/ActiveSessionItem';
 import { SettingsSectionKey } from '../model/SettingsSection';
 import { PrivacySettingItem, PrivacySettingKey } from '../model/PrivacySettings';
 import { ProxyItem } from '../model/ProxySettings';
-import { AutoDownloadPolicy } from '@tgx/core-domain';
+import { AutoDownloadPolicy, DataSaverSettings } from '@tgx/core-domain';
 
 export type SettingsThemeMode = ThemePreference;
 
@@ -74,6 +74,8 @@ export interface SettingsUiStateOptions {
   readonly showAutoDownloadPage?: boolean;
   /** AUTODL-101：已读到的自动下载策略；null 表示还没读盘（行副标题显 Loading）。 */
   readonly autoDownloadPolicy?: AutoDownloadPolicy | null;
+  /** AUTODL-102：省流量设置；null 表示还没读盘（此时行上按默认档显示）。 */
+  readonly dataSaverSettings?: DataSaverSettings | null;
 }
 
 export class SettingsUiState implements UiState {
@@ -134,6 +136,8 @@ export class SettingsUiState implements UiState {
   readonly showAutoDownloadPage: boolean;
   /** AUTODL-101：自动下载策略；null 表示尚未读盘。 */
   readonly autoDownloadPolicy: AutoDownloadPolicy | null;
+  /** AUTODL-102：省流量设置；null 表示尚未读盘。 */
+  readonly dataSaverSettings: DataSaverSettings | null;
 
   constructor(
     userId: number,
@@ -174,7 +178,8 @@ export class SettingsUiState implements UiState {
     isLoadingProxies: boolean = false,
     updatingProxyId: number | null = null,
     showAutoDownloadPage: boolean = false,
-    autoDownloadPolicy: AutoDownloadPolicy | null = null
+    autoDownloadPolicy: AutoDownloadPolicy | null = null,
+    dataSaverSettings: DataSaverSettings | null = null
   ) {
     this.userId = userId;
     this.displayName = displayName;
@@ -215,6 +220,7 @@ export class SettingsUiState implements UiState {
     this.updatingProxyId = updatingProxyId;
     this.showAutoDownloadPage = showAutoDownloadPage;
     this.autoDownloadPolicy = autoDownloadPolicy;
+    this.dataSaverSettings = dataSaverSettings;
   }
 
   static initial(
@@ -307,7 +313,9 @@ export class SettingsUiState implements UiState {
       options.isLoadingProxies !== undefined ? options.isLoadingProxies : this.isLoadingProxies,
       options.updatingProxyId !== undefined ? options.updatingProxyId : this.updatingProxyId,
       options.showAutoDownloadPage !== undefined ? options.showAutoDownloadPage : this.showAutoDownloadPage,
-      options.autoDownloadPolicy !== undefined ? options.autoDownloadPolicy : this.autoDownloadPolicy
+      options.autoDownloadPolicy !== undefined ? options.autoDownloadPolicy : this.autoDownloadPolicy,
+      // 显式传 null 表示「清空为未读盘」，与 undefined（不改动）区分开。
+      options.dataSaverSettings !== undefined ? options.dataSaverSettings : this.dataSaverSettings
     );
   }
 }

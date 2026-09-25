@@ -25,11 +25,12 @@ export const NET_BEARER_VPN: number = 4;
 /** HarmonyOS connection.NetCap.NET_CAPABILITY_NOT_METERED 数值（SDK d.ts 核对）。 */
 export const NET_CAPABILITY_NOT_METERED: number = 11;
 
-/** 断网快照（契约语义：transport 为 null、metered 为 false）。 */
+/** 断网快照（契约语义：transport 为 null、metered 为 false、读不到漫游）。 */
 export const DISCONNECTED_SNAPSHOT: NetworkSnapshot = {
   connected: false,
   transport: null,
-  metered: false
+  metered: false,
+  roaming: false
 };
 
 /** 单个 bearer → 契约 transport。 */
@@ -58,8 +59,14 @@ export interface RawNetCapabilities {
   readonly capabilities: number[];
 }
 
-/** RawNetCapabilities → 已连接快照（断网语义不在此函数内，见 DISCONNECTED_SNAPSHOT）。 */
-export function mapCapabilities(raw: RawNetCapabilities): NetworkSnapshot {
+/**
+ * RawNetCapabilities → 已连接快照（断网语义不在此函数内，见 DISCONNECTED_SNAPSHOT）。
+ *
+ * `roaming` 不在 NetCapabilities 里 —— HarmonyOS 的 NetCap 枚举**没有** Android 那个
+ * `NET_CAPABILITY_NOT_ROAMING`，漫游只能由电话子系统（`radio.getNetworkState`）给出，
+ * 所以它作为独立入参由 Kit 层传进来，本函数保持纯。默认 false：读不到就按不漫游处理。
+ */
+export function mapCapabilities(raw: RawNetCapabilities, roaming: boolean = false): NetworkSnapshot {
   let best: NetworkTransport = 'other';
   let bestRank: number = TRANSPORT_PRIORITY.length;
   for (const bearer of raw.bearerTypes) {
@@ -71,12 +78,18 @@ export function mapCapabilities(raw: RawNetCapabilities): NetworkSnapshot {
     }
   }
   const metered: boolean = raw.capabilities.indexOf(NET_CAPABILITY_NOT_METERED) < 0;
-  return { connected: true, transport: best, metered: metered };
+  // 漫游只在蜂窝上有意义；Kit 层若在不该有漫游的承载上报了 true，这里一并收口，
+  // 免得下游（省流量判定）出现「Wi-Fi 漫游」这种自相矛盾的快照。
+  const roamingOnly: boolean = roaming && best === 'cellular';
+  return { connected: true, transport: best, metered: metered, roaming: roamingOnly };
 }
 
 /** 两快照全字段相等判定（契约去重口径）。 */
 export function sameSnapshot(a: NetworkSnapshot, b: NetworkSnapshot): boolean {
-  return a.connected === b.connected && a.transport === b.transport && a.metered === b.metered;
+  return a.connected === b.connected
+    && a.transport === b.transport
+    && a.metered === b.metered
+    && a.roaming === b.roaming;
 }
 
 /**

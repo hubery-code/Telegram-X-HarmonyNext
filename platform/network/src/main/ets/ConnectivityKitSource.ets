@@ -5,6 +5,12 @@
  * current()：getDefaultNetSync() + getNetCapabilitiesSync() 同步取默认网络能力。
  * 需要权限 ohos.permission.GET_NETWORK_INFO（已在 module.json5 声明）。
  *
+ * 漫游（AUTODL-102）：本 SDK 的 NetCap 枚举里没有 Android 那个 NOT_ROAMING 能力位，
+ * 漫游只能由电话子系统 radio.getNetworkState().isRoaming 给出，而它是异步的，
+ * 与同步的 current() 不同形 —— 因此本类把探针结果缓存在 roamingValue 上，
+ * 注册后与每次网络事件里刷新，值变化时补发一次快照。
+ * 不具备电话能力的形态（模拟器、平板、无 SIM）一律回落 false。
+ *
  * 解绑说明：本 SDK（API 24/26）的 connection.NetConnection 只有 on/register/unregister，
  * 没有 off——unregister 会移除该连接上的全部监听。因此本类按「一个 source 实例服务一个
  * observe 订阅」设计（ConnectivityAdapter 默认构造即一一对应）；迟到的 Kit 事件由
@@ -20,6 +26,7 @@
  */
 
 import connection from '@ohos.net.connection';
+import radio from '@ohos.telephony.radio';
 import { Result, AppError, ok, err, AppErrors } from '@tgx/core-common';
 import { NetworkSnapshot, Subscription } from '@tgx/platform-ports';
 import { ConnectivitySource } from './ConnectivitySource';
@@ -36,6 +43,31 @@ import {
 
 /** Kit BusinessError 码（SDK d.ts）：连接服务失败。 */
 const ERR_SERVICE_UNAVAILABLE: number = 2100002;
+
+/** 电话子系统能力名：不具备（平板、模拟器、无 SIM 形态）时漫游按 false 处理。 */
+const TELEPHONY_CORE_SYS_CAP: string = 'SystemCapability.Telephony.CoreService';
+
+/**
+ * 漫游探针：返回设备当前是否处于蜂窝漫游。
+ * 抽成可注入函数是因为 `radio.getNetworkState` 是**异步**的，而
+ * `ConnectivitySource.current()` 是同步契约 —— 异步读到的值只能缓存后盖到后续快照上，
+ * 单测则直接注入确定值。
+ */
+export type RoamingProbe = () => Promise<boolean>;
+
+/** 生产探针：读蜂窝网络注册状态里的 isRoaming；任何失败都回落 false（不漫游）。 */
+async function readCellularRoaming(): Promise<boolean> {
+  try {
+    if (!canIUse(TELEPHONY_CORE_SYS_CAP)) {
+      return false;
+    }
+    const state: radio.NetworkState = await radio.getNetworkState();
+    return state !== undefined && state !== null && state.isRoaming === true;
+  } catch (e) {
+    // 无 SIM / 权限被拒 / 该形态不支持电话能力：都按「没在漫游」处理，不影响其余网络字段。
+    return false;
+  }
+}
 
 /** 订阅状态：active=false 后 Kit 迟到事件全部丢弃。 */
 class KitListenState {
@@ -68,10 +100,18 @@ class ConnectivityKitSubscription implements Subscription {
 
 export class ConnectivityKitSource implements ConnectivitySource {
   private readonly netConnection: connection.NetConnection;
+  private readonly roamingProbe: RoamingProbe;
+  /**
+   * 最近一次读到的漫游值。`radio.getNetworkState()` 只有异步形态，而 current() 是同步契约，
+   * 所以这里缓存并在注册后与网络事件里刷新；漫游切换必然伴随 netAvailable /
+   * netCapabilitiesChange，因此快照最多滞后一次事件，不会长期停在旧值上。
+   */
+  private roamingValue: boolean = false;
   private unregisterStarted: boolean = false;
 
-  constructor(netConnection?: connection.NetConnection) {
+  constructor(netConnection?: connection.NetConnection, roamingProbe?: RoamingProbe) {
     this.netConnection = netConnection !== undefined ? netConnection : connection.createNetConnection();
+    this.roamingProbe = roamingProbe !== undefined ? roamingProbe : readCellularRoaming;
   }
 
   current(): NetworkSnapshot {
@@ -84,7 +124,7 @@ export class ConnectivityKitSource implements ConnectivitySource {
       return mapCapabilities({
         bearerTypes: ConnectivityKitSource.toBearerNumbers(caps.bearerTypes),
         capabilities: ConnectivityKitSource.toCapabilityNumbers(caps.networkCap)
-      });
+      }, this.roamingValue);
     } catch (e) {
       return DISCONNECTED_SNAPSHOT;
     }
@@ -99,18 +139,32 @@ export class ConnectivityKitSource implements ConnectivitySource {
           listener(snapshot);
         }
       };
+      // 漫游读的是电话子系统，回来时可能已经换了网络；只在仍活跃且值变了时补发一次快照。
+      const refreshRoaming = (): void => {
+        this.roamingProbe().then((next: boolean): void => {
+          if (!state.active || next === this.roamingValue) {
+            return;
+          }
+          this.roamingValue = next;
+          dispatch(this.current());
+        }).catch((): void => {
+          // 探针自身失败不改变已缓存的漫游值，也不影响其余网络字段的上报。
+        });
+      };
       const onAvailable = (handle: connection.NetHandle): void => {
+        refreshRoaming();
         dispatch(this.snapshotForHandle(handle));
       };
       const onLost = (): void => {
         dispatch(DISCONNECTED_SNAPSHOT);
       };
       const onCapsChange = (info: connection.NetCapabilityInfo): void => {
+        refreshRoaming();
         const caps: connection.NetCapabilities = info.netCap;
         dispatch(mapCapabilities({
           bearerTypes: ConnectivityKitSource.toBearerNumbers(caps.bearerTypes),
           capabilities: ConnectivityKitSource.toCapabilityNumbers(caps.networkCap)
-        }));
+        }, this.roamingValue));
       };
       nc.on('netAvailable', onAvailable);
       nc.on('netLost', onLost);
@@ -123,6 +177,7 @@ export class ConnectivityKitSource implements ConnectivitySource {
           this.unregisterQuietly(nc);
         }
       });
+      refreshRoaming();
       return ok(new ConnectivityKitSubscription(state, () => {
         this.unregisterQuietly(nc);
       }));
@@ -140,7 +195,7 @@ export class ConnectivityKitSource implements ConnectivitySource {
       return mapCapabilities({
         bearerTypes: ConnectivityKitSource.toBearerNumbers(caps.bearerTypes),
         capabilities: ConnectivityKitSource.toCapabilityNumbers(caps.networkCap)
-      });
+      }, this.roamingValue);
     } catch (e) {
       return DISCONNECTED_SNAPSHOT;
     }

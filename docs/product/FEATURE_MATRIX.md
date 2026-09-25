@@ -414,6 +414,33 @@
 > 三守卫 0 违规。FEAT-P2-006（完整媒体查看器、后台音频、AVSession）至此收官。
 > 遗留：HEVC 视频帧画面待真机或有 H.264 素材时复核；`gif` 档只有单测覆盖（本账号会话里没有 GIF 消息可点）；
 > 视频页双击会翻一次工具栏（`Video` 控制条与祖先点击的仲裁待真机复核）。
+> **追加（AUTODL-102，FEAT-P2-007 省流量半边）**：自动下载补上「省流量」这一维 —— 主开关 + 自动开启两档 + 聊天页硬否决。
+> **否决排在门的第一句，照 Android 的求值顺序**：`canAutomaticallyDownloadFromServer()`（`TdlibFilesManager.java:1352-1411`）
+> 第一行就是 `if (isDataSaverActive()) return false;`，在会话类型、媒体类型、尺寸上限**全部之前**；本端
+> `ChatCoordinator.canAutoDownload()` 同构 —— 否则「省流量开着但媒体还是下了」会被解释成「你是不是又勾回去了」。
+> **存储照 `settings_datasaver` 而不是照 UI**：一个整数三位（`:1000-1005`）`ENABLED=1` / `WHEN_MOBILE=1<<1` /
+> `WHEN_ROAMING=1<<2`，默认**只勾漫游**（`:1192`），键 = `datasaver_<accountKey>`。Android 另外三位是 VoIP 省流量，
+> 本端没有 VoIP 通话，**刻意不建模**（建了就是一排永远点不亮的死开关）；系统级省流量那条分支同样不移植 ——
+> HarmonyOS 没给应用暴露系统数据节省状态（`connection.NetCap` 连 `NOT_ROAMING` 都没有），硬做只能读到恒 false。
+> **漫游只能从电话侧异步拿**：`radio.getNetworkState().isRoaming`（权限 `GET_NETWORK_INFO`、syscap 用 `canIUse` 守卫、
+> 异常回落 false），且 `mapCapabilities(raw, roaming)` 里 **`roaming && transport === 'cellular'` 才置位** ——
+> 电话侧漫游态与「默认网络是蜂窝」是两次独立读取，Wi-Fi 挂着时读到 `true` 是陈旧值，照抄就会在用户连 Wi-Fi
+> 时按「漫游」把自动下载判死；`roaming` 同时进 `sameSnapshot` 去重，否则进/出漫游根本不派发。
+> **门读缓存快照，不自己订阅网络**：`ConnectivityKitSource` 一实例只服务一个订阅（SDK 无 `off`，`unregister` 摘全部），
+> `ConnectivityAdapter.current()` 每次两趟同步 IPC，而聊天页每条附件都要问一次策略 —— 所以快照缓存在
+> `LifecycleCoordinator`（全应用唯一网络观察者）的 `lastNetworkSnapshot`。**兜底方向是产品判断**：
+> 读不到漫游按 `'mobile'`（只勾「移动网络」的用户仍被挡住，宁保守不越权）；连快照都没有按 `'none'`
+> （只有主开关能否决），Wi-Fi 上已打开的聊天页不会因为网络信息晚到而整屏不下。
+> 设备 A/B（模拟器 127.0.0.1:5555，真实 TDLib，全程只读未发送）：先清媒体缓存把状态归零，再进同一个群翻到
+> 同一张海报照片 —— **Data Saver ON**：气泡仍是「缩略图 + 深色圆白色下载箭头」（显示档没下）；
+> **OFF** 后重进同一会话：badge 消失、显示档自动落盘。唯一变量就是那一位。
+> 测试：`core_domain` **138/138**（新增 `DataSaver.test.ets` 9 例，含 **8 档设置 × 5 种网络的否决真值表**、
+> 非法掩码回落、`withFlag` 不可变、「Wi-Fi 上读到漫游」→ `wifi`）、`feature_settings` **178/178**（reducer 9 例含
+> `dataSaverAndAutoDownload_doNotClobberEachOther` + `DataSaverRows` 3 例）、`platform_network` **19/19**、
+> `entry` **42/42**（快照缓存生命周期）、`feature_chat` **321/321** 无回归；三守卫 0 违规。
+> 遗留：provider 那两行 glue 无 coordinator 级单测（要伪造整条 `getMessages` 回包链，改由设备 A/B 覆盖）、
+> 「自动开启」两档缺蜂窝/漫游可取证环境、省流量生效时不追溯取消已在途下载、per-network 尺寸上限
+> （Android `settings_limit_*`）另立一包。
 
 
 | 功能 ID | 功能名 |

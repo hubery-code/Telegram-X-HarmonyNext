@@ -192,6 +192,16 @@ const EN_DICTIONARY: Record<string, string> = {
   'Media still downloads when you tap it.': 'Media still downloads when you tap it.',
   'Varies by chat type': 'Varies by chat type',
   'Download nothing automatically': 'Download nothing automatically',
+
+  // Data saver (AUTODL-102)
+  'Data Saver': 'Data Saver',
+  'Turn on automatically': 'Turn on automatically',
+  'Mobile data': 'Mobile data',
+  'Roaming': 'Roaming',
+  'Mobile and roaming': 'Mobile and roaming',
+  'None': 'None',
+  'Media never downloads automatically while Data Saver is on.':
+    'Media never downloads automatically while Data Saver is on.',
   'Videos': 'Videos',
   'Music': 'Music',
   'GIFs': 'GIFs',
@@ -310,6 +320,16 @@ const ZH_DICTIONARY: Record<string, string> = {
   'Media still downloads when you tap it.': '关闭后点按媒体仍会下载，只是不再自动下载。',
   'Varies by chat type': '按会话类型分别设置',
   'Download nothing automatically': '不自动下载',
+
+  // Data saver (AUTODL-102)
+  'Data Saver': '省流量',
+  'Turn on automatically': '自动开启',
+  'Mobile data': '移动网络',
+  'Roaming': '漫游',
+  'Mobile and roaming': '移动网络与漫游',
+  'None': '不开启',
+  'Media never downloads automatically while Data Saver is on.':
+    '省流量生效期间，任何媒体都不会自动下载；点按仍然可以下载。',
   'Videos': '视频',
   'Music': '音乐',
   'GIFs': '动图',

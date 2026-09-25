@@ -23,6 +23,7 @@ import { NetworkStatePort, NetworkSnapshot, Subscription } from '@tgx/platform-p
 import { TdWireObject } from '@tgx/td-gateway';
 import {
   NetworkTypeMobile,
+  NetworkTypeMobileRoaming,
   NetworkTypeNone,
   NetworkTypeOther,
   NetworkTypeWiFi,
@@ -56,7 +57,9 @@ export function mapSnapshotToNetworkType(snapshot: NetworkSnapshot): TdNetworkTy
     return new NetworkTypeWiFi();
   }
   if (snapshot.transport === 'cellular') {
-    return new NetworkTypeMobile();
+    // AUTODL-102：漫游单独上报 NetworkTypeMobileRoaming，与 Android WatchDog 一致
+    // （TDLib 对 roaming 走更保守的限速档）。契约保证 roaming 只在蜂窝下为 true。
+    return snapshot.roaming ? new NetworkTypeMobileRoaming() : new NetworkTypeMobile();
   }
   return new NetworkTypeOther();
 }
@@ -75,6 +78,15 @@ export class LifecycleCoordinator {
 
   private networkSubscription: Subscription | null = null;
   private primaryScope: AccountScope | null = null;
+  /**
+   * AUTODL-102：最近一次网络快照。
+   *
+   * 存在这里是因为本类是全应用**唯一**的网络观察者：`ConnectivityKitSource` 一个实例只服务
+   * 一个订阅（该 SDK 无 off，unregister 会摘掉全部监听），而 `ConnectivityAdapter.current()`
+   * 每次都要走两趟同步 Kit 调用 —— 聊天页每条附件都问一次策略，若各自去读网络就会退化成
+   * 每帧同步 IPC。所以订阅推来的快照缓存在此，消费方读缓存。
+   */
+  private lastSnapshot: NetworkSnapshot | null = null;
 
   constructor(options: LifecycleCoordinatorOptions) {
     this.options = options;
@@ -105,6 +117,11 @@ export class LifecycleCoordinator {
 
   get primaryAccountScope(): AccountScope | null {
     return this.primaryScope;
+  }
+
+  /** AUTODL-102：自动下载门读的缓存快照；还没派发过时为 null，调用方按「无网络信息」处理。 */
+  get lastNetworkSnapshot(): NetworkSnapshot | null {
+    return this.lastSnapshot;
   }
 
   /**
@@ -158,6 +175,7 @@ export class LifecycleCoordinator {
     this.primaryScope = primary;
 
     const currentNetwork: NetworkSnapshot = this.network.current();
+    this.lastSnapshot = currentNetwork;
     this.log(`start: primary scope accountKey=${primary.accountKey}, initial network connected=${currentNetwork.connected}`);
 
     const self: LifecycleCoordinator = this;
@@ -223,6 +241,7 @@ export class LifecycleCoordinator {
     }
 
     const currentNetwork: NetworkSnapshot = this.network.current();
+    this.lastSnapshot = currentNetwork;
     const netType: TdNetworkType = mapSnapshotToNetworkType(currentNetwork);
     this.broadcastNetworkType(netType);
   }
@@ -282,6 +301,7 @@ export class LifecycleCoordinator {
     if (this.isDestroyedValue) {
       return;
     }
+    this.lastSnapshot = snapshot;
     this.log(`handleNetworkChanged: connected=${snapshot.connected}, transport=${snapshot.transport}`);
     if (this.options.onNetworkChanged !== undefined) {
       this.options.onNetworkChanged(snapshot);

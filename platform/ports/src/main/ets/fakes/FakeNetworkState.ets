@@ -34,7 +34,7 @@ class FakeNetworkSubscription implements Subscription {
 }
 
 export class FakeNetworkState implements NetworkStatePort {
-  private snapshot: NetworkSnapshot = { connected: false, transport: null, metered: false };
+  private snapshot: NetworkSnapshot = { connected: false, transport: null, metered: false, roaming: false };
   private listeners: ((snapshot: NetworkSnapshot) => void)[] = [];
   private observeEnabled: boolean = true;
 
@@ -80,6 +80,9 @@ export class FakeNetworkState implements NetworkStatePort {
   }
 
   private sameSnapshot(a: NetworkSnapshot, b: NetworkSnapshot): boolean {
-    return a.connected === b.connected && a.transport === b.transport && a.metered === b.metered;
+    return a.connected === b.connected
+      && a.transport === b.transport
+      && a.metered === b.metered
+      && a.roaming === b.roaming;
   }
 }

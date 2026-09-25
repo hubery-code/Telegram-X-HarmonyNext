@@ -43,17 +43,17 @@ export default function connectivityAdapterContractTest() {
         received.push(snapshot);
       });
 
-      const wifi: NetworkSnapshot = { connected: true, transport: 'wifi', metered: false };
+      const wifi: NetworkSnapshot = { connected: true, transport: 'wifi', metered: false, roaming: false };
       source.pushRaw(wifi);
       expect(received.length).assertEqual(2);
       expect(received[1].transport).assertEqual('wifi');
 
       // 相同快照重复推送必须被去重（底层不去重，adapter 负责）
-      source.pushRaw({ connected: true, transport: 'wifi', metered: false });
+      source.pushRaw({ connected: true, transport: 'wifi', metered: false, roaming: false });
       expect(received.length).assertEqual(2);
 
       // 部分字段不同即视为变化
-      source.pushRaw({ connected: true, transport: 'wifi', metered: true });
+      source.pushRaw({ connected: true, transport: 'wifi', metered: true, roaming: false });
       expect(received.length).assertEqual(3);
     });
 
@@ -65,9 +65,9 @@ export default function connectivityAdapterContractTest() {
         received.push(snapshot);
       });
 
-      source.pushRaw({ connected: true, transport: 'wifi', metered: false });
-      source.pushRaw({ connected: true, transport: 'cellular', metered: true });
-      source.pushRaw({ connected: false, transport: null, metered: false });
+      source.pushRaw({ connected: true, transport: 'wifi', metered: false, roaming: false });
+      source.pushRaw({ connected: true, transport: 'cellular', metered: true, roaming: false });
+      source.pushRaw({ connected: false, transport: null, metered: false, roaming: false });
 
       expect(received.length).assertEqual(4);
       expect(received[1].transport).assertEqual('wifi');
@@ -93,14 +93,14 @@ export default function connectivityAdapterContractTest() {
       expect(subscription.isActive).assertFalse();
       subscription.unsubscribe();
 
-      source.pushRaw({ connected: true, transport: 'wifi', metered: false });
+      source.pushRaw({ connected: true, transport: 'wifi', metered: false, roaming: false });
       expect(received.length).assertEqual(1);
     });
 
     it('current_reflectsPushedSnapshot', 0, () => {
       const source: FakeConnectivitySource = new FakeConnectivitySource();
       const adapter: ConnectivityAdapter = new ConnectivityAdapter(source);
-      source.pushRaw({ connected: true, transport: 'cellular', metered: true });
+      source.pushRaw({ connected: true, transport: 'cellular', metered: true, roaming: false });
       const snapshot: NetworkSnapshot = adapter.current();
       expect(snapshot.connected).assertTrue();
       expect(snapshot.transport).assertEqual('cellular');

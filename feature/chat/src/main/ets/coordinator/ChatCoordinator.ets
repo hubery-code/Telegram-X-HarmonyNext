@@ -452,6 +452,14 @@ export interface ChatCoordinatorOptions {
    * 下一批媒体要按新策略放行，而会话协调器不会因为设置页关掉而重建。
    */
   readonly autoDownloadPolicyProvider?: () => AutoDownloadPolicy | null;
+  /**
+   * AUTODL-102：省流量（Data Saver）是否生效，由装配层注入。
+   * 对齐 Android `TdlibFilesManager.canAutomaticallyDownload()` 的第一句
+   * （`TdlibFilesManager.java:1353-1355`）：省流量打开时**直接否决**，
+   * 不再看会话分区、媒体类型与尺寸——所以它必须落在门的首行。
+   * 传闭包而不是传快照：网络切换与设置页改动都要在下一条同步里立刻生效。
+   */
+  readonly dataSaverActiveProvider?: () => boolean;
 }
 
 class ParsedDraft {
@@ -462,6 +470,11 @@ class ParsedDraft {
     this.text = text;
     this.replyToId = replyToId;
   }
+}
+
+/** AUTODL-102：未注入省流量判定时的兜底 —— 视为「未开启」。 */
+function neverDataSaverActive(): boolean {
+  return false;
 }
 
 export class ChatCoordinator {
@@ -478,6 +491,11 @@ export class ChatCoordinator {
   private readonly cacheDir: string;
   /** AUTODL-101：自动下载策略来源；没注入时按 TGX 兜底默认走，与设置页同一份来源。 */
   private readonly autoDownloadPolicyProvider: () => AutoDownloadPolicy | null;
+  /**
+   * AUTODL-102：省流量生效判定；没注入时视为「未开启」，即行为与 AUTODL-101 一致，
+   * 不会因为装配层漏接线而静默关掉自动下载。
+   */
+  private readonly dataSaverActiveProvider: () => boolean;
   private recordTimerId: number = -1;
   private recordingSeconds: number = 0;
   private readonly logger: Logger;
@@ -620,6 +638,9 @@ export class ChatCoordinator {
     this.autoDownloadPolicyProvider = (options !== undefined && options.autoDownloadPolicyProvider !== undefined)
       ? options.autoDownloadPolicyProvider
       : (): AutoDownloadPolicy | null => null;
+    this.dataSaverActiveProvider = (options !== undefined && options.dataSaverActiveProvider !== undefined)
+      ? options.dataSaverActiveProvider
+      : neverDataSaverActive;
     this.logger = (options !== undefined && options.logger !== undefined)
       ? options.logger
       : new Logger();
@@ -1343,6 +1364,10 @@ export class ChatCoordinator {
   /**
    * AUTODL-101：这一类媒体在当前会话是否该自动下载。
    *
+   * AUTODL-102：省流量生效时**第一句就否决**，不看分区 / 类型 / 尺寸 ——
+   * 与 Android `canAutomaticallyDownload()` 的判断顺序一致，这样「开了省流量还漏下载」
+   * 不会被解释成「某一类没勾对」。
+   *
    * 只用于「进入会话即自动拉」的路径；用户点下载按钮、点开播放器这类显式动作
    * 一律不走这道门 —— 那是请求，不是自动下载。
    * provider 没注入或读盘失败时按 Android 的兜底默认（照片 / 语音 / 视频便签 / 动图开）走，
@@ -1354,6 +1379,9 @@ export class ChatCoordinator {
    * `scheduleSyncFromProjection()` 再按真实分区放行。
    */
   private canAutoDownload(kind: AutoDownloadMediaKind, sizeBytes: number): boolean {
+    if (this.dataSaverActiveProvider()) {
+      return false;
+    }
     if (autoDownloadScopeForChatKind(this.chatKind) === null) {
       return false;
     }

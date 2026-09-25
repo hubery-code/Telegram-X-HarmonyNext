@@ -28,6 +28,7 @@
 import { LightTheme, Theme, ThemeManager, parseChatFontSize, CHAT_FONT_SIZE_DEFAULT } from '@tgx/core-design-system';
 import { saveChatFontSize } from '../store/SettingsStore';
 import { PreferencesAutoDownloadPolicyStore } from '../store/AutoDownloadStore';
+import { PreferencesDataSaverStore } from '../store/DataSaverStore';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { common } from '@kit.AbilityKit';
 import { AccountDescriptor, AccountScope } from '@tgx/core-account';
@@ -109,7 +110,8 @@ import {
   SelfProfileCoordinator
 } from '@tgx/feature-self';
 import type { TdPendingRequest, TdWireObject } from '@tgx/td-gateway';
-import { AutoDownloadPolicy, ChatRegistry } from '@tgx/core-domain';
+import { AutoDownloadPolicy, ChatRegistry, dataSaverNetworkOfSnapshot, isDataSaverActive } from '@tgx/core-domain';
+import { NetworkSnapshot } from '@tgx/platform-ports';
 import { BootstrapResult } from '../Bootstrap';
 import { ScopeAuthAdapter } from '../ScopeAuthAdapter';
 import { TELEGRAM_CREDENTIALS } from '../config/AppCredentials';
@@ -180,6 +182,7 @@ struct Index {
   private unsubscribeSettingsFn: (() => void) | null = null;
   /** AUTODL-101：设置页写、聊天页读的同一份策略存储（进程内单例，带账号级缓存）。 */
   private autoDownloadStore: PreferencesAutoDownloadPolicyStore | null = null;
+  private dataSaverStore: PreferencesDataSaverStore | null = null;
   private searchCoordinator: SearchCoordinator | null = null;
   private unsubscribeSearchFn: (() => void) | null = null;
   // PROFILE-101：用户资料页（群聊点头像进入）。
@@ -1021,6 +1024,29 @@ struct Index {
     return this.autoDownloadStore;
   }
 
+  /** AUTODL-102：省流量设置存储，与策略存储同一份账号键。 */
+  private getDataSaverStore(): PreferencesDataSaverStore {
+    if (this.dataSaverStore === null) {
+      this.dataSaverStore = new PreferencesDataSaverStore((): string => this.currentAccountKey);
+    }
+    return this.dataSaverStore;
+  }
+
+  /**
+   * AUTODL-102：此刻省流量是否生效 —— 聊天页下载门的第一句。
+   *
+   * 两个来源都读缓存，所以每条附件调用它都是常数开销：设置走 `DataSaverStore.current()`，
+   * 网络走 `LifecycleCoordinator.lastNetworkSnapshot`（它是全应用唯一的网络观察者）。
+   * bootstrap 还没就绪时快照为 null → 档位 'none' → 只有主开关能拦，
+   * 这比「读不到网络就一律不放行」更符合用户预期：会话页都打开了，Wi-Fi 下不该不下图。
+   */
+  private isDataSaverActiveNow(): boolean {
+    const snapshot: NetworkSnapshot | null = this.bootstrapResult === null
+      ? null
+      : this.bootstrapResult.lifecycle.lastNetworkSnapshot;
+    return isDataSaverActive(this.getDataSaverStore().current(), dataSaverNetworkOfSnapshot(snapshot));
+  }
+
   private openSettings(): void {
     if (this.accountScope === null || this.settingsCoordinator !== null) {
       return;
@@ -1045,6 +1071,7 @@ struct Index {
     );
     this.settingsCoordinator = coordinator;
     coordinator.setAutoDownloadStore(this.getAutoDownloadStore());
+    coordinator.setDataSaverStore(this.getDataSaverStore());
     this.unsubscribeSettingsFn = coordinator.subscribe((uiState: SettingsUiState) => {
       this.settingsUiState = uiState;
     });
@@ -1089,6 +1116,9 @@ struct Index {
         logger: this.logger,
         // AUTODL-101：聊天页读同一份策略存储；用闭包而不是快照，设置页改完下一条即可生效。
         autoDownloadPolicyProvider: (): AutoDownloadPolicy | null => this.getAutoDownloadStore().current(),
+        // AUTODL-102：省流量是压在策略上面的那一票否决（Android `canAutomaticallyDownload()` 的第一句）。
+        // 网络状态读 LifecycleCoordinator 的缓存快照，不在每条附件上同步问 Kit。
+        dataSaverActiveProvider: (): boolean => this.isDataSaverActiveNow(),
         // PROFILE-101：群聊点头像 → 压栈用户资料页。
         onOpenUserProfile: (userId: number): void => {
           this.navController.navigateTo({ name: 'userProfile', userId: userId });

@@ -22,7 +22,13 @@ import {
   ok
 } from '@tgx/core-common';
 import { AccountScope } from '@tgx/core-account';
-import { AutoDownloadPolicy, AutoDownloadPolicyStore, UserRegistry } from '@tgx/core-domain';
+import {
+  AutoDownloadPolicy,
+  AutoDownloadPolicyStore,
+  DataSaverSettings,
+  DataSaverStore,
+  UserRegistry
+} from '@tgx/core-domain';
 import {
   GetMe,
   GetScopeNotificationSettings,
@@ -137,7 +143,8 @@ import {
   UserProfileData,
   ProxiesLoaded,
   LoadAutoDownloadPolicy,
-  AutoDownloadPolicyLoaded
+  AutoDownloadPolicyLoaded,
+  DataSaverSettingsLoaded
 } from '../contract/SettingsIntent';
 import {
   ClearCacheEffect,
@@ -163,7 +170,9 @@ import {
   SaveProxyEffect,
   RemoveProxyEffect,
   LoadAutoDownloadPolicyEffect,
-  PersistAutoDownloadPolicyEffect
+  PersistAutoDownloadPolicyEffect,
+  LoadDataSaverSettingsEffect,
+  PersistDataSaverSettingsEffect
 } from '../contract/SettingsEffect';
 import { settingsReducer } from '../reducer/SettingsReducer';
 import { Theme, ThemeManager } from '@tgx/core-design-system';
@@ -202,11 +211,21 @@ export class SettingsCoordinator {
    * 而这一位是可选能力（缺省时页面显示的就是默认策略，行为与 TGX 首装一致）。
    */
   private autoDownloadStore: AutoDownloadPolicyStore | null = null;
+  /**
+   * AUTODL-102：省流量设置的落盘端口。同样是 setter 注入、同样可选 ——
+   * 没注入时页面显默认档（只勾「漫游」），与 Android 首装一致。
+   */
+  private dataSaverStore: DataSaverStore | null = null;
   private destroyed: boolean = false;
 
   /** 注入策略存储；必须在 start() 之前调用。 */
   setAutoDownloadStore(store: AutoDownloadPolicyStore | null): void {
     this.autoDownloadStore = store;
+  }
+
+  /** 注入省流量设置存储；必须在 start() 之前调用。 */
+  setDataSaverStore(store: DataSaverStore | null): void {
+    this.dataSaverStore = store;
   }
 
   constructor(
@@ -473,6 +492,16 @@ export class SettingsCoordinator {
       case 'persistAutoDownloadPolicy': {
         const persistEffect: PersistAutoDownloadPolicyEffect = effect as PersistAutoDownloadPolicyEffect;
         this.handlePersistAutoDownloadPolicy(persistEffect.policy);
+        break;
+      }
+
+      case 'loadDataSaverSettings':
+        this.handleLoadDataSaverSettings();
+        break;
+
+      case 'persistDataSaverSettings': {
+        const persistEffect: PersistDataSaverSettingsEffect = effect as PersistDataSaverSettingsEffect;
+        this.handlePersistDataSaverSettings(persistEffect.settings);
         break;
       }
 
@@ -1541,5 +1570,35 @@ export class SettingsCoordinator {
       restored !== null ? restored : AutoDownloadPolicy.defaultPolicy()
     ));
     this.dispatch(new SetErrorMessage('Unable to save automatic download settings.'));
+  }
+
+  // ---- AUTODL-102 省流量（Data Saver）----
+
+  /** 读省流量设置；端口没注入或盘上没值都回落 Android 的默认档（只勾「漫游」）。 */
+  private handleLoadDataSaverSettings(): void {
+    const store: DataSaverStore | null = this.dataSaverStore;
+    const loaded: DataSaverSettings | null = store !== null ? store.load() : null;
+    this.dispatch(new DataSaverSettingsLoaded(
+      loaded !== null ? loaded : DataSaverSettings.defaultSettings()
+    ));
+  }
+
+  /**
+   * 写省流量设置。回滚逻辑与自动下载那一份同理：主开关看起来已开、盘上却没存住，
+   * 用户会在蜂窝下被扣流量还毫不知情。
+   */
+  private handlePersistDataSaverSettings(settings: DataSaverSettings): void {
+    const store: DataSaverStore | null = this.dataSaverStore;
+    if (store === null) {
+      return;
+    }
+    if (store.save(settings)) {
+      return;
+    }
+    const restored: DataSaverSettings | null = store.load();
+    this.dispatch(new DataSaverSettingsLoaded(
+      restored !== null ? restored : DataSaverSettings.defaultSettings()
+    ));
+    this.dispatch(new SetErrorMessage('Unable to save data saver settings.'));
   }
 }

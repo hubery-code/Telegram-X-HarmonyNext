@@ -7,6 +7,7 @@ import devicesSubPageTest from './DevicesSubPage.test';
 import settingsSectionTest from './SettingsSection.test';
 import proxySettingsTest from './ProxySettings.test';
 import autoDownloadRowsTest from './AutoDownloadRows.test';
+import dataSaverRowsTest from './DataSaverRows.test';
 
 export default function testsuite(): void {
   settingsReducerTest();
@@ -18,4 +19,5 @@ export default function testsuite(): void {
   settingsSectionTest();
   proxySettingsTest();
   autoDownloadRowsTest();
+  dataSaverRowsTest();
 }

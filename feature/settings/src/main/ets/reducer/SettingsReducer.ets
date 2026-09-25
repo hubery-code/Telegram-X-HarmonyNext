@@ -61,7 +61,9 @@ import {
   CloseAutoDownloadPage,
   LoadAutoDownloadPolicy,
   AutoDownloadPolicyLoaded,
-  SetAutoDownloadKind
+  SetAutoDownloadKind,
+  DataSaverSettingsLoaded,
+  SetDataSaverFlag
 } from '../contract/SettingsIntent';
 import {
   ClearCacheEffect,
@@ -86,7 +88,9 @@ import {
   SaveProxyEffect,
   RemoveProxyEffect,
   LoadAutoDownloadPolicyEffect,
-  PersistAutoDownloadPolicyEffect
+  PersistAutoDownloadPolicyEffect,
+  LoadDataSaverSettingsEffect,
+  PersistDataSaverSettingsEffect
 } from '../contract/SettingsEffect';
 import { NotificationScopeKey } from '../model/NotificationSettings';
 import {
@@ -103,7 +107,8 @@ import {
 } from '../model/ProxySettings';
 import {
   AutoDownloadFlags,
-  AutoDownloadPolicy
+  AutoDownloadPolicy,
+  DataSaverSettings
 } from '@tgx/core-domain';
 
 function notificationScopeEnabled(state: SettingsUiState, scope: NotificationScopeKey): boolean {
@@ -824,6 +829,42 @@ export const settingsReducer: Reducer<SettingsUiState, SettingsIntent, SettingsE
         errorMessage: null
       };
       return reduced(state.copyWith(options), [new PersistAutoDownloadPolicyEffect(next)]);
+    }
+
+    // ---- AUTODL-102 省流量（Data Saver）----
+    // 与自动下载同一子页、同一套「读盘 → 勾选即写回 → 以存储返回值回灌」的流程，
+    // 但走另一个偏好键：Android 就是把 settings_datasaver 与 settings_autodownload 分开存。
+
+    case 'loadDataSaverSettings': {
+      return reduced(state, [new LoadDataSaverSettingsEffect()]);
+    }
+
+    case 'dataSaverSettingsLoaded': {
+      const loadedIntent: DataSaverSettingsLoaded = intent as DataSaverSettingsLoaded;
+      const options: SettingsUiStateOptions = {
+        dataSaverSettings: loadedIntent.settings,
+        errorMessage: null
+      };
+      return reduced(state.copyWith(options));
+    }
+
+    case 'setDataSaverFlag': {
+      const flagIntent: SetDataSaverFlag = intent as SetDataSaverFlag;
+      const settings: DataSaverSettings | null = state.dataSaverSettings;
+      // 同 setAutoDownloadKind：没读到盘就不写，否则会用猜出来的默认覆盖用户偏好。
+      if (settings === null) {
+        return reduced(state);
+      }
+      if (settings.ofFlag(flagIntent.flag) === flagIntent.enabled) {
+        // Toggle 挂载时会回调一次初值，同值不算变更、不该落盘。
+        return reduced(state);
+      }
+      const next: DataSaverSettings = settings.withFlag(flagIntent.flag, flagIntent.enabled);
+      const options: SettingsUiStateOptions = {
+        dataSaverSettings: next,
+        errorMessage: null
+      };
+      return reduced(state.copyWith(options), [new PersistDataSaverSettingsEffect(next)]);
     }
 
     default:

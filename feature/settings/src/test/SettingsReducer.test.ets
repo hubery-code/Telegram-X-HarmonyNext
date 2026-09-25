@@ -57,6 +57,9 @@ import {
   LoadAutoDownloadPolicy,
   AutoDownloadPolicyLoaded,
   SetAutoDownloadKind,
+  LoadDataSaverSettings,
+  DataSaverSettingsLoaded,
+  SetDataSaverFlag,
   UserProfileData
 } from '../main/ets/contract/SettingsIntent';
 import {
@@ -80,9 +83,18 @@ import {
   SaveProxyEffect,
   RemoveProxyEffect,
   LoadAutoDownloadPolicyEffect,
-  PersistAutoDownloadPolicyEffect
+  PersistAutoDownloadPolicyEffect,
+  LoadDataSaverSettingsEffect,
+  PersistDataSaverSettingsEffect
 } from '../main/ets/contract/SettingsEffect';
-import { AutoDownloadFlags, AutoDownloadPolicy } from '@tgx/core-domain';
+import {
+  AutoDownloadFlags,
+  AutoDownloadPolicy,
+  DATA_SAVER_FLAG_ENABLED,
+  DATA_SAVER_FLAG_WHEN_MOBILE,
+  DATA_SAVER_FLAG_WHEN_ROAMING,
+  DataSaverSettings
+} from '@tgx/core-domain';
 import { ActiveSessionItem } from '../main/ets/model/ActiveSessionItem';
 import { PrivacySettingItem } from '../main/ets/model/PrivacySettings';
 import {
@@ -138,6 +150,14 @@ function autoDownloadState(policy: AutoDownloadPolicy | null): SettingsUiState {
   return SettingsUiState.initial().copyWith({
     showAutoDownloadPage: true,
     autoDownloadPolicy: policy
+  });
+}
+
+/** AUTODL-102：已经读到盘上省流量设置的起始态（与策略同页，页已打开）。 */
+function dataSaverState(settings: DataSaverSettings | null): SettingsUiState {
+  return SettingsUiState.initial().copyWith({
+    showAutoDownloadPage: true,
+    dataSaverSettings: settings
   });
 }
 
@@ -1206,6 +1226,108 @@ export default function settingsReducerTest(): void {
 
       expect(next.showAutoDownloadPage).assertTrue();
       expect(next.autoDownloadPolicy !== null).assertTrue();
+    });
+
+    // ---- AUTODL-102 省流量（Data Saver）----
+
+    it('initialState_hasNoDataSaverSettingsLoaded', 0, () => {
+      // null = 「还没读盘」，页面据此显 Loading，而不是显一份猜出来的默认。
+      expect(SettingsUiState.initial().dataSaverSettings === null).assertTrue();
+    });
+
+    it('loadDataSaverSettings_emitsEffectWithoutTouchingState', 0, () => {
+      const state = dataSaverState(null);
+      const result = settingsReducer(state, new LoadDataSaverSettings(), makeEnv());
+
+      expect(result.state === state).assertTrue();
+      expect(result.effects.length).assertEqual(1);
+      expect((result.effects[0] as LoadDataSaverSettingsEffect).kind).assertEqual('loadDataSaverSettings');
+    });
+
+    it('dataSaverSettingsLoaded_storesSettingsAndClearsError', 0, () => {
+      const state = SettingsUiState.initial().copyWith({ errorMessage: 'boom' });
+      const settings: DataSaverSettings = DataSaverSettings.defaultSettings();
+      const result = settingsReducer(state, new DataSaverSettingsLoaded(settings), makeEnv());
+
+      expect(result.state.dataSaverSettings === settings).assertTrue();
+      expect(result.state.errorMessage).assertNull();
+      expect(result.effects.length).assertEqual(0);
+    });
+
+    it('setDataSaverFlag_withoutLoadedSettings_isNoop', 0, () => {
+      const state = dataSaverState(null);
+      const result = settingsReducer(state, new SetDataSaverFlag(DATA_SAVER_FLAG_ENABLED, true), makeEnv());
+
+      // 没读盘就写回 = 用默认档覆盖用户盘上的偏好，必须整个忽略。
+      expect(result.state === state).assertTrue();
+      expect(result.effects.length).assertEqual(0);
+    });
+
+    it('setDataSaverFlag_sameValue_isNoop', 0, () => {
+      // Toggle 挂载时会回调一次初值（Android 默认勾着「漫游」），同值不该落盘。
+      const state = dataSaverState(DataSaverSettings.defaultSettings());
+      const result = settingsReducer(state,
+        new SetDataSaverFlag(DATA_SAVER_FLAG_WHEN_ROAMING, true), makeEnv());
+
+      expect(result.state === state).assertTrue();
+      expect(result.effects.length).assertEqual(0);
+    });
+
+    it('setDataSaverFlag_togglesOnlyThatBitAndPersists', 0, () => {
+      const source: DataSaverSettings = DataSaverSettings.defaultSettings();
+      const state = dataSaverState(source);
+      const result = settingsReducer(state,
+        new SetDataSaverFlag(DATA_SAVER_FLAG_WHEN_MOBILE, true), makeEnv());
+
+      expect(result.effects.length).assertEqual(1);
+      const effect: PersistDataSaverSettingsEffect = result.effects[0] as PersistDataSaverSettingsEffect;
+      expect(effect.kind).assertEqual('persistDataSaverSettings');
+      expect(effect.settings.toMask())
+        .assertEqual(DATA_SAVER_FLAG_WHEN_MOBILE | DATA_SAVER_FLAG_WHEN_ROAMING);
+      // 主开关不能被「多勾一档」带跑。
+      expect(effect.settings.enabled).assertFalse();
+      // reducer 是纯函数：入参那份设置不得被就地改动。
+      expect(source.toMask()).assertEqual(DATA_SAVER_FLAG_WHEN_ROAMING);
+      expect(state.dataSaverSettings !== null && state.dataSaverSettings.whenMobile).assertFalse();
+      expect(result.state.dataSaverSettings !== null
+        && result.state.dataSaverSettings.toMask()).assertEqual(effect.settings.toMask());
+    });
+
+    it('setDataSaverFlag_turningOnMaster_savesMaskOne', 0, () => {
+      const state = dataSaverState(DataSaverSettings.defaultSettings());
+      const result = settingsReducer(state,
+        new SetDataSaverFlag(DATA_SAVER_FLAG_ENABLED, true), makeEnv());
+
+      const persisted: DataSaverSettings = (result.effects[0] as PersistDataSaverSettingsEffect).settings;
+      expect(persisted.toMask()).assertEqual(DATA_SAVER_FLAG_ENABLED | DATA_SAVER_FLAG_WHEN_ROAMING);
+    });
+
+    it('dataSaverAndAutoDownload_doNotClobberEachOther', 0, () => {
+      // 同页两套设置各自 copyWith 一位，另一套必须原样留着 ——
+      // 省流量卡在最上面，用户勾完主开关不该把下面的分区策略清成「未读盘」。
+      const state = SettingsUiState.initial().copyWith({
+        showAutoDownloadPage: true,
+        autoDownloadPolicy: AutoDownloadPolicy.defaultPolicy(),
+        dataSaverSettings: DataSaverSettings.defaultSettings()
+      });
+      const afterSaver = settingsReducer(state,
+        new SetDataSaverFlag(DATA_SAVER_FLAG_ENABLED, true), makeEnv()).state;
+      expect(afterSaver.autoDownloadPolicy !== null).assertTrue();
+      expect(afterSaver.autoDownloadPolicy === state.autoDownloadPolicy).assertTrue();
+
+      const afterKind = settingsReducer(afterSaver,
+        new SetAutoDownloadKind('private', 'video', true), makeEnv()).state;
+      expect(afterKind.dataSaverSettings !== null).assertTrue();
+      expect(afterKind.dataSaverSettings !== null
+        && afterKind.dataSaverSettings.enabled).assertTrue();
+    });
+
+    it('closeAutoDownloadPage_keepsLoadedDataSaverSettings', 0, () => {
+      const state = dataSaverState(DataSaverSettings.defaultSettings());
+      const result = settingsReducer(state, new CloseAutoDownloadPage(), makeEnv());
+
+      expect(result.state.showAutoDownloadPage).assertFalse();
+      expect(result.state.dataSaverSettings !== null).assertTrue();
     });
   });
 }

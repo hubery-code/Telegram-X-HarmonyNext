@@ -44,17 +44,17 @@ export default function networkStatePortContract(
         received.push(snapshot);
       });
 
-      const wifi: NetworkSnapshot = { connected: true, transport: 'wifi', metered: false };
+      const wifi: NetworkSnapshot = { connected: true, transport: 'wifi', metered: false, roaming: false };
       driver.push(wifi);
       expect(received.length).assertEqual(2);
       expect(received[1].transport).assertEqual('wifi');
 
       // 相同快照重复推送必须被去重
-      driver.push({ connected: true, transport: 'wifi', metered: false });
+      driver.push({ connected: true, transport: 'wifi', metered: false, roaming: false });
       expect(received.length).assertEqual(2);
 
       // 部分字段不同即视为变化
-      driver.push({ connected: true, transport: 'wifi', metered: true });
+      driver.push({ connected: true, transport: 'wifi', metered: true, roaming: false });
       expect(received.length).assertEqual(3);
     });
 
@@ -65,9 +65,9 @@ export default function networkStatePortContract(
         received.push(snapshot);
       });
 
-      driver.push({ connected: true, transport: 'wifi', metered: false });
-      driver.push({ connected: true, transport: 'cellular', metered: true });
-      driver.push({ connected: false, transport: null, metered: false });
+      driver.push({ connected: true, transport: 'wifi', metered: false, roaming: false });
+      driver.push({ connected: true, transport: 'cellular', metered: true, roaming: false });
+      driver.push({ connected: false, transport: null, metered: false, roaming: false });
 
       expect(received.length).assertEqual(4);
       expect(received[1].transport).assertEqual('wifi');
@@ -92,13 +92,13 @@ export default function networkStatePortContract(
       expect(subscription.isActive).assertFalse();
       subscription.unsubscribe();
 
-      driver.push({ connected: true, transport: 'wifi', metered: false });
+      driver.push({ connected: true, transport: 'wifi', metered: false, roaming: false });
       expect(received.length).assertEqual(1);
     });
 
     it('current_reflectsPushedSnapshot', 0, () => {
       const port: NetworkStatePort = factory();
-      driver.push({ connected: true, transport: 'cellular', metered: true });
+      driver.push({ connected: true, transport: 'cellular', metered: true, roaming: false });
       const snapshot: NetworkSnapshot = port.current();
       expect(snapshot.connected).assertTrue();
       expect(snapshot.transport).assertEqual('cellular');

@@ -74,21 +74,24 @@ export default function lifecycleCoordinatorTest() {
   describe('LifecycleCoordinator', () => {
 
     it('mapSnapshotToNetworkType maps correctly', 0, () => {
-      const disconnected: NetworkSnapshot = { connected: false, transport: null, metered: false };
+      const disconnected: NetworkSnapshot = { connected: false, transport: null, metered: false, roaming: false };
       expect(mapSnapshotToNetworkType(disconnected).type).assertEqual('networkTypeNone');
 
-      const wifi: NetworkSnapshot = { connected: true, transport: 'wifi', metered: false };
+      const wifi: NetworkSnapshot = { connected: true, transport: 'wifi', metered: false, roaming: false };
       expect(mapSnapshotToNetworkType(wifi).type).assertEqual('networkTypeWiFi');
 
-      const cellular: NetworkSnapshot = { connected: true, transport: 'cellular', metered: true };
+      const cellular: NetworkSnapshot = { connected: true, transport: 'cellular', metered: true, roaming: false };
       expect(mapSnapshotToNetworkType(cellular).type).assertEqual('networkTypeMobile');
 
-      const ethernet: NetworkSnapshot = { connected: true, transport: 'ethernet', metered: false };
+      const roaming: NetworkSnapshot = { connected: true, transport: 'cellular', metered: true, roaming: true };
+      expect(mapSnapshotToNetworkType(roaming).type).assertEqual('networkTypeMobileRoaming');
+
+      const ethernet: NetworkSnapshot = { connected: true, transport: 'ethernet', metered: false, roaming: false };
       expect(mapSnapshotToNetworkType(ethernet).type).assertEqual('networkTypeOther');
     });
 
     it('cold start with empty manifest creates default account', 0, () => {
-      const h = createHarness({ connected: true, transport: 'wifi', metered: false });
+      const h = createHarness({ connected: true, transport: 'wifi', metered: false, roaming: false });
       const report: LifecycleBootstrapReport = h.coordinator.start();
 
       expect(report.primaryScope.accountKey).assertEqual('default');
@@ -111,7 +114,7 @@ export default function lifecycleCoordinatorTest() {
     });
 
     it('cold start restores persisted accounts', 0, () => {
-      const h = createHarness({ connected: true, transport: 'wifi', metered: false });
+      const h = createHarness({ connected: true, transport: 'wifi', metered: false, roaming: false });
       // Pre-create two accounts in registry
       h.registry.create('primary_user');
       h.registry.create('secondary_user');
@@ -146,7 +149,7 @@ export default function lifecycleCoordinatorTest() {
       const bridge = new FakeAccountBridge();
       const files = new FakeAppFiles();
       const clock = new ManualClock(1000, 100);
-      const network = new FakeNetworkState({ connected: true, transport: 'wifi', metered: false });
+      const network = new FakeNetworkState({ connected: true, transport: 'wifi', metered: false, roaming: false });
 
       const registry = new AccountRegistry({ bridge: bridge, files: files, clock: clock });
       registry.start();
@@ -195,24 +198,59 @@ export default function lifecycleCoordinatorTest() {
     });
 
     it('dynamic network change broadcasts to active scopes', 0, () => {
-      const h = createHarness({ connected: true, transport: 'wifi', metered: false });
+      const h = createHarness({ connected: true, transport: 'wifi', metered: false, roaming: false });
       h.coordinator.start();
       h.bridge.sent.length = 0;
 
       // Switch to cellular
-      h.network.push({ connected: true, transport: 'cellular', metered: true });
+      h.network.push({ connected: true, transport: 'cellular', metered: true, roaming: false });
       expect(h.bridge.sent.length).assertEqual(1);
       expect(h.bridge.sent[0].utf8.indexOf('networkTypeMobile') >= 0).assertTrue();
 
       // Switch to disconnected
       h.bridge.sent.length = 0;
-      h.network.push({ connected: false, transport: null, metered: false });
+      h.network.push({ connected: false, transport: null, metered: false, roaming: false });
       expect(h.bridge.sent.length).assertEqual(1);
       expect(h.bridge.sent[0].utf8.indexOf('networkTypeNone') >= 0).assertTrue();
     });
 
+    /**
+     * AUTODL-102：自动下载门读的是这里的缓存快照，而不是自己去订阅网络。
+     * 三条都要钉住：没启动过是 null（门按「无网络信息」放行给主开关判定）、
+     * start() 用 current() 兜一次底（首帧不等异步回调）、推来的新快照能刷新缓存。
+     */
+    it('caches snapshots for the auto-download gate', 0, () => {
+      const h = createHarness({ connected: true, transport: 'wifi', metered: false, roaming: false });
+      expect(h.coordinator.lastNetworkSnapshot === null).assertTrue();
+
+      h.coordinator.start();
+      const seeded: NetworkSnapshot | null = h.coordinator.lastNetworkSnapshot;
+      expect(seeded !== null).assertTrue();
+      if (seeded !== null) {
+        expect(seeded.transport).assertEqual('wifi');
+        expect(seeded.roaming).assertFalse();
+      }
+
+      h.network.push({ connected: true, transport: 'cellular', metered: true, roaming: true });
+      const roaming: NetworkSnapshot | null = h.coordinator.lastNetworkSnapshot;
+      expect(roaming !== null).assertTrue();
+      if (roaming !== null) {
+        expect(roaming.transport).assertEqual('cellular');
+        expect(roaming.roaming).assertTrue();
+      }
+
+      // 销毁后不再刷新：门读到的应当是最后一次有效快照，而不是半路状态
+      h.coordinator.onDestroy();
+      h.network.push({ connected: false, transport: null, metered: false, roaming: false });
+      const frozen: NetworkSnapshot | null = h.coordinator.lastNetworkSnapshot;
+      expect(frozen !== null).assertTrue();
+      if (frozen !== null) {
+        expect(frozen.roaming).assertTrue();
+      }
+    });
+
     it('onDestroy tears down coordinator, closes scopes, and unregisters network', 0, () => {
-      const h = createHarness({ connected: true, transport: 'wifi', metered: false });
+      const h = createHarness({ connected: true, transport: 'wifi', metered: false, roaming: false });
       const report = h.coordinator.start();
       const scope = report.primaryScope;
 
@@ -226,7 +264,7 @@ export default function lifecycleCoordinatorTest() {
 
       // Pushing network after destroy does not emit requests
       h.bridge.sent.length = 0;
-      h.network.push({ connected: true, transport: 'wifi', metered: false });
+      h.network.push({ connected: true, transport: 'wifi', metered: false, roaming: false });
       expect(h.bridge.sent.length).assertEqual(0);
     });
 

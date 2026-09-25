@@ -19,7 +19,7 @@ import { Subscription } from './Common';
 
 export type NetworkTransport = 'wifi' | 'cellular' | 'ethernet' | 'other';
 
-/** 不可变网络快照；两个字段全相等即视为同一快照。 */
+/** 不可变网络快照；全字段相等即视为同一快照。 */
 export interface NetworkSnapshot {
   /** connected / disconnected。 */
   readonly connected: boolean;
@@ -27,6 +27,12 @@ export interface NetworkSnapshot {
   readonly transport: NetworkTransport | null;
   /** 计费网络提示（蜂窝通常为 true）；断网为 false。 */
   readonly metered: boolean;
+  /**
+   * 是否处于蜂窝漫游（AUTODL-102）。契约语义：**只在读到时才为 true** ——
+   * 非蜂窝、无 SIM、电话能力不可用或 Kit 抛错时一律 false，调用方按「不漫游」处理。
+   * 消费侧（省流量判定）据此把回落方向选成「更保守」而不是「更宽松」。
+   */
+  readonly roaming: boolean;
 }
 
 export interface NetworkStatePort {

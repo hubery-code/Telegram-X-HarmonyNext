@@ -103,12 +103,53 @@ export default function connectivityMappingTest() {
       expect(DISCONNECTED_SNAPSHOT.metered).assertFalse();
     });
 
+    /**
+     * AUTODL-102：漫游位只在蜂窝上才作数。
+     * 电话侧的 `isRoaming` 与「当前默认网络是蜂窝」是两次独立读取，
+     * Wi-Fi 挂着的时候读到 true 是陈旧值 —— 若照抄成快照，省流量会在
+     * 用户连着 Wi-Fi 时按「漫游」否决自动下载。
+     */
+    it('roaming_only_counts_on_cellular', 0, () => {
+      const roamingCellular: NetworkSnapshot = mapCapabilities({
+        bearerTypes: [NET_BEARER_CELLULAR],
+        capabilities: []
+      }, true);
+      expect(roamingCellular.transport).assertEqual('cellular');
+      expect(roamingCellular.roaming).assertTrue();
+
+      const roamingOnWifi: NetworkSnapshot = mapCapabilities({
+        bearerTypes: [NET_BEARER_WIFI],
+        capabilities: [NET_CAPABILITY_NOT_METERED]
+      }, true);
+      expect(roamingOnWifi.roaming).assertFalse();
+
+      // 双网卡时按优先级选出的仍是 Wi-Fi，漫游同样不作数
+      const roamingDual: NetworkSnapshot = mapCapabilities({
+        bearerTypes: [NET_BEARER_CELLULAR, NET_BEARER_WIFI],
+        capabilities: []
+      }, true);
+      expect(roamingDual.transport).assertEqual('wifi');
+      expect(roamingDual.roaming).assertFalse();
+
+      const notRoaming: NetworkSnapshot = mapCapabilities({
+        bearerTypes: [NET_BEARER_CELLULAR],
+        capabilities: []
+      });
+      expect(notRoaming.roaming).assertFalse();
+      expect(DISCONNECTED_SNAPSHOT.roaming).assertFalse();
+    });
+
     it('sameSnapshot_allFieldsCompared', 0, () => {
-      const a: NetworkSnapshot = { connected: true, transport: 'wifi', metered: false };
-      expect(sameSnapshot(a, { connected: true, transport: 'wifi', metered: false })).assertTrue();
-      expect(sameSnapshot(a, { connected: true, transport: 'wifi', metered: true })).assertFalse();
-      expect(sameSnapshot(a, { connected: true, transport: 'cellular', metered: false })).assertFalse();
-      expect(sameSnapshot(a, { connected: false, transport: null, metered: false })).assertFalse();
+      const a: NetworkSnapshot = { connected: true, transport: 'wifi', metered: false, roaming: false };
+      expect(sameSnapshot(a, { connected: true, transport: 'wifi', metered: false, roaming: false })).assertTrue();
+      expect(sameSnapshot(a, { connected: true, transport: 'wifi', metered: true, roaming: false })).assertFalse();
+      expect(sameSnapshot(a, { connected: true, transport: 'cellular', metered: false, roaming: false })).assertFalse();
+      expect(sameSnapshot(a, { connected: false, transport: null, metered: false, roaming: false })).assertFalse();
+      // 漫游参与去重：进/出漫游必须派发，否则省流量的自动开启条件会停在旧网络上
+      expect(sameSnapshot(
+        { connected: true, transport: 'cellular', metered: true, roaming: false },
+        { connected: true, transport: 'cellular', metered: true, roaming: true }
+      )).assertFalse();
     });
   });
 }
