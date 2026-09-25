@@ -235,7 +235,22 @@ const EN_DICTIONARY: Record<string, string> = {
 
   // Internal links (DEEPLINK-101)
   'This link type is not supported yet': 'This link type is not supported yet',
-  'Failed to open link': 'Failed to open link'
+  'Failed to open link': 'Failed to open link',
+
+  // Link confirmations (DEEPLINK-102)
+  'Join': 'Join',
+  'Request to Join': 'Request to Join',
+  '{0} members': '{0} members',
+  '{0} subscribers': '{0} subscribers',
+  'Connect to This Proxy?': 'Connect to This Proxy?',
+  'Server': 'Server',
+  'This will add a proxy server to your configuration.': 'This will add a proxy server to your configuration.',
+  'This proxy uses a secret, make sure you trust the link source.': 'This proxy uses a secret, make sure you trust the link source.',
+  'Enable': 'Enable',
+  'Save for Later': 'Save for Later',
+  'Join request sent': 'Join request sent',
+  'Proxy enabled': 'Proxy enabled',
+  'Proxy saved for later use': 'Proxy saved for later use'
 };
 
 const ZH_DICTIONARY: Record<string, string> = {
@@ -393,7 +408,22 @@ const ZH_DICTIONARY: Record<string, string> = {
 
   // Internal links (DEEPLINK-101)
   'This link type is not supported yet': '暂不支持这种链接',
-  'Failed to open link': '无法打开链接'
+  'Failed to open link': '无法打开链接',
+
+  // Link confirmations (DEEPLINK-102)
+  'Join': '加入',
+  'Request to Join': '申请加入',
+  '{0} members': '{0} 位成员',
+  '{0} subscribers': '{0} 位订阅者',
+  'Connect to This Proxy?': '连接到此代理？',
+  'Server': '服务器',
+  'This will add a proxy server to your configuration.': '这会将一个代理服务器添加到你的配置中。',
+  'This proxy uses a secret, make sure you trust the link source.': '该代理带有密钥，请确认你信任链接来源。',
+  'Enable': '启用',
+  'Save for Later': '稍后使用',
+  'Join request sent': '加入申请已发送',
+  'Proxy enabled': '代理已启用',
+  'Proxy saved for later use': '代理已保存，稍后可使用'
 };
 
 export class Lang {

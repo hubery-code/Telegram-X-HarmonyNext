@@ -596,6 +596,78 @@
 > `tg://resolve?domain=`；Share Extension 另包；气泡内 `t.me` 链接的**真机点击**取证还缺一个可稳定命中的
 > span 热区（判定与递出已由单测覆盖）。
 
+> **追加（DEEPLINK-102，FEAT-P2-010 深链的另一半：其余 Telegram 链接类型）**：
+> 邀请、代理、消息、bot start 四类判别式落地，DEEPLINK-101 那句「认得但没实现」的 `unsupported`
+> 现在只剩贴纸包 / 语言包 / 语音聊天三类。
+> **① 要问人的链接走端口，不走全局弹窗单例**：`entry/deeplink/AppLinkPrompt.ets` 只声明两条回调
+> `confirmInvite(data) → boolean` 与 `chooseProxy(data) → 'enable' | 'save' | 'cancel'`
+> （对标 Android `TdlibUi.openJoinDialog` 与 `openProxyAlert` 的两个 UI 触点），路由器因此仍是能在
+> hypium 里跑的纯逻辑；ArkUI 状态（`@State promptVisible/promptCard`）全在装配层 `pages/Index.ets`。
+> **没接弹窗时的兜底是「一律拒绝」**（`DECLINING_APP_LINK_PROMPT`）——加入会话与切代理都是账号级动作，
+> 默认值绝不能替用户同意。
+> **② 视图模型是从 TDLib DTO 里挑出来的标量**：`InvitePromptData` / `ProxyPromptData` 只带能显示的东西，
+> 邀请哈希留在路由器手里，不进 UI 状态、不进日志。构卡函数（`invitePromptCard` / `proxyPromptCard`）
+> 注入 `TranslateFn` 后完全 Kit-free，可单测；产出的 `PromptCard` 只有已经翻译好的三段文案 + 三个按钮，
+> `secondaryLabel === ''` 表示「没有第二动作」——视图层不认识「邀请」「代理」这些业务概念，
+> 也就不会出现「新加一类链接忘了加按钮」。
+> **③ 代理链接的两个动作是同一条 `addProxy`**：「启用」与「稍后使用」只差 `enable` 这个 bool，
+> 由 `proxyChoiceEnables(choice)` 单列出来（`cancel → null`），测试钉住「选了 save 绝不会 enable」；
+> **不补发 `enableProxy`** —— PROXY-101 的口径是单选态只有 TDLib 知道真相，`addProxy(enable=true)` 已原子，
+> 代理页下次回读自然显出这一行。TDLib 回 `proxy: null`（不支持的代理类型）时报 `unsupported` 且**先于弹窗**，
+> 不问用户一个答不了的问题。
+> **④ 邀请链接的两条捷径**：`checkChatInviteLink` 的 `chat_id !== 0` 表示「已经是成员」→ 直接导航，
+> 不再问人；`creates_join_request` 的链接按钮换成「申请加入」，`joinChatByInviteLink` 回
+> `chatJoinResultRequestSent` 时走新出口 `notified`（动作完成了但没有页面可去 → toast「加入申请已发送」）。
+> `declined` / `guardbot` 一律 `failed`，不猜。
+> **⑤ 消息链接复用既有路由**：本 TDLib 版本没有 `internalLinkTypePost`，帖子链接同样回
+> `internalLinkTypeMessage`，统一交给 `getMessageLinkInfo`；`chat_id === 0` 是「本地没有这个会话」→
+> `failed`，**不猜 chatId、不建会话**；`messageId > 0` 时压 `chat` 路由带 `messageId`（SEARCH-102 就有的字段，
+> 会话页已会滚动定位并高亮），这里不另造路径。
+> **⑥ bot start 先验真身**：`searchPublicChat` 拿到会话后还要 `getUser` 且 `type_ === 'userTypeBot'` 才导航
+> （Android 直接 `addContact` 是因为它信任自己解析出来的 bot 名），非 bot 用户名回 `failed`；
+> `sendBotStartMessage` 只在 `autostart && start_parameter.length > 0` 时发，且**不等回包**——
+> 进会话已经成功，启动消息失败只留一行日志。
+> **⑦ 三种结果三种表达**：`cancelled`（用户说了不）静默、`notified` 走 `appLinkReasonKey(reason)` 翻译后
+> toast、`unsupported`/`failed` 各有兜底文案；认不出的 reason 回「Failed to open link」而不是把内部键名
+> 印到用户脸上。
+> **⑧ 每个终态必须留下一行日志**：设备实测 `https://t.me/durov?start=qoderx` 什么也没发生、日志里也查不到
+> ——`fetchPublicChat` 失败静默返回 null，那几条早退的 `failed` 分支没人记账。修法是收口成一处：
+> `handle()` 对解析出的结果统一走 `logTerminal()`，`failed`/`unsupported` 必留
+> `outcome=… linkType=…,reason=…`，分支自己的 `stage=` 仍各自给；配套单测
+> `failedOutcome_alwaysLeavesASummaryLine`（漏一条就红）。
+> **⑨ 设备取证**（模拟器 127.0.0.1:5555，真实 TDLib，未加入任何会话、未发消息）：
+> 消息深链指向 `Telegram News` 里 2019-01-22 的那条帖子（`Group Permissions, Undo Delete and More`），
+> 落点页面仍显示「加入频道」，证明整趟是只读的；代理链接（`server=proxy.qoder.test`、`port=1080`）
+> 在会话页之上弹出真卡片（`Connect to This Proxy?` / `Server: proxy.qoder.test` `Port: 1080` / `Enable` /
+> `Save for Later` / `Cancel`），点 **Save for Later** → 弹窗关闭、**页面没动**、
+> `outcome=notified stage=add_proxy,enable=false`；设置行随之变成 `Proxies · Disabled`（存了但没启用），
+> 代理页里能看到那一行；**收尾已还原**：经 `ProxySubPage` 删除确认移除该代理，设置行回到 `Tap to set up`、
+> 列表回到空态（跑之前本来就没有代理）。bot 守卫复测：三次触发同一链接，`hilog` 稳定给出
+> `outcome=failed linkType=internalLinkTypeBotStart,reason=bot_not_found`，屏幕底部出
+> 「Failed to open link」toast，`dumpLayout` 仍在 `Chats`（未导航）。
+> **⑩ `tg://resolve?domain=` 不用写规则**（DEEPLINK-101 把它挂在遗留里，本轮实测直接通过）：
+> `tg` scheme 本来就是候选链接，自有规则表没有 `resolve` 这一条 → 落到 `getInternalLinkType`，
+> TDLib 解析成 `internalLinkTypePublicChat` → `outcome=routed chatId=-1001005640892,openProfile=false`，
+> 落在 `Telegram News`。**这一类链接的正确处理是「不加代码」**，规则表只留真正不需要 IPC 的形态。
+> **⑪ 测试**：`entry` **97/97 PASS**（`AppLinkRouter.test.ets` 38 例，较 DEEPLINK-101 的 14 例增 24：
+> 邀请 7 例（已是成员不问、接受后入会并导航、拒绝零写入、未接端口默认拒绝、只发申请走 notified、
+> check 失败 fail-closed、`invitePromptOf` 只留可显示标量）；代理 6 例（enable 与 save 各发**一次**
+> `addProxy` 且只差 bool、cancel 零写入、未接端口零写入、不支持类型报 unsupported 且**不问**、
+> `proxyPromptOf` 剥掉 ProxyType 前缀）；消息 3 例（带 messageId 导航、无 message 只进会话、
+> 会话解析不出不猜）；bot 4 例（非 bot 用户名拒、验真后导航并递参数、无 start_parameter 绝不发、
+> 非私聊会话拒）；外加终态日志与「日志里绝不出现链接正文」（真 `Logger` 收口断言）；
+> 新增 `AppLinkPrompt.test.ets` 9 例：按钮/人数文案规则、邀请卡无第二动作、0 人时不出 footnote、
+> 代理卡正文逐字符等于 `Server: …\nPort: …`、mtproto footnote 长于 socks5、`proxyChoiceEnables` 三态、
+> `appLinkReasonKey` 三个 notified reason 全覆盖 + 兜底）。三守卫与 `secret_scan` 0 违规。
+> 一个 ArkTS 坑：`arkts-no-untyped-obj-literals` 不接受「带方法的接口」的对象字面量实现，
+> 端口两条回调必须写成 `readonly fn: (…) => Promise<…>` 函数属性（注入点与测试都用字面量）。
+> **遗留（→ 下一包）**：四类之外仍有 52 个判别式回 `unsupported`（`Theme` / `StickerSet` /
+> `LanguagePack` / `GroupCall`+`VideoChat` / `Invoice` / `Game` / `WebApp` / `Story` /
+> `ChatFolderInvite` …，`tg://settings` 这类自有规则已经先接住）；邀请**弹窗**的真机取证缺一个可安全加入的
+> 真实哈希（入会语义由单测覆盖，卡片渲染与代理卡共用同一视图层、已由代理卡证明）；
+> `internalLinkTypeBotStartInGroup` / `attachmentMenuBot` 等 bot 家族其余入口未做；
+> FEAT-P2-010 的另一半 Share Extension 另包。
+
 
 | 功能 ID | 功能名 |
 |---|---|

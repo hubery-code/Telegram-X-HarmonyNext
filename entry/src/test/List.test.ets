@@ -6,6 +6,7 @@ import entryNavigationTest from './navigation/EntryNavigation.test';
 import multiAccountFlowTest from './account/MultiAccountFlow.test';
 import audioSessionOrchestratorTest from './platform/AudioSessionOrchestrator.test';
 import appLinkRouterTest from './deeplink/AppLinkRouter.test';
+import appLinkPromptTest from './deeplink/AppLinkPrompt.test';
 import deepLinkQueueTest from './deeplink/DeepLinkQueue.test';
 
 const DOMAIN: number = 0x0000;
@@ -28,5 +29,6 @@ export default function listTest() {
   multiAccountFlowTest();
   audioSessionOrchestratorTest();
   appLinkRouterTest();
+  appLinkPromptTest();
   deepLinkQueueTest();
 }

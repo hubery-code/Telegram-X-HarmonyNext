@@ -8,6 +8,7 @@
 
 import { describe, it, expect } from '@ohos/hypium';
 import { AppError, AppErrors, ok, err, Result } from '@tgx/core-common';
+import { Logger, LogLevel } from '@tgx/observability';
 import {
   AppRoute,
   ChatInfoRoute,
@@ -18,17 +19,30 @@ import {
 import { TdWireObject, TdWireValue } from '@tgx/td-gateway';
 import {
   Chat,
+  ChatInviteLinkInfo,
   ChatTypeBasicGroup,
   ChatTypePrivate,
-  ChatTypeSupergroup
+  ChatTypeSupergroup,
+  ProxyValue,
+  TdJsonRaw,
+  decodeChatInviteLinkInfo,
+  decodeProxyValue
 } from '@tgx/core-td-api-generated';
 import {
   AppLinkResult,
   AppLinkRouter,
   AppLinkTdPort,
+  invitePromptOf,
+  proxyPromptOf,
   routeForChat,
   stripAtSign
 } from '../../main/ets/deeplink/AppLinkRouter';
+import {
+  AppLinkPromptPort,
+  InvitePromptData,
+  ProxyPromptChoice,
+  ProxyPromptData
+} from '../../main/ets/deeplink/AppLinkPrompt';
 
 function publicChatWire(username: string, openProfile: boolean): TdWireObject {
   const payload: TdWireObject = {};
@@ -49,8 +63,14 @@ function linkTypeWire(typeName: string): TdWireObject {
   return payload;
 }
 
-function chatWire(chatId: number, type: TdWireValue): TdWireObject {
+/** TDLib 写请求的空应答（`Ok` 对象）。 */
+function okWire(): TdWireObject {
   const payload: TdWireObject = {};
+  payload['@type'] = 'ok';
+  return payload;
+}
+
+function chatWire(chatId: number, type: TdWireValue): TdWireObject {  const payload: TdWireObject = {};
   payload['@type'] = 'chat';
   payload['id'] = chatId;
   payload['type'] = type;
@@ -73,26 +93,131 @@ function supergroupTypeWire(isChannel: boolean): TdWireObject {
   return payload;
 }
 
+/** `chatInviteLinkInfo`：`chatId` 为 0 表示「本地还没有这个会话」，也就是要问用户。 */
+function inviteInfoWire(
+  chatId: number,
+  memberCount: number,
+  isChannel: boolean,
+  createsJoinRequest: boolean
+): TdWireObject {
+  const type: TdWireObject = {};
+  type['@type'] = isChannel ? 'inviteLinkChatTypeChannel' : 'inviteLinkChatTypeBasicGroup';
+  const payload: TdWireObject = {};
+  payload['@type'] = 'chatInviteLinkInfo';
+  payload['chat_id'] = chatId;
+  payload['type'] = type;
+  payload['title'] = 'Qoder Test Group';
+  payload['description'] = 'for link routing test';
+  payload['member_count'] = memberCount;
+  payload['creates_join_request'] = createsJoinRequest;
+  payload['is_public'] = false;
+  return payload;
+}
+
+function joinResultWire(typeName: string, chatId: number): TdWireObject {
+  const payload: TdWireObject = {};
+  payload['@type'] = typeName;
+  payload['chat_id'] = chatId;
+  return payload;
+}
+
+/** `internalLinkTypeProxy`；`server` 传空串即模拟 TDLib 回「不支持的代理类型」。 */
+function proxyLinkWire(server: string, port: number, typeName: string): TdWireObject {
+  const payload: TdWireObject = {};
+  payload['@type'] = 'internalLinkTypeProxy';
+  if (server.length > 0) {
+    const proxyType: TdWireObject = {};
+    proxyType['@type'] = typeName;
+    const proxy: TdWireObject = {};
+    proxy['@type'] = 'proxy';
+    proxy['server'] = server;
+    proxy['port'] = port;
+    proxy['type'] = proxyType;
+    payload['proxy'] = proxy;
+  }
+  return payload;
+}
+
+function messageLinkWire(chatId: number, messageId: number): TdWireObject {
+  const payload: TdWireObject = {};
+  payload['@type'] = 'messageLinkInfo';
+  payload['is_public'] = true;
+  payload['chat_id'] = chatId;
+  if (messageId > 0) {
+    const message: TdWireObject = {};
+    message['@type'] = 'message';
+    message['id'] = messageId;
+    message['chat_id'] = chatId;
+    payload['message'] = message;
+  }
+  return payload;
+}
+
+function botStartWire(botUsername: string, parameter: string, autostart: boolean): TdWireObject {
+  const payload: TdWireObject = {};
+  payload['@type'] = 'internalLinkTypeBotStart';
+  payload['bot_username'] = botUsername;
+  payload['start_parameter'] = parameter;
+  payload['autostart'] = autostart;
+  return payload;
+}
+
+function userWire(userId: number, isBot: boolean): TdWireObject {
+  const type: TdWireObject = {};
+  type['@type'] = isBot ? 'userTypeBot' : 'userTypeRegular';
+  const payload: TdWireObject = {};
+  payload['@type'] = 'user';
+  payload['id'] = userId;
+  payload['first_name'] = isBot ? 'TestBot' : 'Test';
+  payload['type'] = type;
+  return payload;
+}
+
+function wireString(params: TdWireObject, key: string): string {
+  const record: TdWireObject = params;
+  const value: TdWireValue | undefined = record[key];
+  return typeof value === 'string' ? value : '';
+}
+
+function wireNumber(params: TdWireObject, key: string): number {
+  const record: TdWireObject = params;
+  const value: TdWireValue | undefined = record[key];
+  return typeof value === 'number' ? value : 0;
+}
+
+function wireBool(params: TdWireObject, key: string): boolean {
+  const record: TdWireObject = params;
+  const value: TdWireValue | undefined = record[key];
+  return value === true;
+}
+
 function testError(message: string): AppError {
   return AppErrors.unknown('test', message);
 }
 
-/** 按 method 回给定应答的假端口，并记录调用序列。 */
+/** 按 method 回给定应答的假端口，并记录调用序列与各次入参。 */
 class FakeAppLinkPort implements AppLinkTdPort {
   readonly calls: string[] = [];
   /** 归一化后送进 getInternalLinkType 的链接（断言子域改写用）。 */
   readonly links: string[] = [];
+  /** 每次请求的入参，与 calls 同序 —— 断言 `addProxy.enable` 这类写语义。 */
+  readonly sentParams: TdWireObject[] = [];
   linkTypeResult: Result<TdWireObject, AppError> = err(testError('no canned link type'));
   chatResult: Result<TdWireObject, AppError> = err(testError('no canned chat'));
+  inviteResult: Result<TdWireObject, AppError> = err(testError('no canned invite info'));
+  joinResult: Result<TdWireObject, AppError> = err(testError('no canned join result'));
+  messageLinkResult: Result<TdWireObject, AppError> = err(testError('no canned message link'));
+  proxyWriteResult: Result<TdWireObject, AppError> = ok(okWire());
+  userResult: Result<TdWireObject, AppError> = err(testError('no canned user'));
   gate: Promise<Result<TdWireObject, AppError>> | null = null;
   requestCount: number = 0;
 
   async request(method: string, params: TdWireObject): Promise<Result<TdWireObject, AppError>> {
     this.calls.push(method);
+    this.sentParams.push(params);
     this.requestCount++;
     if (method === 'getInternalLinkType') {
-      const record: TdWireObject = params;
-      const link: TdWireValue | undefined = record['link'];
+      const link: TdWireValue | undefined = params['link'];
       this.links.push(typeof link === 'string' ? link : '');
       if (this.gate !== null) {
         return await this.gate;
@@ -102,7 +227,38 @@ class FakeAppLinkPort implements AppLinkTdPort {
     if (method === 'searchPublicChat') {
       return this.chatResult;
     }
+    if (method === 'checkChatInviteLink') {
+      return this.inviteResult;
+    }
+    if (method === 'joinChatByInviteLink') {
+      return this.joinResult;
+    }
+    if (method === 'getMessageLinkInfo') {
+      return this.messageLinkResult;
+    }
+    if (method === 'getUser') {
+      return this.userResult;
+    }
+    if (method === 'addProxy') {
+      // TDLib 的 addProxy 回 `ok`；这里只关心「有没有发出去、enable 是什么」。
+      return this.proxyWriteResult;
+    }
     return err(testError(`unexpected method ${method}`));
+  }
+
+  /** 某次请求的入参（按 method 的第 n 次调用取）。 */
+  paramsOf(method: string, occurrence: number = 0): TdWireObject {
+    let seen: number = 0;
+    for (let i = 0; i < this.calls.length; i++) {
+      if (this.calls[i] === method) {
+        if (seen === occurrence) {
+          return this.sentParams[i];
+        }
+        seen++;
+      }
+    }
+    const empty: TdWireObject = {};
+    return empty;
   }
 
   callsOf(method: string): number {
@@ -113,6 +269,27 @@ class FakeAppLinkPort implements AppLinkTdPort {
       }
     }
     return count;
+  }
+}
+
+/** 记录「弹窗问了什么、用户答了什么」的假端口。 */
+class PromptRecorder {
+  readonly invites: InvitePromptData[] = [];
+  readonly proxies: ProxyPromptData[] = [];
+  inviteAnswer: boolean = false;
+  proxyAnswer: ProxyPromptChoice = 'cancel';
+
+  asPort(): AppLinkPromptPort {
+    return {
+      confirmInvite: (data: InvitePromptData): Promise<boolean> => {
+        this.invites.push(data);
+        return Promise.resolve(this.inviteAnswer);
+      },
+      chooseProxy: (data: ProxyPromptData): Promise<ProxyPromptChoice> => {
+        this.proxies.push(data);
+        return Promise.resolve(this.proxyAnswer);
+      }
+    };
   }
 }
 
@@ -128,12 +305,27 @@ class NavRecorder {
   }
 }
 
-function makeRouter(port: AppLinkTdPort, nav: NavRecorder, ready: boolean = true): AppLinkRouter {
+function makeRouter(
+  port: AppLinkTdPort,
+  nav: NavRecorder,
+  ready: boolean = true,
+  prompt: AppLinkPromptPort | null = null
+): AppLinkRouter {
+  if (prompt === null) {
+    // 不传 prompt：测「装配忘了接弹窗」时的缺省行为（一律拒绝）。
+    return new AppLinkRouter(port, {
+      navigate: (route: AppRoute): void => {
+        nav.navigate(route);
+      },
+      isReady: (): boolean => ready
+    });
+  }
   return new AppLinkRouter(port, {
     navigate: (route: AppRoute): void => {
       nav.navigate(route);
     },
-    isReady: (): boolean => ready
+    isReady: (): boolean => ready,
+    prompt: prompt
   });
 }
 
@@ -270,7 +462,8 @@ export default function appLinkRouterTest() {
     });
 
     it('recognizedButUnimplemented_neverEscapesToBrowser', 0, async (): Promise<void> => {
-      const cases: string[] = ['internalLinkTypeChatInvite', 'internalLinkTypeProxy', 'internalLinkTypeMessage'];
+      // DEEPLINK-102 之后仍没实现的类型（邀请/代理/消息/bot 都已经接上了）。
+      const cases: string[] = ['internalLinkTypeStickerSet', 'internalLinkTypeLanguagePack', 'internalLinkTypeGroupCall'];
       for (let i = 0; i < cases.length; i++) {
         const port: FakeAppLinkPort = new FakeAppLinkPort();
         port.linkTypeResult = ok(linkTypeWire(cases[i]));
@@ -373,6 +566,360 @@ export default function appLinkRouterTest() {
       const res: AppLinkResult = await router.handle('tg://chat?chatId=42');
       expect(res.outcome).assertEqual('external');
       expect(port.callsOf('getInternalLinkType')).assertEqual(1);
+    });
+
+    // ---------- DEEPLINK-102：邀请 ----------
+
+    it('invite_alreadyInChat_routesWithoutAsking', 0, async (): Promise<void> => {
+      // chat_id 非 0 = 本地已有该会话（已是成员），直接进，不打扰用户（Android 同口径）。
+      const port: FakeAppLinkPort = new FakeAppLinkPort();
+      port.linkTypeResult = ok(linkTypeWire('internalLinkTypeChatInvite'));
+      port.inviteResult = ok(inviteInfoWire(-10077, 12, true, false));
+      const prompt: PromptRecorder = new PromptRecorder();
+      prompt.inviteAnswer = false;
+      const nav: NavRecorder = new NavRecorder();
+      const res: AppLinkResult = await makeRouter(port, nav, true, prompt.asPort())
+        .handle('https://t.me/+abcHash');
+      expect(res.outcome).assertEqual('routed');
+      expect(res.chatId).assertEqual(-10077);
+      expect(prompt.invites.length).assertEqual(0);
+      expect(port.calls.join(',')).assertEqual('getInternalLinkType,checkChatInviteLink');
+      const route: AppRoute | null = nav.last();
+      expect(route !== null && route.name === 'chat').assertTrue();
+      expect((route as ChatRoute).chatId).assertEqual(-10077);
+    });
+
+    it('invite_accepted_joinsAndRoutes', 0, async (): Promise<void> => {
+      const port: FakeAppLinkPort = new FakeAppLinkPort();
+      port.linkTypeResult = ok(linkTypeWire('internalLinkTypeChatInvite'));
+      port.inviteResult = ok(inviteInfoWire(0, 12, false, false));
+      port.joinResult = ok(joinResultWire('chatJoinResultSuccess', -2055));
+      const prompt: PromptRecorder = new PromptRecorder();
+      prompt.inviteAnswer = true;
+      const nav: NavRecorder = new NavRecorder();
+      const res: AppLinkResult = await makeRouter(port, nav, true, prompt.asPort())
+        .handle('https://t.me/+abcHash');
+      expect(res.outcome).assertEqual('routed');
+      expect(res.chatId).assertEqual(-2055);
+      expect(prompt.invites.length).assertEqual(1);
+      expect(port.calls.join(',')).assertEqual('getInternalLinkType,checkChatInviteLink,joinChatByInviteLink');
+      // join 用的是 TDLib 给的 invite_link，而不是用户点开的原始串。
+      expect(wireString(port.paramsOf('joinChatByInviteLink'), 'invite_link'))
+        .assertEqual('https://t.me/inv/abc');
+    });
+
+    it('invite_declined_writesNothing', 0, async (): Promise<void> => {
+      const port: FakeAppLinkPort = new FakeAppLinkPort();
+      port.linkTypeResult = ok(linkTypeWire('internalLinkTypeChatInvite'));
+      port.inviteResult = ok(inviteInfoWire(0, 12, false, false));
+      const prompt: PromptRecorder = new PromptRecorder();
+      prompt.inviteAnswer = false;
+      const nav: NavRecorder = new NavRecorder();
+      const res: AppLinkResult = await makeRouter(port, nav, true, prompt.asPort())
+        .handle('https://t.me/+abcHash');
+      expect(res.outcome).assertEqual('cancelled');
+      expect(res.reason).assertEqual('invite_declined');
+      expect(port.callsOf('joinChatByInviteLink')).assertEqual(0);
+      expect(nav.routes.length).assertEqual(0);
+    });
+
+    it('invite_withoutPromptPort_declinesByDefault', 0, async (): Promise<void> => {
+      // 缺省端口必须「拒绝」：装配漏接弹窗的最坏结果是链接点了没反应，而不是替用户加入会话。
+      const port: FakeAppLinkPort = new FakeAppLinkPort();
+      port.linkTypeResult = ok(linkTypeWire('internalLinkTypeChatInvite'));
+      port.inviteResult = ok(inviteInfoWire(0, 12, false, false));
+      const nav: NavRecorder = new NavRecorder();
+      const res: AppLinkResult = await makeRouter(port, nav).handle('https://t.me/+abcHash');
+      expect(res.outcome).assertEqual('cancelled');
+      expect(port.callsOf('joinChatByInviteLink')).assertEqual(0);
+      expect(nav.routes.length).assertEqual(0);
+    });
+
+    it('invite_createsJoinRequest_notifiesWithoutNavigation', 0, async (): Promise<void> => {
+      const port: FakeAppLinkPort = new FakeAppLinkPort();
+      port.linkTypeResult = ok(linkTypeWire('internalLinkTypeChatInvite'));
+      port.inviteResult = ok(inviteInfoWire(0, 0, true, true));
+      port.joinResult = ok(joinResultWire('chatJoinResultRequestSent', 0));
+      const prompt: PromptRecorder = new PromptRecorder();
+      prompt.inviteAnswer = true;
+      const nav: NavRecorder = new NavRecorder();
+      const res: AppLinkResult = await makeRouter(port, nav, true, prompt.asPort())
+        .handle('https://t.me/+abcHash');
+      // 申请制链接批准前进不了会话：没有页面可去，只能提示一句。
+      expect(res.outcome).assertEqual('notified');
+      expect(res.reason).assertEqual('join_request_sent');
+      expect(nav.routes.length).assertEqual(0);
+      // creates_join_request 的链接，按钮文案是「申请加入」而不是「加入」。
+      expect(prompt.invites[0].createsJoinRequest).assertTrue();
+    });
+
+    it('invite_checkFailure_failsClosed', 0, async (): Promise<void> => {
+      const port: FakeAppLinkPort = new FakeAppLinkPort();
+      port.linkTypeResult = ok(linkTypeWire('internalLinkTypeChatInvite'));
+      port.inviteResult = err(testError('INVITE_LINK_REVOKED'));
+      const prompt: PromptRecorder = new PromptRecorder();
+      prompt.inviteAnswer = true;
+      const nav: NavRecorder = new NavRecorder();
+      const res: AppLinkResult = await makeRouter(port, nav, true, prompt.asPort())
+        .handle('https://t.me/+abcHash');
+      expect(res.outcome).assertEqual('failed');
+      expect(res.reason).assertEqual('invite_check_failed');
+      // 校验都没过，弹窗根本不该出现。
+      expect(prompt.invites.length).assertEqual(0);
+      expect(port.callsOf('joinChatByInviteLink')).assertEqual(0);
+    });
+
+    it('invitePromptOf_keepsOnlyDisplayableScalars', 0, () => {
+      const info = decodeChatInviteLinkInfo(inviteInfoWire(0, 1234, true, false) as TdJsonRaw);
+      expect(info !== null).assertTrue();
+      const data: InvitePromptData = invitePromptOf(info as ChatInviteLinkInfo);
+      expect(data.title).assertEqual('Qoder Test Group');
+      expect(data.memberCount).assertEqual(1234);
+      expect(data.isChannel).assertTrue();
+      expect(data.createsJoinRequest).assertFalse();
+      // 视图模型里没有哈希的位置：InvitePromptData 只有这四个字段。
+      expect(data.description).assertEqual('for link routing test');
+    });
+
+    // ---------- DEEPLINK-102：代理 ----------
+
+    it('proxy_enable_sendsOneAddProxyWithEnableTrue', 0, async (): Promise<void> => {
+      const port: FakeAppLinkPort = new FakeAppLinkPort();
+      port.linkTypeResult = ok(proxyLinkWire('1.2.3.4', 8443, 'proxyTypeSocks5'));
+      const prompt: PromptRecorder = new PromptRecorder();
+      prompt.proxyAnswer = 'enable';
+      const nav: NavRecorder = new NavRecorder();
+      const res: AppLinkResult = await makeRouter(port, nav, true, prompt.asPort())
+        .handle('https://t.me/proxy?server=1.2.3.4&port=8443');
+      expect(res.outcome).assertEqual('notified');
+      expect(res.reason).assertEqual('proxy_enabled');
+      expect(port.calls.join(',')).assertEqual('getInternalLinkType,addProxy');
+      expect(wireBool(port.paramsOf('addProxy'), 'enable')).assertTrue();
+      // 代理是账号级动作，不压栈。
+      expect(nav.routes.length).assertEqual(0);
+    });
+
+    it('proxy_save_sendsSameAddProxyWithEnableFalse', 0, async (): Promise<void> => {
+      // 「稍后使用」与「启用」是同一条 addProxy，只差 enable —— 也不许补一次 enableProxy。
+      const port: FakeAppLinkPort = new FakeAppLinkPort();
+      port.linkTypeResult = ok(proxyLinkWire('1.2.3.4', 8443, 'proxyTypeSocks5'));
+      const prompt: PromptRecorder = new PromptRecorder();
+      prompt.proxyAnswer = 'save';
+      const nav: NavRecorder = new NavRecorder();
+      const res: AppLinkResult = await makeRouter(port, nav, true, prompt.asPort())
+        .handle('https://t.me/proxy?server=1.2.3.4&port=8443');
+      expect(res.outcome).assertEqual('notified');
+      expect(res.reason).assertEqual('proxy_saved');
+      expect(port.callsOf('addProxy')).assertEqual(1);
+      expect(port.callsOf('enableProxy')).assertEqual(0);
+      expect(wireBool(port.paramsOf('addProxy'), 'enable')).assertFalse();
+      expect(nav.routes.length).assertEqual(0);
+    });
+
+    it('proxy_cancel_writesNothing', 0, async (): Promise<void> => {
+      const port: FakeAppLinkPort = new FakeAppLinkPort();
+      port.linkTypeResult = ok(proxyLinkWire('1.2.3.4', 8443, 'proxyTypeSocks5'));
+      const prompt: PromptRecorder = new PromptRecorder();
+      prompt.proxyAnswer = 'cancel';
+      const nav: NavRecorder = new NavRecorder();
+      const res: AppLinkResult = await makeRouter(port, nav, true, prompt.asPort())
+        .handle('https://t.me/proxy?server=1.2.3.4&port=8443');
+      expect(res.outcome).assertEqual('cancelled');
+      expect(res.reason).assertEqual('proxy_declined');
+      expect(port.callsOf('addProxy')).assertEqual(0);
+    });
+
+    it('proxy_withoutPromptPort_writesNothing', 0, async (): Promise<void> => {
+      const port: FakeAppLinkPort = new FakeAppLinkPort();
+      port.linkTypeResult = ok(proxyLinkWire('1.2.3.4', 8443, 'proxyTypeSocks5'));
+      const nav: NavRecorder = new NavRecorder();
+      const res: AppLinkResult = await makeRouter(port, nav)
+        .handle('https://t.me/proxy?server=1.2.3.4&port=8443');
+      expect(res.outcome).assertEqual('cancelled');
+      expect(port.callsOf('addProxy')).assertEqual(0);
+    });
+
+    it('proxy_unsupportedType_reportsUnsupportedAndNeverAsks', 0, async (): Promise<void> => {
+      // TDLib 回 proxy:null 表示这个代理类型不支持（Android 的 ProxyLinkUnsupported）。
+      const port: FakeAppLinkPort = new FakeAppLinkPort();
+      port.linkTypeResult = ok(proxyLinkWire('', 0, 'proxyTypeSocks5'));
+      const prompt: PromptRecorder = new PromptRecorder();
+      prompt.proxyAnswer = 'enable';
+      const nav: NavRecorder = new NavRecorder();
+      const res: AppLinkResult = await makeRouter(port, nav, true, prompt.asPort())
+        .handle('https://t.me/proxy?server=1.2.3.4&port=8443');
+      expect(res.outcome).assertEqual('unsupported');
+      expect(res.reason).assertEqual('proxy_unsupported');
+      expect(prompt.proxies.length).assertEqual(0);
+      expect(port.callsOf('addProxy')).assertEqual(0);
+    });
+
+    it('proxyPromptOf_stripsProxyTypePrefix', 0, () => {
+      const wired: TdWireObject = {};
+      wired['@type'] = 'proxy';
+      wired['server'] = 'proxy.example.com';
+      wired['port'] = 8443;
+      const proxyType: TdWireObject = {};
+      proxyType['@type'] = 'proxyTypeMtproto';
+      wired['type'] = proxyType;
+      const proxy = decodeProxyValue(wired as TdJsonRaw);
+      expect(proxy !== null).assertTrue();
+      const data: ProxyPromptData = proxyPromptOf(proxy as ProxyValue);
+      expect(data.server).assertEqual('proxy.example.com');
+      expect(data.port).assertEqual(8443);
+      expect(data.kind).assertEqual('mtproto');
+    });
+
+    // ---------- DEEPLINK-102：消息深链 ----------
+
+    it('message_link_routesWithTargetMessage', 0, async (): Promise<void> => {
+      const port: FakeAppLinkPort = new FakeAppLinkPort();
+      port.linkTypeResult = ok(linkTypeWire('internalLinkTypeMessage'));
+      port.messageLinkResult = ok(messageLinkWire(-10042, 777));
+      const nav: NavRecorder = new NavRecorder();
+      const res: AppLinkResult = await makeRouter(port, nav).handle('https://t.me/durov/777');
+      expect(res.outcome).assertEqual('routed');
+      expect(res.chatId).assertEqual(-10042);
+      const route: AppRoute | null = nav.last();
+      expect(route !== null && route.name === 'chat').assertTrue();
+      // messageId 复用 SEARCH-102 的字段：会话页已经会滚动定位并高亮。
+      expect((route as ChatRoute).messageId).assertEqual(777);
+    });
+
+    it('message_link_withoutMessage_routesChatOnly', 0, async (): Promise<void> => {
+      const port: FakeAppLinkPort = new FakeAppLinkPort();
+      port.linkTypeResult = ok(linkTypeWire('internalLinkTypeMessage'));
+      port.messageLinkResult = ok(messageLinkWire(-10042, 0));
+      const nav: NavRecorder = new NavRecorder();
+      const res: AppLinkResult = await makeRouter(port, nav).handle('https://t.me/durov/777');
+      expect(res.outcome).assertEqual('routed');
+      const route: AppRoute | null = nav.last();
+      expect((route as ChatRoute).messageId === undefined).assertTrue();
+    });
+
+    it('message_link_unresolvedChat_failsWithoutGuessing', 0, async (): Promise<void> => {
+      const port: FakeAppLinkPort = new FakeAppLinkPort();
+      port.linkTypeResult = ok(linkTypeWire('internalLinkTypeMessage'));
+      port.messageLinkResult = ok(messageLinkWire(0, 0));
+      const nav: NavRecorder = new NavRecorder();
+      const res: AppLinkResult = await makeRouter(port, nav).handle('https://t.me/durov/777');
+      expect(res.outcome).assertEqual('failed');
+      expect(res.reason).assertEqual('message_link_unresolved');
+      expect(nav.routes.length).assertEqual(0);
+    });
+
+    // ---------- DEEPLINK-102：bot 启动 ----------
+
+    it('botStart_rejectsNonBotUsername', 0, async (): Promise<void> => {
+      // 一个冒充 bot 的用户名不该把普通用户拉进会话，更不该替他发出 start 消息。
+      const port: FakeAppLinkPort = new FakeAppLinkPort();
+      port.linkTypeResult = ok(botStartWire('SomePerson', 'deepvalue', true));
+      port.chatResult = ok(chatWire(301, privateTypeWire(77)));
+      port.userResult = ok(userWire(77, false));
+      const nav: NavRecorder = new NavRecorder();
+      const res: AppLinkResult = await makeRouter(port, nav).handle('https://t.me/SomePerson?start=deepvalue');
+      expect(res.outcome).assertEqual('failed');
+      expect(res.reason).assertEqual('bot_not_found');
+      expect(nav.routes.length).assertEqual(0);
+      expect(port.callsOf('sendBotStartMessage')).assertEqual(0);
+    });
+
+    it('botStart_verifiedBot_routesAndSendsParameter', 0, async (): Promise<void> => {
+      const port: FakeAppLinkPort = new FakeAppLinkPort();
+      port.linkTypeResult = ok(botStartWire('TestBot', 'deepvalue', true));
+      port.chatResult = ok(chatWire(302, privateTypeWire(78)));
+      port.userResult = ok(userWire(78, true));
+      const nav: NavRecorder = new NavRecorder();
+      const res: AppLinkResult = await makeRouter(port, nav).handle('https://t.me/TestBot?start=deepvalue');
+      expect(res.outcome).assertEqual('routed');
+      expect(res.chatId).assertEqual(302);
+      expect(port.calls.join(',')).assertEqual(
+        'getInternalLinkType,searchPublicChat,getUser,sendBotStartMessage'
+      );
+      const sent: TdWireObject = port.paramsOf('sendBotStartMessage');
+      expect(wireNumber(sent, 'bot_user_id')).assertEqual(78);
+      expect(wireNumber(sent, 'chat_id')).assertEqual(302);
+      expect(wireString(sent, 'parameter')).assertEqual('deepvalue');
+    });
+
+    it('botStart_withoutStartParameter_neverSends', 0, async (): Promise<void> => {
+      // start_parameter 为空时发出去的是「/start」——TDLib 没让 autostart，就不该有这条消息。
+      const port: FakeAppLinkPort = new FakeAppLinkPort();
+      port.linkTypeResult = ok(botStartWire('TestBot', '', false));
+      port.chatResult = ok(chatWire(303, privateTypeWire(79)));
+      port.userResult = ok(userWire(79, true));
+      const nav: NavRecorder = new NavRecorder();
+      const res: AppLinkResult = await makeRouter(port, nav).handle('https://t.me/TestBot');
+      expect(res.outcome).assertEqual('routed');
+      expect(port.callsOf('sendBotStartMessage')).assertEqual(0);
+    });
+
+    it('botStart_rejectsNonPrivateChat', 0, async (): Promise<void> => {
+      // 用户名指向的是群/频道时不是 bot 会话，不猜。
+      const port: FakeAppLinkPort = new FakeAppLinkPort();
+      port.linkTypeResult = ok(botStartWire('SomeChannel', 'x', true));
+      port.chatResult = ok(chatWire(-10044, supergroupTypeWire(true)));
+      const nav: NavRecorder = new NavRecorder();
+      const res: AppLinkResult = await makeRouter(port, nav).handle('https://t.me/SomeChannel?start=x');
+      expect(res.outcome).assertEqual('failed');
+      expect(res.reason).assertEqual('bot_not_found');
+      expect(port.callsOf('getUser')).assertEqual(0);
+      expect(nav.routes.length).assertEqual(0);
+    });
+
+    it('failedOutcome_alwaysLeavesASummaryLine', 0, async (): Promise<void> => {
+      // 设备取证踩过的坑：某个分支忘了记日志，链接点了没反应、日志里也查不到。
+      // 兜底行由 handle() 统一给，所以任何一条 failed 都要留下一行 outcome=failed。
+      const lines: string[] = [];
+      const sink: Logger = new Logger('info', (_: LogLevel, line: string): void => {
+        lines.push(line);
+      });
+      const port: FakeAppLinkPort = new FakeAppLinkPort();
+      port.linkTypeResult = ok(botStartWire('GhostBot', '', false));
+      port.chatResult = err(testError('CHAT_NOT_FOUND'));
+      const nav: NavRecorder = new NavRecorder();
+      const router: AppLinkRouter = new AppLinkRouter(port, {
+        navigate: (route: AppRoute): void => {
+          nav.navigate(route);
+        },
+        logger: sink
+      });
+      const res: AppLinkResult = await router.handle('https://t.me/GhostBot?start=x');
+      expect(res.outcome).assertEqual('failed');
+      let found: boolean = false;
+      for (let i = 0; i < lines.length; i++) {
+        if (lines[i].indexOf('outcome=failed') >= 0 && lines[i].indexOf('reason=bot_not_found') >= 0) {
+          found = true;
+        }
+      }
+      expect(found).assertTrue();
+    });
+
+    it('logLines_neverContainLinkBodies', 0, async (): Promise<void> => {
+      // 邀请哈希等同凭证：日志里只能出现事件与 chatId。
+      const lines: string[] = [];
+      const sink: Logger = new Logger('info', (_: LogLevel, line: string): void => {
+        lines.push(line);
+      });
+      const port: FakeAppLinkPort = new FakeAppLinkPort();
+      port.linkTypeResult = ok(linkTypeWire('internalLinkTypeChatInvite'));
+      port.inviteResult = ok(inviteInfoWire(-10099, 3, false, false));
+      const nav: NavRecorder = new NavRecorder();
+      const router: AppLinkRouter = new AppLinkRouter(port, {
+        navigate: (route: AppRoute): void => {
+          nav.navigate(route);
+        },
+        logger: sink
+      });
+      await router.handle('https://t.me/+SECRETInviteHash');
+      let joined: string = '';
+      for (let i = 0; i < lines.length; i++) {
+        joined = `${joined}\n${lines[i]}`;
+      }
+      // 真记了一行，且那行里没有链接正文。
+      expect(joined.length > 0).assertTrue();
+      expect(joined.indexOf('outcome=') >= 0).assertTrue();
+      expect(joined.indexOf('SECRETInviteHash')).assertEqual(-1);
     });
   });
 }

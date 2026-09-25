@@ -38,6 +38,17 @@ import { ReducerEnv } from '@tgx/feature-template';
 import { AppRoute, ChatRoute, ChatInfoRoute, UserProfileRoute, CommentsRoute, SettingsSectionRoute } from '@tgx/core-navigation';
 import { EntryNavigationController } from '../navigation/EntryNavigationController';
 import { AppLinkResult, AppLinkRouter } from '../deeplink/AppLinkRouter';
+import {
+  InvitePromptData,
+  PromptCard,
+  ProxyPromptChoice,
+  ProxyPromptData,
+  EMPTY_PROMPT_CARD,
+  appLinkReasonKey,
+  invitePromptCard,
+  proxyPromptCard
+} from '../deeplink/AppLinkPrompt';
+import { AppLinkPromptLayer } from '../deeplink/AppLinkPromptView';
 import { ScopeAppLinkPort } from '../deeplink/ScopeAppLinkPort';
 import { appDeepLinkQueue } from '../deeplink/DeepLinkQueue';
 import {
@@ -249,6 +260,16 @@ struct Index {
   private appLinkRouter: AppLinkRouter | null = null;
   /** DEEPLINK-101：冷启动 want 要等进过 home 才有人接，attach 只做一次。 */
   private appLinkAttached: boolean = false;
+  /**
+   * DEEPLINK-102：链接确认弹窗。卡片文案是 `@State`，而**决定它的那次 await 的续体**
+   * 留在私有字段里 —— Promise 的 resolve 函数不是渲染状态，放进 `@State` 只会让 ArkUI
+   * 白白深拷贝一个不可比较的闭包。
+   */
+  @State promptVisible: boolean = false;
+  @State promptCard: PromptCard = EMPTY_PROMPT_CARD;
+  private promptKind: string = 'invite';
+  private pendingInvite: ((accepted: boolean) => void) | null = null;
+  private pendingProxy: ((choice: ProxyPromptChoice) => void) | null = null;
 
 
   aboutToAppear(): void {
@@ -405,10 +426,99 @@ struct Index {
           this.navController.navigateTo(route);
         },
         isReady: (): boolean => this.navController.hasRoute('home'),
+        prompt: {
+          confirmInvite: (data: InvitePromptData): Promise<boolean> => this.askInvite(data),
+          chooseProxy: (data: ProxyPromptData): Promise<ProxyPromptChoice> => this.askProxy(data)
+        },
         logger: this.logger
       }
     );
     return this.appLinkRouter;
+  }
+
+  /** 翻译入口：弹窗构卡要的是当前语言的句子，而 Lang 是全局单例。 */
+  private tr(key: string, ...args: (string | number)[]): string {
+    const lang: Lang = Lang.getInstance();
+    return args.length === 0 ? lang.getString(key) : lang.getString(key, ...args);
+  }
+
+  /**
+   * DEEPLINK-102：邀请确认。路由器在这里 await，页面按下去才继续。
+   *
+   * 同一时刻只有一张卡（路由器自己有 inFlight 串行），所以旧的续体先按「拒绝」结算 ——
+   * 宁可丢掉一条没人确认的链接，也不能让上一个 await 永远挂着。
+   */
+  private askInvite(data: InvitePromptData): Promise<boolean> {
+    this.settlePrompt();
+    return new Promise<boolean>((resolve: (accepted: boolean) => void): void => {
+      this.pendingInvite = resolve;
+      this.promptKind = 'invite';
+      this.promptCard = invitePromptCard(data, (key: string, ...args: (string | number)[]): string => this.tr(key, ...args));
+      this.promptVisible = true;
+    });
+  }
+
+  private askProxy(data: ProxyPromptData): Promise<ProxyPromptChoice> {
+    this.settlePrompt();
+    return new Promise<ProxyPromptChoice>((resolve: (choice: ProxyPromptChoice) => void): void => {
+      this.pendingProxy = resolve;
+      this.promptKind = 'proxy';
+      this.promptCard = proxyPromptCard(data, (key: string, ...args: (string | number)[]): string => this.tr(key, ...args));
+      this.promptVisible = true;
+    });
+  }
+
+  /** 收卡并把还挂着的 await 结算掉（未选 = 取消）。 */
+  private settlePrompt(): void {
+    this.promptVisible = false;
+    if (this.pendingInvite !== null) {
+      const resolve: (accepted: boolean) => void = this.pendingInvite;
+      this.pendingInvite = null;
+      resolve(false);
+    }
+    if (this.pendingProxy !== null) {
+      const resolveChoice: (choice: ProxyPromptChoice) => void = this.pendingProxy;
+      this.pendingProxy = null;
+      resolveChoice('cancel');
+    }
+  }
+
+  private onPromptPrimary(): void {
+    if (this.promptKind === 'proxy') {
+      this.settleWithChoice('enable');
+      return;
+    }
+    this.settleWithAnswer(true);
+  }
+
+  private onPromptSecondary(): void {
+    this.settleWithChoice('save');
+  }
+
+  private onPromptCancel(): void {
+    if (this.promptKind === 'proxy') {
+      this.settleWithChoice('cancel');
+      return;
+    }
+    this.settleWithAnswer(false);
+  }
+
+  private settleWithAnswer(accepted: boolean): void {
+    this.promptVisible = false;
+    if (this.pendingInvite !== null) {
+      const resolve: (accepted: boolean) => void = this.pendingInvite;
+      this.pendingInvite = null;
+      resolve(accepted);
+    }
+  }
+
+  private settleWithChoice(choice: ProxyPromptChoice): void {
+    this.promptVisible = false;
+    if (this.pendingProxy !== null) {
+      const resolve: (value: ProxyPromptChoice) => void = this.pendingProxy;
+      this.pendingProxy = null;
+      resolve(choice);
+    }
   }
 
   /**
@@ -438,8 +548,17 @@ struct Index {
         this.openInBrowser(uri);
         return;
       }
+      if (res.outcome === 'cancelled') {
+        // 用户在弹窗里说了不 —— 不打扰，日志由路由器记。
+        return;
+      }
+      if (res.outcome === 'notified') {
+        // 动作完成但没有页面可去（代理已存/已启用、加入申请已发出）。
+        this.toastAdapter.showToast(this.tr(appLinkReasonKey(res.reason)));
+        return;
+      }
       if (res.outcome === 'unsupported') {
-        // 是 Telegram 链接但本端这一步还没做（邀请/代理/消息…）；不丢进浏览器登录墙。
+        // 是 Telegram 链接但本端这一步还没做（贴纸包/语音聊天…）；不丢进浏览器登录墙。
         this.toastAdapter.showToast(Lang.getInstance().getString('This link type is not supported yet'));
         return;
       }
@@ -1366,172 +1485,194 @@ struct Index {
   }
 
   build() {
-    Column() {
-      if (this.bootstrapError !== null) {
-        Column() {
-          Text('Bootstrap Error')
-            .fontSize(this.T.typography.title.fontSize)
-            .fontWeight(this.T.typography.title.fontWeight)
-            .fontColor(this.T.colors.destructive)
-            .margin({ bottom: this.T.spacing.sm })
+    // DEEPLINK-102：根节点从 Column 换成 Stack，是为了让弹窗覆盖在当前页之上而不占布局位。
+    // Column 那一层保持原样（整屏一页 + 背景色），Stack 只负责叠一层。
+    Stack() {
+      Column() {
+        if (this.bootstrapError !== null) {
+          Column() {
+            Text('Bootstrap Error')
+              .fontSize(this.T.typography.title.fontSize)
+              .fontWeight(this.T.typography.title.fontWeight)
+              .fontColor(this.T.colors.destructive)
+              .margin({ bottom: this.T.spacing.sm })
 
-          Text(this.bootstrapError)
-            .fontSize(this.T.typography.body.fontSize)
-            .fontColor(this.T.colors.textSecondary)
-        }
-        .width('100%')
-        .height('100%')
-        .justifyContent(FlexAlign.Center)
-        .alignItems(HorizontalAlign.Center)
-        .backgroundColor(this.T.colors.background)
-      } else if (this.currentRoute.name === 'chat') {
-        Stack() {
-          ChatPage({
-            uiState: this.chatUiState,
-            onDispatch: (intent: Object) => {
-              this.chatDispatch(intent as ChatIntent);
-            }
-          })
-
-          // MSG-106：转发目标选择器覆盖在会话页之上（顶栏 Cancel + Send as
-          // copy 开关 + 目标会话列表）。
-          if (this.showForwardPicker) {
-            ForwardPickerPage({
-              targets: this.forwardTargets,
-              onPick: (chatId: number, sendCopy: boolean) => {
-                this.pickForwardTarget(chatId, sendCopy);
-              },
-              onCancel: () => {
-                this.closeForwardPicker();
+            Text(this.bootstrapError)
+              .fontSize(this.T.typography.body.fontSize)
+              .fontColor(this.T.colors.textSecondary)
+          }
+          .width('100%')
+          .height('100%')
+          .justifyContent(FlexAlign.Center)
+          .alignItems(HorizontalAlign.Center)
+          .backgroundColor(this.T.colors.background)
+        } else if (this.currentRoute.name === 'chat') {
+          Stack() {
+            ChatPage({
+              uiState: this.chatUiState,
+              onDispatch: (intent: Object) => {
+                this.chatDispatch(intent as ChatIntent);
               }
             })
+
+            // MSG-106：转发目标选择器覆盖在会话页之上（顶栏 Cancel + Send as
+            // copy 开关 + 目标会话列表）。
+            if (this.showForwardPicker) {
+              ForwardPickerPage({
+                targets: this.forwardTargets,
+                onPick: (chatId: number, sendCopy: boolean) => {
+                  this.pickForwardTarget(chatId, sendCopy);
+                },
+                onCancel: () => {
+                  this.closeForwardPicker();
+                }
+              })
+            }
           }
+          .width('100%')
+          .height('100%')
+        } else if (this.currentRoute.name === 'comments') {
+          CommentsPage({
+            uiState: this.commentsUiState,
+            coordinator: this.commentsCoordinator !== null ? this.commentsCoordinator : undefined,
+            onBack: () => {
+              this.navController.pop();
+            }
+          })
+        } else if (this.currentRoute.name === 'settings' || this.currentRoute.name === 'settingsSection') {
+          SettingsPage({
+            uiState: this.settingsUiState,
+            onDispatch: (intent: SettingsIntent) => {
+              this.settingsDispatch(intent);
+            },
+            onBack: () => {
+              this.navController.pop();
+            }
+          })
+        } else if (this.currentRoute.name === 'search') {
+          // INTEG-002：搜索结果页。onDispatch 作为协调器缺席时的降级路径保留；
+          // coordinator 非空时页面内部直调协调器（不会双发，见 SearchPage 注释）。
+          SearchPage({
+            uiState: this.searchUiState,
+            coordinator: this.searchCoordinator,
+            onDispatch: (intent: Object) => {
+              if (this.searchCoordinator !== null) {
+                this.searchCoordinator.dispatch(intent as SearchIntent);
+              }
+            },
+            onNavigateToChat: (chatId: number, messageId?: number) => {
+              this.navigateToChatFromSearch(chatId, messageId);
+            },
+            onBack: () => {
+              this.navController.pop();
+            }
+          })
+        } else if (this.currentRoute.name === 'userProfile') {
+          ProfilePage({
+            uiState: this.profileUiState,
+            onDispatch: (intent: ProfileIntent) => {
+              if (this.profileCoordinator !== null) {
+                this.profileCoordinator.dispatch(intent);
+              }
+            },
+            onBack: () => {
+              this.navController.pop();
+            }
+          })
+        } else if (this.currentRoute.name === 'contacts') {
+          ContactsPage({
+            uiState: this.contactsUiState,
+            onDispatch: (intent: ContactsIntent) => {
+              if (this.contactsCoordinator !== null) {
+                this.contactsCoordinator.dispatch(intent);
+              }
+            },
+            onBack: () => {
+              this.navController.pop();
+            },
+            // 双路径防双开：只走 coordinator 的 onOpenUserProfile 回调，此 prop 恒 no-op。
+            onOpenUserProfile: (): void => {
+            }
+          })
+        } else if (this.currentRoute.name === 'selfProfile') {
+          SelfProfilePage({
+            uiState: this.selfProfileUiState,
+            onDispatch: (intent: SelfProfileIntent) => {
+              if (this.selfProfileCoordinator !== null) {
+                this.selfProfileCoordinator.dispatch(intent);
+              }
+            },
+            onBack: () => {
+              this.navController.pop();
+            }
+          })
+        } else if (this.currentRoute.name === 'chatInfo') {
+          ChatProfilePage({
+            uiState: this.chatProfileUiState,
+            onDispatch: (intent: ChatProfileIntent) => {
+              if (this.chatProfileCoordinator !== null) {
+                this.chatProfileCoordinator.dispatch(intent);
+              }
+            },
+            onBack: () => {
+              this.navController.pop();
+            }
+          })
+        } else if (this.currentRoute.name === 'home') {
+          ChatListPage({
+            uiState: this.chatListUiState,
+            onDispatch: (intent: Object) => {
+              this.chatListDispatch(intent as ChatListIntent);
+            },
+            onOpenSettings: () => {
+              this.navController.navigateTo({ name: 'settings' });
+            },
+            onOpenSearch: () => {
+              this.navController.navigateTo({ name: 'search' });
+            },
+            onCompose: () => {
+              this.navController.navigateTo({ name: 'contacts' });
+            },
+            // DRAWER-101：账号头（getMe + 头像）与菜单去向都由 chat_list 的
+            // reducer/coordinator 决定；装配层只执行夜间模式切换与账号切换占位。
+            onDrawerNightModeChanged: (on: boolean): void => {
+              ThemeManager.getInstance().setPreference(on ? 'dark' : 'light');
+              hilog.info(DOMAIN, TAG, 'drawer night mode changed: %{public}s', `${on}`);
+            },
+            onDrawerSwitchAccount: (): void => {
+              hilog.info(DOMAIN, TAG, 'drawer switch account placeholder');
+            }
+          })
+        } else {
+          AuthRootPage({
+            uiState: this.uiState,
+            onDispatch: (intent: Object) => {
+              this.dispatch(intent as AuthIntent);
+            }
+          })
         }
-        .width('100%')
-        .height('100%')
-      } else if (this.currentRoute.name === 'comments') {
-        CommentsPage({
-          uiState: this.commentsUiState,
-          coordinator: this.commentsCoordinator !== null ? this.commentsCoordinator : undefined,
-          onBack: () => {
-            this.navController.pop();
-          }
-        })
-      } else if (this.currentRoute.name === 'settings' || this.currentRoute.name === 'settingsSection') {
-        SettingsPage({
-          uiState: this.settingsUiState,
-          onDispatch: (intent: SettingsIntent) => {
-            this.settingsDispatch(intent);
+      }
+      .width('100%')
+      .height('100%')
+      .backgroundColor(this.T.colors.background)
+      // DEEPLINK-102：链接确认弹窗盖在当前页面之上 —— 深链可能落在任何一页，
+      // 而这一层由 entry 持有（它是唯一的路由/装配所有者），feature 不知道它存在。
+      if (this.promptVisible) {
+        AppLinkPromptLayer({
+          card: this.promptCard,
+          onPrimary: (): void => {
+            this.onPromptPrimary();
           },
-          onBack: () => {
-            this.navController.pop();
-          }
-        })
-      } else if (this.currentRoute.name === 'search') {
-        // INTEG-002：搜索结果页。onDispatch 作为协调器缺席时的降级路径保留；
-        // coordinator 非空时页面内部直调协调器（不会双发，见 SearchPage 注释）。
-        SearchPage({
-          uiState: this.searchUiState,
-          coordinator: this.searchCoordinator,
-          onDispatch: (intent: Object) => {
-            if (this.searchCoordinator !== null) {
-              this.searchCoordinator.dispatch(intent as SearchIntent);
-            }
+          onSecondary: (): void => {
+            this.onPromptSecondary();
           },
-          onNavigateToChat: (chatId: number, messageId?: number) => {
-            this.navigateToChatFromSearch(chatId, messageId);
-          },
-          onBack: () => {
-            this.navController.pop();
-          }
-        })
-      } else if (this.currentRoute.name === 'userProfile') {
-        ProfilePage({
-          uiState: this.profileUiState,
-          onDispatch: (intent: ProfileIntent) => {
-            if (this.profileCoordinator !== null) {
-              this.profileCoordinator.dispatch(intent);
-            }
-          },
-          onBack: () => {
-            this.navController.pop();
-          }
-        })
-      } else if (this.currentRoute.name === 'contacts') {
-        ContactsPage({
-          uiState: this.contactsUiState,
-          onDispatch: (intent: ContactsIntent) => {
-            if (this.contactsCoordinator !== null) {
-              this.contactsCoordinator.dispatch(intent);
-            }
-          },
-          onBack: () => {
-            this.navController.pop();
-          },
-          // 双路径防双开：只走 coordinator 的 onOpenUserProfile 回调，此 prop 恒 no-op。
-          onOpenUserProfile: (): void => {
-          }
-        })
-      } else if (this.currentRoute.name === 'selfProfile') {
-        SelfProfilePage({
-          uiState: this.selfProfileUiState,
-          onDispatch: (intent: SelfProfileIntent) => {
-            if (this.selfProfileCoordinator !== null) {
-              this.selfProfileCoordinator.dispatch(intent);
-            }
-          },
-          onBack: () => {
-            this.navController.pop();
-          }
-        })
-      } else if (this.currentRoute.name === 'chatInfo') {
-        ChatProfilePage({
-          uiState: this.chatProfileUiState,
-          onDispatch: (intent: ChatProfileIntent) => {
-            if (this.chatProfileCoordinator !== null) {
-              this.chatProfileCoordinator.dispatch(intent);
-            }
-          },
-          onBack: () => {
-            this.navController.pop();
-          }
-        })
-      } else if (this.currentRoute.name === 'home') {
-        ChatListPage({
-          uiState: this.chatListUiState,
-          onDispatch: (intent: Object) => {
-            this.chatListDispatch(intent as ChatListIntent);
-          },
-          onOpenSettings: () => {
-            this.navController.navigateTo({ name: 'settings' });
-          },
-          onOpenSearch: () => {
-            this.navController.navigateTo({ name: 'search' });
-          },
-          onCompose: () => {
-            this.navController.navigateTo({ name: 'contacts' });
-          },
-          // DRAWER-101：账号头（getMe + 头像）与菜单去向都由 chat_list 的
-          // reducer/coordinator 决定；装配层只执行夜间模式切换与账号切换占位。
-          onDrawerNightModeChanged: (on: boolean): void => {
-            ThemeManager.getInstance().setPreference(on ? 'dark' : 'light');
-            hilog.info(DOMAIN, TAG, 'drawer night mode changed: %{public}s', `${on}`);
-          },
-          onDrawerSwitchAccount: (): void => {
-            hilog.info(DOMAIN, TAG, 'drawer switch account placeholder');
-          }
-        })
-      } else {
-        AuthRootPage({
-          uiState: this.uiState,
-          onDispatch: (intent: Object) => {
-            this.dispatch(intent as AuthIntent);
+          onCancel: (): void => {
+            this.onPromptCancel();
           }
         })
       }
     }
     .width('100%')
     .height('100%')
-    .backgroundColor(this.T.colors.background)
   }
 }
