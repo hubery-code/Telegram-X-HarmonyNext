@@ -120,6 +120,7 @@ import {
   ProxyForm,
   ProxyItem,
   ProxyKind,
+  proxyFailureOf,
   proxyPingOf
 } from '../main/ets/model/ProxySettings';
 import { settingsReducer } from '../main/ets/reducer/SettingsReducer';
@@ -168,6 +169,15 @@ function pingTable(entries: number[][]): Map<number, number> {
   const table: Map<number, number> = new Map();
   for (let i = 0; i < entries.length; i++) {
     table.set(entries[i][0], entries[i][1]);
+  }
+  return table;
+}
+
+/** PROXY-103：失败原因表的构造入参（`[proxyId 的十进制串, langKey]`）。 */
+function failureTable(entries: string[][]): Map<number, string> {
+  const table: Map<number, string> = new Map();
+  for (let i = 0; i < entries.length; i++) {
+    table.set(Number(entries[i][0]), entries[i][1]);
   }
   return table;
 }
@@ -1197,6 +1207,51 @@ export default function settingsReducerTest(): void {
       // 晚到的回包不能复活一个已经不存在的行。
       expect(result.state === state).assertTrue();
       expect(result.effects.length).assertEqual(0);
+    });
+
+    // ---- PROXY-103 失败原因与两张表的一致性 ----
+
+    it('proxyPingUpdated_writesFailureAlongsideResult', 0, () => {
+      const state = proxyState([proxyRow(7, 'socks5', 'a.com', 1080, false)]);
+      const failed = settingsReducer(
+        state,
+        new ProxyPingUpdated(7, PROXY_PING_FAILED, 'Connection refused'),
+        makeEnv()
+      );
+      expect(proxyPingOf(failed.state.proxyPingMs, 7)).assertEqual(PROXY_PING_FAILED);
+      expect(proxyFailureOf(failed.state.proxyPingFailure, 7)).assertEqual('Connection refused');
+
+      // 重试成功：延迟回来了，原因必须一起擦掉 —— 否则那句「出错」会跟在新延迟后面。
+      const ok = settingsReducer(failed.state, new ProxyPingUpdated(7, 45), makeEnv());
+      expect(proxyPingOf(ok.state.proxyPingMs, 7)).assertEqual(45);
+      expect(proxyFailureOf(ok.state.proxyPingFailure, 7)).assertEqual('');
+      expect(ok.state.proxyPingFailure.has(7)).assertFalse();
+    });
+
+    it('closeProxyPage_clearsBothProbeTables', 0, () => {
+      const state = proxyState([proxyRow(7, 'socks5', 'a.com', 1080, true)])
+        .copyWith({
+          proxyPingMs: pingTable([[7, PROXY_PING_FAILED]]),
+          proxyPingFailure: failureTable([['7', 'Address not found']]),
+          proxyConnection: 'ready'
+        });
+      const result = settingsReducer(state, new CloseProxyPage(), makeEnv());
+
+      expect(result.state.proxyPingMs.size).assertEqual(0);
+      expect(result.state.proxyPingFailure.size).assertEqual(0);
+    });
+
+    it('proxiesLoaded_prunesFailureTableWithTheSameRule', 0, () => {
+      const state = proxyState([proxyRow(1, 'socks5', 'a.com', 1080, false)])
+        .copyWith({
+          proxyPingFailure: failureTable([['0', 'Network unavailable'], ['1', 'Proxy error'], ['2', 'Proxy error']])
+        });
+      const items: ProxyItem[] = [proxyRow(1, 'socks5', 'a.com', 1080, false)];
+      const result = settingsReducer(state, new ProxiesLoaded(items), makeEnv());
+
+      expect(proxyFailureOf(result.state.proxyPingFailure, PROXY_NONE_ID)).assertEqual('Network unavailable');
+      expect(proxyFailureOf(result.state.proxyPingFailure, 1)).assertEqual('Proxy error');
+      expect(result.state.proxyPingFailure.has(2)).assertFalse();
     });
 
     it('proxyConnectionStateChanged_deduplicatesIdenticalState', 0, () => {

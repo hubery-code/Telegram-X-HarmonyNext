@@ -195,6 +195,16 @@ const EN_DICTIONARY: Record<string, string> = {
   'Error': 'Error',
   'Problems detected': 'Problems detected',
 
+  // Why a proxy probe failed (PROXY-103). These are our own sentences, classified
+  // from the TDLib error — the raw text never reaches the screen.
+  'Address not found': 'Address not found',
+  'Connection refused': 'Connection refused',
+  'Connection timed out': 'Connection timed out',
+  'Network unavailable': 'Network unavailable',
+  'Proxy handshake failed': 'Proxy handshake failed',
+  'Proxy settings rejected': 'Proxy settings rejected',
+  'Proxy error': 'Proxy error',
+
   // Automatic media download (AUTODL-101)
   'Automatic Media Download': 'Automatic Media Download',
   'Automatic download': 'Automatic download',
@@ -367,6 +377,15 @@ const ZH_DICTIONARY: Record<string, string> = {
   'Updating...': '同步中...',
   'Error': '连接失败',
   'Problems detected': '直连异常',
+
+  // 探测失败的原因（PROXY-103）：本端分类出来的句子，不是 TDLib 原文。
+  'Address not found': '地址无法解析',
+  'Connection refused': '连接被拒绝',
+  'Connection timed out': '连接超时',
+  'Network unavailable': '网络不可用',
+  'Proxy handshake failed': '代理握手失败',
+  'Proxy settings rejected': '代理配置被拒绝',
+  'Proxy error': '代理异常',
 
   // Automatic media download (AUTODL-101)
   'Automatic Media Download': '自动媒体下载',

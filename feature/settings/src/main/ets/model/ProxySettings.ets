@@ -1,6 +1,6 @@
 /**
  * feature/settings — 网络代理模型（PROXY-101 / FEAT-P2-007 代理部分，
- * PROXY-102 补连通性探测与连接态）。
+ * PROXY-102 补连通性探测与连接态，PROXY-103 补失败原因与探测超时兜底）。
  *
  * TDLib 侧是 `addedProxy`（id + `proxy` + is_enabled + comment），页面上是
  * Telegram 那种「一行一个代理 + 单选启用」。这里做两端都纯的映射：
@@ -14,6 +14,7 @@
  * `proxyRowConnection` 负责「只有当前生效的那条路才配拿连接态」这条门。
  */
 
+import { AppError } from '@tgx/core-common';
 import {
   AddedProxy,
   PingProxy,
@@ -410,14 +411,17 @@ export function proxyRowIsEffective(items: readonly ProxyItem[], item: ProxyItem
   return item.isEnabled;
 }
 
-/** 一行状态：`key` 是 Lang key，'' 表示这句不说；`pingMs` 只在带延迟时有值。 */
+/** 一行状态：`key` 是 Lang key，'' 表示这句不说；`pingMs` 只在带延迟时有值。
+ * `failureKey` 是失败原因（同样是 Lang key），只在 `key` 是那句「出错」时才有值。 */
 export class ProxyStatus {
   readonly key: string;
   readonly pingMs: number;
+  readonly failureKey: string;
 
-  constructor(key: string, pingMs: number) {
+  constructor(key: string, pingMs: number, failureKey: string = '') {
     this.key = key;
     this.pingMs = pingMs;
+    this.failureKey = failureKey;
   }
 }
 
@@ -428,14 +432,17 @@ export class ProxyStatus {
  * 非生效行只有探测结果可说：通了是 Available，不通是 Error —— 而「不使用代理」那一行
  * 说 Problems detected，因为它没有代理可怪。
  *
- * 没建模的两项：错误详情（Android 的 `Error (code: message)` 要展示 TDLib 错误原文）、
- * 多路比较出来的「best」徽标（那是自动切路的事）。
+ * `failureKey` 是那一行自己的探测失败原因（PROXY-103），只在说「出错」时挂上去；
+ * 连接态正在说话时不挂 —— 那时负责说话的是连接，不是那次探测。
+ *
+ * 没建模的一项：多路比较出来的「best」徽标（那是自动切路的事）。
  */
 export function proxyStatusOf(
   item: ProxyItem | null,
   pingMs: number,
   effective: boolean,
-  connection: ProxyConnectionState
+  connection: ProxyConnectionState,
+  failureKey: string = ''
 ): ProxyStatus {
   const failedKey: string = item === null ? 'Problems detected' : 'Error';
   if (effective) {
@@ -455,7 +462,7 @@ export function proxyStatusOf(
       return new ProxyStatus('Connecting...', PROXY_PING_UNSET);
     }
     if (pingMs === PROXY_PING_FAILED) {
-      return new ProxyStatus(failedKey, PROXY_PING_UNSET);
+      return new ProxyStatus(failedKey, PROXY_PING_UNSET, failureKey);
     }
     if (pingMs > 0) {
       return new ProxyStatus('Connected', pingMs);
@@ -466,7 +473,7 @@ export function proxyStatusOf(
     return new ProxyStatus('Checking...', PROXY_PING_UNSET);
   }
   if (pingMs === PROXY_PING_FAILED) {
-    return new ProxyStatus(failedKey, PROXY_PING_UNSET);
+    return new ProxyStatus(failedKey, PROXY_PING_UNSET, failureKey);
   }
   if (pingMs > 0) {
     return new ProxyStatus('Available', pingMs);
@@ -503,11 +510,7 @@ export function proxyPingsWith(pings: Map<number, number>, proxyId: number, ping
  * 保住还在的那些是重点 —— 每写一次代理都要回读列表，探测在途时不能被这次重建抹掉。
  */
 export function proxyPingsPrunedTo(pings: Map<number, number>, items: readonly ProxyItem[]): Map<number, number> {
-  const alive: Set<number> = new Set();
-  alive.add(PROXY_NONE_ID);
-  for (let i = 0; i < items.length; i++) {
-    alive.add(items[i].id);
-  }
+  const alive: Set<number> = proxyAliveIds(items);
   const next: Map<number, number> = new Map();
   pings.forEach((value: number, key: number): void => {
     if (alive.has(key)) {
@@ -516,6 +519,152 @@ export function proxyPingsPrunedTo(pings: Map<number, number>, items: readonly P
   });
   return next;
 }
+
+/** 还活着的行 id（含「不使用代理」那一行）；两张侧表用同一个口径剪枝。 */
+function proxyAliveIds(items: readonly ProxyItem[]): Set<number> {
+  const alive: Set<number> = new Set();
+  alive.add(PROXY_NONE_ID);
+  for (let i = 0; i < items.length; i++) {
+    alive.add(items[i].id);
+  }
+  return alive;
+}
+
+// ---- PROXY-103 失败原因与探测超时 ----
+
+/**
+ * 探测失败原因表：`proxyId → Lang key`。与延迟表分开存而不是把原因编进那个负数哨兵 ——
+ * `PROXY_PING_FAILED` 只有一个值，说不出是哪种失败，而这一行要说的恰恰是「为什么失败」。
+ */
+export function proxyFailureOf(failures: Map<number, string>, proxyId: number): string {
+  const value: string | undefined = failures.get(proxyId);
+  return value === undefined ? '' : value;
+}
+
+/** 写入某一行失败原因；空串表示「这一行现在没有可说的失败」，直接删条目。恒返回新 Map。 */
+export function proxyFailuresWith(
+  failures: Map<number, string>,
+  proxyId: number,
+  failureKey: string
+): Map<number, string> {
+  const next: Map<number, string> = new Map();
+  failures.forEach((value: string, key: number): void => {
+    next.set(key, value);
+  });
+  if (failureKey.length === 0) {
+    next.delete(proxyId);
+    return next;
+  }
+  next.set(proxyId, failureKey);
+  return next;
+}
+
+export function proxyFailuresPrunedTo(
+  failures: Map<number, string>,
+  items: readonly ProxyItem[]
+): Map<number, string> {
+  const alive: Set<number> = proxyAliveIds(items);
+  const next: Map<number, string> = new Map();
+  failures.forEach((value: string, key: number): void => {
+    if (alive.has(key)) {
+      next.set(key, value);
+    }
+  });
+  return next;
+}
+
+/**
+ * TDLib 探测失败 → 本端自己的一句话。
+ *
+ * Android 是 `Error (code: message)`，把 TDLib 原文直接印到行上。本端的错误模型不允许这么干：
+ * `AppErrors.fromTdlibError` 刻意只把原文放进 `cause`（别的请求的原文里可能出现手机号、沙盒路径、
+ * 凭证），`message` 一律是诊断文案而不是用户文案。所以这里做的是**分类**而不是转发 ——
+ * 认得出的连接故障给对应的句子，认不出给一句通用的，绝不把原文搬上屏幕。
+ * 原文本身进日志（`proxy_ping_error` 那行），排查时仍然看得到。
+ */
+export function classifyProxyFailure(error: AppError, elapsedMs: number = 0): string {
+  const text: string = proxyFailureHaystack(error);
+  // 慢到 TDLib 自己的 connect 上限才失败，说的就是「等太久」—— 不看它的原文长什么样。
+  // 模拟器实测：不可达地址 9.0s 回 400、DNS 失败 4.0s、拒连 7ms、成功 230ms，
+  // 所以这条线画在 6s 上既能接住挂死的连接，又不会误伤查不到地址。
+  if (elapsedMs >= PROXY_PING_SLOW_MS) {
+    return 'Connection timed out';
+  }
+  if (text.indexOf('timed out') >= 0 || text.indexOf('timeout') >= 0) {
+    return 'Connection timed out';
+  }
+  if (text.indexOf('refused') >= 0) {
+    return 'Connection refused';
+  }
+  if (text.indexOf('resolve') >= 0 || text.indexOf('hostname') >= 0 ||
+    text.indexOf('name or service') >= 0 || text.indexOf('nodename') >= 0) {
+    return 'Address not found';
+  }
+  if (text.indexOf('unreachable') >= 0 || text.indexOf('network is down') >= 0 ||
+    text.indexOf('no network') >= 0) {
+    return 'Network unavailable';
+  }
+  if (text.indexOf('handshake') >= 0) {
+    return 'Proxy handshake failed';
+  }
+  if (text.indexOf('secret') >= 0 || text.indexOf('decrypt') >= 0 ||
+    text.indexOf('invalid proxy') >= 0) {
+    return 'Proxy settings rejected';
+  }
+  if (error.kind === 'network') {
+    return 'Network unavailable';
+  }
+  return 'Proxy error';
+}
+
+/**
+ * 分类用的文本：`cause` 形如 `400:TDLib 原文`（`fromTdlibError` 的写法），取冒号之后的部分。
+ * 只用来匹配关键字，返回值任何情况下都不进 UI。
+ */
+function proxyFailureHaystack(error: AppError): string {
+  const cause: string | undefined = error.cause;
+  const raw: string = cause !== undefined && cause.length > 0 ? cause : error.message;
+  const colon: number = raw.indexOf(':');
+  const text: string = colon === -1 ? raw : raw.substring(colon + 1);
+  return text.toLowerCase();
+}
+
+/** TDLib 数字错误码，只给日志用（0 = 拿不到，比如不是 tdlib 类错误）。 */
+export function proxyTdlibCodeOf(error: AppError): number {
+  if (error.kind !== 'tdlib') {
+    return 0;
+  }
+  const cause: string | undefined = error.cause;
+  if (cause === undefined) {
+    return 0;
+  }
+  const colon: number = cause.indexOf(':');
+  const head: string = colon === -1 ? cause : cause.substring(0, colon);
+  if (head.length === 0 || head.length > 4) {
+    return 0;
+  }
+  for (let i = 0; i < head.length; i++) {
+    if (head.charAt(i) < '0' || head.charAt(i) > '9') {
+      return 0;
+    }
+  }
+  return Number(head);
+}
+
+/**
+ * 探测的本地超时。TDLib 的 `pingProxy` 挂在一个不可达地址上时可以几分钟不回包，
+ * 而那一行会一直停在 `Checking…` —— 用户读到的是「还在测」，真相是「没人在测」。
+ * Android 有它自己的查询超时层，本端没有，所以超时由协调器补一个定时器兜底。
+ */
+export const PROXY_PING_TIMEOUT_MS: number = 10000;
+export const PROXY_PING_TIMEOUT_KEY: string = 'Connection timed out';
+
+/**
+ * 「慢到才算超时」的分界线（PROXY-103）。模拟器实测 TDLib 自己对不可达地址约 9s 回一个
+ * 400，而那句话里并不带 timeout 字样 —— 纯靠关键字分类会掉进通用的「代理异常」。
+ * 失败本身慢到这个程度就是超时，不需要 TDLib 亲口承认。
+ */
+export const PROXY_PING_SLOW_MS: number = 6000;
 
 /**
  * 探测请求负载。`item === null` 是「不使用代理」行 —— 按 TDLib 语义发空 proxy，

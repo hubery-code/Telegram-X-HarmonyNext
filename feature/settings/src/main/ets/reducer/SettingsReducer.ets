@@ -114,7 +114,9 @@ import {
   ProxyItem,
   proxyFormError,
   proxyPingsPrunedTo,
-  proxyPingsWith
+  proxyPingsWith,
+  proxyFailuresPrunedTo,
+  proxyFailuresWith
 } from '../model/ProxySettings';
 import {
   AutoDownloadFlags,
@@ -704,9 +706,11 @@ export const settingsReducer: Reducer<SettingsUiState, SettingsIntent, SettingsE
       }
       // 探测结果是这一页的临时观察，不是账号状态：离页清空，回来时重新测。
       const cleared: Map<number, number> = new Map();
+      const clearedFailures: Map<number, string> = new Map();
       const options: SettingsUiStateOptions = {
         showProxyPage: false,
         proxyPingMs: cleared,
+        proxyPingFailure: clearedFailures,
         proxyConnection: 'unknown'
       };
       return reduced(state.copyWith(options));
@@ -726,7 +730,9 @@ export const settingsReducer: Reducer<SettingsUiState, SettingsIntent, SettingsE
         isLoadingProxies: false,
         updatingProxyId: null,
         // 重建行的同时留住还活着的探测结果：删掉的行不留残值，在途的行不被抹掉。
-        proxyPingMs: proxyPingsPrunedTo(state.proxyPingMs, loadedIntent.items)
+        // 两张侧表用同一个口径剪枝，否则失败原因会留在一个已经不存在的行上。
+        proxyPingMs: proxyPingsPrunedTo(state.proxyPingMs, loadedIntent.items),
+        proxyPingFailure: proxyFailuresPrunedTo(state.proxyPingFailure, loadedIntent.items)
       };
       // 每次读到列表都把每一行（含「不使用代理」）探一遍 —— 可用性是测出来的，不是猜的。
       return reduced(state.copyWith(options), [new PingProxiesEffect()]);
@@ -803,7 +809,10 @@ export const settingsReducer: Reducer<SettingsUiState, SettingsIntent, SettingsE
         return reduced(state);
       }
       const options: SettingsUiStateOptions = {
-        proxyPingMs: proxyPingsWith(state.proxyPingMs, pingIntent.proxyId, pingIntent.pingMs)
+        proxyPingMs: proxyPingsWith(state.proxyPingMs, pingIntent.proxyId, pingIntent.pingMs),
+        // 两张表同一个口径写：成功探测要把上一次的失败原因擦掉，否则「Error」的句子还在、
+        // 延迟也跟着显示，读起来的是一句自相矛盾的话。
+        proxyPingFailure: proxyFailuresWith(state.proxyPingFailure, pingIntent.proxyId, pingIntent.failureKey)
       };
       return reduced(state.copyWith(options));
     }

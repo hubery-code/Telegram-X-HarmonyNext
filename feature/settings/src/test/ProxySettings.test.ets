@@ -9,11 +9,13 @@
  * 4. PROXY-102 探测纯函数：五个 ConnectionState 判别式、秒 → 毫秒与失败哨兵、
  *    探测表的不可变写入与剪枝、行 → PingProxy 负载（null 行即直连探测）、
  *    生效行判定，以及「连接态优先、探测值兜底」的行状态表；
- * 5. 状态文案的中文词条齐全（缺 key 会原样回显，测得出漏翻）。
+ * 5. 状态文案的中文词条齐全（缺 key 会原样回显，测得出漏翻）；
+ * 6. PROXY-103 失败原因：TDLib 原文 → 本端句子的分类表（只分类不转发）、
+ *    日志用的数字码、原因表的不可变写入/擦除/剪枝，以及「只有那句『出错』才带原因」。
  */
 
 import { describe, it, expect } from '@ohos/hypium';
-import { Lang } from '@tgx/core-common';
+import { AppError, AppErrors, Lang } from '@tgx/core-common';
 import {
   AddedProxy,
   PingProxy,
@@ -25,11 +27,15 @@ import {
   TdUnknownObject
 } from '@tgx/core-td-api-generated';
 import {
+  classifyProxyFailure,
   pingProxyRequestFromItem,
   PROXY_NEW_ID,
   PROXY_NONE_ID,
   PROXY_PING_FAILED,
   PROXY_PING_LOADING,
+  PROXY_PING_SLOW_MS,
+  PROXY_PING_TIMEOUT_KEY,
+  PROXY_PING_TIMEOUT_MS,
   PROXY_PING_UNSET,
   ProxyForm,
   ProxyItem,
@@ -42,6 +48,9 @@ import {
   proxyConnectionStateOfType,
   proxyEnabledCount,
   proxyEnabledItem,
+  proxyFailureOf,
+  proxyFailuresPrunedTo,
+  proxyFailuresWith,
   proxyFormError,
   proxyFormFromItem,
   proxyFormHasCredentials,
@@ -56,6 +65,7 @@ import {
   proxyRowIsEffective,
   proxyRowSummary,
   proxyStatusOf,
+  proxyTdlibCodeOf,
   proxyTitle,
   proxyValueFromForm,
   proxyValueFromItem
@@ -468,13 +478,131 @@ export default function proxySettingsTest(): void {
       const status: ProxyStatus = new ProxyStatus('Connected', 7);
       expect(status.key).assertEqual('Connected');
       expect(status.pingMs).assertEqual(7);
+      // 第三字段有默认值，所以四参数老写法仍然成立。
+      expect(status.failureKey).assertEqual('');
+      expect(new ProxyStatus('Error', -1, 'Connection refused').failureKey)
+        .assertEqual('Connection refused');
+    });
+
+    it('classify_mapsKnownTdlibTextsToOwnSentence', 0, () => {
+      // 分类而不是转发：Android 把 TDLib 原文印到行上，本端只给一句自己的话。
+      expect(classifyProxyFailure(tdlib(400, '[Error 400] Connection timed out')))
+        .assertEqual('Connection timed out');
+      expect(classifyProxyFailure(tdlib(400, '[Error 400] connect failed: Connection refused')))
+        .assertEqual('Connection refused');
+      expect(classifyProxyFailure(tdlib(400, 'Failed to resolve "proxy.example.invalid": ...')))
+        .assertEqual('Address not found');
+      expect(classifyProxyFailure(tdlib(400, 'getaddrinfo: nodename nor servname provided')))
+        .assertEqual('Address not found');
+      expect(classifyProxyFailure(tdlib(400, 'Network is unreachable')))
+        .assertEqual('Network unavailable');
+      expect(classifyProxyFailure(tdlib(400, 'proxy handshake failed')))
+        .assertEqual('Proxy handshake failed');
+      expect(classifyProxyFailure(tdlib(400, 'Wrong secret: can not decrypt')))
+        .assertEqual('Proxy settings rejected');
+      // 认不出的原文只能给一句通用的 —— 绝不调头把 message 搬上来。
+      expect(classifyProxyFailure(tdlib(400, 'some TDLib wording nobody mapped')))
+        .assertEqual('Proxy error');
+    });
+
+    it('classify_prefersTheFirstMatchingBranch', 0, () => {
+      // 一句话里同时有 timeout 与 refused 时，先说的是超时（更长的那个等待才是真相）。
+      expect(classifyProxyFailure(tdlib(400, 'connect refused after timeout')))
+        .assertEqual('Connection timed out');
+    });
+
+    it('classify_readsASlowFailureAsTimeout', 0, () => {
+      // 模拟器实测：不可达地址 TDLib 约 9s 才回 400，且那句里不带 timeout 字样。
+      // 慢到这份上就是超时，不必等它亲口承认 —— 否则这一行只会得到一句没信息量的「代理异常」。
+      expect(classifyProxyFailure(tdlib(400, 'proxy connect failed'), PROXY_PING_SLOW_MS))
+        .assertEqual('Connection timed out');
+      expect(classifyProxyFailure(tdlib(400, 'proxy connect failed'), PROXY_PING_SLOW_MS - 1))
+        .assertEqual('Proxy error');
+      // DNS 失败实测 4s 回来，不能被这条线误伤成超时。
+      expect(classifyProxyFailure(tdlib(400, 'Failed to resolve host'), 4000))
+        .assertEqual('Address not found');
+    });
+
+    it('classify_fallsBackToErrorKind', 0, () => {      // 不是 tdlib 类：network 类错误没有原文可分类，但结论就是「没网」。
+      expect(classifyProxyFailure(AppErrors.network('unreachable', 'network failed', true)))
+        .assertEqual('Network unavailable');
+      expect(classifyProxyFailure(AppErrors.internal('proxy_ping', 'boom')))
+        .assertEqual('Proxy error');
+    });
+
+    it('tdlibCodeOf_readsTheCodeForLogsOnly', 0, () => {
+      expect(proxyTdlibCodeOf(tdlib(400, 'Connection refused'))).assertEqual(400);
+      expect(proxyTdlibCodeOf(tdlib(429, 'Too Many Requests'))).assertEqual(429);
+      // 非 tdlib 类没有码；没有冒号的 cause 也不猜。
+      expect(proxyTdlibCodeOf(AppErrors.network('timeout', 'network failed', true))).assertEqual(0);
+      expect(proxyTdlibCodeOf(AppErrors.tdlib('unknown', 'x', true, undefined, 'no digits here')))
+        .assertEqual(0);
+      // 负数是 TDLib 内部码（-410），不当作可展示的诊断码。
+      expect(proxyTdlibCodeOf(tdlib(-410, 'chat not found'))).assertEqual(0);
+    });
+
+    it('failureTable_readsWritesAndPrunes', 0, () => {
+      let failures: Map<number, string> = new Map();
+      expect(proxyFailureOf(failures, 41)).assertEqual('');
+      failures = proxyFailuresWith(failures, 41, 'Connection refused');
+      failures = proxyFailuresWith(failures, PROXY_NONE_ID, 'Address not found');
+      expect(proxyFailureOf(failures, 41)).assertEqual('Connection refused');
+      expect(proxyFailureOf(failures, PROXY_NONE_ID)).assertEqual('Address not found');
+      // 不可变写入：原表不动。
+      const before: Map<number, string> = failures;
+      proxyFailuresWith(failures, 99, 'Proxy error');
+      expect(before.size).assertEqual(2);
+      // 成功探测后把原因擦掉（空串 = 删条目，不留 `41: ''`）。
+      failures = proxyFailuresWith(failures, 41, '');
+      expect(proxyFailureOf(failures, 41)).assertEqual('');
+      expect(failures.has(41)).assertFalse();
+      // 剪枝：删掉的行不再占位，「不使用代理」那一行永远留着。
+      const alive: ProxyItem[] = [item(42, 'socks5', 'b.com', 1080, '', false)];
+      const pruned: Map<number, string> = proxyFailuresPrunedTo(failures, alive);
+      expect(proxyFailureOf(pruned, PROXY_NONE_ID)).assertEqual('Address not found');
+      expect(pruned.has(41)).assertFalse();
+    });
+
+    it('statusOf_attachesFailureOnlyToTheErrorSentence', 0, () => {
+      const dead: ProxyItem = item(41, 'socks5', 'a.com', 1080, '', true);
+      // 生效行：连接态还在说话时不挂失败原因（那是上一次探测的旧账）。
+      let status: ProxyStatus = proxyStatusOf(dead, PROXY_PING_FAILED, true, 'connecting', 'Connection refused');
+      expect(status.key).assertEqual('Connecting...');
+      expect(status.failureKey).assertEqual('');
+      // 连接态说不出话（还没观察到）时，失败原因才跟着「Error」一起上屏。
+      status = proxyStatusOf(dead, PROXY_PING_FAILED, true, 'unknown', 'Connection refused');
+      expect(status.key).assertEqual('Error');
+      expect(status.failureKey).assertEqual('Connection refused');
+      // 非生效行只有探测结果可说，失败原因同样跟着走。
+      const idleRow: ProxyItem = item(42, 'socks5', 'a.com', 1080, '', false);
+      status = proxyStatusOf(idleRow, PROXY_PING_FAILED, false, 'ready', 'Address not found');
+      expect(status.key).assertEqual('Error');
+      expect(status.failureKey).assertEqual('Address not found');
+      // 「不使用代理」那一行说的是直连。
+      status = proxyStatusOf(null, PROXY_PING_FAILED, false, 'unknown', 'Network unavailable');
+      expect(status.key).assertEqual('Problems detected');
+      expect(status.failureKey).assertEqual('Network unavailable');
+      // 成功与在途都不该带原因。
+      expect(proxyStatusOf(idleRow, 30, false, 'unknown', 'Connection refused').failureKey).assertEqual('');
+      expect(proxyStatusOf(idleRow, PROXY_PING_LOADING, false, 'unknown', 'Connection refused').failureKey)
+        .assertEqual('');
+    });
+
+    it('pingTimeout_isABoundedWaitWithItsOwnSentence', 0, () => {
+      // 兜底超时必须是有界的（太长等于没有，太短会误伤慢代理）。
+      expect(PROXY_PING_TIMEOUT_MS >= 5000).assertTrue();
+      expect(PROXY_PING_TIMEOUT_MS <= 30000).assertTrue();
+      expect(PROXY_PING_TIMEOUT_KEY).assertEqual('Connection timed out');
     });
 
     it('statusKeys_allHaveChineseTranslations', 0, () => {
       // 缺 key 时 Lang 会原样返回 key，所以「翻出来的 != key」就是这句真的进过字典。
       const keys: string[] = [
         'Connected', 'Available', 'Checking...', 'Connecting...',
-        'Waiting for network...', 'Updating...', 'Error', 'Problems detected'
+        'Waiting for network...', 'Updating...', 'Error', 'Problems detected',
+        'Address not found', 'Connection refused', 'Connection timed out',
+        'Network unavailable', 'Proxy handshake failed', 'Proxy settings rejected',
+        'Proxy error'
       ];
       const lang: Lang = Lang.getInstance();
       const empty: (string | number)[] = [];
@@ -483,4 +611,8 @@ export default function proxySettingsTest(): void {
       }
     });
   });
+}
+
+function tdlib(code: number, text: string): AppError {
+  return AppErrors.fromTdlibError(code, text);
 }

@@ -532,9 +532,11 @@
 > PROXY-101 的三条遗留在此**结案为「不可实现」而不是「没做」**：`setProxyOrder`（拖拽排序）与 `updateProxy`
 > 在 TDLib 1.8.67 的 schema 里都不存在 —— 前者没有请求类型，后者没有推送类型，所以「多端改代理的实时推送」
 > 本端只能靠回读；「通话是否走代理」依赖 VoIP 本身，本端没有 VoIP 通话，也就没有可接的对象。
-> 遗留：错误态只说 `Error`，不给 TDLib 的原文（`AppError.message` 未进界面）；"Switch automatically" 与
+> 遗留：错误态只说 `Error`，不给 TDLib 的原文（现已交付，见下方 PROXY-103 追加段 —— 交付的是**分类后的一句话**，
+> 不是原文本身）；"Switch automatically" 与
 > 最佳代理徽标要先有一个「路由选择器」，本端目前是单选语义；`tg://proxy` 分享链接的确认弹窗（`openProxyAlert`）
-> 与扫码导入；本地没有探测超时，TDLib 若不回包一行会一直停在 `Checking...`。
+> 与扫码导入（前一项已由 DEEPLINK-102 的代理确认卡交付；扫码入口本端没有相机二维码识别，仍未做）；
+> 本地没有探测超时（现已交付，见下方 PROXY-103 追加段）。
 > **追加（DEEPLINK-101，FEAT-P2-010 深链半边）**：`t.me/…` 与 `tg://…` 从外部（系统选择器、`aa start -U`、
 > 聊天气泡里的正文链接）进来到落会话，整条链路第一次打通；FEAT-P2-010 的另一半 Share Extension 另包。
 > **解析权交给 TDLib，本端不写链接文法**：Android 的 `TdlibUi.openUrl:3172-3182` 是先 `openTelegramUrl`
@@ -667,6 +669,48 @@
 > 真实哈希（入会语义由单测覆盖，卡片渲染与代理卡共用同一视图层、已由代理卡证明）；
 > `internalLinkTypeBotStartInGroup` / `attachmentMenuBot` 等 bot 家族其余入口未做；
 > FEAT-P2-010 的另一半 Share Extension 另包。
+> **追加（PROXY-103，FEAT-P2-007 代理半边的收官）**：PROXY-102 记的两条遗留一起清掉 ——
+> 出错的那一行现在说得出**为什么**出错，而卡在 `Checking...` 的行有了本地兜底。
+> **这一包的核心决定是「分类而不是转发」**：Android 的 `SettingsProxyController` 直接把 TDLib 原文印成
+> `Error (code: message)`，本端的错误模型不允许这么干 —— `AppErrors.fromTdlibError` 刻意把原文只放进 `cause`
+> （别的请求的原文里可能出现手机号、沙盒路径、mtproto 凭证），`message` 一律是诊断文案而不是用户文案，
+> 而 `Logger.logError` 走的又是 `toLogString()`（只留 kind/code）。所以 `classifyProxyFailure()` 做的是
+> **认得出的连接故障给对应的句子、认不出给一句通用的**，7 个自有 Lang key 收口（refused / timed out /
+> 地址无法解析 / 网络不可用 / 握手失败 / 配置被拒绝 / 兜底）。界面拿到的永远是 key，原文只进
+> `proxy_ping_error` 那一行日志。**形状借自 Android，内容是本端的**：`SOCKS5 · Error (Connection refused)`。
+> **失败原因放在第二张侧表 `proxyPingFailure: Map<number, string>`，不把原因编进延迟那个负数哨兵**：
+> `PROXY_PING_FAILED` 只有一个值，说不出是哪种失败，而这一行要说的恰恰是「为什么失败」；分开存还带来一条
+> 必须成对写的纪律 —— 成功探测要把上一次的失败原因一起擦掉（`proxyFailuresWith(…, '')` 走删条目而不是写空串），
+> 否则会出现「`Available · 230 ms` 后面挂着一句 (Connection refused)」。两张表用**同一个** `proxyAliveIds()`
+> 剪枝、同一次 `closeProxyPage` 清空，口径不一致就会留下幽灵原因。
+> `ProxyStatus.failureKey` 只在说那句「出错」时挂上：生效行的句子由连接态优先说话，那时负责解释的是连接，
+> 不是那次已经过期的探测。
+> **本地超时是补出来的，不是 TDLib 给的**：`pingProxy` 没有取消接口，挂在一个黑洞地址上可以几分钟不回包，
+> 而那一行会一直停在 `Checking...` —— 用户读到「还在测」，真相是「没人在测」。协调器给每一行补一个
+> `PROXY_PING_TIMEOUT_MS = 10s` 的 `setTimeout` 兜底。
+> **设备取证抓出一个真实缺陷**：PROXY-102 的拦截靠 `generation` 世代令牌，而世代是**每轮**的、不是**每行**的 ——
+> `127.0.0.1:989` 4 ms 就回了 `Connection refused`，10 s 后定时器照样到点，把已经落定的那句盖成了
+> 「Connection timed out」。日志和界面同框对上了才看得见：`proxy_ping_error …reason=Connection refused,elapsed=4`
+> 与行上的 `Error (Connection timed out)` 互相矛盾。修法不是加长超时，而是让定时器只对**还在途**的那一行说话
+> （`proxyPingOf(…) !== PROXY_PING_LOADING` 直接返回）—— 超时的语义是「这行还没结果」，不是「这一轮过了一秒」。
+> **耗时本身是一个信号，不只是日志字段**：黑洞地址 `10.255.255.1:8080` TDLib 自己在 **9.02 s** 回了一个 400，
+> 抢在 10 s 兜底之前，而那句话里并不带 `timeout` 字样 —— 纯关键字分类掉进通用的「代理异常」。
+> 于是加了 `PROXY_PING_SLOW_MS = 6000`：失败慢到这个程度就是超时，不需要 TDLib 亲口承认。
+> 这条线是实测画出来的：拒连 2–4 ms、DNS 失败 4.0 s、黑洞 9.0 s、成功 ~225 ms，
+> 6 s 既能接住挂死的连接，又不会把「查不到地址」误读成「等太久」。
+> 测试：`feature_settings` **230/230 PASS**（+8 例模型：TDLib 原文 → 自有句子的六路分类表、
+> 多关键字命中时取先手、慢失败读成超时（`elapsed = 6000` 是超时、`5999` 不是，而 4 s 的 DNS 失败仍归「地址无法解析」），
+> 非 tdlib 类按 kind 兜底、数字码只给日志、原因表读/写/擦/剪、`failureKey` 只挂在那句「出错」上、
+> 超时是有界等待且有自己那句话；+3 例 reducer：探测值与原因同口径写、关页清两张表、回读按同一规则剪枝；
+> 另把 i18n 守卫从 8 句扩到 15 句 —— Lang 缺 key 会原样回显，「翻出来 != key」就是进过字典的证据），三守卫 0 违规。
+> 设备取证（模拟器 127.0.0.1:5555，真实 TDLib，三条**都不启用**，不让账号流量经过死主机）：同一屏里三种原因
+> 各自独立成句 —— `127.0.0.1:989 → SOCKS5 · Error (Connection refused)`（`elapsed=4`）、
+> `ghost-node.qoder-invalid.test:1080 → Error (Address not found)`（`elapsed=4019`）、
+> `10.255.255.1:8080 → Error (Connection timed out)`（`elapsed=9024`，改分类前这一行是 `Error (Proxy error)`），
+> 而「不使用代理」行全程 `Connected · 225 ms` 不受影响。**收尾已还原**：三条测试代理逐个删除、
+> `proxy_list_read count=0,skipped=0,enabled=0`、设置行回到 `Tap to set up`。
+> 遗留：MTProto 与 HTTP 两类代理的失败原因没在设备上单独取过证（分类表是同一份，实测只覆盖 socks5 三种通路）；
+> "Switch automatically" / 最佳代理徽标缺「路由选择器」（单选语义下没有可比的对象）；扫码导入缺相机识别入口。
 
 
 | 功能 ID | 功能名 |

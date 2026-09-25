@@ -46,6 +46,7 @@ import {
   ProxyStatus,
   proxyAddress,
   proxyEnabledItem,
+  proxyFailureOf,
   proxyFormError,
   proxyFormFromItem,
   proxyFormHasCredentials,
@@ -135,19 +136,29 @@ export struct ProxySubPage {
   /**
    * PROXY-102 状态句：连通性探测（`pingProxy`）与 TDLib 连接态合成的一句话，
    * 判定全在 `proxyStatusOf` 里。'' 表示这一句不说，副标题退回「类型 / 地址」。
+   *
+   * PROXY-103：那句「出错」后面跟一个括号里的原因 —— 只可能是本端分类出来的句子，
+   * 不可能是 TDLib 原文（原文进日志）。Android 印的是 `Error (code: message)`，
+   * 括号形状照它，内容换成我们自己看得懂、也翻得动的话。
    */
   private statusText(item: ProxyItem | null): string {
-    const pingMs: number = proxyPingOf(this.uiState.proxyPingMs, item === null ? PROXY_NONE_ID : item.id);
+    const proxyId: number = item === null ? PROXY_NONE_ID : item.id;
+    const pingMs: number = proxyPingOf(this.uiState.proxyPingMs, proxyId);
     const status: ProxyStatus = proxyStatusOf(
       item,
       pingMs,
       proxyRowIsEffective(this.uiState.proxyItems, item),
-      this.uiState.proxyConnection
+      this.uiState.proxyConnection,
+      proxyFailureOf(this.uiState.proxyPingFailure, proxyId)
     );
     if (status.key.length === 0) {
       return '';
     }
-    return this.t(status.key) + proxyPingSuffix(status.pingMs);
+    const text: string = this.t(status.key);
+    if (status.failureKey.length === 0) {
+      return text + proxyPingSuffix(status.pingMs);
+    }
+    return `${text} (${this.t(status.failureKey)})` + proxyPingSuffix(status.pingMs);
   }
 
   /**
@@ -518,7 +529,8 @@ export struct ProxySubPage {
         // 探测结果与连接态不在 ProxyItem 上（列表每次写回都整批重建行），所以键要自己带上，
         // 否则 ArkUI 按键复用节点、那一行的状态句会停在旧文案。
         `${item.id}|${item.isEnabled}|${item.comment}|${item.server}` +
-        `|${proxyPingOf(this.uiState.proxyPingMs, item.id)}|${this.uiState.proxyConnection}`)
+        `|${proxyPingOf(this.uiState.proxyPingMs, item.id)}|${this.uiState.proxyConnection}` +
+        `|${proxyFailureOf(this.uiState.proxyPingFailure, item.id)}`)
     }
     .width('100%')
     .padding({

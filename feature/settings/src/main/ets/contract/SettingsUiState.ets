@@ -85,6 +85,11 @@ export interface SettingsUiStateOptions {
    * 挂在行上的在途探测会被那次重建抹掉。
    */
   readonly proxyPingMs?: Map<number, number>;
+  /**
+   * PROXY-103：各行探测失败原因（Lang key）；缺条目即「这一行没有可说的失败」。
+   * 与延迟表分开存：`PROXY_PING_FAILED` 只有一个值，说不出是拒连还是查不到地址。
+   */
+  readonly proxyPingFailure?: Map<number, string>;
   /** PROXY-102：TDLib 连接态；'unknown' 表示还没收到 `updateConnectionState`。 */
   readonly proxyConnection?: ProxyConnectionState;
 }
@@ -153,6 +158,8 @@ export class SettingsUiState implements UiState {
   readonly downloadLimits: DownloadLimitsByNetwork | null;
   /** PROXY-102：各行连通性探测结果；空 Map 表示一行都没测过。 */
   readonly proxyPingMs: Map<number, number>;
+  /** PROXY-103：各行探测失败原因（Lang key）；空 Map 表示一行都没有失败可说。 */
+  readonly proxyPingFailure: Map<number, string>;
   /** PROXY-102：TDLib 连接态。 */
   readonly proxyConnection: ProxyConnectionState;
 
@@ -199,6 +206,7 @@ export class SettingsUiState implements UiState {
     dataSaverSettings: DataSaverSettings | null = null,
     downloadLimits: DownloadLimitsByNetwork | null = null,
     proxyPingMs: Map<number, number> = new Map(),
+    proxyPingFailure: Map<number, string> = new Map(),
     proxyConnection: ProxyConnectionState = 'unknown'
   ) {
     this.userId = userId;
@@ -243,6 +251,7 @@ export class SettingsUiState implements UiState {
     this.dataSaverSettings = dataSaverSettings;
     this.downloadLimits = downloadLimits;
     this.proxyPingMs = proxyPingMs;
+    this.proxyPingFailure = proxyPingFailure;
     this.proxyConnection = proxyConnection;
   }
 
@@ -341,6 +350,7 @@ export class SettingsUiState implements UiState {
       options.dataSaverSettings !== undefined ? options.dataSaverSettings : this.dataSaverSettings,
       options.downloadLimits !== undefined ? options.downloadLimits : this.downloadLimits,
       options.proxyPingMs !== undefined ? options.proxyPingMs : this.proxyPingMs,
+      options.proxyPingFailure !== undefined ? options.proxyPingFailure : this.proxyPingFailure,
       options.proxyConnection !== undefined ? options.proxyConnection : this.proxyConnection
     );
   }

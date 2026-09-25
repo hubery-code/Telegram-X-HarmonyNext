@@ -425,15 +425,21 @@ export class RemoveProxyRequested implements Intent {
  * PROXY-102：某一行 `pingProxy` 的回结果。
  * `proxyId` 用 `PROXY_NONE_ID`（0）表示「不使用代理」那一行的直连探测；
  * `pingMs` 取模型层的哨兵（LOADING / FAILED）或正数毫秒。
+ *
+ * PROXY-103 加 `failureKey`：失败那一行要说的「为什么」，同样是 Lang key，
+ * 成功/在途传空串（空串即擦除这一行的旧原因）。为什么不编进 `pingMs`：
+ * `PROXY_PING_FAILED` 只有一个值，说不出是拒连、查不到地址还是本地超时。
  */
 export class ProxyPingUpdated implements Intent {
   readonly kind: 'proxyPingUpdated' = 'proxyPingUpdated';
   readonly proxyId: number;
   readonly pingMs: number;
+  readonly failureKey: string;
 
-  constructor(proxyId: number, pingMs: number) {
+  constructor(proxyId: number, pingMs: number, failureKey: string = '') {
     this.proxyId = proxyId;
     this.pingMs = pingMs;
+    this.failureKey = failureKey;
   }
 }
 

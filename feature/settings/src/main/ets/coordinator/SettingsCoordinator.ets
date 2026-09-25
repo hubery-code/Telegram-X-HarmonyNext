@@ -127,10 +127,13 @@ import {
   toUserPrivacySetting
 } from '../model/PrivacySettings';
 import {
+  classifyProxyFailure,
   pingProxyRequestFromItem,
   PROXY_NONE_ID,
   PROXY_PING_FAILED,
   PROXY_PING_LOADING,
+  PROXY_PING_TIMEOUT_KEY,
+  PROXY_PING_TIMEOUT_MS,
   ProxyForm,
   ProxyItem,
   PROXY_NEW_ID,
@@ -138,6 +141,8 @@ import {
   proxyEnabledCount,
   proxyItemFromAdded,
   proxyPingMsOfSeconds,
+  proxyPingOf,
+  proxyTdlibCodeOf,
   proxyValueFromForm
 } from '../model/ProxySettings';
 import {
@@ -1628,48 +1633,84 @@ export class SettingsCoordinator {
   ): Promise<void> {
     const request: PingProxy = pingProxyRequestFromItem(item);
     this.dispatch(new ProxyPingUpdated(proxyId, PROXY_PING_LOADING));
+    this.schedulePingTimeout(generation, proxyId);
+    const startedAt: number = Date.now();
     const pendingResult: Result<TdPendingRequest, AppError> = this.scope.request(
       'pingProxy',
       encodePingProxy(request) as TdWireObject
     );
     if (pendingResult.err) {
       this.logger.logError(TAG, pendingResult.error);
-      this.applyPing(generation, proxyId, PROXY_PING_FAILED);
+      // 请求根本没发出去（本地失败），原因同样按分类给一句话。
+      this.applyPing(generation, proxyId, PROXY_PING_FAILED, classifyProxyFailure(pendingResult.error, 0));
       return;
     }
     if (!pendingResult.ok) {
-      this.applyPing(generation, proxyId, PROXY_PING_FAILED);
+      this.applyPing(generation, proxyId, PROXY_PING_FAILED, 'Proxy error');
       return;
     }
     try {
       const response: Result<TdWireObject, AppError> = await pendingResult.value.promise;
       if (response.err) {
-        // 探测失败只有「连不上」这一个结论：TDLib 的错误原文留给错误详情那一包。
-        this.logger.info(TAG, 'proxy_ping_error', `id=${proxyId},kind=${response.error.kind}`);
-        this.applyPing(generation, proxyId, PROXY_PING_FAILED);
+        // PROXY-103：TDLib 原文只进得了分类器、进不了屏幕与日志
+        // （`AppError` 刻意把 message 留作诊断、原文放 cause，别的请求的原文里可能出现手机号），
+        // 行上说的是本端分类出来的一句话，数字码只留给日志。
+        const reason: string = classifyProxyFailure(response.error, Date.now() - startedAt);
+        this.logger.info(
+          TAG,
+          'proxy_ping_error',
+          `id=${proxyId},kind=${response.error.kind},reason=${reason},` +
+            `code=${proxyTdlibCodeOf(response.error)},elapsed=${Date.now() - startedAt}`
+        );
+        this.applyPing(generation, proxyId, PROXY_PING_FAILED, reason);
         return;
       }
       if (!response.ok) {
-        this.applyPing(generation, proxyId, PROXY_PING_FAILED);
+        this.applyPing(generation, proxyId, PROXY_PING_FAILED, 'Proxy error');
         return;
       }
       const seconds: Seconds | null = decodeSeconds(response.value as TdJsonRaw);
       if (seconds === null) {
-        this.applyPing(generation, proxyId, PROXY_PING_FAILED);
+        this.applyPing(generation, proxyId, PROXY_PING_FAILED, 'Proxy error');
         return;
       }
-      this.applyPing(generation, proxyId, proxyPingMsOfSeconds(seconds.seconds));
+      const pingMs: number = proxyPingMsOfSeconds(seconds.seconds);
+      // 成功（含 0 秒当失败）都不该留着上一次的原因 —— 空串即擦除。
+      this.applyPing(
+        generation,
+        proxyId,
+        pingMs,
+        pingMs === PROXY_PING_FAILED ? 'Proxy error' : ''
+      );
     } catch (e) {
-      this.applyPing(generation, proxyId, PROXY_PING_FAILED);
+      this.applyPing(generation, proxyId, PROXY_PING_FAILED, 'Proxy error');
     }
   }
 
+  /**
+   * 本地超时兜底：TDLib 的 `pingProxy` 挂在一个不可达地址上可以几分钟不回包，
+   * 而那一行会一直停在「Checking…」—— 用户读到的是「还在测」，真相是「没人在测」。
+   *
+   * 只对**还在途**的那一行说话：模拟器实测到 `127.0.0.1:989` 的拒连 7ms 就回来了，
+   * 10s 后定时器照样到点，把已经落定的「Connection refused」盖成了「Connection timed out」。
+   * 世代号挡不住这种覆盖（还是同一轮），所以必须按行的当前探测态判。
+   */
+  private schedulePingTimeout(generation: number, proxyId: number): void {
+    const self: SettingsCoordinator = this;
+    setTimeout((): void => {
+      if (proxyPingOf(self.currentState.proxyPingMs, proxyId) !== PROXY_PING_LOADING) {
+        return;
+      }
+      self.applyPing(generation, proxyId, PROXY_PING_FAILED, PROXY_PING_TIMEOUT_KEY);
+    }, PROXY_PING_TIMEOUT_MS);
+  }
+
   /** 回包只认当轮：旧轮晚到、页面已经关掉，都不该再改那一行说什么。 */
-  private applyPing(generation: number, proxyId: number, pingMs: number): void {
+  private applyPing(generation: number, proxyId: number, pingMs: number, failureKey: string): void {
     if (this.destroyed || generation !== this.pingGeneration || !this.currentState.showProxyPage) {
       return;
     }
-    this.dispatch(new ProxyPingUpdated(proxyId, pingMs));
+    this.dispatch(new ProxyPingUpdated(proxyId, pingMs, failureKey));
   }
 
   /**
