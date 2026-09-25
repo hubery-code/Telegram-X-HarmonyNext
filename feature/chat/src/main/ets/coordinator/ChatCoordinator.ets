@@ -270,7 +270,7 @@ import {
   SendPollEffect,
   SetPollAnswerEffect
 } from '../contract/ChatEffect';
-import { StickerSetPreviewState, StickerSetItem } from '../model/StickerSetPreviewState';
+import { StickerSetPreviewState, StickerSetItem, isUnicodeEmojiSticker } from '../model/StickerSetPreviewState';
 import { isOutgoingMessageRead, ReadReportThrottle } from '../model/ReadReceipt';
 import { chatReducer } from '../reducer/ChatReducer';
 
@@ -4087,7 +4087,7 @@ export class ChatCoordinator {
   }
 
   private handleSendSticker(sendSticker: SendStickerMessage): void {
-    if (sendSticker.fileId >= 1001 && sendSticker.fileId <= 1045) {
+    if (isUnicodeEmojiSticker(sendSticker.fileId)) {
       this.projection.sendTextMessage(sendSticker.emoji, 0);
       return;
     }

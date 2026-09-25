@@ -101,6 +101,17 @@ const MAKE_STICKER = (id: number, emoji: string): StickerSetItem => ({
   isDownloading: false
 });
 
+/**
+ * 内置贴纸包的 fileId 区间：这一段「贴纸」其实是 unicode 表情，coordinator 把它们当文本发
+ * （sendTextMessage），所以 otherMessages 受限不应该拦住它们 —— 否决方与发送方必须同口径。
+ */
+export const UNICODE_EMOJI_STICKER_MIN_FILE_ID: number = 1001;
+export const UNICODE_EMOJI_STICKER_MAX_FILE_ID: number = 1045;
+
+export function isUnicodeEmojiSticker(fileId: number): boolean {
+  return fileId >= UNICODE_EMOJI_STICKER_MIN_FILE_ID && fileId <= UNICODE_EMOJI_STICKER_MAX_FILE_ID;
+}
+
 /** STICKER-101：默认内置贴纸包 */
 export const DEFAULT_STICKER_PACKS: StickerPack[] = [
   {

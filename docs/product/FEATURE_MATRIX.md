@@ -224,7 +224,8 @@
 > 中间态用一次性强制权限包取证后删除重建复验 —— 禁视频+投票时 `Video`/`Poll` 置灰（opacity .45）且点 `Video` 弹
 > 「此会话不允许发送视频」；仅留 basic 时 📎 从输入栏消失、点麦克风弹「此会话不允许发送语音消息」。全程未向真实会话发送内容。
 > `core_domain` 124/124（新增 8 例，含九位映射矩阵防位序写错）、`feature_chat` 281/281，三守卫 0 违规。
-> 遗留：`can_send_other_messages` 尚未驱动 `EmojiBoard` 里的贴纸/GIF 页签；`can_send_audios` 本端附件菜单无「音乐」入口可置灰；
+> 遗留（两项已在 **CHAN-SEND-3** 结案，见本节末）：~~`can_send_other_messages` 尚未驱动 `EmojiBoard` 里的贴纸/GIF 页签~~
+> → 改为**发送时否决**（Android 不禁页签）；~~`can_send_audios` 本端附件菜单无「音乐」入口可置灰~~ → 确认为**误报遗留**（删项）。
 > 「可发言但禁部分媒体」的真实会话账号内不存在，受限态只有注入证据；`updateChatPermissions` 推送链仍未设备实证。
 > **2026-09-24（CHATPROF-DATE，FEAT-P2-002/005 共享内容日期分组）**：共享内容三个 Tab 补上**按日期分组头**，并修掉
 > CHATPROF-SHARED 记的 `placeholder=` 统计口径。分组规则照 Android `SharedBaseController.needDateSectionSplitting()`
@@ -711,6 +712,39 @@
 > `proxy_list_read count=0,skipped=0,enabled=0`、设置行回到 `Tap to set up`。
 > 遗留：MTProto 与 HTTP 两类代理的失败原因没在设备上单独取过证（分类表是同一份，实测只覆盖 socks5 三种通路）；
 > "Switch automatically" / 最佳代理徽标缺「路由选择器」（单选语义下没有可比的对象）；扫码导入缺相机识别入口。
+
+> **2026-09-25（CHAN-SEND-3，FEAT-P2-002/004/005 贴纸与 GIF 的发言权否决）**：CHAN-SEND-2 的两条遗留结案，
+> **但两条都不按原来写的方式做 —— 读码后都改了形状**。
+> **① 遗留项本身写错了方向**：原文是「`can_send_other_messages` 尚未驱动 `EmojiBoard` 里的贴纸/GIF **页签**」，
+> 照字面做就该把页签置灰或藏掉 —— 而 Android **从不**在面板上管这件事：`EmojiLayout.java` 全文零 `RightId` 引用，
+> 贴纸与 GIF 页签任何时候都可点；否决发生在**选中要发出去那一张**时（`MessagesController.java:9230` sendSticker、
+> `:9238` sendAnimation → `sendContent()` → `showRestriction(...)`，出句子 + 不发）。所以本端做成**发送时否决**：
+> 页签照常、点一张被禁的贴纸/GIF 才弹提示，且**消息根本不会出去**（设备实证：会话仍是 `No messages yet`）。
+> **② `can_send_audios` 的「音乐附件入口」确认为误报，删项**：Android 附件面板只有
+> Contact / File / Gallery / Location / Poll（`MediaLayout.java:260-268`），**音乐是文件浏览器里的一行**
+> （`MediaBottomFilesController.java:275-276`，点击时按 `isMusic ? SEND_AUDIO : SEND_DOCS` 否决），本端没有那个容器。
+> 与 CHAN-SEND 首版「输入栏左侧 🔔」同一处理口径：**不为不存在的容器造 UI**。
+> 落点：`core/domain/chat/ChatSendRights.ets` 加 `CONTENT_STICKER` / `CONTENT_GIF` 两个内容 key、
+> `canSendContent(rights, key)` 判定表（六类内容一位一权，**未知 key 放行** —— 新入口忘了登记时，
+> 让 TDLib 报错比本地误杀好查）、`sendVetoLabel(rights, key)` 统一否决入口；
+> 原 `attachmentRestrictionLabel` 改为与它**共用同一张文案表** `restrictionSentence`（两处各抄一遍迟早写成两个句子）。
+> 三处入口全接：表情板贴纸、表情板 GIF、**贴纸包预览**（`SendStickerFromPreview` 与 `SendSticker` 发的是同一个
+> `SendStickerMessage`，漏接一处等于没 gate，而且预览那条还会顺手把贴纸记进最近使用）。
+> **unicode 表情贴纸的豁免**是这里唯一的坑：内置贴纸包 fileId 1001–1045 实际由 coordinator 走
+> `sendTextMessage` 当文本发（那是 emoji，受 `basic` 位管），把它们一起否决就会在禁贴纸的群里连一行 emoji 都发不出。
+> 这条边界原先是**两处硬编码 magic number**（页面要跳过、coordinator 要认），现集中成
+> `isUnicodeEmojiSticker(fileId)`，并有用例守住「内置贴纸全部落在豁免区间内、GIF 占位档全部落在区间外」——
+> 区间一旦漂移（新增贴纸包用了 1046），提示语就会指错方向。
+> 测试：`core_domain` **161/161**（+4 例：九位逐位点亮证明**只有** `otherMessages` 能否决贴纸与 GIF、
+> 六类内容六句不同文案、未知 key 放行、置灰提示与发送否决同源）、`feature_chat` **326/326**（+3 例豁免区间），三守卫 0 违规。
+> 设备取证（模拟器 127.0.0.1:5555，受限态用一次性强制权限包：`applyChatSendPermissions` 里把 `otherMessages`
+> 写死 false，验完删除重建）—— ① GIF 页签点 `Thumbs Up` → `Toast 此会话不允许发送 GIF`，
+> 同屏 Saved Messages 仍 `No messages yet`（否决是真的没发出去，不是发完再报错）；
+> ② 同一包里贴纸页签点 🐼 → **照发**（豁免生效，emoji 走文本不受贴纸位管），随后长按删除回空态；
+> ③ 还原成正常包后重跑同一步 GIF 点击 → 出 `🎬 Thumbs Up` 且无提示（证明否决只由权限驱动而不是无条件拦截），同样删除还原。
+> 全程只在 Saved Messages 内操作，未向任何真实群/频道发送内容。
+> 遗留：真实贴纸包与动图的**实际发送链路**（非占位 fileId）仍未接，这条否决目前吃到真内容的场景只有贴纸包预览；
+> 受限态依旧只有注入证据（账号内不存在「可发言但禁贴纸」的会话）；`updateChatPermissions` 推送链仍未设备实证。
 
 
 | 功能 ID | 功能名 |

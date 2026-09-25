@@ -19,6 +19,7 @@ import privateChatHeaderProfileTest from './PrivateChatHeaderProfile.test';
 import viewerTransformTest from './ViewerTransform.test';
 import viewerPlaybackTest from './ViewerPlayback.test';
 import chatAppLinkDispatchTest from './ChatAppLinkDispatch.test';
+import stickerSendVetoTest from './StickerSendVeto.test';
 
 export default function testsuite(): void {
   chatReducerTest();
@@ -42,5 +43,6 @@ export default function testsuite(): void {
   viewerTransformTest();
   viewerPlaybackTest();
   chatAppLinkDispatchTest();
+  stickerSendVetoTest();
 }
 

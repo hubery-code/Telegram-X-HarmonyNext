@@ -55,7 +55,10 @@ import {
   attachmentRestrictionLabel,
   buildAttachmentEntries,
   canRecordVoice,
-  canSendAnyMedia
+  canSendAnyMedia,
+  CONTENT_GIF,
+  CONTENT_STICKER,
+  sendVetoLabel
 } from '@tgx/core-domain';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { common } from '@kit.AbilityKit';
@@ -185,7 +188,7 @@ import {
 import { isMessageSelected } from '../model/ForwardSelection';
 import { ChatSearchResultItem } from '../model/ChatSearchResultItem';
 import { PinnedMessageInfo } from '../model/PinnedMessageInfo';
-import { StickerSetItem } from '../model/StickerSetPreviewState';
+import { StickerSetItem, isUnicodeEmojiSticker } from '../model/StickerSetPreviewState';
 import { GifItem } from '../model/GifItem';
 import {
   PollComposerState,
@@ -936,13 +939,17 @@ export struct ChatPage {
               // 兼容老调用
             },
             onSendSticker: (item: StickerSetItem) => {
-              this.onDispatch(new SendSticker(item));
+              this.sendContentWithVeto(CONTENT_STICKER, item.fileId, (): void => {
+                this.onDispatch(new SendSticker(item));
+              });
             },
             onClearRecentStickers: () => {
               this.onDispatch(new ClearRecentStickers());
             },
             onSendGif: (item: GifItem) => {
-              this.onDispatch(new SendGif(item));
+              this.sendContentWithVeto(CONTENT_GIF, item.fileId, (): void => {
+                this.onDispatch(new SendGif(item));
+              });
             },
             onClearRecentGifs: () => {
               this.onDispatch(new ClearRecentGifs());
@@ -995,7 +1002,9 @@ export struct ChatPage {
             this.onDispatch(new UninstallStickerSet(setId));
           },
           onSelectSticker: (stickerItem: StickerSetItem) => {
-            this.onDispatch(new SendStickerFromPreview(stickerItem));
+            this.sendContentWithVeto(CONTENT_STICKER, stickerItem.fileId, (): void => {
+              this.onDispatch(new SendStickerFromPreview(stickerItem));
+            });
           },
           onRetry: (setId: string) => {
             this.onDispatch(new OpenStickerSet(setId));
@@ -3546,6 +3555,27 @@ export struct ChatPage {
   /** 九位媒体权限全被禁时，附件入口本身没有意义（对齐 Android canSendSendSomeMedia）。 */
   private showAttachButton(): boolean {
     return canSendAnyMedia(this.uiState.sendRights);
+  }
+
+  /**
+   * CHAN-SEND-3：贴纸 / GIF 的**发送时**否决。Android 的表情面板从不限贴纸/GIF 页签
+   * （`EmojiLayout.java` 里零 `RightId` 引用），否决发生在选中要发出去那一张时
+   * （`MessagesController.java:9230` sendSticker、`:9238` sendAnimation → `showRestriction`），
+   * 所以这里照原样：页签照常可点，否决只出句子、不发东西。
+   */
+  private sendContentWithVeto(contentKey: string, fileId: number, send: () => void): void {
+    if (contentKey === CONTENT_STICKER && isUnicodeEmojiSticker(fileId)) {
+      // 内置「unicode 表情贴纸」由 coordinator 走 sendTextMessage，那是文本、受 basic 位管，
+      // 不能因为会话禁贴纸就把表情也扣下。
+      send();
+      return;
+    }
+    const hint: string = sendVetoLabel(this.uiState.sendRights, contentKey);
+    if (hint.length > 0) {
+      this.showHintToast(hint);
+      return;
+    }
+    send();
   }
 
   /** 无输入文本时的麦克风按钮是否被权限挡住；挡住时点击出提示而不是开始录音。 */

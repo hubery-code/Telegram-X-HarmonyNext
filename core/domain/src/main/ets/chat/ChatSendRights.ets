@@ -143,12 +143,46 @@ export function canRecordVoice(rights: ChatSendRights): boolean {
   return rights.voiceNotes || rights.videoNotes;
 }
 
+/**
+ * 贴纸与 GIF：Android 里它们**不是附件面板的一格**，而是表情面板的页签；页签永远可点，
+ * 否决发生在「选中要发出去的那一张」时（MessagesController.java:9230 sendSticker / :9238 sendAnimation）。
+ * 所以这两个 key 只喂给 sendVetoLabel，不参与 buildAttachmentEntries。
+ */
+export const CONTENT_STICKER: string = 'sticker';
+export const CONTENT_GIF: string = 'gif';
+
+/** 内容类型 -> 该位的发言权；未知 key 放行（宁可发出去由 TDLib 报错，也不在本地误杀）。 */
+export function canSendContent(rights: ChatSendRights, contentKey: string): boolean {
+  switch (contentKey) {
+    case ATTACHMENT_GALLERY:
+      return rights.photos;
+    case ATTACHMENT_VIDEO:
+      return rights.videos;
+    case ATTACHMENT_FILE:
+      return rights.documents;
+    case ATTACHMENT_POLL:
+      return rights.polls;
+    case CONTENT_STICKER:
+    case CONTENT_GIF:
+      return rights.otherMessages;
+    default:
+      return true;
+  }
+}
+
+/** 发送时否决的统一入口：返回提示文案表示「不发」，'' 表示放行。 */
+export function sendVetoLabel(rights: ChatSendRights, contentKey: string): string {
+  return canSendContent(rights, contentKey) ? '' : restrictionSentence(contentKey);
+}
+
 /** 受限点击的提示文案；返回 '' 表示该条目其实可用，不该出提示。 */
 export function attachmentRestrictionLabel(entry: AttachmentEntry): string {
-  if (entry.enabled) {
-    return '';
-  }
-  switch (entry.key) {
+  return entry.enabled ? '' : restrictionSentence(entry.key);
+}
+
+/** 六类受限内容共用一张文案表，避免同一语义在两处各写一遍。 */
+function restrictionSentence(contentKey: string): string {
+  switch (contentKey) {
     case ATTACHMENT_GALLERY:
       return '此会话不允许发送图片';
     case ATTACHMENT_VIDEO:
@@ -157,6 +191,10 @@ export function attachmentRestrictionLabel(entry: AttachmentEntry): string {
       return '此会话不允许发送文件';
     case ATTACHMENT_POLL:
       return '此会话不允许发起投票';
+    case CONTENT_STICKER:
+      return '此会话不允许发送贴纸';
+    case CONTENT_GIF:
+      return '此会话不允许发送 GIF';
     default:
       return '此会话不允许发送该内容';
   }

@@ -5,7 +5,8 @@
  * 1. permissions 缺失必须当成「全放开」——读不到权限不等于没权限，否则用户被锁在输入栏外；
  * 2. 九位映射按位置传参，翻错一位就会「图片能发、视频不能发」这类查不出来的错，
  *    所以逐位单独点亮做映射断言；
- * 3. 附件面板各项可用性只由对应那一位决定，不可用项仍要出现在列表里（点了出提示，不是入口消失）。
+ * 3. 附件面板各项可用性只由对应那一位决定，不可用项仍要出现在列表里（点了出提示，不是入口消失）；
+ * 4. CHAN-SEND-3：贴纸 / GIF 的发送否决只认 otherMessages 位，且与附件置灰提示共用同一张文案表。
  */
 
 import { describe, it, expect } from '@ohos/hypium';
@@ -20,8 +21,12 @@ import {
   buildAttachmentEntries,
   canRecordVoice,
   canSendAnyMedia,
+  canSendContent,
+  CONTENT_GIF,
+  CONTENT_STICKER,
   ChatSendRights,
-  sendRightsFromPermissions
+  sendRightsFromPermissions,
+  sendVetoLabel
 } from '../../main/ets/chat/ChatSendRights';
 
 /** 全 false 的 TDLib permissions；调用方再点亮自己要验证的那一位。 */
@@ -155,5 +160,64 @@ export default function chatSendRightsTest(): void {
       expect(canRecordVoice(new ChatSendRights(true, true, true, true, true, true, false, true, true))).assertTrue();
       expect(canRecordVoice(new ChatSendRights(true, true, true, true, true, false, false, true, true))).assertFalse();
     });
+
+    // ---- CHAN-SEND-3：贴纸 / GIF 的发送时否决 ----
+
+    it('sendVeto_stickerAndGifFollowTheOtherMessagesBitOnly', 0, () => {
+      // 九位里只有 otherMessages 能否决贴纸与 GIF：逐位关掉，任何一位误接都会在这里暴露
+      // （比如把 stickers 挂到 photos 上，禁图片的群就发不了贴纸了）。
+      const keys: string[] = [CONTENT_STICKER, CONTENT_GIF];
+      for (let bit = 0; bit < 9; bit++) {
+        const rights: ChatSendRights = rightsWithOnlyBitOff(bit);
+        for (let k = 0; k < keys.length; k++) {
+          const veto: string = sendVetoLabel(rights, keys[k]);
+          if (bit === 8) {
+            expect(veto.length > 0).assertTrue();
+          } else {
+            expect(veto).assertEqual('');
+          }
+        }
+      }
+    });
+
+    it('sendVeto_distinctSentencePerContentKind', 0, () => {
+      // 六类受限内容六句不同的话：同一句会让用户猜不到被禁的是哪一类。
+      const rights: ChatSendRights = new ChatSendRights(false, false, false, false, false, false, false, false, false);
+      const keys: string[] = [
+        ATTACHMENT_GALLERY, ATTACHMENT_VIDEO, ATTACHMENT_FILE, ATTACHMENT_POLL, CONTENT_STICKER, CONTENT_GIF
+      ];
+      const seen: Set<string> = new Set<string>();
+      for (let i = 0; i < keys.length; i++) {
+        const veto: string = sendVetoLabel(rights, keys[i]);
+        expect(veto.length > 0).assertTrue();
+        seen.add(veto);
+      }
+      expect(seen.size).assertEqual(6);
+    });
+
+    it('sendVeto_unknownContentKindPassesThrough', 0, () => {
+      // 未知 key 放行：本地误杀比让 TDLib 报错更难查（新加入口时忘了登记会立刻暴露在这里）。
+      const none: ChatSendRights = new ChatSendRights(false, false, false, false, false, false, false, false, false);
+      expect(sendVetoLabel(none, 'contact')).assertEqual('');
+      expect(canSendContent(none, 'contact')).assertTrue();
+    });
+
+    it('attachmentLabel_and_sendVeto_readTheSameSentenceTable', 0, () => {
+      // 置灰提示与发送否决必须同一张表：两处各抄一遍迟早写成两个句子。
+      const pairs: string[] = [ATTACHMENT_GALLERY, ATTACHMENT_VIDEO, ATTACHMENT_FILE, ATTACHMENT_POLL];
+      const none: ChatSendRights = new ChatSendRights(false, false, false, false, false, false, false, false, false);
+      for (let i = 0; i < pairs.length; i++) {
+        const entry: AttachmentEntry = new AttachmentEntry(pairs[i], false);
+        expect(sendVetoLabel(none, pairs[i])).assertEqual(attachmentRestrictionLabel(entry));
+      }
+    });
   });
+}
+
+/** 只关掉某一位发言权（其余全放开），用于「一位一权」的映射断言。 */
+function rightsWithOnlyBitOff(bit: number): ChatSendRights {
+  const flags: boolean[] = [true, true, true, true, true, true, true, true, true];
+  flags[bit] = false;
+  return new ChatSendRights(flags[0], flags[1], flags[2], flags[3], flags[4],
+    flags[5], flags[6], flags[7], flags[8]);
 }
