@@ -185,6 +185,16 @@ const EN_DICTIONARY: Record<string, string> = {
   'Remove proxy': 'Remove proxy',
   'Delete this proxy configuration?': 'Delete this proxy configuration?',
 
+  // Proxy connectivity probe and connection state (PROXY-102)
+  'Connected': 'Connected',
+  'Available': 'Available',
+  'Checking...': 'Checking...',
+  'Connecting...': 'Connecting...',
+  'Waiting for network...': 'Waiting for network...',
+  'Updating...': 'Updating...',
+  'Error': 'Error',
+  'Problems detected': 'Problems detected',
+
   // Automatic media download (AUTODL-101)
   'Automatic Media Download': 'Automatic Media Download',
   'Automatic download': 'Automatic download',
@@ -328,6 +338,16 @@ const ZH_DICTIONARY: Record<string, string> = {
   'Secret must be hexadecimal': '密钥需为十六进制字符串，例如 ee1234…',
   'Remove proxy': '移除代理',
   'Delete this proxy configuration?': '确定删除这条代理配置吗？',
+
+  // Proxy connectivity probe and connection state (PROXY-102)
+  'Connected': '已连接',
+  'Available': '可用',
+  'Checking...': '检测中...',
+  'Connecting...': '连接中...',
+  'Waiting for network...': '等待网络...',
+  'Updating...': '同步中...',
+  'Error': '连接失败',
+  'Problems detected': '直连异常',
 
   // Automatic media download (AUTODL-101)
   'Automatic Media Download': '自动媒体下载',

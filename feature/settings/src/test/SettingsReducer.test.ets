@@ -52,6 +52,8 @@ import {
   SelectProxy,
   SaveProxy,
   RemoveProxyRequested,
+  ProxyPingUpdated,
+  ProxyConnectionStateChanged,
   OpenAutoDownloadPage,
   CloseAutoDownloadPage,
   LoadAutoDownloadPolicy,
@@ -86,6 +88,7 @@ import {
   DisableProxyEffect,
   SaveProxyEffect,
   RemoveProxyEffect,
+  PingProxiesEffect,
   LoadAutoDownloadPolicyEffect,
   PersistAutoDownloadPolicyEffect,
   LoadDataSaverSettingsEffect,
@@ -111,9 +114,13 @@ import { PrivacySettingItem } from '../main/ets/model/PrivacySettings';
 import {
   PROXY_NONE_ID,
   PROXY_NEW_ID,
+  PROXY_PING_FAILED,
+  PROXY_PING_LOADING,
+  PROXY_PING_UNSET,
   ProxyForm,
   ProxyItem,
-  ProxyKind
+  ProxyKind,
+  proxyPingOf
 } from '../main/ets/model/ProxySettings';
 import { settingsReducer } from '../main/ets/reducer/SettingsReducer';
 
@@ -154,6 +161,15 @@ function proxyRow(
 
 function proxyFormItem(id: number, server: string, port: string, kind: ProxyKind): ProxyForm {
   return new ProxyForm(id, kind, server, port, '', '', '', false, '', true);
+}
+
+/** PROXY-102：探测表的测试构造器，`[[proxyId, pingMs], ...]`。 */
+function pingTable(entries: number[][]): Map<number, number> {
+  const table: Map<number, number> = new Map();
+  for (let i = 0; i < entries.length; i++) {
+    table.set(entries[i][0], entries[i][1]);
+  }
+  return table;
 }
 
 /** AUTODL-101：已经读到盘上策略、子页已打开的起始态。 */
@@ -989,6 +1005,16 @@ export default function settingsReducerTest(): void {
       expect(result.effects.length).assertEqual(0);
     });
 
+    it('closeProxyPage_clearsProbeTableButKeepsRows', 0, () => {
+      const state = proxyState([proxyRow(7, 'socks5', 'a.com', 1080, true)])
+        .copyWith({ proxyPingMs: pingTable([[7, 42]]), proxyConnection: 'ready' });
+      const result = settingsReducer(state, new CloseProxyPage(), makeEnv());
+
+      expect(result.state.showProxyPage).assertFalse();
+      expect(result.state.proxyPingMs.size).assertEqual(0);
+      expect(result.state.proxyConnection).assertEqual('unknown');
+    });
+
     it('loadProxies_setsLoadingAndEmitsEffect', 0, () => {
       const state = proxyState([]);
       const result = settingsReducer(state, new LoadProxies(), makeEnv());
@@ -999,7 +1025,7 @@ export default function settingsReducerTest(): void {
       expect(effect.kind).assertEqual('loadProxies');
     });
 
-    it('proxiesLoaded_replacesItemsAndClearsBusy', 0, () => {
+    it('proxiesLoaded_replacesItemsAndRequestsProbe', 0, () => {
       const state = proxyState([proxyRow(1, 'socks5', 'old.com', 1, false)])
         .copyWith({ isLoadingProxies: true, updatingProxyId: 1 });
       const items: ProxyItem[] = [
@@ -1012,7 +1038,24 @@ export default function settingsReducerTest(): void {
       expect(result.state.proxyItems[0].id).assertEqual(7);
       expect(result.state.isLoadingProxies).assertFalse();
       expect(result.state.updatingProxyId === null).assertTrue();
-      expect(result.effects.length).assertEqual(0);
+      // 读到列表就轮到探测：可用性是测出来的，不靠上一轮的残值。
+      expect(result.effects.length).assertEqual(1);
+      expect((result.effects[0] as PingProxiesEffect).kind).assertEqual('pingProxies');
+    });
+
+    it('proxiesLoaded_prunesDeadRowsAndKeepsLiveProbeResults', 0, () => {
+      const state = proxyState([proxyRow(1, 'socks5', 'a.com', 1080, false)])
+        .copyWith({ proxyPingMs: pingTable([[PROXY_NONE_ID, 33], [1, 77], [2, 88]]) });
+      const items: ProxyItem[] = [
+        proxyRow(1, 'socks5', 'a.com', 1080, false),
+        proxyRow(3, 'socks5', 'c.com', 1080, false)
+      ];
+      const result = settingsReducer(state, new ProxiesLoaded(items), makeEnv());
+
+      // 1 号行还在（在途的回包别被抹掉），0 是「不使用代理」，2 已经删了才该消失。
+      expect(proxyPingOf(result.state.proxyPingMs, PROXY_NONE_ID)).assertEqual(33);
+      expect(proxyPingOf(result.state.proxyPingMs, 1)).assertEqual(77);
+      expect(result.state.proxyPingMs.has(2)).assertFalse();
     });
 
     it('selectProxy_unenabledRow_enablesAndMarksBusy', 0, () => {
@@ -1123,6 +1166,85 @@ export default function settingsReducerTest(): void {
       const busyResult = settingsReducer(busy, new RemoveProxyRequested(7), makeEnv());
       expect(busyResult.state === busy).assertTrue();
       expect(busyResult.effects.length).assertEqual(0);
+    });
+
+    // ---- PROXY-102 连通性探测与连接态 ----
+
+    it('proxyPingUpdated_writesTableAndKeepsOldOne', 0, () => {
+      const state = proxyState([proxyRow(7, 'socks5', 'a.com', 1080, false)])
+        .copyWith({ proxyPingMs: pingTable([[7, 11]]) });
+      const result = settingsReducer(state, new ProxyPingUpdated(7, 222), makeEnv());
+
+      expect(proxyPingOf(result.state.proxyPingMs, 7)).assertEqual(222);
+      // 覆盖式写入，不是累加；旧实例也不能被就地改掉。
+      expect(proxyPingOf(state.proxyPingMs, 7)).assertEqual(11);
+      expect(result.effects.length).assertEqual(0);
+    });
+
+    it('proxyPingUpdated_noneRowIsAlwaysWritable', 0, () => {
+      const state = proxyState([]);
+      const loading = settingsReducer(state, new ProxyPingUpdated(PROXY_NONE_ID, PROXY_PING_LOADING), makeEnv());
+      expect(proxyPingOf(loading.state.proxyPingMs, PROXY_NONE_ID)).assertEqual(PROXY_PING_LOADING);
+
+      const result = settingsReducer(loading.state, new ProxyPingUpdated(PROXY_NONE_ID, 38), makeEnv());
+      expect(proxyPingOf(result.state.proxyPingMs, PROXY_NONE_ID)).assertEqual(38);
+    });
+
+    it('proxyPingUpdated_dropsRepliesForDeadRows', 0, () => {
+      const state = proxyState([proxyRow(7, 'socks5', 'a.com', 1080, false)]);
+      const result = settingsReducer(state, new ProxyPingUpdated(21, PROXY_PING_FAILED), makeEnv());
+
+      // 晚到的回包不能复活一个已经不存在的行。
+      expect(result.state === state).assertTrue();
+      expect(result.effects.length).assertEqual(0);
+    });
+
+    it('proxyConnectionStateChanged_deduplicatesIdenticalState', 0, () => {
+      const state = proxyState([proxyRow(7, 'socks5', 'a.com', 1080, true)])
+        .copyWith({ proxyConnection: 'ready' });
+      const result = settingsReducer(state, new ProxyConnectionStateChanged('ready'), makeEnv());
+
+      expect(result.state === state).assertTrue();
+      expect(result.effects.length).assertEqual(0);
+    });
+
+    it('proxyConnectionStateChanged_firstFrameDoesNotReprobe', 0, () => {
+      const state = proxyState([proxyRow(7, 'socks5', 'a.com', 1080, true)]);
+      const result = settingsReducer(state, new ProxyConnectionStateChanged('ready'), makeEnv());
+
+      // unknown → ready 只是订阅后的首帧，不是「断了又通」，否则每次进页都多一轮探测。
+      expect(result.state.proxyConnection).assertEqual('ready');
+      expect(result.effects.length).assertEqual(0);
+    });
+
+    it('proxyConnectionStateChanged_recoveryReprobesWhilePageIsOpen', 0, () => {
+      const state = proxyState([proxyRow(7, 'socks5', 'a.com', 1080, true)])
+        .copyWith({ proxyConnection: 'waiting_for_network' });
+      const result = settingsReducer(state, new ProxyConnectionStateChanged('ready'), makeEnv());
+
+      expect(result.state.proxyConnection).assertEqual('ready');
+      expect(result.effects.length).assertEqual(1);
+      expect((result.effects[0] as PingProxiesEffect).kind).assertEqual('pingProxies');
+    });
+
+    it('proxyConnectionStateChanged_afterCloseDoesNotReprobe', 0, () => {
+      const state = proxyState([proxyRow(7, 'socks5', 'a.com', 1080, true)])
+        .copyWith({ proxyConnection: 'connecting' });
+      const closed = state.copyWith({ showProxyPage: false });
+      const result = settingsReducer(closed, new ProxyConnectionStateChanged('ready'), makeEnv());
+
+      expect(result.state.proxyConnection).assertEqual('ready');
+      expect(result.effects.length).assertEqual(0);
+    });
+
+    it('copyWith_keepsProbeFieldsWhenUnspecified', 0, () => {
+      const state = proxyState([proxyRow(7, 'socks5', 'a.com', 1080, true)])
+        .copyWith({ proxyPingMs: pingTable([[7, 55]]), proxyConnection: 'ready' });
+      const next = state.copyWith({ displayName: 'hubery' });
+
+      expect(proxyPingOf(next.proxyPingMs, 7)).assertEqual(55);
+      expect(next.proxyConnection).assertEqual('ready');
+      expect(proxyPingOf(SettingsUiState.initial().proxyPingMs, PROXY_NONE_ID)).assertEqual(PROXY_PING_UNSET);
     });
 
     it('copyWith_keepsProxyFieldsWhenUnspecified', 0, () => {

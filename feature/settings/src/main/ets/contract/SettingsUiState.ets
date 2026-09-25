@@ -14,7 +14,7 @@ import { NotificationScopeKey } from '../model/NotificationSettings';
 import { ActiveSessionItem } from '../model/ActiveSessionItem';
 import { SettingsSectionKey } from '../model/SettingsSection';
 import { PrivacySettingItem, PrivacySettingKey } from '../model/PrivacySettings';
-import { ProxyItem } from '../model/ProxySettings';
+import { ProxyItem, ProxyConnectionState } from '../model/ProxySettings';
 import { AutoDownloadPolicy, DataSaverSettings, DownloadLimitsByNetwork } from '@tgx/core-domain';
 
 export type SettingsThemeMode = ThemePreference;
@@ -78,6 +78,15 @@ export interface SettingsUiStateOptions {
   readonly dataSaverSettings?: DataSaverSettings | null;
   /** AUTODL-103：按网络档的自动下载限制；null 表示还没读盘（三行副标题显 Loading）。 */
   readonly downloadLimits?: DownloadLimitsByNetwork | null;
+  /**
+   * PROXY-102：各行连通性探测结果（毫秒或模型层哨兵）。
+   * key 是 TDLib 代理 id，`PROXY_NONE_ID`（0）是「不使用代理」行的直连探测。
+   * 刻意不放进 `ProxyItem`：列表每次写回都要重读 `getProxies` 并整批重建行，
+   * 挂在行上的在途探测会被那次重建抹掉。
+   */
+  readonly proxyPingMs?: Map<number, number>;
+  /** PROXY-102：TDLib 连接态；'unknown' 表示还没收到 `updateConnectionState`。 */
+  readonly proxyConnection?: ProxyConnectionState;
 }
 
 export class SettingsUiState implements UiState {
@@ -142,6 +151,10 @@ export class SettingsUiState implements UiState {
   readonly dataSaverSettings: DataSaverSettings | null;
   /** AUTODL-103：按网络档的自动下载限制；null 表示尚未读盘。 */
   readonly downloadLimits: DownloadLimitsByNetwork | null;
+  /** PROXY-102：各行连通性探测结果；空 Map 表示一行都没测过。 */
+  readonly proxyPingMs: Map<number, number>;
+  /** PROXY-102：TDLib 连接态。 */
+  readonly proxyConnection: ProxyConnectionState;
 
   constructor(
     userId: number,
@@ -184,7 +197,9 @@ export class SettingsUiState implements UiState {
     showAutoDownloadPage: boolean = false,
     autoDownloadPolicy: AutoDownloadPolicy | null = null,
     dataSaverSettings: DataSaverSettings | null = null,
-    downloadLimits: DownloadLimitsByNetwork | null = null
+    downloadLimits: DownloadLimitsByNetwork | null = null,
+    proxyPingMs: Map<number, number> = new Map(),
+    proxyConnection: ProxyConnectionState = 'unknown'
   ) {
     this.userId = userId;
     this.displayName = displayName;
@@ -227,6 +242,8 @@ export class SettingsUiState implements UiState {
     this.autoDownloadPolicy = autoDownloadPolicy;
     this.dataSaverSettings = dataSaverSettings;
     this.downloadLimits = downloadLimits;
+    this.proxyPingMs = proxyPingMs;
+    this.proxyConnection = proxyConnection;
   }
 
   static initial(
@@ -322,7 +339,9 @@ export class SettingsUiState implements UiState {
       options.autoDownloadPolicy !== undefined ? options.autoDownloadPolicy : this.autoDownloadPolicy,
       // 显式传 null 表示「清空为未读盘」，与 undefined（不改动）区分开。
       options.dataSaverSettings !== undefined ? options.dataSaverSettings : this.dataSaverSettings,
-      options.downloadLimits !== undefined ? options.downloadLimits : this.downloadLimits
+      options.downloadLimits !== undefined ? options.downloadLimits : this.downloadLimits,
+      options.proxyPingMs !== undefined ? options.proxyPingMs : this.proxyPingMs,
+      options.proxyConnection !== undefined ? options.proxyConnection : this.proxyConnection
     );
   }
 }

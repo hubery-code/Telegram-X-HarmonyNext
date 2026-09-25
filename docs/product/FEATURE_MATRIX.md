@@ -310,9 +310,9 @@
 > 「Port must be 1-65535」）。**收尾已恢复账号原状**：测试代理删除、无代理保持选中，设置行回到 `Tap to set up`。
 > 测试：`feature_settings` **145/145 PASS**（新增 `ProxySettings.test.ets` 15 例纯模型 + reducer 17 例意图/效果 +
 > `SettingsSection` 卡位 3 处），三守卫 0 违规。
-> 遗留：代理 ping 延迟副标题与连接态（Android `ProxyListController` 的 `pingProxy` + `updateConnectionState`）、
-> "Switch automatically"、通话是否走代理、`tg://proxy` 分享链接的确认弹窗（`openProxyAlert`）、扫码导入、
-> 多端改代理的实时推送（本端只订阅不到 `updateProxy`）；FEAT-P2-007 的**下载与自动缓存策略半边**当时未动（现已交付，见下方 AUTODL-101 追加段）。
+> 遗留：代理 ping 延迟副标题与连接态（现已交付，见下方 PROXY-102 追加段）、
+> "Switch automatically"、通话是否走代理（结案：无 VoIP，无对象）、`tg://proxy` 分享链接的确认弹窗（`openProxyAlert`）、扫码导入、
+> 多端改代理的实时推送（本端只订阅不到 `updateProxy`，结案：1.8.67 schema 无此类型，只能靠回读）；FEAT-P2-007 的**下载与自动缓存策略半边**当时未动（现已交付，见下方 AUTODL-101 追加段）。
 > **同日追加（AUTODL-101，FEAT-P2-007 下载与自动缓存策略半边）**：设置页新增整屏「自动媒体下载」子页，
 > 聊天页 7 类入站媒体全部接上下载门，策略按账号持久化。
 > **存储形状照 TGX 而不是照 UI**：Android 把这套策略存成一个整数 `settings_autodownload`
@@ -482,6 +482,59 @@
 > 遗留：移动网络与漫游两档缺可取证环境（模拟器只有以太网，恰好让 Wi-Fi 档成为设备上的活档）、
 > 限制变更不追溯已在途下载、没有「按会话单独覆盖」的入口、Android 的「全部排除」快捷（本端只做逐类勾选，
 > 常量 `DOWNLOAD_EXCLUDE_ALL_KINDS` 已备但没有对应 UI）。
+> **同日追加（PROXY-102，FEAT-P2-007 代理半边的最后一项）**：代理行从「只有一个 radio 的清单」变成会报延迟和连接态的行 ——
+> 每行一次 `pingProxy` + 全局一条 `updateConnectionState`，PROXY-101 记的第一条遗留清掉。
+> **直连可证，靠的是 TDLib 的一个语义而不是代码技巧**：`pingProxy proxy:proxy = Seconds` 里
+> **空 `proxy` 载荷探测的是直连通路**，所以「不使用代理」这一行根本不需要先配一个能用的代理才有得显 ——
+> 本端把 `PROXY_NONE_ID = 0` 直接映射成「发空负载」，`pingRequest()` 对 0 号行返回 `null` 就是这个意思。
+> 也正因为这条，这一整包的设备取证**在账号里零代理的状态下就完成了**，没有为了让界面动起来而往账号里留东西。
+> **探测数据放在 `SettingsUiState` 的侧表里，不放进 `ProxyItem`**：`proxyPingMs: Map<number, number>` + `proxyConnection`。
+> 两个理由：① PROXY-101 定的纪律是「每次写操作后重新 `getProxies` 回读」，行对象整批重建，把易变的探测值挂在行上
+> 就等于每轮回读都把刚测出来的数丢掉；② 无代理行不是 `ProxyItem`（它是哨兵），侧表天然能容纳 id 0。
+> 探测表写入仍是不可变替换，并按当前行集**剪枝**（`proxiesLoaded_prunesDeadRowsAndKeepsLiveProbeResults`）——
+> 删掉的代理留下的幽灵延迟会让「重新添加同一条」开局显示一个不属于它的数。
+> **三值哨兵，负数区互不重叠**：`PROXY_PING_UNSET = -1`（还没测）/ `LOADING = -2`（在途）/ `FAILED = -3`（测了且失败）。
+> 不用 `undefined`/`0` 是因为 `0 ms` 是一个合法的邻近网络值，而「没有这一行」和「这一行失败」在界面上必须是两句话；
+> 秒 → 毫秒取 `Math.round(seconds * 1000)`，非有限值或 `<= 0` 一律判 `FAILED` —— TDLib 返回 0 秒就是失败，不是「零延迟」。
+> **行的状态句子是三个因子共同决定的，不能压成一个**：`proxyRowIsEffective(items, item)`（哪条承载了这条连接）、
+> `connection`（`updateConnectionState` 的 5 个判别式）、`pingMs`（这一行自己的探测）。
+> 刻意把「非生效行」和「连接态未知」分开：`proxyConnection` 初始 `'unknown'`，若拿它当「你不是当前通路」的依据，
+> 那么**在第一条连接态推送到来之前**，所有行都会被误判成「不可用」并显出一个用户从没见过的句子；
+> 反过来生效行的句子优先跟连接态（`Connecting...` / `Waiting for network...` / `Updating...`），
+> 只有 `'ready'` 与 `'unknown'` 才把探测值端上来（`Connected · 226 ms` / `Available · 226 ms` / `Error`）。
+> 非生效行永远只有探测结果可说 —— 它没在承载流量，说 `Connected` 是假话。
+> **连接态订阅走 gateway 的过滤通道，不走 `scope.subscribeEvents`**：后者是**单槽**监听，装配层已经把它给了 auth 事件；
+> 所以 `subscribeConnectionState()` 用 `subscribeUpdates({ clientId, types: ['updateConnectionState'] })` 自建一条，
+> 整个协调器只建一次、`destroy()` 退订（这是本端继聊天页之后第二处用到该过滤订阅的地方）。
+> **迟到的回包靠一个世代令牌拦**：`pingProxy` 在 TDLib 里没有取消接口，用户翻走页面、切代理、删行时
+> 上一轮探测还在途。`handlePingProxies()` 每轮 `pingGeneration++`，回包时同时校验「世代没变」和「页面还开着」，
+> 两条任一不成立就丢弃 —— 否则会出现「已经退回设置主页了，代理页的状态却在后台被改写」这种看不见来源的抖动。
+> **连接态变化只在「断了又通」时补测一轮**：`unknown → ready`（首帧）**不发** `PingProxiesEffect`，
+> 因为打开页面时那一轮已经在途，再发就是同一批请求排队两次；而 `waiting_for_network → ready` 要发 ——
+> 断网期间的探测结果全是 `Error`，网络回来了不留一次重测，界面就永远停在一句过期的「不可用」上。
+> **一句话记录为什么加了日志**：连接态是推过来的，不在任何一次点按的因果链上，光看界面无法证明订阅真的活着，
+> 所以补一条 `proxy_connection <type>` info 日志（连同 `proxy_ping round=…,rows=…` 与 `proxy_ping_error id=…,kind=…`），
+> 取证时「界面句子翻转」和「日志里那一帧」互相对上，才算两头都证明。
+> 设备取证（模拟器 127.0.0.1:5555，真实 TDLib，账号里零代理）：进代理页 → 日志 `proxy_ping round=1,rows=1` →
+> 无代理行先是 `Checking...` → 翻成 `Connected · 226 ms`；添加 socks5 `127.0.0.1:989` 且**不启用**
+> （不让账号流量经过一个死主机）→ 该行 `SOCKS5 · Error`，与日志 `proxy_ping_error id=4,kind=tdlib` **同一帧**；
+> 控制中心开飞行模式 → 连接态推 `connectionStateWaitingForNetwork`、生效行句子变「Waiting for network...」→
+> 关闭飞行模式 → `connecting` → `ready` → **2 ms 后**日志出现 `proxy_ping round=3`（重测轮的直接证据），
+> 行回到 `Connected · 228 ms`。**收尾已还原**：测试代理删除、`proxy_list_read count=0,skipped=0,enabled=0`、
+> 设置行回到 `Tap to set up`、飞行模式关闭。
+> 测试：`feature_settings` **219/219 PASS**（`ProxySettings.test.ets` +11 例纯模型：5 个 `ConnectionState` 判别式映射、
+> 秒 → 毫秒与垃圾值拒绝、三哨兵互不相同、探测表不可变写入与剪枝、`pingProxy` 负载重建（0 号行返回 `null`）、
+> 生效行判定、生效行跟连接态 / 非生效行只认探测值、` · 226 ms` 后缀只给正数、状态是值对象；
+> +1 例 i18n 守卫：8 个状态句子在 zh 字典里全部命中 —— Lang 缺 key 时原样返回 key，所以「翻出来 != key」就是进过字典的证据，
+> 这条纪律要抓的是「中文界面漏出一句 `Checking...`」；`SettingsReducer.test.ets` +10 例：`ProxiesLoaded` 现在发一轮探测、
+> 关页清表不清行、回读剪枝、探测值写入且保留旧值、0 号行恒可写、死行回包丢弃、连接态去重、首帧不补测、
+> 断后复通补测、关页后不补测、`copyWith` 缺省保留两个探测字段），`entry` 42/42、三守卫 0 违规。
+> PROXY-101 的三条遗留在此**结案为「不可实现」而不是「没做」**：`setProxyOrder`（拖拽排序）与 `updateProxy`
+> 在 TDLib 1.8.67 的 schema 里都不存在 —— 前者没有请求类型，后者没有推送类型，所以「多端改代理的实时推送」
+> 本端只能靠回读；「通话是否走代理」依赖 VoIP 本身，本端没有 VoIP 通话，也就没有可接的对象。
+> 遗留：错误态只说 `Error`，不给 TDLib 的原文（`AppError.message` 未进界面）；"Switch automatically" 与
+> 最佳代理徽标要先有一个「路由选择器」，本端目前是单选语义；`tg://proxy` 分享链接的确认弹窗（`openProxyAlert`）
+> 与扫码导入；本地没有探测超时，TDLib 若不回包一行会一直停在 `Checking...`。
 
 
 | 功能 ID | 功能名 |

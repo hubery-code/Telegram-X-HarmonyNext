@@ -157,6 +157,14 @@ export class RemoveProxyEffect implements Effect {
   }
 }
 
+/**
+ * PROXY-102：探测列表里每一行的连通性（含「不使用代理」行的直连探测）。
+ * 与 TGX 同规则：列表每次（重）建都要 ping 一遍，这样「可用性」是测出来的，不是猜的。
+ */
+export class PingProxiesEffect implements Effect {
+  readonly kind: 'pingProxies' = 'pingProxies';
+}
+
 /** AUTODL-101：读取自动下载策略（本地偏好，同步返回）。 */
 export class LoadAutoDownloadPolicyEffect implements Effect {
   readonly kind: 'loadAutoDownloadPolicy' = 'loadAutoDownloadPolicy';
@@ -239,6 +247,7 @@ export type SettingsEffect =
   | DisableProxyEffect
   | SaveProxyEffect
   | RemoveProxyEffect
+  | PingProxiesEffect
   | LoadAutoDownloadPolicyEffect
   | PersistAutoDownloadPolicyEffect
   | LoadDataSaverSettingsEffect

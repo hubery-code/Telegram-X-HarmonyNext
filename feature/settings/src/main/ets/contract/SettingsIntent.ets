@@ -12,7 +12,7 @@ import { SettingsThemeMode } from './SettingsUiState';
 import { NotificationScopeKey } from '../model/NotificationSettings';
 import { ActiveSessionItem } from '../model/ActiveSessionItem';
 import { PrivacyChoice, PrivacySettingItem, PrivacySettingKey } from '../model/PrivacySettings';
-import { ProxyForm, ProxyItem } from '../model/ProxySettings';
+import { ProxyForm, ProxyItem, ProxyConnectionState } from '../model/ProxySettings';
 import {
   AutoDownloadChatScope,
   AutoDownloadMediaKind,
@@ -421,6 +421,32 @@ export class RemoveProxyRequested implements Intent {
   }
 }
 
+/**
+ * PROXY-102：某一行 `pingProxy` 的回结果。
+ * `proxyId` 用 `PROXY_NONE_ID`（0）表示「不使用代理」那一行的直连探测；
+ * `pingMs` 取模型层的哨兵（LOADING / FAILED）或正数毫秒。
+ */
+export class ProxyPingUpdated implements Intent {
+  readonly kind: 'proxyPingUpdated' = 'proxyPingUpdated';
+  readonly proxyId: number;
+  readonly pingMs: number;
+
+  constructor(proxyId: number, pingMs: number) {
+    this.proxyId = proxyId;
+    this.pingMs = pingMs;
+  }
+}
+
+/** PROXY-102：TDLib `updateConnectionState` 进状态；连接文案只属于当前生效的那条路。 */
+export class ProxyConnectionStateChanged implements Intent {
+  readonly kind: 'proxyConnectionStateChanged' = 'proxyConnectionStateChanged';
+  readonly connection: ProxyConnectionState;
+
+  constructor(connection: ProxyConnectionState) {
+    this.connection = connection;
+  }
+}
+
 /** AUTODL-101：打开「自动媒体下载」子页（同时读取本地策略）。 */
 export class OpenAutoDownloadPage implements Intent {
   readonly kind: 'openAutoDownloadPage' = 'openAutoDownloadPage';
@@ -595,6 +621,8 @@ export type SettingsIntent =
   | SelectProxy
   | SaveProxy
   | RemoveProxyRequested
+  | ProxyPingUpdated
+  | ProxyConnectionStateChanged
   | OpenAutoDownloadPage
   | CloseAutoDownloadPage
   | LoadAutoDownloadPolicy

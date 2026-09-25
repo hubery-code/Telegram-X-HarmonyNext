@@ -14,11 +14,12 @@
  */
 
 /**
- * feature/settings — 「代理」子页（PROXY-101 / FEAT-P2-007 代理部分）。
+ * feature/settings — 「代理」子页（PROXY-101 / FEAT-P2-007 代理部分，
+ * PROXY-102 补连通性探测与连接态）。
  *
  * 对齐 Telegram X 的 Proxies 页：单选列表（首行「不使用代理」）+ 添加/编辑表单 +
- * 删除二次确认。这里刻意不做的是 TGX 的代理连通性探测（ping 显示延迟）、「自动切换」
- * 与「通话走代理」，前者要 `pingProxy` 与调度器，后两者是独立开关组，都另包处理。
+ * 删除二次确认 + 每行一句「通不通、多久通」。这里刻意不做的还是 TGX 那两件：
+ * 「自动切换」（要路由选择器，会替用户改代理）与「通话走代理」（本端没有 VoIP 通话）。
  *
  * 表单态（输入框内容、工作表开合）留在组件内：它是页面私有的草稿，不该进 UiState；
  * 但「保存成功」这件事只有 UiState 知道，故用 saveInFlight + updatingProxyId 的
@@ -42,12 +43,17 @@ import {
   ProxyForm,
   ProxyItem,
   ProxyKind,
+  ProxyStatus,
   proxyAddress,
   proxyEnabledItem,
   proxyFormError,
   proxyFormFromItem,
   proxyFormHasCredentials,
   proxyKindLabel,
+  proxyPingOf,
+  proxyPingSuffix,
+  proxyRowIsEffective,
+  proxyStatusOf,
   proxyTitle
 } from '../model/ProxySettings';
 
@@ -127,6 +133,37 @@ export struct ProxySubPage {
   }
 
   /**
+   * PROXY-102 状态句：连通性探测（`pingProxy`）与 TDLib 连接态合成的一句话，
+   * 判定全在 `proxyStatusOf` 里。'' 表示这一句不说，副标题退回「类型 / 地址」。
+   */
+  private statusText(item: ProxyItem | null): string {
+    const pingMs: number = proxyPingOf(this.uiState.proxyPingMs, item === null ? PROXY_NONE_ID : item.id);
+    const status: ProxyStatus = proxyStatusOf(
+      item,
+      pingMs,
+      proxyRowIsEffective(this.uiState.proxyItems, item),
+      this.uiState.proxyConnection
+    );
+    if (status.key.length === 0) {
+      return '';
+    }
+    return this.t(status.key) + proxyPingSuffix(status.pingMs);
+  }
+
+  /**
+   * 行的副标题。有状态可说时是「类型 · 状态」（TGX 那一行同样是「名字 + 状态值」，
+   * 备注行因此不展示地址 —— 点铅笔进表单就能看到）；没状态可说时保持 PROXY-101 的原样。
+   */
+  private rowSubtitle(item: ProxyItem): string {
+    const kind: string = this.t(proxyKindLabel(item.kind));
+    const status: string = this.statusText(item);
+    if (status.length === 0) {
+      return item.comment.trim().length > 0 ? proxyAddress(item) : kind;
+    }
+    return `${kind} · ${status}`;
+  }
+
+  /**
    * 写回落地（updatingProxyId 归位）才关工作表；失败时 UiState 带着 errorMessage，
    * 此时保持打开，用户不必重打一遍服务器地址。
    */
@@ -142,6 +179,11 @@ export struct ProxySubPage {
       this.saveInFlight = false;
       this.formOpen = false;
     }
+  }
+
+  /** 「不使用代理」那一行的状态句；'' 时不渲染副标题。 */
+  private noneRowStatus(): string {
+    return this.statusText(null);
   }
 
   private currentForm(): ProxyForm {
@@ -361,10 +403,25 @@ export struct ProxySubPage {
             : this.getTheme().colors.textSecondary
         })
 
-        Text(this.t('Do Not Use Proxy'))
-          .fontSize(this.getTheme().typography.body.fontSize)
-          .fontColor(this.getTheme().colors.textPrimary)
-          .layoutWeight(1)
+        Column() {
+          Text(this.t('Do Not Use Proxy'))
+            .fontSize(this.getTheme().typography.body.fontSize)
+            .fontColor(this.getTheme().colors.textPrimary)
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+
+          // 直连探测有结果才多一行；没结果时这一行和 PROXY-101 时一样干净。
+          if (this.noneRowStatus().length > 0) {
+            Text(this.noneRowStatus())
+              .fontSize(this.getTheme().typography.footnote.fontSize)
+              .fontColor(this.getTheme().colors.textSecondary)
+              .margin({ top: this.getTheme().spacing.hairline })
+              .maxLines(1)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+          }
+        }
+        .alignItems(HorizontalAlign.Start)
+        .layoutWeight(1)
 
         if (this.uiState.updatingProxyId === 0) {
           LoadingProgress()
@@ -414,9 +471,7 @@ export struct ProxySubPage {
                 .maxLines(1)
                 .textOverflow({ overflow: TextOverflow.Ellipsis })
 
-              Text(item.comment.trim().length > 0
-                ? proxyAddress(item)
-                : this.t(proxyKindLabel(item.kind)))
+              Text(this.rowSubtitle(item))
                 .fontSize(this.getTheme().typography.footnote.fontSize)
                 .fontColor(this.getTheme().colors.textSecondary)
                 .margin({ top: this.getTheme().spacing.hairline })
@@ -459,7 +514,11 @@ export struct ProxySubPage {
           })
         }
         .width('100%')
-      }, (item: ProxyItem): string => `${item.id}|${item.isEnabled}|${item.comment}|${item.server}`)
+      }, (item: ProxyItem): string =>
+        // 探测结果与连接态不在 ProxyItem 上（列表每次写回都整批重建行），所以键要自己带上，
+        // 否则 ArkUI 按键复用节点、那一行的状态句会停在旧文案。
+        `${item.id}|${item.isEnabled}|${item.comment}|${item.server}` +
+        `|${proxyPingOf(this.uiState.proxyPingMs, item.id)}|${this.uiState.proxyConnection}`)
     }
     .width('100%')
     .padding({

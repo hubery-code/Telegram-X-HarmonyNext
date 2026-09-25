@@ -57,6 +57,8 @@ import {
   SelectProxy,
   SaveProxy,
   RemoveProxyRequested,
+  ProxyPingUpdated,
+  ProxyConnectionStateChanged,
   OpenAutoDownloadPage,
   CloseAutoDownloadPage,
   LoadAutoDownloadPolicy,
@@ -90,6 +92,7 @@ import {
   DisableProxyEffect,
   SaveProxyEffect,
   RemoveProxyEffect,
+  PingProxiesEffect,
   LoadAutoDownloadPolicyEffect,
   PersistAutoDownloadPolicyEffect,
   LoadDataSaverSettingsEffect,
@@ -107,8 +110,11 @@ import {
 } from '../model/PrivacySettings';
 import {
   PROXY_NONE_ID,
+  ProxyConnectionState,
   ProxyItem,
-  proxyFormError
+  proxyFormError,
+  proxyPingsPrunedTo,
+  proxyPingsWith
 } from '../model/ProxySettings';
 import {
   AutoDownloadFlags,
@@ -696,8 +702,12 @@ export const settingsReducer: Reducer<SettingsUiState, SettingsIntent, SettingsE
       if (!state.showProxyPage) {
         return reduced(state);
       }
+      // 探测结果是这一页的临时观察，不是账号状态：离页清空，回来时重新测。
+      const cleared: Map<number, number> = new Map();
       const options: SettingsUiStateOptions = {
-        showProxyPage: false
+        showProxyPage: false,
+        proxyPingMs: cleared,
+        proxyConnection: 'unknown'
       };
       return reduced(state.copyWith(options));
     }
@@ -714,9 +724,12 @@ export const settingsReducer: Reducer<SettingsUiState, SettingsIntent, SettingsE
       const options: SettingsUiStateOptions = {
         proxyItems: loadedIntent.items,
         isLoadingProxies: false,
-        updatingProxyId: null
+        updatingProxyId: null,
+        // 重建行的同时留住还活着的探测结果：删掉的行不留残值，在途的行不被抹掉。
+        proxyPingMs: proxyPingsPrunedTo(state.proxyPingMs, loadedIntent.items)
       };
-      return reduced(state.copyWith(options));
+      // 每次读到列表都把每一行（含「不使用代理」）探一遍 —— 可用性是测出来的，不是猜的。
+      return reduced(state.copyWith(options), [new PingProxiesEffect()]);
     }
 
     case 'selectProxy': {
@@ -778,6 +791,40 @@ export const settingsReducer: Reducer<SettingsUiState, SettingsIntent, SettingsE
         updatingProxyId: removeIntent.proxyId
       };
       return reduced(state.copyWith(options), [new RemoveProxyEffect(removeIntent.proxyId)]);
+    }
+
+    // ---- PROXY-102 连通性探测与连接态 ----
+
+    case 'proxyPingUpdated': {
+      const pingIntent: ProxyPingUpdated = intent as ProxyPingUpdated;
+      // 行已经不在了（被删了或列表重建过）就别再写：晚到的回包不该复活一个探测值。
+      if (pingIntent.proxyId !== PROXY_NONE_ID &&
+        proxyItemById(state.proxyItems, pingIntent.proxyId) === null) {
+        return reduced(state);
+      }
+      const options: SettingsUiStateOptions = {
+        proxyPingMs: proxyPingsWith(state.proxyPingMs, pingIntent.proxyId, pingIntent.pingMs)
+      };
+      return reduced(state.copyWith(options));
+    }
+
+    case 'proxyConnectionStateChanged': {
+      const connectionIntent: ProxyConnectionStateChanged = intent as ProxyConnectionStateChanged;
+      const previous: ProxyConnectionState = state.proxyConnection;
+      if (previous === connectionIntent.connection) {
+        return reduced(state);
+      }
+      const options: SettingsUiStateOptions = {
+        proxyConnection: connectionIntent.connection
+      };
+      // 只在真的「断了又通」时重测：断网期间那批探测值是按旧网络出来的。
+      // 首帧 unknown → ready 不重测，否则每次进页都要多发一轮。
+      const recovered: boolean = connectionIntent.connection === 'ready' &&
+        previous !== 'unknown' && state.showProxyPage;
+      if (recovered) {
+        return reduced(state.copyWith(options), [new PingProxiesEffect()]);
+      }
+      return reduced(state.copyWith(options));
     }
 
     // ---- AUTODL-101 自动媒体下载 ----

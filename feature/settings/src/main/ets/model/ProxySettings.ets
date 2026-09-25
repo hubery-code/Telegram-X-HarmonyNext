@@ -1,5 +1,6 @@
 /**
- * feature/settings — 网络代理模型（PROXY-101 / FEAT-P2-007 代理部分）。
+ * feature/settings — 网络代理模型（PROXY-101 / FEAT-P2-007 代理部分，
+ * PROXY-102 补连通性探测与连接态）。
  *
  * TDLib 侧是 `addedProxy`（id + `proxy` + is_enabled + comment），页面上是
  * Telegram 那种「一行一个代理 + 单选启用」。这里做两端都纯的映射：
@@ -8,10 +9,14 @@
  * - `proxyValueFromForm`：表单 → `proxy` 负载，类型分支与字段裁剪只此一处；
  * - `proxyFormError`：表单校验，返回 Lang key（不是成品文案），模型层零 Kit /
  *   零 Lang 依赖，单测可直接断言。
+ *
+ * 探测部分同样只留纯逻辑：`proxyStatusOf` 给的是 Lang key，延迟单独成尾巴；
+ * `proxyRowConnection` 负责「只有当前生效的那条路才配拿连接态」这条门。
  */
 
 import {
   AddedProxy,
+  PingProxy,
   ProxyTypeHttp,
   ProxyTypeMtproto,
   ProxyTypeSocks5,
@@ -298,27 +303,228 @@ export function proxyItemFromAdded(added: AddedProxy): ProxyItem | null {
 
 /** 表单 → TDLib `proxy` 负载；调用方需先过 `isProxyFormValid`。 */
 export function proxyValueFromForm(form: ProxyForm): ProxyValue {
+  return proxyValueOf(
+    form.kind, form.server.trim(), proxyPortOf(form.portInput),
+    form.username.trim(), form.password, form.secret.trim(), form.httpOnly
+  );
+}
+
+/**
+ * 列表行 → TDLib `proxy` 负载：`pingProxy` 收的是代理对象而不是 id，所以探测要能
+ * 从已读到的行把负载还原出来。与表单共用一个构造器，类型分支只此一处。
+ */
+export function proxyValueFromItem(item: ProxyItem): ProxyValue {
+  return proxyValueOf(
+    item.kind, item.server, item.port,
+    item.username, item.password, item.secret, item.httpOnly
+  );
+}
+
+function proxyValueOf(
+  kind: ProxyKind,
+  server: string,
+  port: number,
+  username: string,
+  password: string,
+  secret: string,
+  httpOnly: boolean
+): ProxyValue {
   const value: ProxyValue = new ProxyValue();
-  value.server = form.server.trim();
-  value.port = proxyPortOf(form.portInput);
-  if (form.kind === 'mtproto') {
+  value.server = server;
+  value.port = port;
+  if (kind === 'mtproto') {
     const mtproto: ProxyTypeMtproto = new ProxyTypeMtproto();
-    mtproto.secret = form.secret.trim();
+    mtproto.secret = secret;
     value.type_ = mtproto;
     return value;
   }
-  if (form.kind === 'http') {
+  if (kind === 'http') {
     const http: ProxyTypeHttp = new ProxyTypeHttp();
-    http.username = form.username.trim();
-    http.password = form.password;
+    http.username = username;
+    http.password = password;
     // 开关名与 TDLib 字段同名同义（关闭 = 允许透明 TCP 转发），默认关。
-    http.http_only = form.httpOnly;
+    http.http_only = httpOnly;
     value.type_ = http;
     return value;
   }
   const socks5: ProxyTypeSocks5 = new ProxyTypeSocks5();
-  socks5.username = form.username.trim();
-  socks5.password = form.password;
+  socks5.username = username;
+  socks5.password = password;
   value.type_ = socks5;
   return value;
+}
+
+// ---- PROXY-102 连通性探测与连接态 ----
+
+/** 还没探测过。 */
+export const PROXY_PING_UNSET: number = -1;
+/** 探测在途；页面上这一行显示「Checking…」。 */
+export const PROXY_PING_LOADING: number = -2;
+/** 探测失败（TDLib 回了错误，或延迟不是正数）。 */
+export const PROXY_PING_FAILED: number = -3;
+
+/**
+ * TDLib `updateConnectionState` 的五个档，外加一个「这一行不归连接态管」的哨兵。
+ * 用字符串而不是数字：与 `ProxyKind` 同风格，单测里断言的是能读出来的词。
+ */
+export type ProxyConnectionState =
+  'unknown' | 'waiting_for_network' | 'connecting_to_proxy' | 'connecting' | 'updating' | 'ready';
+
+/** 连接态 `@type` → 页面档；认不出的按 'unknown'（宁可少一句话，也不编一个状态出来）。 */
+export function proxyConnectionStateOfType(type: string): ProxyConnectionState {
+  if (type === 'connectionStateWaitingForNetwork') {
+    return 'waiting_for_network';
+  }
+  if (type === 'connectionStateConnectingToProxy') {
+    return 'connecting_to_proxy';
+  }
+  if (type === 'connectionStateConnecting') {
+    return 'connecting';
+  }
+  if (type === 'connectionStateUpdating') {
+    return 'updating';
+  }
+  if (type === 'connectionStateReady') {
+    return 'ready';
+  }
+  return 'unknown';
+}
+
+/** `Seconds` → 毫秒（TGX 同规则 `Math.round(seconds * 1000)`）；非正数或不是有限数都算失败。 */
+export function proxyPingMsOfSeconds(seconds: number): number {
+  if (!Number.isFinite(seconds) || seconds <= 0) {
+    return PROXY_PING_FAILED;
+  }
+  return Math.round(seconds * 1000);
+}
+
+/**
+ * 这一行是不是「正在承载流量」的那条路。TDLib 只有一条连接，`updateConnectionState`
+ * 说的是它，不是每一行：代理开着的时候，「不使用代理」那一行的直连探测再快也不是连接态。
+ * `item === null` 即「不使用代理」行。
+ */
+export function proxyRowIsEffective(items: readonly ProxyItem[], item: ProxyItem | null): boolean {
+  if (item === null) {
+    return proxyEnabledItem(items) === null;
+  }
+  return item.isEnabled;
+}
+
+/** 一行状态：`key` 是 Lang key，'' 表示这句不说；`pingMs` 只在带延迟时有值。 */
+export class ProxyStatus {
+  readonly key: string;
+  readonly pingMs: number;
+
+  constructor(key: string, pingMs: number) {
+    this.key = key;
+    this.pingMs = pingMs;
+  }
+}
+
+/**
+ * 行状态文案（TGX `SettingsProxyController.getState()` 同规则，去掉本端没有的分支）。
+ * 生效行以连接态为主，顺序照 Android：连上了 → Connected；探测在途 → Checking…；
+ * 然后是三个进行中的连接档；连接态一句话都说不出来时（'unknown'）才退回探测结果。
+ * 非生效行只有探测结果可说：通了是 Available，不通是 Error —— 而「不使用代理」那一行
+ * 说 Problems detected，因为它没有代理可怪。
+ *
+ * 没建模的两项：错误详情（Android 的 `Error (code: message)` 要展示 TDLib 错误原文）、
+ * 多路比较出来的「best」徽标（那是自动切路的事）。
+ */
+export function proxyStatusOf(
+  item: ProxyItem | null,
+  pingMs: number,
+  effective: boolean,
+  connection: ProxyConnectionState
+): ProxyStatus {
+  const failedKey: string = item === null ? 'Problems detected' : 'Error';
+  if (effective) {
+    if (connection === 'ready') {
+      return new ProxyStatus('Connected', pingMs > 0 ? pingMs : PROXY_PING_UNSET);
+    }
+    if (pingMs === PROXY_PING_LOADING) {
+      return new ProxyStatus('Checking...', PROXY_PING_UNSET);
+    }
+    if (connection === 'waiting_for_network') {
+      return new ProxyStatus('Waiting for network...', PROXY_PING_UNSET);
+    }
+    if (connection === 'updating') {
+      return new ProxyStatus('Updating...', PROXY_PING_UNSET);
+    }
+    if (connection === 'connecting' || connection === 'connecting_to_proxy') {
+      return new ProxyStatus('Connecting...', PROXY_PING_UNSET);
+    }
+    if (pingMs === PROXY_PING_FAILED) {
+      return new ProxyStatus(failedKey, PROXY_PING_UNSET);
+    }
+    if (pingMs > 0) {
+      return new ProxyStatus('Connected', pingMs);
+    }
+    return new ProxyStatus('', PROXY_PING_UNSET);
+  }
+  if (pingMs === PROXY_PING_LOADING) {
+    return new ProxyStatus('Checking...', PROXY_PING_UNSET);
+  }
+  if (pingMs === PROXY_PING_FAILED) {
+    return new ProxyStatus(failedKey, PROXY_PING_UNSET);
+  }
+  if (pingMs > 0) {
+    return new ProxyStatus('Available', pingMs);
+  }
+  return new ProxyStatus('', PROXY_PING_UNSET);
+}
+
+/** 延迟尾巴；数字不进句子，免得翻译时词序被绑死。 */
+export function proxyPingSuffix(pingMs: number): string {
+  if (pingMs <= 0) {
+    return '';
+  }
+  return ` · ${pingMs} ms`;
+}
+
+/** 读出某一行当前的探测结果；没测过就是 UNSET（页面据此决定这一行说什么）。 */
+export function proxyPingOf(pings: Map<number, number>, proxyId: number): number {
+  const value: number | undefined = pings.get(proxyId);
+  return value === undefined ? PROXY_PING_UNSET : value;
+}
+
+/** 写入某一行的探测结果；恒返回新 Map，状态不可变。 */
+export function proxyPingsWith(pings: Map<number, number>, proxyId: number, pingMs: number): Map<number, number> {
+  const next: Map<number, number> = new Map();
+  pings.forEach((value: number, key: number): void => {
+    next.set(key, value);
+  });
+  next.set(proxyId, pingMs);
+  return next;
+}
+
+/**
+ * 列表重建后留下的探测结果：删掉已经不存在的行，保住「不使用代理」那一行（0）。
+ * 保住还在的那些是重点 —— 每写一次代理都要回读列表，探测在途时不能被这次重建抹掉。
+ */
+export function proxyPingsPrunedTo(pings: Map<number, number>, items: readonly ProxyItem[]): Map<number, number> {
+  const alive: Set<number> = new Set();
+  alive.add(PROXY_NONE_ID);
+  for (let i = 0; i < items.length; i++) {
+    alive.add(items[i].id);
+  }
+  const next: Map<number, number> = new Map();
+  pings.forEach((value: number, key: number): void => {
+    if (alive.has(key)) {
+      next.set(key, value);
+    }
+  });
+  return next;
+}
+
+/**
+ * 探测请求负载。`item === null` 是「不使用代理」行 —— 按 TDLib 语义发空 proxy，
+ * 即「绕过代理直连测一次」，因此这一行在没有配任何代理时也可证。
+ */
+export function pingProxyRequestFromItem(item: ProxyItem | null): PingProxy {
+  const request: PingProxy = new PingProxy();
+  if (item !== null) {
+    request.proxy = proxyValueFromItem(item);
+  }
+  return request;
 }

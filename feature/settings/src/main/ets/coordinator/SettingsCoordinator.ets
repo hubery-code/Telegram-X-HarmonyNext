@@ -84,15 +84,28 @@ import {
   RemoveProxy,
   AddProxy,
   ProxyValue,
+  PingProxy,
+  Seconds,
+  TdConnectionState,
+  UpdateConnectionState,
   decodeAddedProxies,
+  decodeSeconds,
+  decodeUpdateConnectionState,
   encodeAddProxy,
   encodeDisableProxy,
   encodeEditProxy,
   encodeEnableProxy,
   encodeGetProxies,
+  encodePingProxy,
   encodeRemoveProxy
 } from '@tgx/core-td-api-generated';
-import { TdPendingRequest, TdWireObject } from '@tgx/td-gateway';
+import {
+  TdPendingRequest,
+  TdRoutedEvent,
+  TdUpdateFilter,
+  TdUpdateSubscription,
+  TdWireObject
+} from '@tgx/td-gateway';
 import { ReducerEnv, ReducerResult } from '@tgx/feature-template';
 import { SettingsUiState } from '../contract/SettingsUiState';
 import { formatStorageLabel } from '../model/StorageSize';
@@ -114,11 +127,17 @@ import {
   toUserPrivacySetting
 } from '../model/PrivacySettings';
 import {
-  PROXY_NEW_ID,
+  pingProxyRequestFromItem,
+  PROXY_NONE_ID,
+  PROXY_PING_FAILED,
+  PROXY_PING_LOADING,
   ProxyForm,
   ProxyItem,
+  PROXY_NEW_ID,
+  proxyConnectionStateOfType,
   proxyEnabledCount,
   proxyItemFromAdded,
+  proxyPingMsOfSeconds,
   proxyValueFromForm
 } from '../model/ProxySettings';
 import {
@@ -144,6 +163,8 @@ import {
   StorageStatsLoaded,
   UserProfileData,
   ProxiesLoaded,
+  ProxyPingUpdated,
+  ProxyConnectionStateChanged,
   LoadAutoDownloadPolicy,
   AutoDownloadPolicyLoaded,
   DataSaverSettingsLoaded,
@@ -226,6 +247,13 @@ export class SettingsCoordinator {
    * 没注入时页面显 Android 默认（Wi-Fi 50MB / 移动 15MB / 漫游 5MB）。
    */
   private downloadLimitsStore: DownloadLimitsStore | null = null;
+  /**
+   * PROXY-102：探测轮次令牌。TDLib 不会取消已经发出去的 `pingProxy`，所以晚到的
+   * 旧轮回包只能靠世代号丢 —— 不丢就会出现「代理已删除，那一行又亮起来」。
+   */
+  private pingGeneration: number = 0;
+  /** PROXY-102：`updateConnectionState` 订阅；首次读代理列表时建立，destroy 时退订。 */
+  private connectionSubscription: TdUpdateSubscription | null = null;
   private destroyed: boolean = false;
 
   /** 注入策略存储；必须在 start() 之前调用。 */
@@ -354,6 +382,10 @@ export class SettingsCoordinator {
     if (this.unsubscribeLang !== null) {
       this.unsubscribeLang();
       this.unsubscribeLang = null;
+    }
+    if (this.connectionSubscription !== null) {
+      this.connectionSubscription.unsubscribe();
+      this.connectionSubscription = null;
     }
     this.listeners.length = 0;
   }
@@ -499,6 +531,10 @@ export class SettingsCoordinator {
         this.handleRemoveProxy(removeEffect.proxyId);
         break;
       }
+
+      case 'pingProxies':
+        this.handlePingProxies();
+        break;
 
       case 'loadAutoDownloadPolicy':
         this.handleLoadAutoDownloadPolicy();
@@ -1562,6 +1598,115 @@ export class SettingsCoordinator {
       return `Unable to ${action} proxy. Check your connection.`;
     }
     return `Unable to ${action} proxy. Please try again.`;
+  }
+
+  // ---- PROXY-102 连通性探测与连接态 ----
+
+  /**
+   * 一轮探测：列表里每行各发一次 `pingProxy`，外加「不使用代理」行的直连探测
+   * （TDLib 语义：`proxy` 留空即绕开代理发）。各行并行，谁先回来谁先亮。
+   */
+  private handlePingProxies(): void {
+    if (this.destroyed || !this.currentState.showProxyPage) {
+      return;
+    }
+    this.subscribeConnectionState();
+    this.pingGeneration = this.pingGeneration + 1;
+    const generation: number = this.pingGeneration;
+    const items: ProxyItem[] = this.currentState.proxyItems;
+    this.pingProxyRow(generation, PROXY_NONE_ID, null);
+    for (let i = 0; i < items.length; i++) {
+      this.pingProxyRow(generation, items[i].id, items[i]);
+    }
+    this.logger.info(TAG, 'proxy_ping', `round=${generation},rows=${items.length + 1}`);
+  }
+
+  private async pingProxyRow(
+    generation: number,
+    proxyId: number,
+    item: ProxyItem | null
+  ): Promise<void> {
+    const request: PingProxy = pingProxyRequestFromItem(item);
+    this.dispatch(new ProxyPingUpdated(proxyId, PROXY_PING_LOADING));
+    const pendingResult: Result<TdPendingRequest, AppError> = this.scope.request(
+      'pingProxy',
+      encodePingProxy(request) as TdWireObject
+    );
+    if (pendingResult.err) {
+      this.logger.logError(TAG, pendingResult.error);
+      this.applyPing(generation, proxyId, PROXY_PING_FAILED);
+      return;
+    }
+    if (!pendingResult.ok) {
+      this.applyPing(generation, proxyId, PROXY_PING_FAILED);
+      return;
+    }
+    try {
+      const response: Result<TdWireObject, AppError> = await pendingResult.value.promise;
+      if (response.err) {
+        // 探测失败只有「连不上」这一个结论：TDLib 的错误原文留给错误详情那一包。
+        this.logger.info(TAG, 'proxy_ping_error', `id=${proxyId},kind=${response.error.kind}`);
+        this.applyPing(generation, proxyId, PROXY_PING_FAILED);
+        return;
+      }
+      if (!response.ok) {
+        this.applyPing(generation, proxyId, PROXY_PING_FAILED);
+        return;
+      }
+      const seconds: Seconds | null = decodeSeconds(response.value as TdJsonRaw);
+      if (seconds === null) {
+        this.applyPing(generation, proxyId, PROXY_PING_FAILED);
+        return;
+      }
+      this.applyPing(generation, proxyId, proxyPingMsOfSeconds(seconds.seconds));
+    } catch (e) {
+      this.applyPing(generation, proxyId, PROXY_PING_FAILED);
+    }
+  }
+
+  /** 回包只认当轮：旧轮晚到、页面已经关掉，都不该再改那一行说什么。 */
+  private applyPing(generation: number, proxyId: number, pingMs: number): void {
+    if (this.destroyed || generation !== this.pingGeneration || !this.currentState.showProxyPage) {
+      return;
+    }
+    this.dispatch(new ProxyPingUpdated(proxyId, pingMs));
+  }
+
+  /**
+   * 连接态走 gateway 的过滤订阅，而不是 `scope.subscribeEvents` —— 后者是单槽监听，
+   * 装配层已经把它交给 auth 事件了。整个协调器只建一次，destroy 时退订。
+   */
+  private subscribeConnectionState(): void {
+    if (this.connectionSubscription !== null) {
+      return;
+    }
+    const filter: TdUpdateFilter = {
+      clientId: this.scope.clientId,
+      types: ['updateConnectionState']
+    };
+    const self: SettingsCoordinator = this;
+    this.connectionSubscription = this.scope.gatewayInstance.subscribeUpdates(
+      filter,
+      (event: TdRoutedEvent): void => {
+        self.handleConnectionStateEvent(event);
+      }
+    );
+  }
+
+  private handleConnectionStateEvent(event: TdRoutedEvent): void {
+    if (this.destroyed) {
+      return;
+    }
+    const update: UpdateConnectionState | null = decodeUpdateConnectionState(
+      event.payload as TdJsonRaw
+    );
+    if (update === null) {
+      return;
+    }
+    const state: TdConnectionState | null = update.state;
+    const type: string = state === null ? '' : state.type;
+    this.logger.info(TAG, 'proxy_connection', type);
+    this.dispatch(new ProxyConnectionStateChanged(proxyConnectionStateOfType(type)));
   }
 
   // ---- AUTODL-101 自动媒体下载 ----
