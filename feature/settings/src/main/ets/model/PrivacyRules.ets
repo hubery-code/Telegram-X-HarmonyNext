@@ -214,6 +214,46 @@ export function privacyMembersOf(chatIds: number[], chatMemberCounts: Map<number
 }
 
 /**
+ * 设/撤「Premium 放行」（Android `PrivacySettings.togglePlusPremium`：237-272）。
+ *
+ * 与改主档位是**两件不同的事**：改档会重建主档位类规则，这一条只摘掉已有的 premium 规则、
+ * 例外名单原样留着。插入位置是 **第一条主档位规则之前** —— premium 是修饰规则，
+ * 排在 `allowContacts` / `restrictAll` 后面就永远不会先命中（TDLib 首个匹配生效）。
+ * 列表里没有主档位规则时追加到末尾（Android 同）。
+ */
+export function privacyRulesWithPremium(
+  rules: TdUserPrivacySettingRule[],
+  plusPremium: boolean
+): TdUserPrivacySettingRule[] {
+  const next: TdUserPrivacySettingRule[] = [];
+  let globalIndex: number = -1;
+  for (let i = 0; i < rules.length; i++) {
+    const rule: TdUserPrivacySettingRule = rules[i];
+    if (rule.type === 'userPrivacySettingRuleAllowPremiumUsers') {
+      continue;
+    }
+    if (globalIndex === -1 && isModeRuleType(rule.type)) {
+      // 记的是它在**新列表**里的下标：前面摘掉的 premium 规则不再占位。
+      globalIndex = next.length;
+    }
+    next.push(rule);
+  }
+  if (plusPremium) {
+    insertAt(next, globalIndex === -1 ? next.length : globalIndex, new UserPrivacySettingRuleAllowPremiumUsers());
+  }
+  return next;
+}
+
+/**
+ * 「隐藏已读时间」这一行是否存在（Android `needExtraToggle` 的 ShowStatus 分支：640-641）。
+ * 「所有人」档下它无意义：每个人都能看到你的最后上线，也就没有「看不到你的人的已读时间」可藏。
+ * 但「从不允许」名单非空时仍要出 —— 名单里那些人看不到你，这条开关对他们有效。
+ */
+export function privacyNeedsHideReadTime(view: PrivacyRulesView): boolean {
+  return view.mode !== 'everybody' || view.minusUserIds.length > 0;
+}
+
+/**
  * 改主档位，**例外名单原样保留**（Android `toggleGlobal`：279-293 只摘掉主档位类规则，
  * 用户/群例外显式 `break` 保位）。这是本包最关键的一条语义：从「所有人」切到「我的联系人」
  * 不能把「从不允许」名单清空 —— 旧版的单条规则写回就会犯这个错。
@@ -288,11 +328,18 @@ export function privacyModeLabel(mode: PrivacyMode, plusPremium: boolean): strin
 
 /** 主档位类规则：改档时被摘掉重建。bots 与例外名单都不在此列。 */
 function isGeneralRuleType(type: string): boolean {
+  return isModeRuleType(type) || type === 'userPrivacySettingRuleAllowPremiumUsers';
+}
+
+/**
+ * 纯主档位类规则（不含 premium）。`togglePlusPremium` 找的是「第一条这样的规则」，
+ * 而改档要摘掉的集合是它加上 premium —— 两个口径在 Android 里就是分开的两支 switch。
+ */
+function isModeRuleType(type: string): boolean {
   return type === 'userPrivacySettingRuleAllowAll' ||
     type === 'userPrivacySettingRuleRestrictAll' ||
     type === 'userPrivacySettingRuleAllowContacts' ||
-    type === 'userPrivacySettingRuleRestrictContacts' ||
-    type === 'userPrivacySettingRuleAllowPremiumUsers';
+    type === 'userPrivacySettingRuleRestrictContacts';
 }
 
 /**

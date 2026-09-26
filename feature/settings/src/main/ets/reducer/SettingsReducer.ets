@@ -90,6 +90,9 @@ import {
   PrivacyDetailLoadFailed,
   SetPrivacyMode,
   TogglePrivacyPremium,
+  TogglePrivacyHideReadTime,
+  PrivacyReadDateLoaded,
+  PrivacyReadDateRejected,
   OpenPrivacyPicker,
   ClosePrivacyPicker,
   TogglePrivacyPickerContact,
@@ -135,6 +138,7 @@ import {
   LoadPrivacySettingsEffect,
   LoadPrivacyDetailEffect,
   SetPrivacySettingEffect,
+  SetReadDatePrivacyEffect,
   LoadProxiesEffect,
   EnableProxyEffect,
   DisableProxyEffect,
@@ -150,11 +154,17 @@ import {
 } from '../contract/SettingsEffect';
 import { TdUserPrivacySettingRule } from '@tgx/core-td-api-generated';
 import { NotificationScopeKey } from '../model/NotificationSettings';
-import { PrivacySettingItem, PrivacySettingKey } from '../model/PrivacySettings';
+import {
+  PrivacySettingItem,
+  PrivacySettingKey,
+  privacyNeedsPremiumRow,
+  privacyPremiumForMode
+} from '../model/PrivacySettings';
 import {
   parsePrivacyRules,
   privacyRulesForMode,
   privacyRulesWithAllowExceptions,
+  privacyRulesWithPremium,
   privacyRulesWithRestrictExceptions,
   PrivacyRulesView
 } from '../model/PrivacyRules';
@@ -759,7 +769,7 @@ export const settingsReducer: Reducer<SettingsUiState, SettingsIntent, SettingsE
       }
       return reduced(state.copyWith({
         privacyDetail: PrivacyDetailState.forLoaded(
-          loaded.key, loaded.rules, loaded.contacts, loaded.chats
+          loaded.key, loaded.rules, loaded.contacts, loaded.chats, loaded.showReadDate
         )
       }));
     }
@@ -781,32 +791,78 @@ export const settingsReducer: Reducer<SettingsUiState, SettingsIntent, SettingsE
       if (detail === null) {
         return reduced(state);
       }
+      // Premium 不是本端可自选的档位：Android 在改档那一次就把 `plusPremium` 算成
+      // 「这一项是 invites 且新档位是 contacts」，其它项改档等于顺手把已有的 premium 规则摘掉。
       const next: TdUserPrivacySettingRule[] = privacyRulesForMode(
         detail.rules,
         modeIntent.mode,
-        parsePrivacyRules(detail.rules).plusPremium
+        privacyPremiumForMode(detail.key, modeIntent.mode)
       );
       const reducedState: SettingsUiState | null = detailWithRules(state, next);
       return reducedState === null ? reduced(state) : reduced(reducedState);
     }
 
     /**
-     * Premium 勾只在「我的联系人」档有意义（Android `togglePlusPremium`）；
-     * 其余档位下点它没有任何结果，所以直接忽略而不是悄悄改档位。
+     * PRIVACY-103：Premium 放行只属于「群组与频道邀请」这一项，且改的是**这一条规则本身**
+     * （`privacyRulesWithPremium`）—— 不动档位、不动例外名单。
+     * 「所有人」档下这行根本不出现（Android `needExtraToggle`），所以那一档的点击直接忽略，
+     * 而不是悄悄写进一条界面上看不见、也撤回不了的规则。
      */
     case 'togglePrivacyPremium': {
+      const detail: PrivacyDetailState | null = state.privacyDetail;
+      if (detail === null || !privacyNeedsPremiumRow(detail.key)) {
+        return reduced(state);
+      }
+      const view: PrivacyRulesView = parsePrivacyRules(detail.rules);
+      if (view.mode === 'everybody') {
+        return reduced(state);
+      }
+      const next: TdUserPrivacySettingRule[] =
+        privacyRulesWithPremium(detail.rules, !view.plusPremium);
+      const reducedState: SettingsUiState | null = detailWithRules(state, next);
+      return reducedState === null ? reduced(state) : reduced(reducedState);
+    }
+
+    /**
+     * 「隐藏已读时间」（PRIVACY-103）。两点与上面的规则编辑相反：
+     * 1. 它不在隐私规则列表里，是 TDLib 的另一个设置，所以**当场就写**，不等离开页面；
+     * 2. 界面上的开关是「隐藏」，TDLib 的字段是 `show_read_date`，**方向相反**
+     *    （Android `readDatePrivacySetting.showReadDate = !adapter.toggleView(v)`）。
+     * `showReadDate === null` 是「还没读到」，此时这一行不可点（Android 把该 cell 置灰）。
+     */
+    case 'togglePrivacyHideReadTime': {
+      const detail: PrivacyDetailState | null = state.privacyDetail;
+      if (detail === null || detail.showReadDate === null) {
+        return reduced(state);
+      }
+      const showReadDate: boolean = !detail.showReadDate;
+      return reduced(
+        state.copyWith({ privacyDetail: detail.copyWith({ showReadDate: showReadDate }) }),
+        [new SetReadDatePrivacyEffect(showReadDate)]
+      );
+    }
+
+    case 'privacyReadDateLoaded': {
+      const loadedDate: PrivacyReadDateLoaded = intent as PrivacyReadDateLoaded;
       const detail: PrivacyDetailState | null = state.privacyDetail;
       if (detail === null) {
         return reduced(state);
       }
-      const view: PrivacyRulesView = parsePrivacyRules(detail.rules);
-      if (view.mode !== 'contacts') {
+      return reduced(state.copyWith({
+        privacyDetail: detail.copyWith({ showReadDate: loadedDate.showReadDate })
+      }));
+    }
+
+    /** 写失败且读不回真值时退到上一个已知值；`null` 表示退回「没读到」= 该行重新不可点。 */
+    case 'privacyReadDateRejected': {
+      const rejected: PrivacyReadDateRejected = intent as PrivacyReadDateRejected;
+      const detail: PrivacyDetailState | null = state.privacyDetail;
+      if (detail === null) {
         return reduced(state);
       }
-      const next: TdUserPrivacySettingRule[] =
-        privacyRulesForMode(detail.rules, 'contacts', !view.plusPremium);
-      const reducedState: SettingsUiState | null = detailWithRules(state, next);
-      return reducedState === null ? reduced(state) : reduced(reducedState);
+      return reduced(state.copyWith({
+        privacyDetail: detail.copyWith({ showReadDate: rejected.showReadDate })
+      }));
     }
 
     case 'openPrivacyPicker': {

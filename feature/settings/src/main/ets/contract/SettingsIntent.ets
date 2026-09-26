@@ -365,17 +365,21 @@ export class PrivacyDetailLoaded implements Intent {
   readonly contacts: PrivacyContactRow[];
   /** PRIVACY-102：选择器的会话分区候选（群与超大群，含例外名单引用到的那些）。 */
   readonly chats: PrivacyChatRow[];
+  /** PRIVACY-103：「隐藏已读时间」的当前值；null = 这一项没有这条开关，或没读到。 */
+  readonly showReadDate: boolean | null;
 
   constructor(
     key: PrivacySettingKey,
     rules: TdUserPrivacySettingRule[],
     contacts: PrivacyContactRow[],
-    chats: PrivacyChatRow[]
+    chats: PrivacyChatRow[],
+    showReadDate: boolean | null = null
   ) {
     this.key = key;
     this.rules = rules;
     this.contacts = contacts;
     this.chats = chats;
+    this.showReadDate = showReadDate;
   }
 }
 
@@ -401,9 +405,43 @@ export class SetPrivacyMode implements Intent {
   }
 }
 
-/** PRIVACY-101：在「我的联系人」档下勾选/取消 Premium 用户。 */
+/**
+ * PRIVACY-101：勾选/取消 Premium 放行。
+ * PRIVACY-103 起这一条**不再顺带改档**：Android 的 `togglePlusPremium` 只动 premium 规则本身，
+ * 例外名单与其它规则原样留着（见 `PrivacyRules.privacyRulesWithPremium`）。
+ * 这一行只在「群组与频道邀请」详情页出现（`privacyNeedsPremiumRow`）。
+ */
 export class TogglePrivacyPremium implements Intent {
   readonly kind: 'togglePrivacyPremium' = 'togglePrivacyPremium';
+}
+
+/**
+ * PRIVACY-103：点「隐藏已读时间」。它属于 TDLib 的另一个设置
+ * （`readDatePrivacySettings`），不在隐私规则列表里，因此**当场就写**，不等离开页面
+ * （Android `onClick(btn_togglePermission)` 的 ShowStatus 分支同样是立刻 send）。
+ */
+export class TogglePrivacyHideReadTime implements Intent {
+  readonly kind: 'togglePrivacyHideReadTime' = 'togglePrivacyHideReadTime';
+}
+
+/** PRIVACY-103：「隐藏已读时间」读回的真实值（写完后也走这一条收敛）。 */
+export class PrivacyReadDateLoaded implements Intent {
+  readonly kind: 'privacyReadDateLoaded' = 'privacyReadDateLoaded';
+  readonly showReadDate: boolean;
+
+  constructor(showReadDate: boolean) {
+    this.showReadDate = showReadDate;
+  }
+}
+
+/** PRIVACY-103：写失败且读不回值时，把开关退回上一次读到的值（不让界面停在假状态）。 */
+export class PrivacyReadDateRejected implements Intent {
+  readonly kind: 'privacyReadDateRejected' = 'privacyReadDateRejected';
+  readonly showReadDate: boolean | null;
+
+  constructor(showReadDate: boolean | null) {
+    this.showReadDate = showReadDate;
+  }
 }
 
 /** PRIVACY-101：打开「总是允许 / 从不允许」联系人多选器。 */
@@ -872,6 +910,9 @@ export type SettingsIntent =
   | PrivacyDetailLoadFailed
   | SetPrivacyMode
   | TogglePrivacyPremium
+  | TogglePrivacyHideReadTime
+  | PrivacyReadDateLoaded
+  | PrivacyReadDateRejected
   | OpenPrivacyPicker
   | ClosePrivacyPicker
   | TogglePrivacyPickerContact

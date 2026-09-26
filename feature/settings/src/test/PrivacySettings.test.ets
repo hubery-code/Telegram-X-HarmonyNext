@@ -45,6 +45,9 @@ import {
   privacyNeedNobodyOption,
   privacyNeedExceptions,
   privacyNeverAllowLabel,
+  privacyNeedsPremiumRow,
+  privacyNeedsReadDateRow,
+  privacyPremiumForMode,
   privacyRowLabel,
   privacySettingLabel,
   toUserPrivacySetting
@@ -58,9 +61,11 @@ import {
   privacyModeLabel,
   privacyNeedAlwaysAllow,
   privacyNeedNeverAllow,
+  privacyNeedsHideReadTime,
   privacyNeverAllowCount,
   privacyRulesForMode,
   privacyRulesWithAllowExceptions,
+  privacyRulesWithPremium,
   privacyRulesWithRestrictExceptions
 } from '../main/ets/model/PrivacyRules';
 import {
@@ -675,6 +680,123 @@ export default function privacySettingsTest(): void {
         expect(view.minusUserIds[0]).assertEqual(2002);
         expect(view.plusChatIds[0]).assertEqual(7001);
       }
+    });
+
+    // ---- PRIVACY-103 附加开关行 ----
+
+    it('premiumRule_insertedBeforeFirstModeRule', 0, () => {
+      // premium 是修饰规则：排在 allowContacts 之后就永远轮不到它先命中。
+      const next: TdUserPrivacySettingRule[] = privacyRulesWithPremium(
+        [ruleAllowUsers([1001]), ruleAllowContacts(), ruleRestrictAll()],
+        true
+      );
+      expect(typesOf(next).join(',')).assertEqual([
+        'userPrivacySettingRuleAllowUsers',
+        'userPrivacySettingRuleAllowPremiumUsers',
+        'userPrivacySettingRuleAllowContacts',
+        'userPrivacySettingRuleRestrictAll'
+      ].join(','));
+    });
+
+    it('premiumRule_movedNotDuplicatedAndKeepsExceptions', 0, () => {
+      // 已有 premium 但位置错（排在主档位之后）：再勾一次不能出现第二条，例外名单要原样留着。
+      const next: TdUserPrivacySettingRule[] = privacyRulesWithPremium(
+        [ruleAllowContacts(), ruleRestrictAll(), ruleAllowPremium(), ruleAllowChatMembers([7001])],
+        true
+      );
+      expect(typesOf(next).join(',')).assertEqual([
+        'userPrivacySettingRuleAllowPremiumUsers',
+        'userPrivacySettingRuleAllowContacts',
+        'userPrivacySettingRuleRestrictAll',
+        'userPrivacySettingRuleAllowChatMembers'
+      ].join(','));
+      expect(chatIdsOf(next[3])[0]).assertEqual(7001);
+    });
+
+    it('premiumRule_toggleOffRemovesOnlyThatRule', 0, () => {
+      const withPremium: TdUserPrivacySettingRule[] =
+        [ruleRestrictUsers([2002]), ruleAllowPremium(), ruleAllowContacts(), ruleRestrictAll()];
+      const off: TdUserPrivacySettingRule[] = privacyRulesWithPremium(withPremium, false);
+      expect(off.length).assertEqual(3);
+      expect(typesOf(off).join(',')).assertEqual([
+        'userPrivacySettingRuleRestrictUsers',
+        'userPrivacySettingRuleAllowContacts',
+        'userPrivacySettingRuleRestrictAll'
+      ].join(','));
+      // 取消勾选不该动别人：再关一次是恒等。
+      expect(privacyRulesEqual(privacyRulesWithPremium(off, false), off)).assertTrue();
+    });
+
+    it('premiumRule_appendsWhenNoModeRuleAtAll', 0, () => {
+      // 列表里没有主档位规则（Android `globalIndex == -1` 分支）：追加到末尾。
+      const next: TdUserPrivacySettingRule[] =
+        privacyRulesWithPremium([ruleAllowUsers([1001])], true);
+      expect(typesOf(next).join(',')).assertEqual([
+        'userPrivacySettingRuleAllowUsers',
+        'userPrivacySettingRuleAllowPremiumUsers'
+      ].join(','));
+    });
+
+    it('premiumRule_emptyList', 0, () => {
+      // 「没有人」档在 TDLib 里就是空列表，勾 Premium 只能得到一条 premium 规则。
+      expect(typesOf(privacyRulesWithPremium([], true)).join(','))
+        .assertEqual('userPrivacySettingRuleAllowPremiumUsers');
+      expect(privacyRulesWithPremium([], false).length).assertEqual(0);
+    });
+
+    it('premiumRow_onlyOnChatInvites', 0, () => {
+      // Android 只在 AllowChatInvites 上给这一行；其余项点了也产不出 premium 规则。
+      expect(privacyNeedsPremiumRow('allow_chat_invites')).assertTrue();
+      for (let i = 0; i < PRIVACY_SETTING_KEYS.length; i++) {
+        const key: PrivacySettingKey = PRIVACY_SETTING_KEYS[i];
+        expect(privacyNeedsPremiumRow(key)).assertEqual(key === 'allow_chat_invites');
+      }
+    });
+
+    it('readDateRow_onlyOnLastSeen', 0, () => {
+      expect(privacyNeedsReadDateRow('show_last_seen')).assertTrue();
+      for (let i = 0; i < PRIVACY_SETTING_KEYS.length; i++) {
+        const key: PrivacySettingKey = PRIVACY_SETTING_KEYS[i];
+        expect(privacyNeedsReadDateRow(key)).assertEqual(key === 'show_last_seen');
+      }
+    });
+
+    it('readDateRow_hiddenUnderEverybodyWithoutExceptions', 0, () => {
+      // 「所有人」档下没人看不到你的上线时间，这条开关无意义；例外名单非空时仍要出。
+      expect(privacyNeedsHideReadTime(parsePrivacyRules([ruleAllowAll()]))).assertFalse();
+      expect(privacyNeedsHideReadTime(
+        parsePrivacyRules([ruleRestrictUsers([2002]), ruleAllowAll()])
+      )).assertTrue();
+      expect(privacyNeedsHideReadTime(parsePrivacyRules([ruleAllowContacts()]))).assertTrue();
+      expect(privacyNeedsHideReadTime(parsePrivacyRules([]))).assertTrue();
+    });
+
+    it('modeChange_ownsPremiumFlagPerKey', 0, () => {
+      // 改档时 premium 归谁：Android 只有 AllowChatInvites + 目标档「我的联系人」才置真，
+      // 其余一律为假 —— 所以在别的项上改档等于把它已有的 premium 规则摘掉。
+      expect(privacyPremiumForMode('allow_chat_invites', 'contacts')).assertTrue();
+      expect(privacyPremiumForMode('allow_chat_invites', 'everybody')).assertFalse();
+      expect(privacyPremiumForMode('allow_chat_invites', 'nobody')).assertFalse();
+      expect(privacyPremiumForMode('show_last_seen', 'contacts')).assertFalse();
+      expect(privacyPremiumForMode('show_bio', 'contacts')).assertFalse();
+    });
+
+    it('detailState_showReadDateNotDirty', 0, () => {
+      // 它不在规则列表里，所以「有没有未保存的编辑」不能把它算进去 —— 否则离开页面会
+      // 多发一次 setUserPrivacySettingRules，而这一项根本没改。
+      const loaded: PrivacyDetailState = PrivacyDetailState.forLoaded(
+        'show_last_seen',
+        [ruleAllowContacts()],
+        [],
+        [],
+        true
+      );
+      expect(loaded.showReadDate).assertTrue();
+      expect(loaded.isDirty()).assertFalse();
+      const flipped: PrivacyDetailState = loaded.copyWith({ showReadDate: false });
+      expect(flipped.showReadDate).assertFalse();
+      expect(flipped.isDirty()).assertFalse();
+      expect(PrivacyDetailState.forLoading('show_last_seen').showReadDate === null).assertTrue();
     });
   });
 }

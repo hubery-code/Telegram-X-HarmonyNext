@@ -120,7 +120,7 @@
 | FEAT-SET-002 | 语言切换（中/英） | P1 | `ui/SettingsLanguageController.java`, `core/Lang.java`, `telegram/Tdlib.java:5912`（SetOption language_pack_id） | SetOption(language_pack_id) | 切换后 UI 立即生效且重启保持，TDLib 语言包同步 | — | Accepted | 迁移组 |
 | FEAT-SET-003 | 通知设置入口 | P1 | `ui/SettingsNotificationController.java`, `telegram/LocalScopeNotificationSettings.java` | SetScopeNotificationSettings, SetChatNotificationSettings | 全局/单会话通知开关生效并持久化 | 通知权限 | Accepted | SET-106 |
 | FEAT-SET-004 | 存储与缓存入口 | P1 | `ui/SettingsCacheController.java`, `telegram/TdlibSettingsManager.java` | GetStorageStatistics, OptimizeStorage | 展示缓存占用并支持一键清理，清理后媒体可重下 | 文件 | Accepted | 迁移组 |
-| FEAT-SET-005 | 隐私和安全入口（可见范围规则） | P1 | `ui/PrivacySettingsActivity` + `ui/SettingsPrivacyKeyController.java` + `TD_getPrivacySettingRules` | getUserPrivacySettingRules, setUserPrivacySettingRules | 8 项可见范围（最后上线/手机号/头像/简介/生日/通话/入群/被搜索）读真值；点一行进详情页：主档位单选 + Premium 勾 +「总是/从不允许」例外名单，名单支持**联系人与已加入群组的成员**（双分区多选器，频道不可选），**离开页面才写回并回读确认** | — | Accepted | SELF-102 → PRIVACY-101 → PRIVACY-102 |
+| FEAT-SET-005 | 隐私和安全入口（可见范围规则） | P1 | `ui/PrivacySettingsActivity` + `ui/SettingsPrivacyKeyController.java` + `TD_getPrivacySettingRules` | getUserPrivacySettingRules, setUserPrivacySettingRules | 8 项可见范围（最后上线/手机号/头像/简介/生日/通话/入群/被搜索）读真值；点一行进详情页：主档位单选 + Premium 勾 +「总是/从不允许」例外名单，名单支持**联系人与已加入群组的成员**（双分区多选器，频道不可选），另有 Android 的**附加开关卡**：Premium 放行只挂在「谁能把我加进群组」、隐藏已读时间只挂在「最后上线时间」且走独立 RPC 当场写回读收敛，**离开页面才写回规则并回读确认** | — | Accepted | SELF-102 → PRIVACY-101 → PRIVACY-102 → PRIVACY-103 |
 
 ### 外观与本地化
 
@@ -1083,7 +1083,39 @@
 > 取消勾选 → Done → 离开 → `write <- [allowAll]` → 读回 `[allowAll]`，**账号状态已还原**；另实证「无改动离开」
 > 一条 `write` 都不发，`allow_find_by_phone` 只有两档无例外卡，`show_last_seen` 行与标题都读 `Never Share With`。
 > 遗留：例外名单里**会话名靠 `getChat` 现取**，退群后那条规则仍在（Android 同样不清理）；
-> `btn_togglePermission` 一类布尔开关项仍未拆包。
+> `btn_togglePermission` 一类布尔开关项未拆包 —— 下半条由 PRIVACY-103 结案（见下一段），剩 `ShowContactPhoto`
+> 那类「编辑器入口」分支本端还没有对应编辑器，仍算未拆。
+> **追加（PRIVACY-103，FEAT-SET-005 的附加开关半边）**：详情页在档位卡与例外名单卡之外，补上 Android 的
+> **附加开关卡**（`needExtraToggle`:631-655 + `newExtraToggleItems`:669-736）—— 每个开关自己一张卡
+> （`SHADOW_TOP / TYPE_RADIO_SETTING / SHADOW_BOTTOM / TYPE_DESCRIPTION`），位置在例外名单卡**及其帮助文案之后**，
+> 所以旧版把 Premium 勾画在档位卡里那一处是错的，现在搬出来。两条门控各管一个键：
+> **Premium 行只给 `allow_chat_invites`**、**Hide Read Time 行只给 `show_last_seen`**，且都在「所有人」档下不出 ——
+> 例外是 ShowStatus 的门写作 `mode != everybody || minusUserIdCount > 0`：名单里有人时仍要出，那条开关正是对
+> 「看不到你的人」生效。`ShowContactPhoto` / `ShowBirthdate` 那两个恒 true 的分支在 Android 是「编辑器入口」，
+> 不是布尔开关，本端没有对应编辑器，不 port。
+> **Premium 与主档位是一件事的两半**（Android click:1062-1071）：`allow_chat_invites` 切到「我的联系人」时 premium
+> **自动置 on**，切到其它档或改别的键时 premium 规则**摘掉**；premium 规则的插入位置是**第一条主档位规则之前** ——
+> 它是修饰规则，排在 `allowContacts` 之后 TDLib 永远不会先命中它。生效时档位标签合并读 `My Contacts & Premium`。
+> **「隐藏已读时间」是另一个设置**：`readDatePrivacySettings` 不在这条规则列表里，因此 ① 不参与「有没有未保存的改动」
+> 的比较，② 点它**当场写**（Android 的 `onClick` 直接 `SetReadDatePrivacySettings`），不等离开页面，
+> ③ 语义方向相反（`show_read_date=false` 才是「隐藏已读时间」开），④ **还没读到值时那一行画成关且不可点**
+> （Android `setEnabledAnimated(readDatePrivacySetting != null)`）。收敛口径与规则写回同源：写完**回读覆盖**乐观翻转，
+> 失败退回 `null` = 「不知道」，行重新变成不可点。
+> 文案四条进 Lang（EN+ZH）：`Telegram Premium subscribers` / `Allow Premium Invite Desc` / `Hide Read Time` /
+> `Hide Read Time Desc`；上一版自造的 `Premium Users` 行文案删除。
+> 测试：`feature_settings` **324/324**（304 → 324：premium 规则插入位置/不重复/摘掉只摘自己、两项逐键门控、
+> 改档对 premium 的所有权、read-date 改动不置脏 + 离开页面不为此写规则、乐观翻转被回读覆盖、失败退回不可用），
+> 四守卫 0 违规。
+> 设备取证（127.0.0.1:5555，`.hvigor/outputs/privacy103/`）：`show_last_seen` 基线 `rules=[allowAll]` +
+> `read_date show_read_date=1` → Everybody 档下 Hide Read Time 行与 Premium 行**都不出** → 切 My Contacts →
+> `privacy-read-date-row` 出现、Premium 行不出（逐键门控同时实证）→ 点开关 → `privacy_read_date_write show_read_date=0`
+> → `privacy_read_date_read show_read_date=0` → `Toggle checked=true`（回读收敛）→ 再点回 `show_read_date=1` →
+> 切回 Everybody → 行消失。`allow_chat_invites` 基线 `[allowAll]` → Everybody 无 Premium 行 → 切 My Contacts →
+> Premium 行出且 `checked=true`（改档自动置 on），档位行与列表行都读 `My Contacts & Premium` → 手动关 → `checked=false`
+> → 头部返回 → `write <- [allowPremiumUsers, allowContacts, restrictAll]`（顺序与 Android 一致，premium 先于主档位）→
+> 再进 → Everybody → 返回 → `write <- [allowAll]` → 列表行读回 `Everybody`，**两项隐私设置逐条还原**。
+> **新登记遗留**：详情页的**物理返回键**是路由 pop，不经过页面自己的 `onBack`，所以未保存的编辑会被静默丢弃
+> （`entry/Index.ets` 的 `onBackPress` 目前只处理应用锁）；这一处影响设置页全部覆盖层，单列一个包收口。
 
 
 | 功能 ID | 功能名 |

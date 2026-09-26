@@ -46,6 +46,9 @@ import {
   ClosePrivacyKeyPage,
   SetPrivacyMode,
   TogglePrivacyPremium,
+  TogglePrivacyHideReadTime,
+  PrivacyReadDateLoaded,
+  PrivacyReadDateRejected,
   OpenPrivacyPicker,
   ClosePrivacyPicker,
   TogglePrivacyPickerContact,
@@ -93,6 +96,7 @@ import {
   TerminateAllOtherSessionsEffect,
   TerminateSessionEffect,
   SetPrivacySettingEffect,
+  SetReadDatePrivacyEffect,
   LoadProxiesEffect,
   EnableProxyEffect,
   DisableProxyEffect,
@@ -1166,7 +1170,9 @@ export default function settingsReducerTest(): void {
     });
 
     it('togglePrivacyPremium_inContactsMode_addsThenRemovesPremiumRule', 0, () => {
-      const state = stateWithDetail(loadedDetail('show_bio', contactsRules(), contacts()));
+      // PRIVACY-103：Premium 行只有「群组与频道邀请」这一项有（Android `needExtraToggle`）。
+      const state =
+        stateWithDetail(loadedDetail('allow_chat_invites', contactsRules(), contacts()));
       const on: SettingsUiState = settingsReducer(state, new TogglePrivacyPremium(), makeEnv()).state;
       expect(typesOf(rulesOf(on))).assertEqual(
         'userPrivacySettingRuleAllowPremiumUsers>userPrivacySettingRuleAllowContacts>userPrivacySettingRuleRestrictAll'
@@ -1184,12 +1190,160 @@ export default function settingsReducerTest(): void {
       }
     });
 
-    it('togglePrivacyPremium_outsideContactsMode_isIgnored', 0, () => {
-      const state = stateWithDetail(loadedDetail('show_bio', everybodyRules(), contacts()));
+    it('togglePrivacyPremium_keepsExceptionLists', 0, () => {
+      // 这一条只动 premium 规则，例外名单必须原样留着（PRIVACY-101 改档才重建主档位规则）。
+      const rules: TdUserPrivacySettingRule[] = [
+        allowUsersRule([1001]),
+        new UserPrivacySettingRuleAllowContacts(),
+        new UserPrivacySettingRuleRestrictAll(),
+        restrictChatMembersRule([8001])
+      ];
+      const state =
+        stateWithDetail(loadedDetail('allow_chat_invites', rules, contacts()));
+      const on: SettingsUiState = settingsReducer(state, new TogglePrivacyPremium(), makeEnv()).state;
+      expect(typesOf(rulesOf(on))).assertEqual([
+        'userPrivacySettingRuleAllowUsers',
+        'userPrivacySettingRuleAllowPremiumUsers',
+        'userPrivacySettingRuleAllowContacts',
+        'userPrivacySettingRuleRestrictAll',
+        'userPrivacySettingRuleRestrictChatMembers'
+      ].join('>'));
+    });
+
+    it('togglePrivacyPremium_underEverybody_isIgnored', 0, () => {
+      const state =
+        stateWithDetail(loadedDetail('allow_chat_invites', everybodyRules(), contacts()));
       const result = settingsReducer(state, new TogglePrivacyPremium(), makeEnv());
 
       // 「所有人」档下点 Premium 不该顺手把可见面缩到联系人。
       expect(result.state === state).assertTrue();
+    });
+
+    it('togglePrivacyPremium_onOtherKeys_isIgnored', 0, () => {
+      // 其余 7 项没有这一行；即便有旧数据带着 premium 规则，点它也不会改（Android 同）。
+      const state = stateWithDetail(loadedDetail('show_bio', contactsRules(), contacts()));
+      const result = settingsReducer(state, new TogglePrivacyPremium(), makeEnv());
+
+      expect(result.state === state).assertTrue();
+      expect(result.effects.length).assertEqual(0);
+    });
+
+    it('setPrivacyMode_onChatInvitesContacts_turnsPremiumOn', 0, () => {
+      // Android `onClick(btn_contacts)`：`plusPremium = constructor == AllowChatInvites && mode == CONTACTS`。
+      const state =
+        stateWithDetail(loadedDetail('allow_chat_invites', everybodyRules(), contacts()));
+      const result = settingsReducer(state, new SetPrivacyMode('contacts'), makeEnv());
+
+      expect(typesOf(rulesOf(result.state))).assertEqual(
+        'userPrivacySettingRuleAllowPremiumUsers>userPrivacySettingRuleAllowContacts>userPrivacySettingRuleRestrictAll'
+      );
+    });
+
+    it('setPrivacyMode_onOtherKeys_dropsPremiumRule', 0, () => {
+      // 别的项目改档不能把 premium 带过去：那一行在它们身上根本不存在。
+      const rules: TdUserPrivacySettingRule[] = [
+        new UserPrivacySettingRuleAllowPremiumUsers(),
+        new UserPrivacySettingRuleAllowContacts(),
+        new UserPrivacySettingRuleRestrictAll()
+      ];
+      const state = stateWithDetail(loadedDetail('show_bio', rules, contacts()));
+      const result = settingsReducer(state, new SetPrivacyMode('nobody'), makeEnv());
+
+      expect(typesOf(rulesOf(result.state))).assertEqual('');
+    });
+
+    // ---- PRIVACY-103 详情页：隐藏已读时间（另一条 TDLib 设置，不走规则列表）----
+
+    it('privacyDetailLoaded_carriesReadDateValue', 0, () => {
+      // 起始态没读到过 read-date（null），回包带 false 必须把它落到详情态上。
+      const state = stateWithDetail(loadedDetail('show_last_seen', contactsRules(), contacts()));
+      const result = settingsReducer(
+        state,
+        new PrivacyDetailLoaded('show_last_seen', contactsRules(), contacts(), [], false),
+        makeEnv()
+      );
+
+      const detail: PrivacyDetailState | null = result.state.privacyDetail;
+      expect(detail !== null).assertTrue();
+      if (detail !== null) {
+        expect(detail.showReadDate).assertFalse();
+      }
+    });
+
+    it('togglePrivacyHideReadTime_flipsAndWritesImmediately', 0, () => {
+      // 与规则编辑相反：这一项**当场就写**（Android 在点击里直接 send SetReadDatePrivacySettings）。
+      const state =
+        stateWithDetail(loadedDetail('show_last_seen', contactsRules(), contacts())
+          .copyWith({ showReadDate: true }));
+      const result = settingsReducer(state, new TogglePrivacyHideReadTime(), makeEnv());
+
+      const detail: PrivacyDetailState | null = result.state.privacyDetail;
+      expect(detail !== null).assertTrue();
+      if (detail !== null) {
+        expect(detail.showReadDate).assertFalse();
+      }
+      expect(result.effects.length).assertEqual(1);
+      const effect: SetReadDatePrivacyEffect = result.effects[0] as SetReadDatePrivacyEffect;
+      expect(effect.kind).assertEqual('setReadDatePrivacy');
+      expect(effect.showReadDate).assertFalse();
+      // 它不属于规则列表，所以不会顺带把这一项标成「有未保存的规则改动」。
+      if (detail !== null) {
+        expect(detail.isDirty()).assertFalse();
+      }
+    });
+
+    it('togglePrivacyHideReadTime_whenNotLoaded_isIgnored', 0, () => {
+      // 没读到服务端值 = 界面上这一行不可点（Android 置灰），Reducer 再兜一层。
+      const state =
+        stateWithDetail(loadedDetail('show_last_seen', contactsRules(), contacts()));
+      const result = settingsReducer(state, new TogglePrivacyHideReadTime(), makeEnv());
+
+      expect(result.state === state).assertTrue();
+      expect(result.effects.length).assertEqual(0);
+    });
+
+    it('privacyReadDateRejected_nullPutsTheRowBackToUnavailable', 0, () => {
+      const state =
+        stateWithDetail(loadedDetail('show_last_seen', contactsRules(), contacts())
+          .copyWith({ showReadDate: true }));
+      const flipped: SettingsUiState =
+        settingsReducer(state, new TogglePrivacyHideReadTime(), makeEnv()).state;
+      const result = settingsReducer(flipped, new PrivacyReadDateRejected(null), makeEnv());
+
+      const detail: PrivacyDetailState | null = result.state.privacyDetail;
+      expect(detail !== null).assertTrue();
+      if (detail !== null) {
+        expect(detail.showReadDate === null).assertTrue();
+      }
+    });
+
+    it('privacyReadDateLoaded_overridesTheOptimisticFlip', 0, () => {
+      const state =
+        stateWithDetail(loadedDetail('show_last_seen', contactsRules(), contacts())
+          .copyWith({ showReadDate: true }));
+      const flipped: SettingsUiState =
+        settingsReducer(state, new TogglePrivacyHideReadTime(), makeEnv()).state;
+      // 服务端说没改成 → 界面上的开关要拨回去。
+      const result = settingsReducer(flipped, new PrivacyReadDateLoaded(true), makeEnv());
+
+      const detail: PrivacyDetailState | null = result.state.privacyDetail;
+      expect(detail !== null).assertTrue();
+      if (detail !== null) {
+        expect(detail.showReadDate).assertTrue();
+      }
+    });
+
+    it('closePrivacyKeyPage_afterReadDateToggle_writesNoRules', 0, () => {
+      // 只动了 read-date 的详情页，离开时不该再发一次 setUserPrivacySettingRules。
+      const state =
+        stateWithDetail(loadedDetail('show_last_seen', contactsRules(), contacts())
+          .copyWith({ showReadDate: true }));
+      const flipped: SettingsUiState =
+        settingsReducer(state, new TogglePrivacyHideReadTime(), makeEnv()).state;
+      const result = settingsReducer(flipped, new ClosePrivacyKeyPage(), makeEnv());
+
+      expect(result.state.privacyDetail === null).assertTrue();
+      expect(result.effects.length).assertEqual(0);
     });
 
     // ---- PRIVACY-101 详情页：例外名单选择器 ----

@@ -126,6 +126,12 @@ export class PrivacyDetailState {
   /** 选择器里的勾选集合（点「完成」前不写回规则）。 */
   readonly pickedUserIds: number[];
   readonly pickedChatIds: number[];
+  /**
+   * 「隐藏已读时间」的真实态（PRIVACY-103）。它是 TDLib 的**另一个**设置
+   * （`readDatePrivacySettings`），不在这条规则列表里，所以也不参与 `isDirty()` 比较 ——
+   * 点它当场就写，不等离开页面。`null` = 还没读到，此时那一行按 Android 的口径不可点。
+   */
+  readonly showReadDate: boolean | null;
   readonly errorMessage: string | null;
 
   constructor(
@@ -139,7 +145,8 @@ export class PrivacyDetailState {
     pickerTarget: PrivacyExceptionTarget | null,
     pickedUserIds: number[],
     pickedChatIds: number[],
-    errorMessage: string | null
+    errorMessage: string | null,
+    showReadDate: boolean | null = null
   ) {
     this.key = key;
     this.loading = loading;
@@ -152,6 +159,7 @@ export class PrivacyDetailState {
     this.pickedUserIds = pickedUserIds;
     this.pickedChatIds = pickedChatIds;
     this.errorMessage = errorMessage;
+    this.showReadDate = showReadDate;
   }
 
   static forLoading(key: PrivacySettingKey): PrivacyDetailState {
@@ -162,10 +170,11 @@ export class PrivacyDetailState {
     key: PrivacySettingKey,
     rules: TdUserPrivacySettingRule[],
     contacts: PrivacyContactRow[],
-    chats: PrivacyChatRow[]
+    chats: PrivacyChatRow[],
+    showReadDate: boolean | null = null
   ): PrivacyDetailState {
     return new PrivacyDetailState(
-      key, false, false, rules, rules.slice(), contacts, chats, null, [], [], null
+      key, false, false, rules, rules.slice(), contacts, chats, null, [], [], null, showReadDate
     );
   }
 
@@ -183,7 +192,8 @@ export class PrivacyDetailState {
       options.pickerTarget !== undefined ? options.pickerTarget : this.pickerTarget,
       options.pickedUserIds !== undefined ? options.pickedUserIds : this.pickedUserIds,
       options.pickedChatIds !== undefined ? options.pickedChatIds : this.pickedChatIds,
-      options.errorMessage !== undefined ? options.errorMessage : this.errorMessage
+      options.errorMessage !== undefined ? options.errorMessage : this.errorMessage,
+      options.showReadDate !== undefined ? options.showReadDate : this.showReadDate
     );
   }
 
@@ -205,6 +215,7 @@ interface PrivacyDetailStateOptions {
   pickedUserIds?: number[];
   pickedChatIds?: number[];
   errorMessage?: string | null;
+  showReadDate?: boolean | null;
 }
 
 /**

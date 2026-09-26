@@ -132,6 +132,19 @@ export class SetPrivacySettingEffect implements Effect {
   }
 }
 
+/**
+ * PRIVACY-103：写 `setReadDatePrivacySettings`。这一条**不跟着离开页面一起提交** ——
+ * 它属于 TDLib 的另一个设置，不在隐私规则列表里，Android 也是点下开关当场就 send。
+ */
+export class SetReadDatePrivacyEffect implements Effect {
+  readonly kind: 'setReadDatePrivacy' = 'setReadDatePrivacy';
+  readonly showReadDate: boolean;
+
+  constructor(showReadDate: boolean) {
+    this.showReadDate = showReadDate;
+  }
+}
+
 /** PROXY-101：读取代理列表（getProxies）。 */
 export class LoadProxiesEffect implements Effect {
   readonly kind: 'loadProxies' = 'loadProxies';
@@ -331,6 +344,7 @@ export type SettingsEffect =
   | LoadPrivacySettingsEffect
   | LoadPrivacyDetailEffect
   | SetPrivacySettingEffect
+  | SetReadDatePrivacyEffect
   | LoadProxiesEffect
   | EnableProxyEffect
   | DisableProxyEffect

@@ -20,7 +20,7 @@ import {
   UserPrivacySettingShowStatus,
   TdUserPrivacySetting
 } from '@tgx/core-td-api-generated';
-import { PrivacyRulesView, privacyModeLabel } from './PrivacyRules';
+import { PrivacyMode, PrivacyRulesView, privacyModeLabel } from './PrivacyRules';
 
 export type PrivacySettingKey =
   | 'show_last_seen'
@@ -155,4 +155,33 @@ export function privacyAlwaysAllowLabel(key: PrivacySettingKey): string {
 
 export function privacyNeverAllowLabel(key: PrivacySettingKey): string {
   return key === 'show_last_seen' ? 'Never Share With' : 'Never Allow';
+}
+
+/**
+ * 附加开关区块：Android 的详情页在档位/例外之下还有一组**按项**出现的开关行
+ * （`needExtraToggle` :631-655 + `newExtraToggleItems` :669-736），它们不属于档位、
+ * 也不属于例外名单，所以单独一块卡。
+ *
+ * - Premium 放行**只有「群组与频道邀请」这一项有**。PRIVACY-101 一度把它做成所有项档位卡里
+ *   的勾，结果是本端能在「简介」「生日」上写出 Android 根本写不出的 premium 规则。
+ * - 「隐藏已读时间」只有「最后上线」有。
+ * - Android 在「公开头像」「生日」两项下还有编辑器入口行（头像选择器 / 生日编辑器），
+ *   本端没有那两个容器，**不为不存在的容器造 UI**（同 CHAN-SEND 的口径），故不出行。
+ */
+export function privacyNeedsPremiumRow(key: PrivacySettingKey): boolean {
+  return key === 'allow_chat_invites';
+}
+
+export function privacyNeedsReadDateRow(key: PrivacySettingKey): boolean {
+  return key === 'show_last_seen';
+}
+
+/**
+ * 改主档位时 premium 该是什么（Android `onClick` 的 btn_everybody/contacts/nobody 分支：
+ * `plusPremium = constructor == AllowChatInvites && desiredMode == CONTACTS`）。
+ * 两条含义都在里面：只有 invites 项会**自动**放行 Premium，且其余项改档会把已有的
+ * premium 规则一并摘掉（它算主档位类规则）。
+ */
+export function privacyPremiumForMode(key: PrivacySettingKey, mode: PrivacyMode): boolean {
+  return key === 'allow_chat_invites' && mode === 'contacts';
 }

@@ -16,8 +16,9 @@
 /**
  * feature/settings — 单个隐私项的详情页（PRIVACY-101）。
  *
- * 端口自 Android `SettingsPrivacyKeyController`：主档位单选（+「我的联系人」档下的 Premium
- * 勾）+「总是允许 / 从不允许」两份例外名单 + 一句脚注。
+ * 端口自 Android `SettingsPrivacyKeyController`：主档位单选 +「总是允许 / 从不允许」两份
+ * 例外名单 + 一句脚注，最后是一张「附加开关」卡（PRIVACY-103：只有「群组与频道邀请」给
+ * Premium 开关、只有「最后上线时间」给「隐藏已读时间」开关）。
  *
  * 两条与旧列表页相反的规矩：
  * 1. **页内编辑不写服务器**。全部改动只落在 `uiState.privacyDetail.rules` 上，离开本页那一次
@@ -42,6 +43,7 @@ import {
   SetErrorMessage,
   SetPrivacyMode,
   SettingsIntent,
+  TogglePrivacyHideReadTime,
   TogglePrivacyPickerChat,
   TogglePrivacyPickerContact,
   TogglePrivacyPremium
@@ -52,12 +54,15 @@ import {
   privacyNeedNobodyOption,
   privacyNeedExceptions,
   privacyNeverAllowLabel,
+  privacyNeedsPremiumRow,
+  privacyNeedsReadDateRow,
   privacySettingLabel
 } from '../model/PrivacySettings';
 import {
   parsePrivacyRules,
   PrivacyMode,
   privacyModeLabel,
+  privacyNeedsHideReadTime,
   PrivacyRulesView
 } from '../model/PrivacyRules';
 import {
@@ -149,6 +154,49 @@ export struct PrivacyKeySubPage {
   private isPremiumOn(): boolean {
     const view: PrivacyRulesView | null = this.viewOf();
     return view !== null && view.plusPremium;
+  }
+
+  /**
+   * 附加开关行（PRIVACY-103）的可见性，逐条照 Android `needExtraToggle()`：
+   * Premium 行只有「群组与频道邀请」有，且「所有人」档下不出（那时谁都进得来，勾了没意义）；
+   * 「隐藏已读时间」只有「最后上线时间」有，且档位是「所有人」但排除了具体的人/会话时仍要出。
+   */
+  private premiumRowShown(): boolean {
+    const detail: PrivacyDetailState | null = this.detail();
+    if (detail === null || !privacyNeedsPremiumRow(detail.key)) {
+      return false;
+    }
+    const view: PrivacyRulesView | null = this.viewOf();
+    return view !== null && view.mode !== 'everybody';
+  }
+
+  private readDateRowShown(): boolean {
+    const detail: PrivacyDetailState | null = this.detail();
+    if (detail === null || !privacyNeedsReadDateRow(detail.key)) {
+      return false;
+    }
+    const view: PrivacyRulesView | null = this.viewOf();
+    return view !== null && privacyNeedsHideReadTime(view);
+  }
+
+  private hasExtraToggle(): boolean {
+    return this.premiumRowShown() || this.readDateRowShown();
+  }
+
+  /** 界面是「隐藏」，TDLib 字段是 `show_read_date`，方向相反。 */
+  private isHideReadTimeOn(): boolean {
+    const detail: PrivacyDetailState | null = this.detail();
+    return detail !== null && detail.showReadDate !== null && !detail.showReadDate;
+  }
+
+  /** 还没读到 read-date 设置 = 这一行画成关闭且不可点（Android `setRadioEnabled(readDatePrivacySetting != null && …)`）。 */
+  private isReadDateRowEnabled(): boolean {
+    const detail: PrivacyDetailState | null = this.detail();
+    return detail !== null && detail.showReadDate !== null;
+  }
+
+  private extraToggleDescription(): string {
+    return this.premiumRowShown() ? 'Allow Premium Invite Desc' : 'Hide Read Time Desc';
   }
 
   /**
@@ -276,6 +324,9 @@ export struct PrivacyKeySubPage {
                 this.ExceptionsView()
               }
               this.FootnoteView()
+              if (this.hasExtraToggle()) {
+                this.ExtraToggleView()
+              }
             }
           }
           .width('100%')
@@ -430,43 +481,6 @@ export struct PrivacyKeySubPage {
           .onClick((): void => {
             this.onDispatch(new SetPrivacyMode(mode));
           })
-
-          // Premium 勾只在「我的联系人」档下出现并且可点（Android 同：其余档位它无意义）。
-          if (mode === 'contacts' && this.isModeSelected('contacts')) {
-            Row() {
-              Stack() {
-                if (this.isPremiumOn()) {
-                  Image($r('app.media.ic_check_single'))
-                    .width(14)
-                    .height(14)
-                    .fillColor(this.getTheme().colors.accent)
-                }
-              }
-              .width(20)
-              .height(20)
-              .margin({ right: this.getTheme().spacing.md })
-              .borderRadius(5)
-              .border({
-                width: 1.5,
-                color: this.isPremiumOn()
-                  ? this.getTheme().colors.accent
-                  : this.getTheme().colors.textSecondary
-              })
-
-              Text(this.t('Premium Users'))
-                .fontSize(this.getTheme().typography.subheadline.fontSize)
-                .fontColor(this.getTheme().colors.textSecondary)
-                .layoutWeight(1)
-            }
-            .width('100%')
-            .height(44)
-            .alignItems(VerticalAlign.Center)
-            .padding({ left: this.getTheme().spacing.xxl })
-            .id('privacy-premium-row')
-            .onClick((): void => {
-              this.onDispatch(new TogglePrivacyPremium());
-            })
-          }
         }
         .width('100%')
       })
@@ -561,6 +575,80 @@ export struct PrivacyKeySubPage {
         .borderRadius(this.getTheme().radius.md)
       }
       .width('100%')
+    }
+    .width('100%')
+    .margin({ top: this.getTheme().spacing.lg })
+  }
+
+  /**
+   * 附加开关卡（PRIVACY-103）：Android 在例外名单之后另起一张卡 + 一段自己的脚注
+   * （`newExtraToggleItems`），所以 Premium 行不在档位卡里。「隐藏已读时间」这一行
+   * 在没读到服务端值之前画成关闭且不可点。
+   */
+  @Builder
+  ExtraToggleView() {
+    Column() {
+      Column() {
+        if (this.premiumRowShown()) {
+          Row() {
+            Text(this.t('Telegram Premium subscribers'))
+              .fontSize(this.getTheme().typography.body.fontSize)
+              .fontColor(this.getTheme().colors.textPrimary)
+              .layoutWeight(1)
+
+            Toggle({ type: ToggleType.Switch, isOn: this.isPremiumOn() })
+              .onChange((isOn: boolean): void => {
+                if (isOn !== this.isPremiumOn()) {
+                  this.onDispatch(new TogglePrivacyPremium());
+                }
+              })
+          }
+          .width('100%')
+          .height(52)
+          .alignItems(VerticalAlign.Center)
+          .id('privacy-premium-row')
+        }
+
+        if (this.readDateRowShown()) {
+          Row() {
+            Text(this.t('Hide Read Time'))
+              .fontSize(this.getTheme().typography.body.fontSize)
+              .fontColor(this.getTheme().colors.textPrimary)
+              .layoutWeight(1)
+
+            Toggle({ type: ToggleType.Switch, isOn: this.isHideReadTimeOn() })
+              .enabled(this.isReadDateRowEnabled())
+              .onChange((isOn: boolean): void => {
+                if (isOn !== this.isHideReadTimeOn()) {
+                  this.onDispatch(new TogglePrivacyHideReadTime());
+                }
+              })
+          }
+          .width('100%')
+          .height(52)
+          .alignItems(VerticalAlign.Center)
+          .id('privacy-read-date-row')
+        }
+      }
+      .width('100%')
+      .padding({
+        left: this.getTheme().spacing.md,
+        right: this.getTheme().spacing.md,
+        top: this.getTheme().spacing.xs,
+        bottom: this.getTheme().spacing.xs
+      })
+      .backgroundColor(this.getTheme().colors.surface)
+      .borderRadius(this.getTheme().radius.md)
+
+      Text(this.t(this.extraToggleDescription()))
+        .fontSize(this.getTheme().typography.footnote.fontSize)
+        .fontColor(this.getTheme().colors.textSecondary)
+        .margin({
+          top: this.getTheme().spacing.sm,
+          left: this.getTheme().spacing.xs,
+          right: this.getTheme().spacing.xs
+        })
+        .width('100%')
     }
     .width('100%')
     .margin({ top: this.getTheme().spacing.lg })

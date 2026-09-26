@@ -84,6 +84,12 @@ import {
   UserPrivacySettingRules,
   TdUserPrivacySettingRule,
   decodeUserPrivacySettingRules,
+  GetReadDatePrivacySettings,
+  encodeGetReadDatePrivacySettings,
+  SetReadDatePrivacySettings,
+  encodeSetReadDatePrivacySettings,
+  ReadDatePrivacySettings,
+  decodeReadDatePrivacySettings,
   GetContacts,
   encodeGetContacts,
   Users,
@@ -144,6 +150,7 @@ import {
   PrivacySettingKey,
   PRIVACY_SETTING_KEYS,
   privacySettingLabel,
+  privacyNeedsReadDateRow,
   toUserPrivacySetting
 } from '../model/PrivacySettings';
 import { parsePrivacyRules } from '../model/PrivacyRules';
@@ -192,6 +199,8 @@ import {
   PrivacyDetailLoadFailed,
   PrivacyRulesSaved,
   PrivacyRulesSaveFailed,
+  PrivacyReadDateLoaded,
+  PrivacyReadDateRejected,
   SetAvailableAccounts,
   SetErrorMessage,
   SettingsIntent,
@@ -233,6 +242,7 @@ import {
   LoadPrivacySettingsEffect,
   LoadPrivacyDetailEffect,
   SetPrivacySettingEffect,
+  SetReadDatePrivacyEffect,
   LoadProxiesEffect,
   EnableProxyEffect,
   DisableProxyEffect,
@@ -596,6 +606,12 @@ export class SettingsCoordinator {
       case 'loadPrivacyDetail': {
         const detailEffect: LoadPrivacyDetailEffect = effect as LoadPrivacyDetailEffect;
         this.handleLoadPrivacyDetail(detailEffect.key);
+        break;
+      }
+
+      case 'setReadDatePrivacy': {
+        const readDateEffect: SetReadDatePrivacyEffect = effect as SetReadDatePrivacyEffect;
+        this.handleSetReadDatePrivacy(readDateEffect.showReadDate);
         break;
       }
 
@@ -1440,7 +1456,19 @@ export class SettingsCoordinator {
       if (chatsResult.ok) {
         chats = chatsResult.value;
       }
-      this.dispatch(new PrivacyDetailLoaded(key, rules, contacts, chats));
+      // PRIVACY-103：「隐藏已读时间」是另一条 TDLib 设置，只有「最后上线」这一项要读。
+      // 读不到就留 null（那一行按不可点渲染），不把它升级成整页错误 —— 档位和例外名单与它无关。
+      let showReadDate: boolean | null = null;
+      if (privacyNeedsReadDateRow(key)) {
+        const readDateResult: Result<boolean, AppError> = await this.fetchReadDateSettings();
+        if (readDateResult.ok) {
+          showReadDate = readDateResult.value;
+        }
+        if (this.destroyed) {
+          return;
+        }
+      }
+      this.dispatch(new PrivacyDetailLoaded(key, rules, contacts, chats, showReadDate));
       if (contactsResult.err) {
         this.logger.logError(TAG, contactsResult.error);
       }
@@ -1908,6 +1936,129 @@ export class SettingsCoordinator {
     }
     return err<void, AppError>(
       AppErrors.internal('settings_privacy_write_request', 'TDLib privacy write request was not created')
+    );
+  }
+
+  /**
+   * PRIVACY-103：写 `setReadDatePrivacySettings`，随后**以回读为准**收敛。
+   * 界面上的开关是先翻的（用户按了不动等于没响应），但真值只认回读：写失败、或写成功而回读
+   * 失败，都会把这一行拨回可信状态（回读失败时传 null —— Android 在「没读到」时就是把该行画成
+   * 关闭且不可点），绝不停在一个没发生过的状态上。
+   */
+  private handleSetReadDatePrivacy(showReadDate: boolean): void {
+    this.setReadDatePrivacy(showReadDate);
+  }
+
+  private async setReadDatePrivacy(showReadDate: boolean): Promise<void> {
+    try {
+      const writeResult: Result<void, AppError> = await this.writeReadDateSettings(showReadDate);
+      if (this.destroyed) {
+        return;
+      }
+      const readResult: Result<boolean, AppError> = await this.fetchReadDateSettings();
+      if (this.destroyed) {
+        return;
+      }
+      if (readResult.ok) {
+        this.dispatch(new PrivacyReadDateLoaded(readResult.value));
+      }
+      if (readResult.err) {
+        this.logger.logError(TAG, readResult.error);
+        this.dispatch(new PrivacyReadDateRejected(null));
+      }
+      if (writeResult.err) {
+        this.logger.logError(TAG, writeResult.error);
+        this.dispatch(new SetErrorMessage(this.privacyErrorMessage(writeResult.error, 'update')));
+      }
+    } catch (e) {
+      if (this.destroyed) {
+        return;
+      }
+      const cause: string = e instanceof Error ? e.name : 'non-error';
+      const error: AppError = AppErrors.unknown(
+        'settings-read-date-privacy',
+        'Unexpected read date privacy settings failure',
+        cause
+      );
+      this.logger.logError(TAG, error);
+      this.dispatch(new PrivacyReadDateRejected(null));
+      this.dispatch(new SetErrorMessage(this.privacyErrorMessage(error, 'update')));
+    }
+  }
+
+  /** 读 `getReadDatePrivacySettings`。失败由调用方决定怎么呈现（详情页留 null = 不可点）。 */
+  private async fetchReadDateSettings(): Promise<Result<boolean, AppError>> {
+    const request: GetReadDatePrivacySettings = new GetReadDatePrivacySettings();
+    const pendingResult: Result<TdPendingRequest, AppError> = this.scope.request(
+      'getReadDatePrivacySettings',
+      encodeGetReadDatePrivacySettings(request) as TdWireObject
+    );
+    if (pendingResult.ok) {
+      const response: Result<TdWireObject, AppError> = await pendingResult.value.promise;
+      if (response.ok) {
+        const settings: ReadDatePrivacySettings | null =
+          decodeReadDatePrivacySettings(response.value as TdJsonRaw);
+        if (settings === null) {
+          return err<boolean, AppError>(
+            AppErrors.internal(
+              'settings_read_date_decode',
+              'TDLib read date privacy settings could not be decoded'
+            )
+          );
+        }
+        this.logger.info(
+          TAG,
+          'privacy_read_date_read',
+          `show_read_date=${settings.show_read_date ? '1' : '0'}`
+        );
+        return ok<boolean, AppError>(settings.show_read_date);
+      }
+      if (response.err) {
+        return err<boolean, AppError>(response.error);
+      }
+      return err<boolean, AppError>(
+        AppErrors.internal('settings_read_date_response', 'TDLib returned no read date settings')
+      );
+    }
+    if (pendingResult.err) {
+      return err<boolean, AppError>(pendingResult.error);
+    }
+    return err<boolean, AppError>(
+      AppErrors.internal('settings_read_date_request', 'TDLib read date request was not created')
+    );
+  }
+
+  private async writeReadDateSettings(showReadDate: boolean): Promise<Result<void, AppError>> {
+    const payload: ReadDatePrivacySettings = new ReadDatePrivacySettings();
+    payload.show_read_date = showReadDate;
+    const request: SetReadDatePrivacySettings = new SetReadDatePrivacySettings();
+    request.settings = payload;
+    this.logger.info(
+      TAG,
+      'privacy_read_date_write',
+      `show_read_date=${showReadDate ? '1' : '0'}`
+    );
+    const pendingResult: Result<TdPendingRequest, AppError> = this.scope.request(
+      'setReadDatePrivacySettings',
+      encodeSetReadDatePrivacySettings(request) as TdWireObject
+    );
+    if (pendingResult.ok) {
+      const response: Result<TdWireObject, AppError> = await pendingResult.value.promise;
+      if (response.ok) {
+        return ok<void, AppError>(undefined);
+      }
+      if (response.err) {
+        return err<void, AppError>(response.error);
+      }
+      return err<void, AppError>(
+        AppErrors.internal('settings_read_date_write_response', 'TDLib returned no write result')
+      );
+    }
+    if (pendingResult.err) {
+      return err<void, AppError>(pendingResult.error);
+    }
+    return err<void, AppError>(
+      AppErrors.internal('settings_read_date_write_request', 'TDLib read date write was not created')
     );
   }
 

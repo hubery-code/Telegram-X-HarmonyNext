@@ -152,7 +152,6 @@ const EN_DICTIONARY: Record<string, string> = {
   'Group and Channel Invites': 'Group and Channel Invites',
   'Discoverable by Phone Number': 'Discoverable by Phone Number',
   'Everybody': 'Everybody',
-  'Premium Users': 'Premium Users',
   'My Contacts': 'My Contacts',
   'Nobody': 'Nobody',
   'Custom': 'Custom',
@@ -171,6 +170,14 @@ const EN_DICTIONARY: Record<string, string> = {
   '{0} Users': '{0} Users',
   'No Contacts Yet': 'No Contacts Yet',
   'Custom Share Settings Help': 'People who are always allowed or never allowed win over the setting above.',
+
+  // Extra toggle rows on the privacy detail page (PRIVACY-103)
+  'Telegram Premium subscribers': 'Telegram Premium subscribers',
+  'Allow Premium Invite Desc':
+    'Always allow users with a Telegram Premium subscription to add you to groups and channels.',
+  'Hide Read Time': 'Hide Read Time',
+  'Hide Read Time Desc':
+    'Hide the time when you read messages from people who can\'t see your last seen. If you turn this on, their read time will also be hidden from you. This setting does not affect group chats.',
 
   // Network proxies (PROXY-101)
   'Proxies': 'Proxies',
@@ -439,7 +446,6 @@ const ZH_DICTIONARY: Record<string, string> = {
   'Group and Channel Invites': '群组与频道邀请',
   'Discoverable by Phone Number': '可通过手机号找到我',
   'Everybody': '所有人',
-  'Premium Users': 'Premium 用户',
   'My Contacts': '我的联系人',
   'Nobody': '没有人',
   'Custom': '自定义',
@@ -457,6 +463,13 @@ const ZH_DICTIONARY: Record<string, string> = {
   '{0} Users': '{0} 位用户',
   'No Contacts Yet': '还没有联系人',
   'Custom Share Settings Help': '「总是允许」和「从不允许」里的人优先于上面的设置。',
+
+  // Extra toggle rows on the privacy detail page (PRIVACY-103)
+  'Telegram Premium subscribers': 'Telegram Premium 用户',
+  'Allow Premium Invite Desc': '始终允许订阅了 Telegram Premium 的用户把你添加到群组与频道。',
+  'Hide Read Time': '隐藏已读时间',
+  'Hide Read Time Desc':
+    '对看不到你最后上线时间的人隐藏你的已读时间。开启后，你也会看不到他们的已读时间。此项不影响群聊。',
 
   // Network proxies (PROXY-101)
   'Proxies': '代理',
