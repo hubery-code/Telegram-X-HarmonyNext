@@ -75,6 +75,8 @@ import {
   OpenStickerBoard,
   OnStickerBoardLoaded,
   OnStickerBoardFailed,
+  OnTrendingLoaded,
+  OnTrendingFailed,
   OnStickerSetLoaded,
   OnStickerSetLoadFailed,
   CloseStickerSetPreview,
@@ -115,7 +117,7 @@ import { PinnedMessageInfo } from '../main/ets/model/PinnedMessageInfo';
 import { PollComposerState, PollOptionView, PollView } from '../main/ets/model/PollView';
 import { ReactionChip } from '../main/ets/model/ReactionChip';
 import { StickerSetPreviewState, StickerSetItem } from '../main/ets/model/StickerSetPreviewState';
-import { StickerBoardPack, StickerBoardState } from '../main/ets/model/StickerBoard';
+import { StickerBoardPack, StickerBoardState, StickerTrendingPack } from '../main/ets/model/StickerBoard';
 import { GifItem } from '../main/ets/model/GifItem';
 import {
   ChatEffect,
@@ -186,6 +188,11 @@ function makeBoardPack(setId: string): StickerBoardPack {
     isDownloading: false
   };
   return new StickerBoardPack(setId, 'Pandamonium ' + setId, null, [item], 20, true);
+}
+
+/** 热门区的一行：reducer 同样只看标志位与数组长度。 */
+function makeTrendingRow(setId: string, isInstalled: boolean): StickerTrendingPack {
+  return new StickerTrendingPack(setId, 'Trending ' + setId, null, 24, isInstalled);
 }
 
 function makeStateWith(
@@ -1981,13 +1988,16 @@ export default function chatReducerTest() {
       );
 
       expect(result.state.stickerBoard.isLoading).assertTrue();
-      expect(result.effects.length).assertEqual(1);
+      // 盘与榜是两次独立的问价：同一次开板一起发出，之后各自按自己的标志位去重
+      expect(result.effects.length).assertEqual(2);
       expect(result.effects[0].kind).assertEqual('fetchStickerBoard');
+      expect(result.effects[1].kind).assertEqual('fetchTrendingStickerSets');
+      expect(result.state.stickerBoard.trendingRequested).assertTrue();
     });
 
     it('openStickerBoard_whileLoadingOrLoaded_doesNotRefetch', 0, () => {
       const loading: ChatUiState = makeState('').copyWith({
-        stickerBoard: new StickerBoardState([], true, false, null)
+        stickerBoard: new StickerBoardState([], true, false, null, [], true)
       });
       const loadingRes: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
         loading, new OpenStickerBoard(), makeEnv()
@@ -1996,13 +2006,26 @@ export default function chatReducerTest() {
       expect(loadingRes.effects.length).assertEqual(0);
 
       const loaded: ChatUiState = makeState('').copyWith({
-        stickerBoard: new StickerBoardState([makeBoardPack('21')], false, true, null)
+        stickerBoard: new StickerBoardState([makeBoardPack('21')], false, true, null, [], true)
       });
       const loadedRes: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
         loaded, new OpenStickerBoard(), makeEnv()
       );
       expect(loadedRes.effects.length).assertEqual(0);
       expect(loadedRes.state.stickerBoard.packs.length).assertEqual(1);
+
+      // 榜与盘的去重各自独立：盘已装好但榜还没问过，这一次只补榜、不重拉盘
+      const boardOnly: ChatUiState = makeState('').copyWith({
+        stickerBoard: new StickerBoardState([makeBoardPack('21')], false, true, null, [], false)
+      });
+      const boardOnlyRes: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        boardOnly, new OpenStickerBoard(), makeEnv()
+      );
+      expect(boardOnlyRes.effects.length).assertEqual(1);
+      expect(boardOnlyRes.effects[0].kind).assertEqual('fetchTrendingStickerSets');
+      // 「问过了」不等于「问成功了」：这里必须仍是 false，否则重复点页签会打风暴
+      expect(boardOnly.stickerBoard.trendingRequested).assertFalse();
+      expect(boardOnlyRes.state.stickerBoard.trendingRequested).assertTrue();
     });
 
     it('onStickerBoardLoaded_setsPacksAndMarksLoaded', 0, () => {
@@ -2046,7 +2069,7 @@ export default function chatReducerTest() {
     it('onStickerSetChanged_invalidatesLoadedBoard', 0, () => {
       const initial: ChatUiState = makeState('').copyWith({
         stickerSetPreview: new StickerSetPreviewState('21', 'Pandamonium 21', 'panda', false, false, false, [], false, true),
-        stickerBoard: new StickerBoardState([makeBoardPack('21')], false, true, null)
+        stickerBoard: new StickerBoardState([makeBoardPack('21')], false, true, null, [makeTrendingRow('21', false)], true, '21')
       });
 
       const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
@@ -2055,9 +2078,115 @@ export default function chatReducerTest() {
         makeEnv()
       );
 
-      // 装/卸包后下一次开板要重拉，否则新装的包要等到杀进程才看得到。
+      // 装/卸包后立刻重拉，新装的包不用等到切走再切回来（更不用等杀进程）。
       expect(result.state.stickerBoard.isLoaded).assertFalse();
       expect(result.state.stickerBoard.packs.length).assertEqual(1);
+      expect(result.state.stickerBoard.installingSetId).assertNull();
+      expect(result.state.stickerBoard.trending[0].isInstalled).assertTrue();
+      expect(result.effects.length).assertEqual(2);
+      expect(result.effects[0].kind).assertEqual('fetchStickerBoard');
+      expect(result.effects[1].kind).assertEqual('fetchTrendingStickerSets');
+    });
+
+    it('onStickerSetChanged_withoutPreview_stillInvalidatesBoard', 0, () => {
+      // 这是 102 修掉的真 bug：从热门行直接装包是一条**没有弹层**的路径。
+      // 旧实现把失效逻辑写在「弹层正好是这一包」的分支里，于是板卡永远不刷新，
+      // 用户点完「添加」什么也不会发生 —— 直到下次开板。
+      const initial: ChatUiState = makeState('').copyWith({
+        stickerSetPreview: null,
+        stickerBoard: new StickerBoardState([makeBoardPack('21')], false, true, null, [makeTrendingRow('99', false)], true, '99')
+      });
+
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        initial,
+        new OnStickerSetChanged('99', true),
+        makeEnv()
+      );
+
+      expect(result.state.stickerSetPreview === null).assertTrue();
+      expect(result.state.stickerBoard.isLoaded).assertFalse();
+      expect(result.state.stickerBoard.installingSetId).assertNull();
+      // 不相干那一行不能被顺手改成已装
+      expect(result.state.stickerBoard.trending[0].setId).assertEqual('99');
+      expect(result.state.stickerBoard.trending[0].isInstalled).assertTrue();
+      expect(result.effects.length).assertEqual(2);
+    });
+
+    it('installStickerSet_withoutPreview_marksInstallingRow', 0, () => {
+      const initial: ChatUiState = makeState('').copyWith({
+        stickerSetPreview: null,
+        stickerBoard: new StickerBoardState([makeBoardPack('21')], false, true, null, [makeTrendingRow('99', false)], true, null)
+      });
+
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        initial,
+        new InstallStickerSet('99'),
+        makeEnv()
+      );
+
+      // 没有弹层时也要有在途令牌：否则「添加中」永远不出现，重复点击还能发出第二条请求
+      expect(result.state.stickerBoard.installingSetId).assertEqual('99');
+      expect(result.effects.length).assertEqual(1);
+      const effect: ChangeStickerSetEffect = result.effects[0] as ChangeStickerSetEffect;
+      expect(effect.setId).assertEqual('99');
+      expect(effect.isInstalled).assertTrue();
+    });
+
+    it('onStickerSetActionFailed_withoutPreview_clearsInstallingRow', 0, () => {
+      const initial: ChatUiState = makeState('').copyWith({
+        stickerSetPreview: null,
+        stickerBoard: new StickerBoardState([], false, true, null, [makeTrendingRow('99', false)], true, '99')
+      });
+
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        initial,
+        new OnStickerSetActionFailed('99', 'boom'),
+        makeEnv()
+      );
+
+      // 不清的话那一行永远卡在「添加中」，用户既退不出去也重试不了
+      expect(result.state.stickerBoard.installingSetId).assertNull();
+      expect(result.state.stickerBoard.trending[0].isInstalled).assertFalse();
+      expect(result.effects.length).assertEqual(0);
+    });
+
+    it('onTrendingLoaded_fillsRows_withoutTouchingTheBoardSlots', 0, () => {
+      const initial: ChatUiState = makeState('').copyWith({
+        stickerBoard: new StickerBoardState([makeBoardPack('21')], false, true, '盘读失败', [], true)
+      });
+
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        initial,
+        new OnTrendingLoaded([makeTrendingRow('99', false)]),
+        makeEnv()
+      );
+
+      expect(result.state.stickerBoard.trending.length).assertEqual(1);
+      expect(result.state.stickerBoard.trending[0].title).assertEqual('Trending 99');
+      // 榜单的回灌不能把已装盘的包或错误一起清掉
+      expect(result.state.stickerBoard.packs.length).assertEqual(1);
+      expect(result.state.stickerBoard.errorMessage).assertEqual('盘读失败');
+      expect(result.state.stickerBoard.isLoading).assertFalse();
+      expect(result.effects.length).assertEqual(0);
+    });
+
+    it('onTrendingFailed_doesNotStealTheBoardErrorSlot', 0, () => {
+      const initial: ChatUiState = makeState('').copyWith({
+        stickerBoard: new StickerBoardState([makeBoardPack('21')], false, true, null, [makeTrendingRow('99', false)], false)
+      });
+
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        initial,
+        new OnTrendingFailed('getTrendingStickerSets failed'),
+        makeEnv()
+      );
+
+      // 那个错误槽说的是「你自己的包没读到」；把榜单失败写进去会把用户支去错误方向
+      expect(result.state.stickerBoard.errorMessage).assertNull();
+      expect(result.state.stickerBoard.trending.length).assertEqual(0);
+      expect(result.state.stickerBoard.packs.length).assertEqual(1);
+      // 失败也算「问过了」：切页签不该反复重试一个坏请求
+      expect(result.state.stickerBoard.trendingRequested).assertTrue();
     });
     it('onStickerSetLoaded_updatesPreviewState', 0, () => {
       const initial: ChatUiState = makeState('');

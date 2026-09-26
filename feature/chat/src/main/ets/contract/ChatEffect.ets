@@ -288,6 +288,11 @@ export class FetchStickerBoard implements Effect {
   readonly kind: 'fetchStickerBoard' = 'fetchStickerBoard';
 }
 
+/** STICKER-BOARD-102：向 TDLib 取热门贴纸包（getTrendingStickerSets, regular）。 */
+export class FetchTrendingStickerSets implements Effect {
+  readonly kind: 'fetchTrendingStickerSets' = 'fetchTrendingStickerSets';
+}
+
 export class FetchStickerSet implements Effect {
   readonly kind: 'fetchStickerSet' = 'fetchStickerSet';
   readonly setId: string;
@@ -458,6 +463,7 @@ export type ChatEffect =
   | ToggleReactionEffect
   | OpenCommentsEffect
   | FetchStickerBoard
+  | FetchTrendingStickerSets
   | FetchStickerSet
   | ChangeStickerSetEffect
   | SendStickerMessage

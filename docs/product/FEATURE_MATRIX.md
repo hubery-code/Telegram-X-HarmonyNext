@@ -780,6 +780,49 @@
 > （TDLib 的 `getRecentStickers` 尚未接）；③ 取证时看到发出的贴纸**气泡不出图**（整图没下、也没有占位），
 > 属于贴纸消息渲染的独立缺口。
 
+> **2026-09-26（STICKER-BOARD-102，FEAT-P2-004 热门贴纸包 + 装包入口，结掉 101 遗留 ①）**：
+> 贴纸页签有了真实内容却没有「从哪里弄到包」的入口，等于把用户关在一个空房间里。
+> **入口是榜，不是弹窗**：接 `getTrendingStickerSets(regular, 0, N)` 在页签底部出一段「热门贴纸包」，
+> 每行一张封面 + 包名 + `size` 张数 + 一个动作，**点动作就地装/卸**（`changeStickerSet`），
+> 不弹全屏、不跳浏览器 —— Android 那侧的 `tg://addstickers` 语义在应用内就是这一条写请求。
+> **一行只登记那一张封面文件**（包 thumbnail → 各 cover 的 thumbnail，去重后取第一个可用项），
+> 榜上一屏 6 行就是 6 路下载；这里若按 101 板卡的口径把 5 张 cover 全登记，
+> 一次进页签就是三十几路并发 —— SHARED-AUDIO 那次的教训不能再犯一次。
+> **热门行没有封面也要保留**：这一行的**用途是装包**，图只是装饰；
+> 与板卡恰好相反（板卡上一格发不出去就不该出现在发送入口，所以无可用封面的包整包跳过）。
+> 两处的判据分叉是刻意的，写成两条用例分别钉住，防止后来人「统一」成一个。
+> **装完必须让板卡重读**：`onStickerSetChanged` 旧实现只在预览弹层开着时才失效，
+> 于是从热门行装包 → 板卡停留在旧列表 → 用户以为没装上（101 时代就漏了这条，只是当时没有装包入口所以看不见）。
+> 现在两条分支**一律**打掉 `isLoaded` 并补发 `FetchStickerBoard` + `FetchTrendingStickerSets`，
+> 榜上那一行的「添加 / 已添加」也跟着 `is_installed` 翻 —— 行键里带 `isInstalled`，否则翻不动。
+> **失败不抢错误槽**：`onTrendingFailed` 只把榜收起来，不写 `errorMessage`；
+> 榜失败而板卡正常时，屏幕上不该出现一句和板卡无关的错。
+> **设备上抓到第二个平台级事实（本轮最有价值的收获）**：第一段取证截图里热门行的封面**全是空白方块**，
+> 而下载日志显示图片文件早就落盘了。落到沙盒里看文件名才看清：TDLib 把**动效贴纸（Lottie）包的缩略图**
+> 直接落成 `.tgs`（gzip 过的 JSON），本端没有 rlottie/TgsPlayer 那样的解码器，
+> ArkUI 的 `Image` 拿到这个路径就是**静默画一块空白** —— 看起来像「图没下下来」，真相是根本解不了。
+> 据此在模型层加 `stickerPathIsRenderable(path)`：后缀命中动画/矢量容器格式（`.tgs/.json/.lottie/.mp4/…`）
+> 一律当「没有图」，热门行换下一张候选封面、板卡退回包名首字母、格子退回贴纸自己的 emoji。
+> **判据只能落在已下盘的本地路径上**：本端用的 TDLib `file` DTO 只有 `id/size/expected_size/local/remote`，
+> **没有 `name`/`extension`**，下载前无从得知格式 —— 所以这是「拿到路径后再筛」，不是「挑着下」。
+> 这条不只关乎贴纸板：任何把 `.tgs` 喂给 `Image` 的界面（**贴纸消息气泡**、贴纸包预览页）都是同一块空白，
+> 因此「TGS/Lottie 渲染器」升级为剩余缺口中明确的一项。
+> 测试：`feature_chat` **365/365**（+纯模型：`.tgs` 封面被跳过并取下一张候选、格式白名单只拒动画类
+> （webp/JPG/无扩展名放行）、格子的 original 是 `.tgs` 时回退到可解码缩略图且**键里不含 `.tgs`**、
+> 包缩略图不可解时不进缩略图取值链；+reducer：开板出两条 Effect、装卸无预览页也失效、`installingSetId`
+> 置位与失败清除、`onTrendingLoaded` 不碰板卡槽位、`onTrendingFailed` 不写 `errorMessage`；
+> +coordinator：榜回包只登记每行一张封面、已下过的那张不再登记），三守卫 0 违规。
+> 设备取证（模拟器 127.0.0.1:5555，真实 TDLib）：进贴纸页签 → 日志 `sticker_trending_loaded rows=6,total=857`，
+> 榜上六行真包名 + 张数、封面图**真实渲染**（`.tgs` 修复前是六块空白）；点第一行「添加」→
+> 该行翻成「已添加」（`changeStickerSet` 的 `updateStickerSet` 推送回来），同一帧板卡重读
+> `sticker_board_loaded rows=1,total=1`，新包**立刻**出现在页签里，块头带真封面、「查看其余 19 张」；
+> 再点「已添加」→ 卸载 → `sticker_board_loaded rows=0,total=0`，**账号回到取证前的 0 个已装 regular 包**。
+> 全程只在 Saved Messages 之外的表情板内操作，未向任何真实群/频道发送内容。
+> 遗留：① 热门榜只取 regular 一类（mask / customEmoji 未露出，榜语义在 Android 是「与当前类型相关」）；
+> ② 无 TGS/Lottie 解码器 → 动效贴纸包在板卡与**消息气泡**里都只有 emoji/字母兜底；
+> ③ 最近使用仍吃 `DEFAULT_RECENT_STICKERS`（`getRecentStickers` 未接，101 遗留 ②）；
+> ④ 101 遗留 ③「贴纸气泡不出图」现在能**部分解释**（整图未下 + `.tgs` 不可解两个原因），仍未修。
+
 
 | 功能 ID | 功能名 |
 |---|---|

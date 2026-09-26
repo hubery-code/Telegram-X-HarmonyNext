@@ -6,6 +6,12 @@
  *   把整页变成表情包，且这个请求在 reducer 里已经去重，所以这里连点两次只允许一条请求）；
  * - 回包要真的落到 `uiState.stickerBoard.packs`，并只为缩略图登记下载（不是贴纸整图）；
  * - 请求失败要有错误态，且**不会**被记成「已加载」—— 否则这个会话里贴纸页签就永远空着。
+ *
+ * STICKER-BOARD-102 又接上热门区那半边：
+ * - 开板同时问一次 `getTrendingStickerSets`（regular、offset 0、limit 6），且去重同理由；
+ * - 榜单回包真的落到 `stickerBoard.trending`，一包只登记那一张封面；
+ * - 榜单失败**不占** `errorMessage`（那个槽说的是自己的包读不到），也不动已装盘；
+ * - 从热门行装包：`changeStickerSet` 只发一条、在途有 `installingSetId`、成功后立刻重读盘与榜。
  */
 
 import { describe, it, expect } from '@ohos/hypium';
@@ -27,8 +33,8 @@ import {
 import { Result, AppError } from '@tgx/core-common';
 import { ChatCoordinator } from '../main/ets/coordinator/ChatCoordinator';
 import { ChatUiState } from '../main/ets/contract/ChatUiState';
-import { OpenStickerBoard } from '../main/ets/contract/ChatIntent';
-import { StickerBoardPack } from '../main/ets/model/StickerBoard';
+import { InstallStickerSet, OpenStickerBoard } from '../main/ets/contract/ChatIntent';
+import { StickerBoardPack, StickerTrendingPack } from '../main/ets/model/StickerBoard';
 
 interface SentBridgeRequest {
   readonly clientId: number;
@@ -121,6 +127,13 @@ function errorFields(message: string): Record<string, TdWireValue> {
   error['code'] = 400;
   error['message'] = message;
   return error;
+}
+
+/** changeStickerSet 的回包是 `ok`：只要不是 error，协调器就按成功走。 */
+function okFields(): Record<string, TdWireValue> {
+  const fields: Record<string, TdWireValue> = {};
+  fields['@type'] = 'ok';
+  return fields;
 }
 
 function createScope(bridge: TestNativeBridge): AccountScope {
@@ -245,6 +258,52 @@ function stickerTypeRegularFields(): Record<string, TdWireValue> {
   return type;
 }
 
+function trendingCoverFields(setId: string, fileId: number, thumbId: number): Record<string, TdWireValue> {
+  const cover: Record<string, TdWireValue> = {};
+  cover['@type'] = 'sticker';
+  cover['set_id'] = setId;
+  cover['width'] = 512;
+  cover['height'] = 512;
+  cover['emoji'] = '🐼';
+  cover['sticker'] = fileFields(fileId);
+  cover['thumbnail'] = thumbId > 0 ? thumbnailFields(thumbId) : null;
+  return cover;
+}
+
+/** 一榜两包：第一包带包级缩略图，第二包只有封面缩略图（走取值兜底那条路）。 */
+function trendingSetsFields(): Record<string, TdWireValue> {
+  const withPackThumb: Record<string, TdWireValue> = {};
+  withPackThumb['@type'] = 'stickerSetInfo';
+  withPackThumb['id'] = '51';
+  withPackThumb['title'] = 'Trending Cats';
+  withPackThumb['name'] = 'trending_cats';
+  withPackThumb['thumbnail'] = thumbnailFields(4500);
+  withPackThumb['is_installed'] = false;
+  withPackThumb['is_archived'] = false;
+  withPackThumb['sticker_type'] = stickerTypeRegularFields();
+  withPackThumb['size'] = 37;
+  withPackThumb['covers'] = [trendingCoverFields('51', 1501, 3501)];
+
+  const coverOnly: Record<string, TdWireValue> = {};
+  coverOnly['@type'] = 'stickerSetInfo';
+  coverOnly['id'] = '52';
+  coverOnly['title'] = 'Trending Dogs';
+  coverOnly['name'] = 'trending_dogs';
+  coverOnly['thumbnail'] = null;
+  coverOnly['is_installed'] = true;
+  coverOnly['is_archived'] = false;
+  coverOnly['sticker_type'] = stickerTypeRegularFields();
+  coverOnly['size'] = 12;
+  coverOnly['covers'] = [trendingCoverFields('52', 1502, 3502)];
+
+  const fields: Record<string, TdWireValue> = {};
+  fields['@type'] = 'trendingStickerSets';
+  fields['total_count'] = 2;
+  fields['sets'] = [withPackThumb, coverOnly];
+  fields['is_premium'] = false;
+  return fields;
+}
+
 export default function stickerBoardFetchTest(): void {
   describe('StickerBoardFetchTest', () => {
 
@@ -336,6 +395,143 @@ export default function stickerBoardFetchTest(): void {
       coordinator.dispatch(new OpenStickerBoard());
       await settle();
       expect(countRequestsOfType(bridge, 'getInstalledStickerSets')).assertEqual(2);
+
+      unsubscribe();
+      coordinator.destroy();
+    });
+
+    // ---------- STICKER-BOARD-102：热门区与装包 ----------
+
+    it('openStickerBoard_requestsRegularTrendingSetsOnce', 0, async (): Promise<void> => {
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const scope: AccountScope = createScope(bridge);
+      const coordinator: ChatCoordinator = new ChatCoordinator(scope, 42, 'Test Chat');
+
+      coordinator.dispatch(new OpenStickerBoard());
+      coordinator.dispatch(new OpenStickerBoard());
+      await settle();
+
+      const reqs: Record<string, TdWireValue>[] = requestsOfType(bridge, 'getTrendingStickerSets');
+      expect(reqs.length).assertEqual(1);
+      // sticker_type 是必填，且三个类型各一张榜：取错类型等于把热门区变成表情包
+      const stickerType = reqs[0]['sticker_type'] as Record<string, TdWireValue>;
+      expect(stickerType['@type']).assertEqual('stickerTypeRegular');
+      expect(reqs[0]['offset']).assertEqual(0);
+      expect(reqs[0]['limit']).assertEqual(6);
+
+      coordinator.destroy();
+    });
+
+    it('trendingResponse_populatesRows_andRegistersOneCoverPerRow', 0, async (): Promise<void> => {
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const scope: AccountScope = createScope(bridge);
+      const coordinator: ChatCoordinator = new ChatCoordinator(scope, 42, 'Test Chat');
+
+      const recorder: StateRecorder = new StateRecorder();
+      const unsubscribe: () => void = coordinator.subscribe((state: ChatUiState): void => {
+        recorder.seen.push(state);
+      });
+
+      coordinator.dispatch(new OpenStickerBoard());
+      await settle();
+      const requestId: string = lastRequestIdOfType(bridge, 'getTrendingStickerSets');
+      expect(requestId.length > 0).assertTrue();
+      bridge.respondTo(requestId, trendingSetsFields());
+      await settle();
+
+      const rows: StickerTrendingPack[] = recorder.last().stickerBoard.trending;
+      expect(rows.length).assertEqual(2);
+      expect(rows[0].setId).assertEqual('51');
+      expect(rows[0].title).assertEqual('Trending Cats');
+      expect(rows[0].totalSize).assertEqual(37);
+      expect(rows[0].isInstalled).assertFalse();
+      expect(rows[1].isInstalled).assertTrue();
+
+      // 一包只登记那一张封面（4500 是包缩略图、3502 是第二包唯一的封面缩略图）；
+      // 整图 1501/1502 不属于这一步。
+      expect(countRequestsOfType(bridge, 'downloadFile')).assertEqual(2);
+      const downloads: Record<string, TdWireValue>[] = requestsOfType(bridge, 'downloadFile');
+      const ids: number[] = [];
+      for (let i = 0; i < downloads.length; i++) {
+        ids.push(Number(downloads[i]['file_id']));
+      }
+      expect(ids.indexOf(1501)).assertEqual(-1);
+      expect(ids.indexOf(1502)).assertEqual(-1);
+      expect(ids.indexOf(4500) >= 0).assertTrue();
+      expect(ids.indexOf(3502) >= 0).assertTrue();
+
+      unsubscribe();
+      coordinator.destroy();
+    });
+
+    it('trendingFailure_leavesTheBoardAlone', 0, async (): Promise<void> => {
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const scope: AccountScope = createScope(bridge);
+      const coordinator: ChatCoordinator = new ChatCoordinator(scope, 42, 'Test Chat');
+
+      const recorder: StateRecorder = new StateRecorder();
+      const unsubscribe: () => void = coordinator.subscribe((state: ChatUiState): void => {
+        recorder.seen.push(state);
+      });
+
+      coordinator.dispatch(new OpenStickerBoard());
+      await settle();
+      bridge.respondTo(lastRequestIdOfType(bridge, 'getInstalledStickerSets'), stickerSetsFields([
+        coverFields(1001, 3001, '🐼')
+      ]));
+      await settle();
+      bridge.respondError(lastRequestIdOfType(bridge, 'getTrendingStickerSets'), 'REQUEST_TIMEOUT');
+      await settle();
+
+      const state: ChatUiState = recorder.last();
+      // 榜单是装饰性入口：它失败不能写成「你的贴纸包读不到」，也不能清掉已装的盘
+      expect(state.stickerBoard.errorMessage).assertNull();
+      expect(state.stickerBoard.trending.length).assertEqual(0);
+      expect(state.stickerBoard.packs.length).assertEqual(1);
+      expect(state.stickerBoard.isLoaded).assertTrue();
+      // 失败也算问过：切走再切回来不该反复重试一个坏请求
+      expect(state.stickerBoard.trendingRequested).assertTrue();
+
+      unsubscribe();
+      coordinator.destroy();
+    });
+
+    it('installFromTrendingRow_writesChangeStickerSet_andRefetchesBoard', 0, async (): Promise<void> => {
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const scope: AccountScope = createScope(bridge);
+      const coordinator: ChatCoordinator = new ChatCoordinator(scope, 42, 'Test Chat');
+
+      const recorder: StateRecorder = new StateRecorder();
+      const unsubscribe: () => void = coordinator.subscribe((state: ChatUiState): void => {
+        recorder.seen.push(state);
+      });
+
+      coordinator.dispatch(new OpenStickerBoard());
+      await settle();
+      bridge.respondTo(lastRequestIdOfType(bridge, 'getTrendingStickerSets'), trendingSetsFields());
+      await settle();
+      expect(recorder.last().stickerBoard.trending[0].isInstalled).assertFalse();
+
+      const before: number = countRequestsOfType(bridge, 'getInstalledStickerSets');
+      coordinator.dispatch(new InstallStickerSet('51'));
+      await settle();
+
+      const changes: Record<string, TdWireValue>[] = requestsOfType(bridge, 'changeStickerSet');
+      expect(changes.length).assertEqual(1);
+      expect(changes[0]['set_id']).assertEqual('51');
+      expect(changes[0]['is_installed']).assertTrue();
+      // 请求还在途：那一行只能显示「在途」，不能提前替 TDLib 宣布装好了
+      expect(recorder.last().stickerBoard.installingSetId).assertEqual('51');
+
+      bridge.respondTo(lastRequestIdOfType(bridge, 'changeStickerSet'), okFields());
+      await settle();
+
+      const after: ChatUiState = recorder.last();
+      expect(after.stickerBoard.installingSetId).assertNull();
+      expect(after.stickerBoard.trending[0].isInstalled).assertTrue();
+      // 装成功后立刻重读盘与榜 —— 新装的包不用等用户切走再切回来
+      expect(countRequestsOfType(bridge, 'getInstalledStickerSets')).assertEqual(before + 1);
+      expect(countRequestsOfType(bridge, 'getTrendingStickerSets')).assertEqual(2);
 
       unsubscribe();
       coordinator.destroy();

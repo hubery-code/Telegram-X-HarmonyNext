@@ -38,6 +38,41 @@ export const STICKER_BOARD_DOWNLOAD_BUDGET: number = 30;
 export const STICKER_BOARD_RECENT_SET_ID: string = 'recent';
 
 /**
+ * ArkUI `Image` 解不了的格式。TDLib 把动效贴纸（Lottie）当普通文件落盘，扩展名 `.tgs`
+ * 内容是 gzip 过的 JSON —— Android 有 rlottie 能播（`TgsPlayer`），本端没有对应解码器，
+ * 直接喂给 Image 只会得到一块**空白**：看起来像「图没下下来」，其实是根本解不了。
+ * 所以这些路径一律当作「没有图」，退回包名首字母 / 贴纸自己的 emoji。
+ *
+ * 判据只能落在**已下盘的本地路径**上：本端用的 TDLib `file` DTO 没有 name/extension
+ * 字段，下载前无从得知格式（于是可能白下一张 .tgs，预算已把这种浪费限死在几十张内）。
+ */
+const STICKER_NON_RASTER_SUFFIXES: string[] = ['tgs', 'json', 'lottie', 'mp4', 'mov', 'm4v', 'webm', 'avi', 'mkv'];
+
+/** 这个本地路径能不能交给 Image 渲染（未知扩展名按可以处理，别把正常的图误杀）。 */
+export function stickerPathIsRenderable(path: string | null): boolean {
+  if (path === null || path.length === 0) {
+    return false;
+  }
+  const dot: number = path.lastIndexOf('.');
+  if (dot < 0 || dot === path.length - 1) {
+    return true;
+  }
+  const suffix: string = path.substring(dot + 1).toLowerCase();
+  for (let i = 0; i < STICKER_NON_RASTER_SUFFIXES.length; i++) {
+    if (STICKER_NON_RASTER_SUFFIXES[i] === suffix) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * 热门区最多几包，且**每行只登记一张封面**（不像已装包那样一包五格）。
+ * 一次页签打开的总下载因此是「已装盘预算 30 + 热门 6」，而不是把两个榜都铺成网格。
+ */
+export const STICKER_TRENDING_MAX_PACKS: number = 6;
+
+/**
  * 解析一包所需的注入依赖：只读本地路径 + 登记一次低优先级下载。
  *
  * 路径是**装盘那一刻**从 FileRegistry 取的快照：某张图后来下好了，由协调器拿缓存的
@@ -185,7 +220,7 @@ export function stickerBoardThumbnailPath(info: StickerSetInfo, deps: StickerBoa
   const packThumb: File | null = thumbnailFileOf(info.thumbnail);
   if (packThumb !== null && packThumb.id > 0) {
     const path: string | null = deps.localPathOf(packThumb.id);
-    if (path !== null && path.length > 0) {
+    if (path !== null && stickerPathIsRenderable(path)) {
       return path;
     }
   }
@@ -193,7 +228,7 @@ export function stickerBoardThumbnailPath(info: StickerSetInfo, deps: StickerBoa
     const coverThumb: File | null = stickerThumbnailFile(info.covers[i]);
     if (coverThumb !== null && coverThumb.id > 0) {
       const path: string | null = deps.localPathOf(coverThumb.id);
-      if (path !== null && path.length > 0) {
+      if (path !== null && stickerPathIsRenderable(path)) {
         return path;
       }
     }
@@ -235,24 +270,133 @@ export function stickerBoardBlocks(packs: readonly StickerBoardPack[], recent: r
 }
 
 function firstRenderablePath(item: StickerSetItem): string | null {
-  if (item.thumbnailPath !== null && item.thumbnailPath.length > 0) {
+  if (item.thumbnailPath !== null && stickerPathIsRenderable(item.thumbnailPath)) {
     return item.thumbnailPath;
   }
-  return item.localPath !== null && item.localPath.length > 0 ? item.localPath : null;
+  return item.localPath !== null && stickerPathIsRenderable(item.localPath) ? item.localPath : null;
 }
 
 /** 格子该显示哪张图：原文件本地路径 → 缩略图本地路径 → 都没有则 null（由界面退回 emoji）。 */
 export function stickerCellImagePath(item: StickerSetItem): string | null {
-  if (item.localPath !== null && item.localPath.length > 0) {
+  if (item.localPath !== null && stickerPathIsRenderable(item.localPath)) {
     return item.localPath;
   }
-  return item.thumbnailPath !== null && item.thumbnailPath.length > 0 ? item.thumbnailPath : null;
+  return item.thumbnailPath !== null && stickerPathIsRenderable(item.thumbnailPath) ? item.thumbnailPath : null;
 }
 
 /** ForEach 键：路径必须进键，否则「图刚下载好」那一帧不会重建 Image（与预览弹层同一口径）。 */
 export function stickerCellKey(item: StickerSetItem): string {
   const path: string | null = stickerCellImagePath(item);
   return `${item.fileId}_${path === null ? '' : path}`;
+}
+
+/**
+ * 热门贴纸包里的一行（STICKER-BOARD-102）。
+ *
+ * 与已装包那一种行不同：这里只给一张封面 + 一个「添加」，不铺五格 —— Android 的
+ * trending 区（`EmojiLayoutTrendingController` + `MediaStickersAdapter` 的
+ * `TYPE_HEADER_TRENDING`）也是整包一张图，点开才进整包详情。
+ */
+export class StickerTrendingPack {
+  readonly setId: string;
+  readonly title: string;
+  readonly coverPath: string | null;
+  readonly totalSize: number;
+  readonly isInstalled: boolean;
+
+  constructor(
+    setId: string,
+    title: string,
+    coverPath: string | null,
+    totalSize: number,
+    isInstalled: boolean
+  ) {
+    this.setId = setId;
+    this.title = title;
+    this.coverPath = coverPath;
+    this.totalSize = totalSize;
+    this.isInstalled = isInstalled;
+  }
+}
+
+/**
+ * `getTrendingStickerSets` 的回包 → 热门区。
+ *
+ * **不跳过没有封面的包**（与已装板卡相反）：这一行的动作是「装包」，封面只是装饰，
+ * 因为取不到图就把一个能装的包藏掉，等于把入口本身弄丢。
+ */
+export function stickerTrendingPacksFromSetInfos(
+  sets: readonly StickerSetInfo[],
+  deps: StickerBoardDeps
+): StickerTrendingPack[] {
+  const rows: StickerTrendingPack[] = [];
+  for (let i = 0; i < sets.length && rows.length < STICKER_TRENDING_MAX_PACKS; i++) {
+    const info: StickerSetInfo = sets[i];
+    if (info.id === '' || info.id === '0') {
+      continue;
+    }
+    rows.push(new StickerTrendingPack(
+      info.id,
+      info.title,
+      stickerTrendingCoverPath(info, deps),
+      info.size,
+      info.is_installed
+    ));
+  }
+  return rows;
+}
+
+/** 行图取值同页签条（包 thumbnail → 首个封面 thumbnail），拿不到就顺手登记那一张。 */
+export function stickerTrendingCoverPath(info: StickerSetInfo, deps: StickerBoardDeps): string | null {
+  const candidates: number[] = trendingRowFileIds(info);
+  for (let i = 0; i < candidates.length; i++) {
+    const path: string | null = deps.localPathOf(candidates[i]);
+    if (path !== null && path.length > 0) {
+      // 下回来了但 ArkUI 解不了（.tgs）：换下一张候选，别把它当封面，也别再下一次。
+      if (stickerPathIsRenderable(path)) {
+        return path;
+      }
+      continue;
+    }
+    // 一行只登记一张：先来的那张没下过就等它到货，到货后由协调器重算这一区。
+    deps.download(candidates[i]);
+    return null;
+  }
+  return null;
+}
+
+/** 一行的候选图：包 thumbnail → 各封面 sticker 的 thumbnail（去重，保持 TDLib 给的顺序）。 */
+function trendingRowFileIds(info: StickerSetInfo): number[] {
+  const ids: number[] = [];
+  const packThumb: File | null = thumbnailFileOf(info.thumbnail);
+  if (packThumb !== null && packThumb.id > 0) {
+    ids.push(packThumb.id);
+  }
+  for (let i = 0; i < info.covers.length; i++) {
+    const coverThumb: File | null = stickerThumbnailFile(info.covers[i]);
+    if (coverThumb !== null && coverThumb.id > 0 && ids.indexOf(coverThumb.id) < 0) {
+      ids.push(coverThumb.id);
+    }
+  }
+  return ids;
+}
+
+/** 装/卸成功后同步那一行：TDLib 的推送晚于本地结果，界面不能还挂着「添加」。 */
+export function stickerTrendingWithInstalled(
+  rows: readonly StickerTrendingPack[],
+  setId: string,
+  isInstalled: boolean
+): StickerTrendingPack[] {
+  return rows.map(
+    (row: StickerTrendingPack): StickerTrendingPack => row.setId === setId
+      ? new StickerTrendingPack(row.setId, row.title, row.coverPath, row.totalSize, isInstalled)
+      : row
+  );
+}
+
+/** ForEach 键：封面路径进键，图到货才会重建那一行。 */
+export function stickerTrendingKey(row: StickerTrendingPack): string {
+  return `${row.setId}_${row.coverPath === null ? '' : row.coverPath}_${row.isInstalled ? 1 : 0}`;
 }
 
 function thumbnailFileOf(thumbnail: Thumbnail | null): File | null {
@@ -269,6 +413,9 @@ export interface StickerBoardOptions {
   readonly isLoading?: boolean;
   readonly isLoaded?: boolean;
   readonly errorMessage?: string | null;
+  readonly trending?: StickerTrendingPack[];
+  readonly trendingRequested?: boolean;
+  readonly installingSetId?: string | null;
 }
 
 export class StickerBoardState {
@@ -277,21 +424,36 @@ export class StickerBoardState {
   /** 已经成功装过一次盘；决定页签打开时是否还要再发一次请求。 */
   readonly isLoaded: boolean;
   readonly errorMessage: string | null;
+  /** 热门贴纸包（`getTrendingStickerSets`）：Android 也是直接铺在贴纸页里，没有商店页。 */
+  readonly trending: StickerTrendingPack[];
+  /**
+   * 榜**问过了**（不等于问成功了）。榜单只是入口装饰，失败不重试、也不占错误槽位；
+   * 真正让它重读的是装/卸一包 —— TDLib 的榜会把已装的那一包换掉。
+   */
+  readonly trendingRequested: boolean;
+  /** 正在装/卸的那一包；只允许同时在途一包（重复点击不该发出第二条 changeStickerSet）。 */
+  readonly installingSetId: string | null;
 
   constructor(
     packs: StickerBoardPack[] = [],
     isLoading: boolean = false,
     isLoaded: boolean = false,
-    errorMessage: string | null = null
+    errorMessage: string | null = null,
+    trending: StickerTrendingPack[] = [],
+    trendingRequested: boolean = false,
+    installingSetId: string | null = null
   ) {
     this.packs = packs;
     this.isLoading = isLoading;
     this.isLoaded = isLoaded;
     this.errorMessage = errorMessage;
+    this.trending = trending;
+    this.trendingRequested = trendingRequested;
+    this.installingSetId = installingSetId;
   }
 
   static initial(): StickerBoardState {
-    return new StickerBoardState([], false, false, null);
+    return new StickerBoardState([], false, false, null, [], false, null);
   }
 
   copyWith(options: StickerBoardOptions): StickerBoardState {
@@ -299,7 +461,10 @@ export class StickerBoardState {
       options.packs !== undefined ? options.packs : this.packs,
       options.isLoading !== undefined ? options.isLoading : this.isLoading,
       options.isLoaded !== undefined ? options.isLoaded : this.isLoaded,
-      options.errorMessage !== undefined ? options.errorMessage : this.errorMessage
+      options.errorMessage !== undefined ? options.errorMessage : this.errorMessage,
+      options.trending !== undefined ? options.trending : this.trending,
+      options.trendingRequested !== undefined ? options.trendingRequested : this.trendingRequested,
+      options.installingSetId !== undefined ? options.installingSetId : this.installingSetId
     );
   }
 

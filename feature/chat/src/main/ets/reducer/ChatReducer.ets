@@ -100,6 +100,8 @@ import {
   OpenStickerBoard,
   OnStickerBoardLoaded,
   OnStickerBoardFailed,
+  OnTrendingLoaded,
+  OnTrendingFailed,
   OnStickerSetLoaded,
   OnStickerSetLoadFailed,
   CloseStickerSetPreview,
@@ -162,6 +164,7 @@ import {
   OpenCommentsEffect,
   FetchStickerSet,
   FetchStickerBoard,
+  FetchTrendingStickerSets,
   ChangeStickerSetEffect,
   SendStickerMessage,
   SendAnimationMessage,
@@ -174,6 +177,7 @@ import {
   SetPollAnswerEffect
 } from '../contract/ChatEffect';
 import { StickerSetPreviewState, StickerSetItem } from '../model/StickerSetPreviewState';
+import { StickerBoardState, stickerTrendingWithInstalled } from '../model/StickerBoard';
 import { GifItem } from '../model/GifItem';
 import {
   PollComposerState,
@@ -1277,15 +1281,51 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
     case 'openStickerBoard': {
       // 语义是「要看」不是「刷新」：同一次会话内反复切页签不重复打 TDLib。
       // 失败过的盘保持 isLoaded=false，下一次进来会再试一次（Android 也是进入即拉、
-      // 之后靠监听器增量更新，不做轮询）。
-      if (state.stickerBoard.isLoading || state.stickerBoard.isLoaded) {
+      // 之后靠监听器增量更新，不做轮询）。热门榜另算一次问价，问过了就不再问。
+      const board: StickerBoardState = state.stickerBoard;
+      const needBoard: boolean = !board.isLoading && !board.isLoaded;
+      const needTrending: boolean = !board.trendingRequested;
+      if (!needBoard && !needTrending) {
         return reduced(state);
+      }
+      const effects: ChatEffect[] = [];
+      if (needBoard) {
+        effects.push(new FetchStickerBoard());
+      }
+      if (needTrending) {
+        effects.push(new FetchTrendingStickerSets());
       }
       return reduced(
         state.copyWith({
-          stickerBoard: state.stickerBoard.copyWith({ isLoading: true, errorMessage: null })
+          stickerBoard: board.copyWith({
+            isLoading: needBoard || board.isLoading,
+            errorMessage: needBoard ? null : board.errorMessage,
+            trendingRequested: true
+          })
         }),
-        [new FetchStickerBoard()]
+        effects
+      );
+    }
+
+    case 'onTrendingLoaded': {
+      const loadedTrending: OnTrendingLoaded = intent as OnTrendingLoaded;
+      return reduced(
+        state.copyWith({
+          stickerBoard: state.stickerBoard.copyWith({
+            trending: loadedTrending.packs,
+            trendingRequested: true
+          })
+        })
+      );
+    }
+
+    case 'onTrendingFailed': {
+      // 不写 errorMessage：那个槽说的是「你自己的包没读到」，把榜单失败显示成那样
+      // 会把用户支去完全错误的方向。这里就是没有那一区可显示。
+      return reduced(
+        state.copyWith({
+          stickerBoard: state.stickerBoard.copyWith({ trending: [], trendingRequested: true })
+        })
       );
     }
 
@@ -1374,6 +1414,11 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
 
     case 'installStickerSet': {
       const installIntent: InstallStickerSet = intent as InstallStickerSet;
+      // installingSetId 与弹层的 isInstalling 各管一处：热门行没有弹层，那一行只有
+      // 板卡上的这个令牌可依赖，否则「添加中」永远不出现，重复点击也发得出第二条请求。
+      const nextBoardInstalling: StickerBoardState = state.stickerBoard.copyWith({
+        installingSetId: installIntent.setId
+      });
       if (state.stickerSetPreview !== null && state.stickerSetPreview.setId === installIntent.setId) {
         const nextPreview: StickerSetPreviewState = state.stickerSetPreview.copyWith(
           undefined,
@@ -1387,15 +1432,21 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
           null
         );
         return reduced(
-          state.copyWith({ stickerSetPreview: nextPreview }),
+          state.copyWith({ stickerSetPreview: nextPreview, stickerBoard: nextBoardInstalling }),
           [new ChangeStickerSetEffect(installIntent.setId, true)]
         );
       }
-      return reduced(state, [new ChangeStickerSetEffect(installIntent.setId, true)]);
+      return reduced(
+        state.copyWith({ stickerBoard: nextBoardInstalling }),
+        [new ChangeStickerSetEffect(installIntent.setId, true)]
+      );
     }
 
     case 'uninstallStickerSet': {
       const uninstallIntent: UninstallStickerSet = intent as UninstallStickerSet;
+      const nextBoardUninstalling: StickerBoardState = state.stickerBoard.copyWith({
+        installingSetId: uninstallIntent.setId
+      });
       if (state.stickerSetPreview !== null && state.stickerSetPreview.setId === uninstallIntent.setId) {
         const nextPreview: StickerSetPreviewState = state.stickerSetPreview.copyWith(
           undefined,
@@ -1409,15 +1460,33 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
           null
         );
         return reduced(
-          state.copyWith({ stickerSetPreview: nextPreview }),
+          state.copyWith({ stickerSetPreview: nextPreview, stickerBoard: nextBoardUninstalling }),
           [new ChangeStickerSetEffect(uninstallIntent.setId, false)]
         );
       }
-      return reduced(state, [new ChangeStickerSetEffect(uninstallIntent.setId, false)]);
+      return reduced(
+        state.copyWith({ stickerBoard: nextBoardUninstalling }),
+        [new ChangeStickerSetEffect(uninstallIntent.setId, false)]
+      );
     }
 
     case 'onStickerSetChanged': {
       const changedIntent: OnStickerSetChanged = intent as OnStickerSetChanged;
+      // 装/卸一包同时让两块内容过期：已装的盘（新装的那一包要立刻上板，而不是等到
+      // 用户切走再切回来）和热门榜（TDLib 会把已装的那一包换掉，is_installed 也变了）。
+      // 关键是**弹层没打开时也要失效** —— 从热门行直接装包就是一条没有弹层的路径。
+      const changedBoard: StickerBoardState = state.stickerBoard.copyWith({
+        isLoading: true,
+        isLoaded: false,
+        trendingRequested: true,
+        installingSetId: null,
+        trending: stickerTrendingWithInstalled(
+          state.stickerBoard.trending,
+          changedIntent.setId,
+          changedIntent.isInstalled
+        )
+      });
+      const refreshEffects: ChatEffect[] = [new FetchStickerBoard(), new FetchTrendingStickerSets()];
       if (state.stickerSetPreview !== null && state.stickerSetPreview.setId === changedIntent.setId) {
         const nextPreview: StickerSetPreviewState = state.stickerSetPreview.copyWith(
           undefined,
@@ -1430,17 +1499,15 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
           false,
           null
         );
-        // 装/卸一包会让已装的盘失效：下一次开板重新拉，否则新装的包要等到杀进程才看得到。
-        return reduced(state.copyWith({
-          stickerSetPreview: nextPreview,
-          stickerBoard: state.stickerBoard.copyWith({ isLoaded: false })
-        }));
+        return reduced(state.copyWith({ stickerSetPreview: nextPreview, stickerBoard: changedBoard }), refreshEffects);
       }
-      return reduced(state);
+      return reduced(state.copyWith({ stickerBoard: changedBoard }), refreshEffects);
     }
 
     case 'onStickerSetActionFailed': {
       const failedAction: OnStickerSetActionFailed = intent as OnStickerSetActionFailed;
+      // 无论有没有弹层都要清 installingSetId：不清的话热门行会永远卡在「添加中」。
+      const failedBoard: StickerBoardState = state.stickerBoard.copyWith({ installingSetId: null });
       if (state.stickerSetPreview !== null && state.stickerSetPreview.setId === failedAction.setId) {
         const nextPreview: StickerSetPreviewState = state.stickerSetPreview.copyWith(
           undefined,
@@ -1453,9 +1520,9 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
           false,
           failedAction.error
         );
-        return reduced(state.copyWith({ stickerSetPreview: nextPreview }));
+        return reduced(state.copyWith({ stickerSetPreview: nextPreview, stickerBoard: failedBoard }));
       }
-      return reduced(state);
+      return reduced(state.copyWith({ stickerBoard: failedBoard }));
     }
 
     case 'sendStickerFromPreview': {

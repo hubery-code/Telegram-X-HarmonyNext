@@ -35,7 +35,7 @@ import { ChatSearchResultItem } from '../model/ChatSearchResultItem';
 import { ChatKind } from '../model/SenderInfo';
 import { StickerSetPreviewState, StickerSetItem } from '../model/StickerSetPreviewState';
 import { GifItem } from '../model/GifItem';
-import { StickerBoardPack } from '../model/StickerBoard';
+import { StickerBoardPack, StickerTrendingPack } from '../model/StickerBoard';
 import { ChatSendRights } from '@tgx/core-domain';
 
 export class LoadInitialMessages implements Intent {
@@ -767,6 +767,8 @@ export type ChatIntent =
   | OpenStickerBoard
   | OnStickerBoardLoaded
   | OnStickerBoardFailed
+  | OnTrendingLoaded
+  | OnTrendingFailed
   | StartVoiceRecord
   | StopAndSendVoiceRecord
   | CancelVoiceRecord
@@ -889,6 +891,31 @@ export class OnStickerBoardLoaded implements Intent {
 /** STICKER-BOARD-101：装盘失败回灌。只留一句可显示的说明，异常原文进日志。 */
 export class OnStickerBoardFailed implements Intent {
   readonly kind: 'onStickerBoardFailed' = 'onStickerBoardFailed';
+  readonly error: string;
+
+  constructor(error: string) {
+    this.error = error;
+  }
+}
+
+/** STICKER-BOARD-102：热门榜回灌（每行一张封面 + 是否已装）。 */
+export class OnTrendingLoaded implements Intent {
+  readonly kind: 'onTrendingLoaded' = 'onTrendingLoaded';
+  readonly packs: StickerTrendingPack[];
+
+  constructor(packs: StickerTrendingPack[]) {
+    this.packs = packs;
+  }
+}
+
+/**
+ * STICKER-BOARD-102：热门榜读取失败。
+ *
+ * 它**不写** `errorMessage` —— 那个槽说的是「你自己的包没读到」，把榜单失败显示成那样
+ * 会把用户支去错误方向；这里只是没有那一区可显示，界面上不留残骸。
+ */
+export class OnTrendingFailed implements Intent {
+  readonly kind: 'onTrendingFailed' = 'onTrendingFailed';
   readonly error: string;
 
   constructor(error: string) {

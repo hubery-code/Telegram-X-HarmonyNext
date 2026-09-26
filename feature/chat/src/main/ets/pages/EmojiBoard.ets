@@ -18,10 +18,12 @@ import { StickerSetItem } from '../model/StickerSetPreviewState';
 import { GifItem, GIF_CATEGORIES, DEFAULT_RECENT_GIFS, DEFAULT_GIF_PACKS } from '../model/GifItem';
 import {
   StickerBoardPack,
+  StickerTrendingPack,
   STICKER_BOARD_RECENT_SET_ID,
   stickerBoardBlocks,
   stickerCellImagePath,
-  stickerCellKey
+  stickerCellKey,
+  stickerTrendingKey
 } from '../model/StickerBoard';
 
 
@@ -179,12 +181,22 @@ export struct EmojiBoard {
    * 父层收到后派发 `OpenStickerBoard`；重复派发无害（reducer 里已装过盘就不再请求）。
    */
   onStickerBoardVisible: () => void = () => {};
+  /**
+   * STICKER-BOARD-102：热门区那一个「添加 / 移除」。语义与 Android 一致 —— 装包是
+   * **行内**动作（`ChangeStickerSet`），不是跳去商店页；点封面/标题才开整包弹层。
+   */
+  onInstallStickerSet?: (setId: string) => void;
+  onUninstallStickerSet?: (setId: string) => void;
   onClearRecent?: () => void;
 
   /** STICKER-BOARD-101：`getInstalledStickerSets` 装出来的真实贴纸包（空 = 账号没装任何包）。 */
   @Prop stickerPacks: StickerBoardPack[] = [];
   @Prop stickerBoardLoading: boolean = false;
   @Prop stickerBoardError: string | null = null;
+  /** STICKER-BOARD-102：`getTrendingStickerSets` 的热门包（读不到就是没有这一区）。 */
+  @Prop stickerTrending: StickerTrendingPack[] = [];
+  /** 在途的那一包（含卸载）；同一时刻只允许一包，避免重复点击发出第二条请求。 */
+  @Prop stickerInstallingSetId: string | null = null;
 
   /** EMOJI-101：由父层回灌的最近使用表情列表 */
   @Prop recentEmojis: string[] = [];
@@ -507,10 +519,17 @@ export struct EmojiBoard {
       .borderWidth({ bottom: 1 })
       .borderColor(this.T.colors.divider)
 
-      if (this.stickerBlocks().length === 0) {
+      if (this.stickerBlocks().length === 0 && this.stickerTrending.length === 0) {
         this.StickerBoardEmptyView()
       } else {
         List({ space: this.T.spacing.xs, scroller: this.stickerScroller }) {
+          // 热门区排在已装包**之前**：账号一个包都没装时这里是唯一的装包入口，
+          // 排在下面等于让用户滚过一片空白去找它。
+          if (this.stickerTrending.length > 0) {
+            ListItem() {
+              this.StickerTrendingSection()
+            }
+          }
           ForEach(this.stickerBlocks(), (pack: StickerBoardPack) => {
             ListItem() {
               Column() {
@@ -612,6 +631,106 @@ export struct EmojiBoard {
   }
 
   /**
+   * 热门贴纸包区（STICKER-BOARD-102）：整包一行，动作就地完成 —— 与 Android 的
+   * trending 区一致（`ChangeStickerSet` 直接装，不跳商店页）。
+   *
+   * 封面只是装饰：取不到图退回包名首字母，**不因为这个藏掉那一行**（入口本身是装包）。
+   */
+  @Builder
+  StickerTrendingSection() {
+    Column() {
+      Text('热门贴纸包')
+        .fontSize(this.T.typography.caption.fontSize)
+        .fontWeight(FontWeight.Medium)
+        .fontColor(this.T.colors.textSecondary)
+        .width('100%')
+        .padding({
+          left: this.T.spacing.md,
+          right: this.T.spacing.md,
+          top: this.T.spacing.xs,
+          bottom: 2
+        })
+
+      ForEach(this.stickerTrending, (row: StickerTrendingPack) => {
+        Row() {
+          if (row.coverPath !== null && row.coverPath.length > 0) {
+            Image(toSandboxUri(row.coverPath))
+              .width(44)
+              .height(44)
+              .objectFit(ImageFit.Contain)
+          } else {
+            Text(row.title.length > 0 ? row.title.substring(0, 1).toUpperCase() : '★')
+              .fontSize(18)
+              .fontColor(this.T.colors.textSecondary)
+              .width(44)
+              .height(44)
+              .textAlign(TextAlign.Center)
+          }
+
+          Column() {
+            Text(row.title)
+              .fontSize(this.T.typography.body.fontSize)
+              .fontColor(this.T.colors.textPrimary)
+              .maxLines(1)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+            Text(`${row.totalSize} 张`)
+              .fontSize(this.T.typography.caption.fontSize)
+              .fontColor(this.T.colors.textSecondary)
+              .margin({ top: 2 })
+          }
+          .alignItems(HorizontalAlign.Start)
+          .layoutWeight(1)
+          .margin({ left: this.T.spacing.sm })
+
+          Text(this.trendingActionLabel(row))
+            .fontSize(this.T.typography.caption.fontSize)
+            .fontWeight(FontWeight.Medium)
+            .fontColor(row.isInstalled ? this.T.colors.textSecondary : this.T.colors.accent)
+            .padding({ left: this.T.spacing.sm, right: this.T.spacing.sm, top: 4, bottom: 4 })
+            .onClick(() => {
+              this.triggerTrendingAction(row);
+            })
+        }
+        .width('100%')
+        .height(56)
+        .padding({ left: this.T.spacing.md, right: this.T.spacing.md })
+        .alignItems(VerticalAlign.Center)
+        .opacity(this.stickerInstallingSetId === row.setId ? 0.5 : 1)
+        .onClick(() => {
+          this.onOpenStickerSet(row.setId);
+        })
+      }, (row: StickerTrendingPack) => stickerTrendingKey(row))
+    }
+    .width('100%')
+  }
+
+  /**
+   * 「添加中」优先于 `is_installed`：请求还在途时不能显示成已经装好了；
+   * 且同一时刻只放行一包（重复点击会发出第二条 changeStickerSet）。
+   */
+  private trendingActionLabel(row: StickerTrendingPack): string {
+    if (this.stickerInstallingSetId === row.setId) {
+      return row.isInstalled ? '移除中…' : '添加中…';
+    }
+    return row.isInstalled ? '已添加' : '添加';
+  }
+
+  private triggerTrendingAction(row: StickerTrendingPack): void {
+    if (this.stickerInstallingSetId !== null) {
+      return;
+    }
+    if (row.isInstalled) {
+      if (this.onUninstallStickerSet) {
+        this.onUninstallStickerSet(row.setId);
+      }
+      return;
+    }
+    if (this.onInstallStickerSet) {
+      this.onInstallStickerSet(row.setId);
+    }
+  }
+
+  /**
    * 空板卡：加载中 / 读取失败 / 账号确实没装包，三种得说不同的话 ——
    * 把「请求失败」显示成「还没有安装贴纸包」会把用户支去完全错误的方向。
    */
@@ -657,9 +776,10 @@ export struct EmojiBoard {
           .fontSize(this.T.typography.body.fontSize)
           .fontWeight(FontWeight.Medium)
           .fontColor(this.T.colors.textPrimary)
-        Text('在贴纸包页面安装后，这里会显示你的贴纸')
+        Text('点上方热门贴纸包的「添加」即可安装，安装后会出现在这里')
           .fontSize(this.T.typography.caption.fontSize)
           .fontColor(this.T.colors.textSecondary)
+          .textAlign(TextAlign.Center)
           .margin({ top: this.T.spacing.xs })
       }
     }

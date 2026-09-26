@@ -10,6 +10,12 @@
  *   下载的教训），超预算必须停手，否则这个纯函数就是个下载风暴发生器；
  * - 缩略图取值顺序（包 thumbnail → 首张封面 thumbnail），以及 ForEach 键必须含路径 ——
  *   路径不进键，图刚下载好那一帧不会重建，板卡会永远停在 emoji 占位。
+ *
+ * STICKER-BOARD-102 补上热门区那几条：热门行**没有封面也要保留**（入口是装包，图只是装饰）、
+ * 一包只登记那一张文件、包数上限、装/卸后只同步匹配那一行，以及行键随 `isInstalled` 变化。
+ * 还有一条设备取证挖出来的：**解不了的格式不能当图用** —— 动效贴纸包的 thumbnail 往往是
+ * .tgs（gzip 的 Lottie JSON），文件确实在盘上，但 ArkUI 的 Image 没有对应解码器，喂过去
+ * 就是一块空白；必须跳过它换下一张候选，全都不行才退回包名首字母 / 贴纸自己的 emoji。
  */
 
 import { describe, it, expect } from '@ohos/hypium';
@@ -24,8 +30,10 @@ import {
   STICKER_BOARD_MAX_COVERS,
   STICKER_BOARD_MAX_PACKS,
   STICKER_BOARD_RECENT_SET_ID,
+  STICKER_TRENDING_MAX_PACKS,
   StickerBoardDeps,
   StickerBoardPack,
+  StickerTrendingPack,
   requestStickerBoardDownloads,
   stickerBoardBlocks,
   stickerBoardPacksFromSetInfos,
@@ -34,7 +42,12 @@ import {
   stickerCellImagePath,
   stickerCellKey,
   stickerItemFromSticker,
-  stickerItemsFromStickers
+  stickerItemsFromStickers,
+  stickerPathIsRenderable,
+  stickerTrendingCoverPath,
+  stickerTrendingKey,
+  stickerTrendingPacksFromSetInfos,
+  stickerTrendingWithInstalled
 } from '../main/ets/model/StickerBoard';
 import { StickerSetItem } from '../main/ets/model/StickerSetPreviewState';
 
@@ -363,6 +376,164 @@ export default function stickerBoardTest(): void {
       };
       expect(stickerCellKey(before) === stickerCellKey(after)).assertFalse();
       expect(stickerCellKey(after).indexOf('/data/7.webp') >= 0).assertTrue();
+    });
+
+    // ---------- STICKER-BOARD-102：热门贴纸包区 ----------
+
+    it('trending_keepsRowsWithoutAnyCoverImage', 0, () => {
+      // 这一行的动作是「装包」，封面只是装饰：因为取不到图就把能装的包藏掉，
+      // 等于把唯一的装包入口弄丢（账号一个包没装时这里是唯一来源）。
+      const rec = new RecordingDeps();
+      const noThumb: StickerSetInfo = makeSetInfo('31', 'NoArt', 12, [cover('31', 1)], 0);
+      const rows: StickerTrendingPack[] = stickerTrendingPacksFromSetInfos([noThumb], rec.deps());
+      expect(rows.length).assertEqual(1);
+      expect(rows[0].coverPath).assertNull();
+      expect(rows[0].totalSize).assertEqual(12);
+      expect(rows[0].isInstalled).assertFalse();
+    });
+
+    it('trending_registersExactlyOneFilePerRow', 0, () => {
+      // 与已装盘不同：这里一包只登记那一张封面（≤6 个文件），不铺五格。
+      const sets: StickerSetInfo[] = [];
+      for (let i = 1; i <= 4; i++) {
+        sets.push(makeSetInfo(`${i}`, `T${i}`, 20, [makeSticker(`${i}`, 100 + i, 200 + i, '🙂')], 900 + i));
+      }
+      const rec = new RecordingDeps();
+      const rows: StickerTrendingPack[] = stickerTrendingPacksFromSetInfos(sets, rec.deps());
+      expect(rows.length).assertEqual(4);
+      expect(rec.downloaded.length).assertEqual(4);
+      expect(rec.downloaded.indexOf(901)).assertEqual(0);
+      // 单张封面的 fileId 绝不能混进来（那是原文件，板卡不需要）
+      expect(rec.downloaded.indexOf(201)).assertEqual(-1);
+      expect(rec.downloaded.indexOf(101)).assertEqual(-1);
+    });
+
+    it('trending_capsAtMaxPacks', 0, () => {
+      const sets: StickerSetInfo[] = [];
+      for (let i = 1; i <= 20; i++) {
+        sets.push(makeSetInfo(`${i}`, `T${i}`, 5, [cover(`${i}`, 1)], 700 + i));
+      }
+      const rows: StickerTrendingPack[] = stickerTrendingPacksFromSetInfos(sets, new RecordingDeps().deps());
+      expect(rows.length).assertEqual(STICKER_TRENDING_MAX_PACKS);
+    });
+
+    it('trending_coverSourceOrder_isSetThumbnailThenFirstCover', 0, () => {
+      const rec = new RecordingDeps();
+      rec.havePath(900, '/data/sets/900.webp');
+      rec.havePath(2001, '/data/covers/2001.webp');
+      const covers: Sticker[] = [makeSticker('4', 1001, 2001, '🐼')];
+
+      expect(stickerTrendingCoverPath(makeSetInfo('4', 'A', 1, covers, 900), rec.deps()))
+        .assertEqual('/data/sets/900.webp');
+      // 包没有缩略图时退回第一张封面的缩略图，而不是空白
+      expect(stickerTrendingCoverPath(makeSetInfo('4', 'A', 1, covers, 0), rec.deps()))
+        .assertEqual('/data/covers/2001.webp');
+      expect(stickerTrendingCoverPath(makeSetInfo('4', 'A', 1, [], 0), rec.deps())).assertNull();
+    });
+
+    it('trending_skipsTgsCoverAndFallsToTheNextCandidate', 0, () => {
+      // TDLib 给动效贴纸包的 thumbnail 是 .tgs（gzip 的 Lottie JSON）：文件确实在盘上，
+      // 但 ArkUI 的 Image 解不了 —— 喂给它就是一块空白，看起来像「图没下下来」。
+      const rec = new RecordingDeps();
+      rec.havePath(900, '/data/sets/900.tgs');
+      rec.havePath(2001, '/data/covers/2001.webp');
+      const covers: Sticker[] = [makeSticker('4', 1001, 2001, '🐼')];
+
+      expect(stickerTrendingCoverPath(makeSetInfo('4', 'A', 1, covers, 900), rec.deps()))
+        .assertEqual('/data/covers/2001.webp');
+      // 解不了的那张已经下过了，不该再登记一次下载
+      expect(rec.downloaded.indexOf(900)).assertEqual(-1);
+
+      // 候选全没下过 → 只登记包缩略图那一张（一行一张的口径不变）
+      const fresh = new RecordingDeps();
+      expect(stickerTrendingCoverPath(makeSetInfo('4', 'A', 1, covers, 900), fresh.deps())).assertNull();
+      expect(fresh.downloaded.length).assertEqual(1);
+      expect(fresh.downloaded.indexOf(900)).assertEqual(0);
+    });
+
+    it('trending_withInstalled_syncsOnlyTheMatchedRow', 0, () => {
+      const first: StickerSetInfo = makeSetInfo('41', 'First', 9, [cover('41', 1)], 0);
+      const second: StickerSetInfo = makeSetInfo('42', 'Second', 8, [cover('42', 1)], 0);
+      const rows: StickerTrendingPack[] = stickerTrendingPacksFromSetInfos(
+        [first, second],
+        new RecordingDeps().deps()
+      );
+      expect(rows[0].isInstalled).assertFalse();
+      const after: StickerTrendingPack[] = stickerTrendingWithInstalled(rows, '41', true);
+
+      expect(after.length).assertEqual(2);
+      expect(after[0].isInstalled).assertTrue();
+      expect(after[0].title).assertEqual('First');
+      expect(after[0].totalSize).assertEqual(9);
+      // 不相干那一行不能被顺手改成已装
+      expect(after[1].isInstalled).assertFalse();
+      // 键必须变：否则那一行的「添加」不会重绘成「已添加」
+      expect(stickerTrendingKey(rows[0]) === stickerTrendingKey(after[0])).assertFalse();
+      expect(stickerTrendingKey(rows[1]) === stickerTrendingKey(after[1])).assertTrue();
+    });
+
+    it('trending_key_changesWhenImageArrives', 0, () => {
+      const before: StickerTrendingPack = new StickerTrendingPack('5', 'X', null, 3, false);
+      const after: StickerTrendingPack = new StickerTrendingPack('5', 'X', '/data/5.webp', 3, false);
+      expect(stickerTrendingKey(before) === stickerTrendingKey(after)).assertFalse();
+    });
+
+    it('pathIsRenderable_rejectsAnimationFormatsOnly', 0, () => {
+      expect(stickerPathIsRenderable('/data/a.webp')).assertTrue();
+      expect(stickerPathIsRenderable('/data/A.JPG')).assertTrue();
+      // 未知扩展名按可渲染处理：别把 TDLib 换的命名规则当错误，误杀正常的图
+      expect(stickerPathIsRenderable('/data/5')).assertTrue();
+      expect(stickerPathIsRenderable('/data/a.tgs')).assertFalse();
+      expect(stickerPathIsRenderable('/data/a.TGS')).assertFalse();
+      expect(stickerPathIsRenderable('/data/a.mp4')).assertFalse();
+      expect(stickerPathIsRenderable(null)).assertFalse();
+      expect(stickerPathIsRenderable('')).assertFalse();
+    });
+
+    it('cellImage_tgsOriginalFallsBackToRasterThumbnail', 0, () => {
+      // 动效贴纸的原文件就是 .tgs：优先原文件是为了看大图，但解不了的格式必须让位给缩略图，
+      // 两样都不行才退回格子自己的 emoji（空白格子会被用户当成「下载坏了」）。
+      const tgs: StickerSetItem = {
+        id: 3,
+        fileId: 3,
+        emoji: '',
+        width: 512,
+        height: 512,
+        localPath: '/data/stickers/3.tgs',
+        thumbnailPath: '/data/thumbnails/3.webp',
+        isDownloaded: true,
+        isDownloading: false
+      };
+      expect(stickerCellImagePath(tgs)).assertEqual('/data/thumbnails/3.webp');
+
+      const tgsOnly: StickerSetItem = {
+        id: 3,
+        fileId: 3,
+        emoji: '🎬',
+        width: 512,
+        height: 512,
+        localPath: '/data/stickers/3.tgs',
+        thumbnailPath: null,
+        isDownloaded: true,
+        isDownloading: false
+      };
+      expect(stickerCellImagePath(tgsOnly)).assertNull();
+      // 键里也不能带那张解不了的图：否则重建出一个空白 Image，比 emoji 占位更糟
+      expect(stickerCellKey(tgsOnly).indexOf('.tgs')).assertEqual(-1);
+    });
+
+    it('boardThumbnail_skipsUndecodablePackThumbnail', 0, () => {
+      const rec = new RecordingDeps();
+      rec.havePath(900, '/data/sets/900.tgs');
+      rec.havePath(2001, '/data/covers/2001.webp');
+      const covers: Sticker[] = [makeSticker('4', 1001, 2001, '🐼')];
+      // 已装盘那一区的取值顺序同页签条，但要跳过解不了的格式
+      expect(stickerBoardThumbnailPath(makeSetInfo('4', 'A', 1, covers, 900), rec.deps()))
+        .assertEqual('/data/covers/2001.webp');
+      // 一张可渲染的都没有 → null，由界面退回包名首字母
+      const nothing = new RecordingDeps();
+      nothing.havePath(900, '/data/sets/900.tgs');
+      expect(stickerBoardThumbnailPath(makeSetInfo('4', 'A', 1, covers, 900), nothing.deps())).assertNull();
     });
   });
 }

@@ -128,6 +128,10 @@ import {
   encodeGetInstalledStickerSets,
   decodeStickerSets,
   StickerSets,
+  GetTrendingStickerSets,
+  encodeGetTrendingStickerSets,
+  decodeTrendingStickerSets,
+  TrendingStickerSets,
   StickerSetInfo,
   StickerTypeRegular,
   ChangeStickerSet,
@@ -233,6 +237,8 @@ import {
   OnStickerPreviewFileUpdated,
   OnStickerBoardLoaded,
   OnStickerBoardFailed,
+  OnTrendingLoaded,
+  OnTrendingFailed,
   StartVoiceRecord,
   StopAndSendVoiceRecord,
   CancelVoiceRecord,
@@ -268,6 +274,7 @@ import {
   OpenCommentsEffect,
   FetchStickerSet,
   FetchStickerBoard,
+  FetchTrendingStickerSets,
   ChangeStickerSetEffect,
   SendStickerMessage,
   SendAnimationMessage,
@@ -283,7 +290,10 @@ import { StickerSetPreviewState, StickerSetItem, isUnicodeEmojiSticker } from '.
 import {
   StickerBoardDeps,
   StickerBoardPack,
-  stickerBoardPacksFromSetInfos
+  StickerTrendingPack,
+  stickerBoardPacksFromSetInfos,
+  stickerTrendingPacksFromSetInfos,
+  STICKER_TRENDING_MAX_PACKS
 } from '../model/StickerBoard';
 import { isOutgoingMessageRead, ReadReportThrottle } from '../model/ReadReceipt';
 import { chatReducer } from '../reducer/ChatReducer';
@@ -620,6 +630,14 @@ export class ChatCoordinator {
   private stickerBoardSets: StickerSetInfo[] = [];
   /** 本次装盘为贴纸板登记过下载的文件 id；哪个到货就要重装一次盘。 */
   private readonly stickerBoardFiles: Set<number> = new Set();
+  /**
+   * STICKER-BOARD-102：`getTrendingStickerSets` 的原始回包，与已装盘同样为了「图到货后重装」。
+   *
+   * 单独一份缓存而不是并到 `stickerBoardSets` 里：两区各自的 ForEach 键、各自的装/卸语义都
+   * 不同（榜单要跟着 `is_installed` 走），混在一起会让到货回灌把另一区的行覆盖掉。
+   */
+  private trendingSets: StickerSetInfo[] = [];
+  private readonly trendingFiles: Set<number> = new Set();
   /**
    * MEDIA-105：待发送视频的**本地缩略图**缓存，key = 送进 TDLib 的视频沙箱物理路径。
    *
@@ -1508,6 +1526,7 @@ export class ChatCoordinator {
             if (file.local.path.length > 0) {
               this.dispatch(new OnStickerPreviewFileUpdated(fileId, file.local.path));
               this.refreshStickerBoardOnArrival(fileId);
+              this.refreshTrendingOnArrival(fileId);
             }
           } else {
             // SET-104：TDLib 停止下载（清理缓存把文件重置 / 下载失败）时释放去重闩，
@@ -3662,6 +3681,11 @@ export class ChatCoordinator {
         break;
       }
 
+      case 'fetchTrendingStickerSets': {
+        this.handleFetchTrendingStickerSets();
+        break;
+      }
+
       case 'fetchStickerSet': {
         const fetchSticker: FetchStickerSet = effect as FetchStickerSet;
         this.handleFetchStickerSet(fetchSticker.setId);
@@ -3986,6 +4010,70 @@ export class ChatCoordinator {
       return;
     }
     this.dispatch(new OnStickerBoardLoaded(this.mapStickerBoard()));
+  }
+
+  /**
+   * STICKER-BOARD-102：拉「热门普通贴纸包」。
+   *
+   * `sticker_type` 是必填参数，且三个类型各是一张独立的榜（与已装盘同理，这里只取 regular）。
+   * 榜单只是贴纸页签里的一个入口区，失败不占 `errorMessage`（那个槽说的是「你自己的包没读到」），
+   * 所以 `OnTrendingFailed` 只写日志。
+   */
+  private handleFetchTrendingStickerSets(): void {
+    const req: GetTrendingStickerSets = new GetTrendingStickerSets();
+    req.sticker_type = new StickerTypeRegular();
+    req.offset = 0;
+    req.limit = STICKER_TRENDING_MAX_PACKS;
+    const result: Result<TdPendingRequest, AppError> =
+      this.scope.request('getTrendingStickerSets', encodeGetTrendingStickerSets(req) as TdWireObject);
+    if (result.err) {
+      this.logger.logError(TAG, result.error);
+      this.dispatch(new OnTrendingFailed(result.error.message));
+      return;
+    }
+    if (result.ok) {
+      result.value.promise.then((res: Result<TdWireObject, AppError>) => {
+        if (this.destroyed) {
+          return;
+        }
+        if (res.err) {
+          this.logger.logError(TAG, res.error);
+          this.dispatch(new OnTrendingFailed(res.error.message));
+        }
+        if (res.ok) {
+          const trending: TrendingStickerSets | null = decodeTrendingStickerSets(res.value as TdJsonRaw);
+          if (trending === null) {
+            this.dispatch(new OnTrendingFailed('Failed to decode trending sticker sets'));
+            return;
+          }
+          this.trendingSets = trending.sets;
+          this.logger.info(TAG, 'sticker_trending_loaded', `rows=${trending.sets.length},total=${trending.total_count}`);
+          this.dispatch(new OnTrendingLoaded(this.mapTrending()));
+        }
+      }).catch(() => {});
+    }
+  }
+
+  /** 榜单 DTO → 行。`download` 只登记那一行用的一张封面（一屏 ≤6 个文件）。 */
+  private mapTrending(): StickerTrendingPack[] {
+    const deps: StickerBoardDeps = {
+      localPathOf: (fileId: number): string | null => this.fileRegistry.getLocalPath(fileId),
+      download: (fileId: number): void => {
+        if (!this.fileRegistry.isDownloaded(fileId)) {
+          this.trendingFiles.add(fileId);
+          this.requestMediaDownload(fileId, 2);
+        }
+      }
+    };
+    return stickerTrendingPacksFromSetInfos(this.trendingSets, deps);
+  }
+
+  /** 榜单某一行到货：从 DTO 缓存重算该区。与已装盘的回灌各走各的，互不覆盖。 */
+  private refreshTrendingOnArrival(fileId: number): void {
+    if (!this.trendingFiles.delete(fileId) || this.trendingSets.length === 0) {
+      return;
+    }
+    this.dispatch(new OnTrendingLoaded(this.mapTrending()));
   }
 
   private handleFetchStickerSet(setId: string): void {

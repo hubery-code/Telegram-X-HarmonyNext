@@ -931,6 +931,15 @@ export struct ChatPage {
             stickerPacks: this.uiState.stickerBoard.packs.slice(),
             stickerBoardLoading: this.uiState.stickerBoard.isLoading,
             stickerBoardError: this.uiState.stickerBoard.errorMessage,
+            // STICKER-BOARD-102：热门区与在途那一包
+            stickerTrending: this.uiState.stickerBoard.trending.slice(),
+            stickerInstallingSetId: this.uiState.stickerBoard.installingSetId,
+            onInstallStickerSet: (setId: string) => {
+              this.onDispatch(new InstallStickerSet(setId));
+            },
+            onUninstallStickerSet: (setId: string) => {
+              this.onDispatch(new UninstallStickerSet(setId));
+            },
             onStickerBoardVisible: () => {
               this.onDispatch(new OpenStickerBoard());
             },
