@@ -848,8 +848,37 @@
 > `dumpLayout` 对应 `Image` 节点 `[570,496][1200,1126]`（180vp 见方）；随后长按删除该测试消息（回 `No messages yet`）、
 > 卸载 Uni 包（`sticker_board_loaded rows=0,total=0`），**账号回到取证前原状**，全程未向任何群/频道发送内容。
 > 遗留：① 动效贴纸无逐帧动画（等 TGS/Lottie 渲染器，届时气泡/板卡/预览页三处一起换）；
-> ② 贴纸包预览页的 `.tgs` 格子仍空白（`stickerPathIsRenderable` 已可复用，纯接线活）；
+> ② ~~贴纸包预览页的 `.tgs` 格子仍空白（`stickerPathIsRenderable` 已可复用，纯接线活）~~（**2026-09-26 已由 STICKER-PREVIEW-101 接上同一取值链**，见下一条注）；
 > ③ 最近使用仍吃 `DEFAULT_RECENT_STICKERS`（`getRecentStickers` 未接）。
+
+> **2026-09-26（STICKER-PREVIEW-101，FEAT-P2-004 贴纸包预览弹层，结掉上一条遗留 ②）**：
+> 接线活本身两行：`StickerSetPreviewSheet` 的格子原来写 `item.localPath ?? item.thumbnailPath` 直接进 `Image`，
+> 换成板卡与气泡共用的那条 `stickerCellImagePath(item)` —— 动效包的整图和缩略图**都能**是 `.tgs`
+> （设备实测 `thumbnails/…_1680977305.tgs`），两条都画不开就退回这颗贴纸自己的 emoji，`ForEach` 键带上路径。
+> **真正的收获是撞出一个此前没人走过的坑**：为了验这两行，第一次把「整包取数」在真实账号上跑到底，
+> 结果预览弹层对**任何**一包都停在错误分支。取出数字码 → `getStickerSet(set_id)` 回
+> `406 STICKERSET_INVALID`；换 `searchStickerSet(短名, ignore_cache=true)`（即 `inputStickerSetShortName`，
+> 与 Telegram X `loadStickerSet(shortName)` 同一条路）**同一个包仍回 406**。
+> 三条反证排除了「包不存在/短名算错」：`ConcernedFroge` 在 t.me 公开页可访问；它的 `id + access_hash`
+> 走 `changeStickerSet` **装包成功**（榜上翻「已添加」、`rows=1,total=1`）；装完本地已有这一包，再开预览两条路各回一次 406。
+> 读 vendored TDLib 对上机制：`get_sticker_set` 与 `search_sticker_set` **都不是本地查表**，最终都落到
+> `GetStickerSetQuery → messages.getStickerSet`（`StickersManager.cpp:719-769`、`:5002-5019`、`:5540-5575`），
+> 而 `STICKERSET_INVALID` 全仓库只被 `update_load_requests` 当作「包大概已被删」用于清短名映射
+> （`:3968-3972`），**没有本地合成这条错误的地方** → 服务端否决，ArkTS 侧修不了，
+> 要 native 继续查 TL 层 / `hash` 语义 / DC 路由（本端 `.so` 是预构建 + 补丁，重编 TDLib 不在本包预算内）。
+> **因此取数交付的形状是「按 id → 短名依次兜底」**：`stickerSetShortNameOf(groups, setId)`（Kit-free）从板卡与
+> 热门榜两组 DTO 缓存里取短名，按 id 失败且有短名就再问一次；本地没见过这一包（消息气泡那个入口只有
+> `stickerSetId`）就只剩按 id 的一次机会。另修一处话术：弹层直接把 TDLib 的英文兜底串 `TDLib request failed`
+> 画在屏幕上，改成「贴纸包加载失败，请稍后重试」，原文继续只进 `AppError.cause`。
+> 测试：`feature_chat` **375/375**（+2：`.tgs` 双路径必须返回 null；`stickerSetShortNameOf` 跨组/同组命中与
+> 未命中、`name` 为空回空串），三守卫 0 违规。设备取证（127.0.0.1:5555，`.hvigor/outputs/sp101b/`）：
+> 热门行进弹层出「贴纸包详情 / 贴纸包加载失败，请稍后重试 / 重试 / 添加贴纸包」，点一次重试
+> `ChatCoordinator error` 计数 2 → 4（兜底链真的重发了两条请求），`name=ConcernedFroge` 确认走的是短名；
+> 取证期间装的 `ConcernedFroge` 收尾卸回（`sticker_board_loaded rows=0,total=0`），**账号回到取证前原状**，
+> 全程未向任何群/频道发送内容。**弹层网格在 406 解决前无法目视验图**，这一半只有单测覆盖。
+> 遗留：① **整包预览需 native 侧解掉 `messages.getStickerSet` 的 406**（不解决则预览页与整包页签恒空）；
+> ② 取数失败时弹层的 `isInstalled` 恒 false（真实态在 `stickerSetInfo.is_installed`，本可先行显示），
+> 装/卸按钮因此可能对已装包重复写；③ `tg://addstickers` 与 `internalLinkTypeStickerSet` 仍未接（DEEPLINK 收尾）。
 
 
 | 功能 ID | 功能名 |

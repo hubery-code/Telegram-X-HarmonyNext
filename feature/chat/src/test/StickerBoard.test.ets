@@ -44,6 +44,7 @@ import {
   stickerItemFromSticker,
   stickerItemsFromStickers,
   stickerPathIsRenderable,
+  stickerSetShortNameOf,
   stickerTrendingCoverPath,
   stickerTrendingKey,
   stickerTrendingPacksFromSetInfos,
@@ -348,6 +349,40 @@ export default function stickerBoardTest(): void {
         isDownloading: false
       };
       expect(stickerCellImagePath(nothing)).assertNull();
+    });
+
+    it('cellImagePath_rejectsAnimatedThumbnailSoThePreviewFallsBackToEmoji', 0, () => {
+      // 贴纸包预览弹层（STICKER-PREVIEW-101）：动效贴纸包的原图与缩略图在 TDLib 里
+      // **都是** `.tgs`（设备实测 thumbnails 目录里就有 `*_1680977305.tgs`）。
+      // 两条路径都画不开时必须返回 null，让界面退回这颗贴纸自己的 emoji ——
+      // 返回任何一条都等于在弹层里再画一块空白。
+      const animated: StickerSetItem = {
+        id: 21,
+        fileId: 21,
+        emoji: '🦄',
+        width: 128,
+        height: 128,
+        localPath: '/data/stickers/1052321353216032834.tgs',
+        thumbnailPath: '/data/thumbnails/1052321353216032834_1680977305.tgs',
+        isDownloaded: true,
+        isDownloading: false
+      };
+      expect(stickerCellImagePath(animated)).assertNull();
+    });
+
+    it('shortNameOf_findsThePackAcrossGroups', 0, () => {
+      // 预览取值链（STICKER-PREVIEW-101）：按 set_id 在板卡与热门榜两组缓存里找短名。
+      // 找不到的那一包必须回空串，让调用方退回按 id 问 —— 拿别人的短名去查包更糟。
+      const board: StickerSetInfo = makeSetInfo('7', 'Board Pack', 3, [], 0);
+      board.name = 'BoardPack';
+      const trending: StickerSetInfo = makeSetInfo('8', 'Trending Pack', 4, [], 0);
+      trending.name = 'TrendingPack';
+      const nameless: StickerSetInfo = makeSetInfo('9', 'No Name', 5, [], 0);
+
+      expect(stickerSetShortNameOf([[board], [trending]], '8')).assertEqual('TrendingPack');
+      expect(stickerSetShortNameOf([[board, trending]], '7')).assertEqual('BoardPack');
+      expect(stickerSetShortNameOf([[board], [trending]], '404')).assertEqual('');
+      expect(stickerSetShortNameOf([[nameless]], '9')).assertEqual('');
     });
 
     it('cellKey_changesWhenTheImageArrives', 0, () => {

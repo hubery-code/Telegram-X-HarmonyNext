@@ -10,6 +10,7 @@
 
 import { LightTheme, Theme } from '@tgx/core-design-system';
 import { StickerSetPreviewState, StickerSetItem } from '../model/StickerSetPreviewState';
+import { stickerCellImagePath } from '../model/StickerBoard';
 
 
 function toSandboxUri(path: string | null): string {
@@ -119,7 +120,7 @@ export struct StickerSetPreviewSheet {
               .alignItems(HorizontalAlign.Center)
             } else if (this.preview.errorMessage !== null && this.preview.stickers.length === 0) {
               Column() {
-                Text(this.preview.errorMessage)
+                Text('贴纸包加载失败，请稍后重试')
                   .fontSize(this.T.typography.body.fontSize)
                   .fontColor(this.T.colors.destructive)
                 Button('重试')
@@ -141,13 +142,8 @@ export struct StickerSetPreviewSheet {
                 ForEach(this.preview.stickers, (item: StickerSetItem) => {
                   GridItem() {
                     Row() {
-                      if (item.localPath !== null && item.localPath.length > 0) {
-                        Image(toSandboxUri(item.localPath))
-                          .width(52)
-                          .height(52)
-                          .objectFit(ImageFit.Contain)
-                      } else if (item.thumbnailPath !== null && item.thumbnailPath.length > 0) {
-                        Image(toSandboxUri(item.thumbnailPath))
+                      if (stickerCellImagePath(item) !== null) {
+                        Image(toSandboxUri(stickerCellImagePath(item)))
                           .width(52)
                           .height(52)
                           .objectFit(ImageFit.Contain)
@@ -165,7 +161,7 @@ export struct StickerSetPreviewSheet {
                       this.onSelectSticker(item);
                     })
                   }
-                }, (item: StickerSetItem) => `${item.id}_${item.localPath ?? ''}`)
+                }, (item: StickerSetItem) => `${item.id}_${stickerCellImagePath(item) ?? ''}`)
               }
               .columnsTemplate('1fr 1fr 1fr 1fr 1fr')
               .rowsGap(this.T.spacing.xs)

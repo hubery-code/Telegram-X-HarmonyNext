@@ -122,6 +122,8 @@ import {
   VoiceNote,
   GetStickerSet,
   encodeGetStickerSet,
+  SearchStickerSet,
+  encodeSearchStickerSet,
   decodeStickerSet,
   StickerSet,
   GetInstalledStickerSets,
@@ -292,6 +294,7 @@ import {
   StickerBoardPack,
   StickerTrendingPack,
   stickerBoardPacksFromSetInfos,
+  stickerSetShortNameOf,
   stickerTrendingPacksFromSetInfos,
   STICKER_TRENDING_MAX_PACKS
 } from '../model/StickerBoard';
@@ -4111,6 +4114,18 @@ export class ChatCoordinator {
       return;
     }
 
+    // 整包预览要的是完整 StickerSet，TDLib 有两条路，各覆盖一半：
+    //  - `getStickerSet(set_id)`：已安装的包命中本地缓存，直接回；没装过的包它拿
+    //    `inputStickerSetID(id, access_hash)` 实发查询，而列表接口缓存的那一层 access_hash 不可用；
+    //  - `searchStickerSet(短名)`：与 Telegram X 的 `loadStickerSet(shortName)` 同一条路，
+    //    走的是一次 `messages.getStickerSet(inputStickerSetShortName)` 网络往返。
+    // 设备实测两条路都可能单独回 406 STICKERSET_INVALID（取证见 PROGRESS），所以按 id → 短名
+    // 依次兜底；只有本地见过这一包（板卡 / 热门榜缓存了短名）才有第二次机会。
+    const setName: string = stickerSetShortNameOf([this.stickerBoardSets, this.trendingSets], setId);
+    this.requestStickerSetById(setId, setName);
+  }
+
+  private requestStickerSetById(setId: string, setName: string): void {
     const req: GetStickerSet = new GetStickerSet();
     req.set_id = setId;
     const result: Result<TdPendingRequest, AppError> =
@@ -4121,68 +4136,103 @@ export class ChatCoordinator {
     }
     if (result.ok) {
       result.value.promise.then((res: Result<TdWireObject, AppError>) => {
+        if (res.ok) {
+          this.onStickerSetPreviewResponse(setId, res.value);
+        }
+        if (res.err) {
+          this.logger.logError(TAG, res.error);
+          if (setName.length > 0) {
+            this.requestStickerSetByName(setId, setName);
+          } else if (!this.destroyed) {
+            this.dispatch(new OnStickerSetLoadFailed(setId, res.error.message));
+          }
+        }
+      }).catch(() => {
+      });
+    }
+  }
+
+  private requestStickerSetByName(setId: string, setName: string): void {
+    if (this.destroyed) {
+      return;
+    }
+    const search: SearchStickerSet = new SearchStickerSet();
+    search.name = setName;
+    search.ignore_cache = true;
+    const result: Result<TdPendingRequest, AppError> =
+      this.scope.request('searchStickerSet', encodeSearchStickerSet(search) as TdWireObject);
+    if (result.err) {
+      this.logger.logError(TAG, result.error);
+      this.dispatch(new OnStickerSetLoadFailed(setId, result.error.message));
+    }
+    if (result.ok) {
+      result.value.promise.then((res: Result<TdWireObject, AppError>) => {
+        if (res.ok) {
+          this.onStickerSetPreviewResponse(setId, res.value);
+        }
         if (res.err) {
           this.logger.logError(TAG, res.error);
           if (!this.destroyed) {
             this.dispatch(new OnStickerSetLoadFailed(setId, res.error.message));
           }
         }
-        if (res.ok) {
-          if (this.destroyed) {
-            return;
-          }
-          const set: StickerSet | null = decodeStickerSet(res.value as TdJsonRaw);
-          if (set === null) {
-            this.dispatch(new OnStickerSetLoadFailed(setId, 'Failed to decode sticker set'));
-            return;
-          }
-          const items: StickerSetItem[] = [];
-          for (let i = 0; i < set.stickers.length; i++) {
-            const s: Sticker = set.stickers[i];
-            const targetFile: File | null = s.sticker;
-            const thumbFile: File | null = (s.thumbnail !== null) ? s.thumbnail.file : null;
-            const fileId: number = targetFile !== null ? targetFile.id : 0;
-            const thumbId: number = thumbFile !== null ? thumbFile.id : 0;
-            const localPath: string | null = fileId > 0 ? this.fileRegistry.getLocalPath(fileId) : null;
-            const thumbPath: string | null = thumbId > 0 ? this.fileRegistry.getLocalPath(thumbId) : null;
-            const isDownloaded: boolean = fileId > 0 ? this.fileRegistry.isDownloaded(fileId) : false;
-
-            if (thumbId > 0 && thumbPath === null) {
-              this.requestMediaDownload(thumbId, 2);
-            }
-            if (fileId > 0 && !isDownloaded) {
-              this.requestMediaDownload(fileId, 1);
-            }
-
-            items.push({
-              id: fileId,
-              fileId: fileId,
-              emoji: s.emoji,
-              width: s.width,
-              height: s.height,
-              localPath: localPath,
-              thumbnailPath: thumbPath,
-              isDownloaded: isDownloaded,
-              isDownloading: false
-            });
-          }
-          const preview: StickerSetPreviewState = new StickerSetPreviewState(
-            setId,
-            set.title,
-            set.name,
-            set.is_installed,
-            set.is_archived,
-            set.is_official,
-            items,
-            false,
-            false,
-            null
-          );
-          this.dispatch(new OnStickerSetLoaded(preview));
-        }
       }).catch(() => {
       });
     }
+  }
+
+  private onStickerSetPreviewResponse(setId: string, value: TdWireObject): void {
+    if (this.destroyed) {
+      return;
+    }
+    const set: StickerSet | null = decodeStickerSet(value as TdJsonRaw);
+    if (set === null) {
+      this.dispatch(new OnStickerSetLoadFailed(setId, 'Failed to decode sticker set'));
+      return;
+    }
+    const items: StickerSetItem[] = [];
+    for (let i = 0; i < set.stickers.length; i++) {
+      const s: Sticker = set.stickers[i];
+      const targetFile: File | null = s.sticker;
+      const thumbFile: File | null = (s.thumbnail !== null) ? s.thumbnail.file : null;
+      const fileId: number = targetFile !== null ? targetFile.id : 0;
+      const thumbId: number = thumbFile !== null ? thumbFile.id : 0;
+      const localPath: string | null = fileId > 0 ? this.fileRegistry.getLocalPath(fileId) : null;
+      const thumbPath: string | null = thumbId > 0 ? this.fileRegistry.getLocalPath(thumbId) : null;
+      const isDownloaded: boolean = fileId > 0 ? this.fileRegistry.isDownloaded(fileId) : false;
+
+      if (thumbId > 0 && thumbPath === null) {
+        this.requestMediaDownload(thumbId, 2);
+      }
+      if (fileId > 0 && !isDownloaded) {
+        this.requestMediaDownload(fileId, 1);
+      }
+
+      items.push({
+        id: fileId,
+        fileId: fileId,
+        emoji: s.emoji,
+        width: s.width,
+        height: s.height,
+        localPath: localPath,
+        thumbnailPath: thumbPath,
+        isDownloaded: isDownloaded,
+        isDownloading: false
+      });
+    }
+    const preview: StickerSetPreviewState = new StickerSetPreviewState(
+      setId,
+      set.title,
+      set.name,
+      set.is_installed,
+      set.is_archived,
+      set.is_official,
+      items,
+      false,
+      false,
+      null
+    );
+    this.dispatch(new OnStickerSetLoaded(preview));
   }
 
   private handleChangeStickerSet(setId: string, isInstalled: boolean): void {
