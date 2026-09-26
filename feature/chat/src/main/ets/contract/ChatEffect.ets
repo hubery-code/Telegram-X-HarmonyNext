@@ -293,6 +293,19 @@ export class FetchTrendingStickerSets implements Effect {
   readonly kind: 'fetchTrendingStickerSets' = 'fetchTrendingStickerSets';
 }
 
+/** STICKER-RECENT-101：向 TDLib 取最近使用的贴纸（getRecentStickers, is_attached=false）。 */
+export class FetchRecentStickers implements Effect {
+  readonly kind: 'fetchRecentStickers' = 'fetchRecentStickers';
+}
+
+/**
+ * STICKER-RECENT-101：把「清空最近使用」写回 TDLib（clearRecentStickers, is_attached=false）。
+ * 本地列表由 reducer 立刻清空（Android 也是先撤 UI 再发请求），这一条只负责服务端那半边。
+ */
+export class ClearRecentStickersInTdlib implements Effect {
+  readonly kind: 'clearRecentStickersInTdlib' = 'clearRecentStickersInTdlib';
+}
+
 export class FetchStickerSet implements Effect {
   readonly kind: 'fetchStickerSet' = 'fetchStickerSet';
   readonly setId: string;
@@ -464,6 +477,8 @@ export type ChatEffect =
   | OpenCommentsEffect
   | FetchStickerBoard
   | FetchTrendingStickerSets
+  | FetchRecentStickers
+  | ClearRecentStickersInTdlib
   | FetchStickerSet
   | ChangeStickerSetEffect
   | SendStickerMessage

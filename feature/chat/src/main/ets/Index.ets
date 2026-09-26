@@ -159,8 +159,7 @@ export {
   StickerSetPreviewState,
   StickerSetItem,
   StickerPack,
-  DEFAULT_STICKER_PACKS,
-  DEFAULT_RECENT_STICKERS
+  DEFAULT_STICKER_PACKS
 } from './model/StickerSetPreviewState';
 
 export {

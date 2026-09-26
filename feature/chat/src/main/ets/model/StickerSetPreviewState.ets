@@ -182,12 +182,3 @@ export const DEFAULT_STICKER_PACKS: StickerPack[] = [
   }
 ];
 
-/** STICKER-101：默认最近使用贴纸 */
-export const DEFAULT_RECENT_STICKERS: readonly StickerSetItem[] = [
-  MAKE_STICKER(1001, '🔥'),
-  MAKE_STICKER(1004, '😎'),
-  MAKE_STICKER(1018, '🐼'),
-  MAKE_STICKER(1002, '🎉'),
-  MAKE_STICKER(1006, '❤️')
-];
-

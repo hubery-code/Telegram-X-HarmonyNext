@@ -38,6 +38,14 @@ export const STICKER_BOARD_DOWNLOAD_BUDGET: number = 30;
 export const STICKER_BOARD_RECENT_SET_ID: string = 'recent';
 
 /**
+ * 最近使用一行的格子数上限。Android 折叠态显示 10 张、点「展开」铺完
+ * （`config/Config.java:194` DEFAULT_SHOW_RECENT_STICKERS_COUNT、
+ * `ui/EmojiMediaListController.java:877-883`）；本端没有折叠档，所以取一个能一次滚完、
+ * 又不会把 Grid 铺爆的数（TDLib 服务端给的列表上限是 200，全铺等于把首帧交给两百个 Image）。
+ */
+export const STICKER_BOARD_RECENT_MAX: number = 20;
+
+/**
  * ArkUI `Image` 解不了的格式。TDLib 把动效贴纸（Lottie）当普通文件落盘，扩展名 `.tgs`
  * 内容是 gzip 过的 JSON —— Android 有 rlottie 能播（`TgsPlayer`），本端没有对应解码器，
  * 直接喂给 Image 只会得到一块**空白**：看起来像「图没下下来」，其实是根本解不了。
@@ -239,19 +247,46 @@ export function stickerBoardThumbnailPath(info: StickerSetInfo, deps: StickerBoa
 /**
  * 最近使用那一个伪包：不对应任何 setId，因此不能被点开成整包。
  *
- * 与真实包不同，这里**不截断**：真实包受 TDLib `covers` 的 5 张上限约束，而最近使用是本机
- * 攒出来的用户自己的列表，Android 也是整段铺开（`EmojiMediaListController` 的 recent section）。
+ * 与真实包不同，这里**不截断**：真实包受 TDLib `covers` 的 5 张上限约束，而最近使用是
+ * TDLib 自己的列表（`getRecentStickers`），Android 也是整段铺开（`EmojiMediaListController` 的 recent section）。
  */
 export function stickerBoardRecentPack(items: readonly StickerSetItem[]): StickerBoardPack {
   const covers: StickerSetItem[] = items.slice(0);
   return new StickerBoardPack(
     STICKER_BOARD_RECENT_SET_ID,
-    'Recent Stickers',
+    '最近使用',
     covers.length > 0 ? firstRenderablePath(covers[0]) : null,
     covers,
     items.length,
     false
   );
+}
+
+/**
+ * `getRecentStickers(is_attached=false)` 的回包 → 最近使用那一行的格子。
+ *
+ * 顺序完全照 TDLib（它已经按「最近」排好，客户端不再二次排序），丢掉落不了地的 null 项，
+ * 超过 `STICKER_BOARD_RECENT_MAX` 的部分**连下载都不登记** —— 上限外的格子根本不上屏。
+ * 只登记缩略图：与真实包的格子同口径（板卡显示的是 512 以内的小图，原图等真发送时 TDLib 自己取）。
+ */
+export function recentStickersFromStickers(
+  stickers: readonly Sticker[],
+  deps: StickerBoardDeps
+): StickerSetItem[] {
+  const items: StickerSetItem[] = [];
+  for (let i = 0; i < stickers.length && items.length < STICKER_BOARD_RECENT_MAX; i++) {
+    const sticker: Sticker = stickers[i];
+    const item: StickerSetItem | null = stickerItemFromSticker(sticker, deps);
+    if (item === null) {
+      continue;
+    }
+    const thumbFile: File | null = stickerThumbnailFile(sticker);
+    if (thumbFile !== null && thumbFile.id > 0) {
+      deps.download(thumbFile.id);
+    }
+    items.push(item);
+  }
+  return items;
 }
 
 /**
@@ -288,6 +323,21 @@ export function stickerCellImagePath(item: StickerSetItem): string | null {
 export function stickerCellKey(item: StickerSetItem): string {
   const path: string | null = stickerCellImagePath(item);
   return `${item.fileId}_${path === null ? '' : path}`;
+}
+
+/**
+ * 板卡一整行的 ForEach 键：`setId` + 每一格当前画的是哪张图。
+ *
+ * ArkUI 对同键项**沿用旧子树**，不会重跑 itemBuilder —— 所以只写 `pack.setId` 时，
+ * 缩略图到货后那一整行（含内层格子的 ForEach）都还是首帧的 emoji 兜底。
+ * 设备实测：包条那一栏的键含路径，正常显示独角兽；同一份数据的整行却停在 😂。
+ */
+export function stickerBoardPackKey(pack: StickerBoardPack): string {
+  let signature: string = '';
+  for (let i = 0; i < pack.covers.length; i++) {
+    signature += `/${stickerCellKey(pack.covers[i])}`;
+  }
+  return `${pack.setId}_${signature}`;
 }
 
 /**
@@ -450,6 +500,7 @@ export interface StickerBoardOptions {
   readonly trending?: StickerTrendingPack[];
   readonly trendingRequested?: boolean;
   readonly installingSetId?: string | null;
+  readonly recentRequested?: boolean;
 }
 
 export class StickerBoardState {
@@ -467,6 +518,11 @@ export class StickerBoardState {
   readonly trendingRequested: boolean;
   /** 正在装/卸的那一包；只允许同时在途一包（重复点击不该发出第二条 changeStickerSet）。 */
   readonly installingSetId: string | null;
+  /**
+   * 最近使用**问过了**（同 `trendingRequested`：不等于问成功）。
+   * 「一次会话内只问一次 TDLib」这条口径要和榜单、已装盘一致，否则反复切页签就是反复打网络。
+   */
+  readonly recentRequested: boolean;
 
   constructor(
     packs: StickerBoardPack[] = [],
@@ -475,7 +531,8 @@ export class StickerBoardState {
     errorMessage: string | null = null,
     trending: StickerTrendingPack[] = [],
     trendingRequested: boolean = false,
-    installingSetId: string | null = null
+    installingSetId: string | null = null,
+    recentRequested: boolean = false
   ) {
     this.packs = packs;
     this.isLoading = isLoading;
@@ -484,10 +541,11 @@ export class StickerBoardState {
     this.trending = trending;
     this.trendingRequested = trendingRequested;
     this.installingSetId = installingSetId;
+    this.recentRequested = recentRequested;
   }
 
   static initial(): StickerBoardState {
-    return new StickerBoardState([], false, false, null, [], false, null);
+    return new StickerBoardState([], false, false, null, [], false, null, false);
   }
 
   copyWith(options: StickerBoardOptions): StickerBoardState {
@@ -498,7 +556,8 @@ export class StickerBoardState {
       options.errorMessage !== undefined ? options.errorMessage : this.errorMessage,
       options.trending !== undefined ? options.trending : this.trending,
       options.trendingRequested !== undefined ? options.trendingRequested : this.trendingRequested,
-      options.installingSetId !== undefined ? options.installingSetId : this.installingSetId
+      options.installingSetId !== undefined ? options.installingSetId : this.installingSetId,
+      options.recentRequested !== undefined ? options.recentRequested : this.recentRequested
     );
   }
 

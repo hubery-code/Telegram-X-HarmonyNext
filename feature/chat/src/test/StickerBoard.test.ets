@@ -16,6 +16,11 @@
  * 还有一条设备取证挖出来的：**解不了的格式不能当图用** —— 动效贴纸包的 thumbnail 往往是
  * .tgs（gzip 的 Lottie JSON），文件确实在盘上，但 ArkUI 的 Image 没有对应解码器，喂过去
  * 就是一块空白；必须跳过它换下一张候选，全都不行才退回包名首字母 / 贴纸自己的 emoji。
+ *
+ * STICKER-RECENT-101 接上「最近使用」的真实数据源（`getRecentStickers`）后，这里守的是：
+ * 顺序**完全照 TDLib**（它自己按最近排，客户端二次排序就是把用户刚发的那颗挪走）、上限
+ * `STICKER_BOARD_RECENT_MAX` 之外的格子连下载都不登记（上了屏才有资格占预算），以及沿用
+ * 101 那条「没有可发送文件句柄就不上板」。伪包标题是中文界面文案，不是 `'Recent Stickers'`。
  */
 
 import { describe, it, expect } from '@ohos/hypium';
@@ -29,13 +34,16 @@ import {
   STICKER_BOARD_DOWNLOAD_BUDGET,
   STICKER_BOARD_MAX_COVERS,
   STICKER_BOARD_MAX_PACKS,
+  STICKER_BOARD_RECENT_MAX,
   STICKER_BOARD_RECENT_SET_ID,
   STICKER_TRENDING_MAX_PACKS,
   StickerBoardDeps,
   StickerBoardPack,
   StickerTrendingPack,
+  recentStickersFromStickers,
   requestStickerBoardDownloads,
   stickerBoardBlocks,
+  stickerBoardPackKey,
   stickerBoardPacksFromSetInfos,
   stickerBoardRecentPack,
   stickerBoardThumbnailPath,
@@ -310,6 +318,62 @@ export default function stickerBoardTest(): void {
       expect(pack.totalSize).assertEqual(9);
     });
 
+    it('recentPack_titleIsTheUiHeader', 0, () => {
+      // 这一行标题就是 EmojiBoard 那个整宽标题行念出来的字符串（`EmojiBoard.ets` 直接渲染
+      // `pack.title`），所以它必须是界面语言，不是英文占位。
+      const item: StickerSetItem = {
+        id: 1,
+        fileId: 1,
+        emoji: '🐼',
+        width: 512,
+        height: 512,
+        localPath: null,
+        thumbnailPath: null,
+        isDownloaded: false,
+        isDownloading: false
+      };
+      const pack: StickerBoardPack = stickerBoardRecentPack([item]);
+      expect(pack.title).assertEqual('最近使用');
+      expect(pack.setId).assertEqual(STICKER_BOARD_RECENT_SET_ID);
+    });
+
+    it('recentStickers_keepsTdLibOrderAndDropsUnsendable', 0, () => {
+      const rec = new RecordingDeps();
+      rec.havePath(2001, '/data/recent/2001.webp');
+      const stickers: Sticker[] = [
+        makeSticker('3', 1001, 2001, '🐼'),
+        makeSticker('3', 0, 2002, '🔥'),
+        makeSticker('4', 1003, 2003, '🎉')
+      ];
+      const items: StickerSetItem[] = recentStickersFromStickers(stickers, rec.deps());
+
+      expect(items.length).assertEqual(2);
+      // TDLib 已经按「最近」排好；客户端二次排序就是把用户刚发出去的那颗挪走
+      expect(items[0].fileId).assertEqual(1001);
+      expect(items[1].fileId).assertEqual(1003);
+      // 只登记缩略图：板卡显示的是小图，原文件等真发送时 TDLib 自己取
+      expect(rec.downloaded.indexOf(2001)).assertEqual(0);
+      expect(rec.downloaded.indexOf(1001)).assertEqual(-1);
+      expect(rec.downloaded.indexOf(1003)).assertEqual(-1);
+      // 丢掉的格子不占下载：那颗贴纸根本不上屏
+      expect(rec.downloaded.indexOf(2002)).assertEqual(-1);
+      // 已到货的缩略图直接进格子，首帧不用再等一次回灌
+      expect(items[0].thumbnailPath).assertEqual('/data/recent/2001.webp');
+    });
+
+    it('recentStickers_capsAtDisplayMaxAndStopsRegisteringDownloads', 0, () => {
+      const stickers: Sticker[] = [];
+      for (let i = 1; i <= STICKER_BOARD_RECENT_MAX + 5; i++) {
+        stickers.push(makeSticker('3', 100 + i, 500 + i, '🙂'));
+      }
+      const rec = new RecordingDeps();
+      const items: StickerSetItem[] = recentStickersFromStickers(stickers, rec.deps());
+      // TDLib 的列表上限是 200，ArkUI 的 Grid 会把所有子项一次建出来：
+      // 显示上限必须在**登记下载之前**收口，否则一次开板就是两百路下载。
+      expect(items.length).assertEqual(STICKER_BOARD_RECENT_MAX);
+      expect(rec.downloaded.length).assertEqual(STICKER_BOARD_RECENT_MAX);
+    });
+
     it('cellImage_fallsBackToLocalThenThumbnailThenNull', 0, () => {
       const base: StickerSetItem = {
         id: 1,
@@ -411,6 +475,36 @@ export default function stickerBoardTest(): void {
       };
       expect(stickerCellKey(before) === stickerCellKey(after)).assertFalse();
       expect(stickerCellKey(after).indexOf('/data/7.webp') >= 0).assertTrue();
+    });
+
+    it('packKey_changesWhenACellImageArrives', 0, () => {
+      // 设备实测（STICKER-RECENT-101 取证）：包条那一栏的键含封面路径，缩略图到货后重建出 Image；
+      // 同一份数据的整行只以 setId 为键 → ArkUI 沿用旧子树、不重跑 itemBuilder，
+      // 于是内层格子明明已经能画图，屏上却永远停在首帧的 emoji 兜底。整行的键必须吃到每格当前的路径。
+      const info: StickerSetInfo = makeSetInfo('77', 'Arrival', 3, [cover('77', 1), cover('77', 2)], 0);
+      const before: RecordingDeps = new RecordingDeps();
+      const after: RecordingDeps = new RecordingDeps();
+      after.havePath(2001, '/data/2001.webp');
+      const packBefore: StickerBoardPack = stickerBoardPacksFromSetInfos([info], before.deps())[0];
+      const packAfter: StickerBoardPack = stickerBoardPacksFromSetInfos([info], after.deps())[0];
+
+      expect(stickerBoardPackKey(packBefore) === stickerBoardPackKey(packAfter)).assertFalse();
+      expect(stickerBoardPackKey(packAfter).indexOf('/data/2001.webp') >= 0).assertTrue();
+    });
+
+    it('packKey_isStableForSameRowAndDiffersAcrossRows', 0, () => {
+      // 键每帧都换等于整行每帧重建：数据没动时必须逐字相同；不同包不能撞键（两包共用同一个缩略图 id）。
+      const deps: RecordingDeps = new RecordingDeps();
+      deps.havePath(2001, '/data/2001.webp');
+      const row: StickerBoardPack = stickerBoardPacksFromSetInfos(
+        [makeSetInfo('81', 'A', 2, [cover('81', 1)], 0)], deps.deps())[0];
+      const rowAgain: StickerBoardPack = stickerBoardPacksFromSetInfos(
+        [makeSetInfo('81', 'A', 2, [cover('81', 1)], 0)], deps.deps())[0];
+      const other: StickerBoardPack = stickerBoardPacksFromSetInfos(
+        [makeSetInfo('82', 'B', 2, [cover('82', 1)], 0)], deps.deps())[0];
+
+      expect(stickerBoardPackKey(row)).assertEqual(stickerBoardPackKey(rowAgain));
+      expect(stickerBoardPackKey(row) === stickerBoardPackKey(other)).assertFalse();
     });
 
     // ---------- STICKER-BOARD-102：热门贴纸包区 ----------

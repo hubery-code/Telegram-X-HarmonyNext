@@ -12,6 +12,14 @@
  * - 榜单回包真的落到 `stickerBoard.trending`，一包只登记那一张封面；
  * - 榜单失败**不占** `errorMessage`（那个槽说的是自己的包读不到），也不动已装盘；
  * - 从热门行装包：`changeStickerSet` 只发一条、在途有 `installingSetId`、成功后立刻重读盘与榜。
+ *
+ * STICKER-RECENT-101 接上最近使用那半边：
+ * - 开板问的是 `getRecentStickers` 且 `is_attached=false`（贴在照片上的那一串不是这一行），
+ *   并且和盘、榜一样一次会话只问一次 —— 失败也算问过；
+ * - 回包按 TDLib 给的顺序进 `uiState.recentStickers`，只为缩略图登记下载；
+ * - 「清空」要把服务端那半边写回去（`clearRecentStickers`），写失败必须重读，
+ *   否则屏上留下一个「看着清空了、下次打开又全在」的假象；
+ * - `updateRecentStickers` 到货后这一行要自己活过来，但**没开过贴纸页签时不许后台重读**。
  */
 
 import { describe, it, expect } from '@ohos/hypium';
@@ -33,8 +41,9 @@ import {
 import { Result, AppError } from '@tgx/core-common';
 import { ChatCoordinator } from '../main/ets/coordinator/ChatCoordinator';
 import { ChatUiState } from '../main/ets/contract/ChatUiState';
-import { InstallStickerSet, OpenStickerBoard } from '../main/ets/contract/ChatIntent';
+import { ClearRecentStickers, InstallStickerSet, OpenStickerBoard } from '../main/ets/contract/ChatIntent';
 import { StickerBoardPack, StickerTrendingPack } from '../main/ets/model/StickerBoard';
+import { StickerSetItem } from '../main/ets/model/StickerSetPreviewState';
 
 interface SentBridgeRequest {
   readonly clientId: number;
@@ -118,6 +127,11 @@ class TestNativeBridge implements TdNativeBridgeLike {
 
   respondError(requestId: string, message: string): void {
     this.respondTo(requestId, errorFields(message));
+  }
+
+  /** 注入一条 push update（走 update 流，不带 @extra，因此不会被请求关联吃掉）。 */
+  pushUpdate(payload: TdWireObject): void {
+    this.emit(payload);
   }
 }
 
@@ -301,6 +315,34 @@ function trendingSetsFields(): Record<string, TdWireValue> {
   fields['total_count'] = 2;
   fields['sets'] = [withPackThumb, coverOnly];
   fields['is_premium'] = false;
+  return fields;
+}
+
+/** `getRecentStickers` 的回包是 `stickers`：只有 `stickers` 一个字段，没有 total_count。 */
+function recentStickersFields(stickers: Record<string, TdWireValue>[]): Record<string, TdWireValue> {
+  const fields: Record<string, TdWireValue> = {};
+  fields['@type'] = 'stickers';
+  fields['stickers'] = stickers;
+  return fields;
+}
+
+function recentStickerFields(fileId: number, thumbId: number, emoji: string): Record<string, TdWireValue> {
+  const sticker: Record<string, TdWireValue> = {};
+  sticker['@type'] = 'sticker';
+  sticker['set_id'] = '21';
+  sticker['width'] = 512;
+  sticker['height'] = 512;
+  sticker['emoji'] = emoji;
+  sticker['sticker'] = fileFields(fileId);
+  sticker['thumbnail'] = thumbId > 0 ? thumbnailFields(thumbId) : null;
+  return sticker;
+}
+
+function recentUpdateFields(isAttached: boolean, stickerIds: number[]): Record<string, TdWireValue> {
+  const fields: Record<string, TdWireValue> = {};
+  fields['@type'] = 'updateRecentStickers';
+  fields['is_attached'] = isAttached;
+  fields['sticker_ids'] = stickerIds;
   return fields;
 }
 
@@ -532,6 +574,198 @@ export default function stickerBoardFetchTest(): void {
       // 装成功后立刻重读盘与榜 —— 新装的包不用等用户切走再切回来
       expect(countRequestsOfType(bridge, 'getInstalledStickerSets')).assertEqual(before + 1);
       expect(countRequestsOfType(bridge, 'getTrendingStickerSets')).assertEqual(2);
+
+      unsubscribe();
+      coordinator.destroy();
+    });
+
+    // ---------- STICKER-RECENT-101：最近使用接 getRecentStickers ----------
+
+    it('openStickerBoard_requestsNonAttachedRecentStickersOnce', 0, async (): Promise<void> => {
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const scope: AccountScope = createScope(bridge);
+      const coordinator: ChatCoordinator = new ChatCoordinator(scope, 42, 'Test Chat');
+
+      coordinator.dispatch(new OpenStickerBoard());
+      coordinator.dispatch(new OpenStickerBoard());
+      await settle();
+
+      const reqs: Record<string, TdWireValue>[] = requestsOfType(bridge, 'getRecentStickers');
+      expect(reqs.length).assertEqual(1);
+      // TDLib 里最近使用有两串：贴在照片上的那一串（is_attached=true）不是板卡这一行
+      expect(reqs[0]['is_attached'] === false).assertTrue();
+
+      coordinator.destroy();
+    });
+
+    it('recentStickersResponse_populatesRow_andDownloadsThumbnailsOnly', 0, async (): Promise<void> => {
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const scope: AccountScope = createScope(bridge);
+      const coordinator: ChatCoordinator = new ChatCoordinator(scope, 42, 'Test Chat');
+
+      const recorder: StateRecorder = new StateRecorder();
+      const unsubscribe: () => void = coordinator.subscribe((state: ChatUiState): void => {
+        recorder.seen.push(state);
+      });
+
+      coordinator.dispatch(new OpenStickerBoard());
+      await settle();
+      const requestId: string = lastRequestIdOfType(bridge, 'getRecentStickers');
+      expect(requestId.length > 0).assertTrue();
+      bridge.respondTo(requestId, recentStickersFields([
+        recentStickerFields(7001, 8001, '🐼'),
+        recentStickerFields(7002, 8002, '🎋')
+      ]));
+      await settle();
+
+      const items: readonly StickerSetItem[] = recorder.last().recentStickers;
+      expect(items.length).assertEqual(2);
+      // TDLib 已经按「最近」排好；这里二次排序就是把用户刚发的那颗挪走
+      expect(items[0].fileId).assertEqual(7001);
+      expect(items[1].fileId).assertEqual(7002);
+
+      // 只登记缩略图：原图等真发送时 TDLib 自己取
+      const downloads: Record<string, TdWireValue>[] = requestsOfType(bridge, 'downloadFile');
+      expect(downloads.length).assertEqual(2);
+      const ids: number[] = [];
+      for (let i = 0; i < downloads.length; i++) {
+        ids.push(Number(downloads[i]['file_id']));
+      }
+      expect(ids.indexOf(7001)).assertEqual(-1);
+      expect(ids.indexOf(8001) >= 0).assertTrue();
+      expect(ids.indexOf(8002) >= 0).assertTrue();
+
+      unsubscribe();
+      coordinator.destroy();
+    });
+
+    it('recentStickersFailure_isSilentAndNotRetriedOnNextOpen', 0, async (): Promise<void> => {
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const scope: AccountScope = createScope(bridge);
+      const coordinator: ChatCoordinator = new ChatCoordinator(scope, 42, 'Test Chat');
+
+      const recorder: StateRecorder = new StateRecorder();
+      const unsubscribe: () => void = coordinator.subscribe((state: ChatUiState): void => {
+        recorder.seen.push(state);
+      });
+
+      coordinator.dispatch(new OpenStickerBoard());
+      await settle();
+      bridge.respondError(lastRequestIdOfType(bridge, 'getRecentStickers'), 'REQUEST_TIMEOUT');
+      await settle();
+
+      const state: ChatUiState = recorder.last();
+      // 没有最近使用就是没有：不显示那一行，也不占板卡的错误槽
+      expect(state.recentStickers.length).assertEqual(0);
+      expect(state.stickerBoard.errorMessage).assertNull();
+      // 但这一路已经问过了：切走再切回来不该反复重试一个坏请求
+      coordinator.dispatch(new OpenStickerBoard());
+      await settle();
+      expect(countRequestsOfType(bridge, 'getRecentStickers')).assertEqual(1);
+
+      unsubscribe();
+      coordinator.destroy();
+    });
+
+    it('updateRecentStickers_refetchesOnlyWhileTheBoardIsOpen', 0, async (): Promise<void> => {
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const scope: AccountScope = createScope(bridge);
+      const coordinator: ChatCoordinator = new ChatCoordinator(scope, 42, 'Test Chat');
+      // 订阅在 `start()` 里注册（和真机一样）：不 start 就没有 `updateRecentStickers` 这一路。
+      coordinator.start();
+
+      const unsubscribe: () => void = coordinator.subscribe((_state: ChatUiState): void => {});
+
+      // 没开过贴纸页签：没人在看这一行，后台重读只是白打一次网络
+      bridge.pushUpdate(recentUpdateFields(false, [7001]));
+      await settle();
+      expect(countRequestsOfType(bridge, 'getRecentStickers')).assertEqual(0);
+
+      coordinator.dispatch(new OpenStickerBoard());
+      await settle();
+      expect(countRequestsOfType(bridge, 'getRecentStickers')).assertEqual(1);
+
+      bridge.pushUpdate(recentUpdateFields(false, [7002]));
+      await settle();
+      // 一次推送一条重读，不做防抖合并也不能漏（Android 的 onRecentStickersUpdated 同理）
+      expect(countRequestsOfType(bridge, 'getRecentStickers')).assertEqual(2);
+
+      // 贴在照片上的那一串不是这一行，重读了等于白花一次请求
+      bridge.pushUpdate(recentUpdateFields(true, [7003]));
+      await settle();
+      expect(countRequestsOfType(bridge, 'getRecentStickers')).assertEqual(2);
+
+      unsubscribe();
+      coordinator.destroy();
+    });
+
+    it('clearRecentStickers_writesToTdlib', 0, async (): Promise<void> => {
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const scope: AccountScope = createScope(bridge);
+      const coordinator: ChatCoordinator = new ChatCoordinator(scope, 42, 'Test Chat');
+
+      const recorder: StateRecorder = new StateRecorder();
+      const unsubscribe: () => void = coordinator.subscribe((state: ChatUiState): void => {
+        recorder.seen.push(state);
+      });
+
+      coordinator.dispatch(new OpenStickerBoard());
+      await settle();
+      bridge.respondTo(lastRequestIdOfType(bridge, 'getRecentStickers'), recentStickersFields([
+        recentStickerFields(7001, 8001, '🐼')
+      ]));
+      await settle();
+      expect(recorder.last().recentStickers.length).assertEqual(1);
+
+      coordinator.dispatch(new ClearRecentStickers());
+      await settle();
+
+      // 本地那一行先撤，服务端那半边再写 —— 反过来会先闪一次旧列表
+      expect(recorder.last().recentStickers.length).assertEqual(0);
+      const clears: Record<string, TdWireValue>[] = requestsOfType(bridge, 'clearRecentStickers');
+      expect(clears.length).assertEqual(1);
+      expect(clears[0]['is_attached'] === false).assertTrue();
+
+      const reads: number = countRequestsOfType(bridge, 'getRecentStickers');
+      bridge.respondTo(lastRequestIdOfType(bridge, 'clearRecentStickers'), okFields());
+      await settle();
+      // 写成功就不必再读一次：屏上已经是空的那一行
+      expect(countRequestsOfType(bridge, 'getRecentStickers')).assertEqual(reads);
+
+      unsubscribe();
+      coordinator.destroy();
+    });
+
+    it('clearRecentStickers_writeFailureRefetchesTheRealList', 0, async (): Promise<void> => {
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const scope: AccountScope = createScope(bridge);
+      const coordinator: ChatCoordinator = new ChatCoordinator(scope, 42, 'Test Chat');
+
+      const recorder: StateRecorder = new StateRecorder();
+      const unsubscribe: () => void = coordinator.subscribe((state: ChatUiState): void => {
+        recorder.seen.push(state);
+      });
+
+      coordinator.dispatch(new OpenStickerBoard());
+      await settle();
+      bridge.respondTo(lastRequestIdOfType(bridge, 'getRecentStickers'), recentStickersFields([
+        recentStickerFields(7001, 8001, '🐼')
+      ]));
+      await settle();
+      expect(countRequestsOfType(bridge, 'getRecentStickers')).assertEqual(1);
+
+      coordinator.dispatch(new ClearRecentStickers());
+      await settle();
+      bridge.respondError(lastRequestIdOfType(bridge, 'clearRecentStickers'), 'REQUEST_TIMEOUT');
+      await settle();
+
+      // 写失败必须重读：否则留下「看着清空了、下次打开又全在」的假象
+      expect(countRequestsOfType(bridge, 'getRecentStickers')).assertEqual(2);
+      bridge.respondTo(lastRequestIdOfType(bridge, 'getRecentStickers'), recentStickersFields([
+        recentStickerFields(7001, 8001, '🐼')
+      ]));
+      await settle();
+      expect(recorder.last().recentStickers.length).assertEqual(1);
 
       unsubscribe();
       coordinator.destroy();

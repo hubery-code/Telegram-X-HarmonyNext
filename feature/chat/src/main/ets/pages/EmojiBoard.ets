@@ -21,6 +21,7 @@ import {
   StickerTrendingPack,
   STICKER_BOARD_RECENT_SET_ID,
   stickerBoardBlocks,
+  stickerBoardPackKey,
   stickerCellImagePath,
   stickerCellKey,
   stickerTrendingKey
@@ -618,7 +619,7 @@ export struct EmojiBoard {
               }
               .width('100%')
             }
-          }, (pack: StickerBoardPack) => pack.setId)
+          }, (pack: StickerBoardPack) => stickerBoardPackKey(pack))
         }
         .layoutWeight(1)
         .width('100%')

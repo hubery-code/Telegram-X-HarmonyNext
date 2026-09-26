@@ -134,6 +134,13 @@ import {
   encodeGetTrendingStickerSets,
   decodeTrendingStickerSets,
   TrendingStickerSets,
+  GetRecentStickers,
+  encodeGetRecentStickers,
+  decodeStickers,
+  Stickers,
+  ClearRecentStickers as TdClearRecentStickers,
+  encodeClearRecentStickers,
+  UpdateRecentStickers,
   StickerSetInfo,
   StickerTypeRegular,
   ChangeStickerSet,
@@ -241,6 +248,8 @@ import {
   OnStickerBoardFailed,
   OnTrendingLoaded,
   OnTrendingFailed,
+  OnRecentStickersLoaded,
+  OnRecentStickersFailed,
   StartVoiceRecord,
   StopAndSendVoiceRecord,
   CancelVoiceRecord,
@@ -277,6 +286,8 @@ import {
   FetchStickerSet,
   FetchStickerBoard,
   FetchTrendingStickerSets,
+  FetchRecentStickers,
+  ClearRecentStickersInTdlib,
   ChangeStickerSetEffect,
   SendStickerMessage,
   SendAnimationMessage,
@@ -294,6 +305,7 @@ import {
   StickerBoardPack,
   StickerTrendingPack,
   stickerBoardPacksFromSetInfos,
+  recentStickersFromStickers,
   stickerSetShortNameOf,
   stickerTrendingPacksFromSetInfos,
   STICKER_TRENDING_MAX_PACKS
@@ -642,6 +654,14 @@ export class ChatCoordinator {
   private trendingSets: StickerSetInfo[] = [];
   private readonly trendingFiles: Set<number> = new Set();
   /**
+   * STICKER-RECENT-101：`getRecentStickers` 的原始回包 + 本次登记的缩略图，用途与上面两区
+   * 完全一致（格子只带路径，到货后要拿 DTO 重装一次盘）。
+   */
+  private recentStickerDtos: Sticker[] = [];
+  private readonly recentStickerFiles: Set<number> = new Set();
+  /** STICKER-RECENT-101：`updateRecentStickers` 订阅（发出去一颗贴纸后这一行要自己活过来）。 */
+  private recentStickersSubscription: TdUpdateSubscription | null = null;
+  /**
    * MEDIA-105：待发送视频的**本地缩略图**缓存，key = 送进 TDLib 的视频沙箱物理路径。
    *
    * 为什么需要它：出站消息在服务端生成缩略图之前，回灌的 `messageVideo.video.thumbnail`
@@ -785,6 +805,8 @@ export class ChatCoordinator {
     this.subscribeChatNotificationSettings();
     // CHAN-SEND：发言权实时同步（管理员改权限会推 updateChatPermissions）。
     this.subscribeChatPermissions();
+    // STICKER-RECENT-101：最近使用实时同步（发出/收到一颗贴纸后 updateRecentStickers 会推）。
+    this.subscribeRecentStickers();
     // MSG-109：先按已知信息补一次副标题（chatKind 未回前为 no-op），
     // getChat 回包 / 用户状态订阅 / 在线人数订阅到达后各自重算。
     this.buildHeaderSubtitle();
@@ -1086,6 +1108,11 @@ export class ChatCoordinator {
     if (this.permissionsSubscription !== null) {
       this.permissionsSubscription.unsubscribe();
       this.permissionsSubscription = null;
+    }
+    // STICKER-RECENT-101：退订最近使用贴纸推送。
+    if (this.recentStickersSubscription !== null) {
+      this.recentStickersSubscription.unsubscribe();
+      this.recentStickersSubscription = null;
     }
     if (this.recordTimerId !== -1) {
       clearInterval(this.recordTimerId);
@@ -1530,6 +1557,7 @@ export class ChatCoordinator {
               this.dispatch(new OnStickerPreviewFileUpdated(fileId, file.local.path));
               this.refreshStickerBoardOnArrival(fileId);
               this.refreshTrendingOnArrival(fileId);
+              this.refreshRecentStickersOnArrival(fileId);
             }
           } else {
             // SET-104：TDLib 停止下载（清理缓存把文件重置 / 下载失败）时释放去重闩，
@@ -3689,6 +3717,16 @@ export class ChatCoordinator {
         break;
       }
 
+      case 'fetchRecentStickers': {
+        this.handleFetchRecentStickers();
+        break;
+      }
+
+      case 'clearRecentStickersInTdlib': {
+        this.handleClearRecentStickers();
+        break;
+      }
+
       case 'fetchStickerSet': {
         const fetchSticker: FetchStickerSet = effect as FetchStickerSet;
         this.handleFetchStickerSet(fetchSticker.setId);
@@ -4077,6 +4115,137 @@ export class ChatCoordinator {
       return;
     }
     this.dispatch(new OnTrendingLoaded(this.mapTrending()));
+  }
+
+  /**
+   * STICKER-RECENT-101：拉「最近使用的贴纸」（`getRecentStickers`）。
+   *
+   * `is_attached=false` 这一位不能省：TDLib 把「最近发出去的」与「最近贴在照片/视频上的」
+   * 存成两张互不相干的列表（`StickersManager.cpp:9018-9026`），Android 取的是前者
+   * （`ui/EmojiMediaListController.java:1051` 的 `new TdApi.GetRecentStickers(false)`）。
+   * 排序也不自己做：TDLib 回的就是「最近 → 最早」，客户端再排一次只会和另一端的显示打架。
+   *
+   * 失败**不占** `errorMessage`（那个槽说的是「你自己的包没读到」）：这一区没有就是没有。
+   */
+  private handleFetchRecentStickers(): void {
+    const req: GetRecentStickers = new GetRecentStickers();
+    req.is_attached = false;
+    const result: Result<TdPendingRequest, AppError> =
+      this.scope.request('getRecentStickers', encodeGetRecentStickers(req) as TdWireObject);
+    if (result.err) {
+      this.logger.logError(TAG, result.error);
+      this.dispatch(new OnRecentStickersFailed(result.error.message));
+      return;
+    }
+    if (result.ok) {
+      result.value.promise.then((res: Result<TdWireObject, AppError>) => {
+        if (this.destroyed) {
+          return;
+        }
+        if (res.err) {
+          this.logger.logError(TAG, res.error);
+          this.dispatch(new OnRecentStickersFailed(res.error.message));
+        }
+        if (res.ok) {
+          const stickers: Stickers | null = decodeStickers(res.value as TdJsonRaw);
+          if (stickers === null) {
+            this.dispatch(new OnRecentStickersFailed('Failed decode'));
+            return;
+          }
+          this.recentStickerDtos = stickers.stickers;
+          this.logger.info(TAG, 'sticker_recent_loaded', `rows=${stickers.stickers.length}`);
+          this.dispatch(new OnRecentStickersLoaded(this.mapRecentStickers()));
+        }
+      }).catch(() => {});
+    }
+  }
+
+  /** 最近使用 DTO → 格子；`download` 只登记缩略图，登记的 id 记住以便到货回灌。 */
+  private mapRecentStickers(): StickerSetItem[] {
+    const deps: StickerBoardDeps = {
+      localPathOf: (fileId: number): string | null => this.fileRegistry.getLocalPath(fileId),
+      download: (fileId: number): void => {
+        if (!this.fileRegistry.isDownloaded(fileId)) {
+          this.recentStickerFiles.add(fileId);
+          this.requestMediaDownload(fileId, 2);
+        }
+      }
+    };
+    return recentStickersFromStickers(this.recentStickerDtos, deps);
+  }
+
+  /** 最近使用某格到货：从 DTO 缓存重算这一行。与已装盘/榜单的回灌互不覆盖。 */
+  private refreshRecentStickersOnArrival(fileId: number): void {
+    if (!this.recentStickerFiles.delete(fileId) || this.recentStickerDtos.length === 0) {
+      return;
+    }
+    this.dispatch(new OnRecentStickersLoaded(this.mapRecentStickers()));
+  }
+
+  /**
+   * STICKER-RECENT-101：把「清空最近使用」写回 TDLib。
+   *
+   * 本地列表已由 reducer 立刻撤掉（Android 同序），这里只负责服务端那半边；
+   * 写失败时重读一次，让屏上回到真实列表 —— 否则会留下一个「看着清空了、下次打开又全在」的假象。
+   */
+  private handleClearRecentStickers(): void {
+    const req: TdClearRecentStickers = new TdClearRecentStickers();
+    req.is_attached = false;
+    const result: Result<TdPendingRequest, AppError> =
+      this.scope.request('clearRecentStickers', encodeClearRecentStickers(req) as TdWireObject);
+    if (result.err) {
+      this.logger.logError(TAG, result.error);
+      this.handleFetchRecentStickers();
+      return;
+    }
+    if (result.ok) {
+      result.value.promise.then((res: Result<TdWireObject, AppError>) => {
+        if (this.destroyed) {
+          return;
+        }
+        if (res.err) {
+          this.logger.logError(TAG, res.error);
+          this.handleFetchRecentStickers();
+          return;
+        }
+        this.recentStickerDtos = [];
+        this.recentStickerFiles.clear();
+        this.logger.info(TAG, 'sticker_recent_cleared', 'ok');
+      }).catch(() => {});
+    }
+  }
+
+  /**
+   * STICKER-RECENT-101：订阅 `updateRecentStickers`（Android 的 `onRecentStickersUpdated`，
+   * `ui/EmojiMediaListController.java:1252-1260`）。发出去一颗贴纸后，服务端记账、TDLib 缓存变化，
+   * 这一行要自己活过来，而不是等用户下次开板。
+   *
+   * 只在**这个会话已经问过最近使用**之后才重读：没开过贴纸页签就没人在看这一行，
+   * 后台重读只是白打一次网络。`is_attached=true` 那一路（贴在照片上的）不是这一行，忽略。
+   */
+  private subscribeRecentStickers(): void {
+    if (this.destroyed || this.recentStickersSubscription !== null) {
+      return;
+    }
+    const filter: TdUpdateFilter = {
+      clientId: this.scope.clientId,
+      types: ['updateRecentStickers']
+    };
+    this.recentStickersSubscription = this.scope.gatewayInstance.subscribeUpdates(
+      filter,
+      (event: TdRoutedEvent): void => {
+        const update: TdUpdate | null = decodeTdUpdate(event.payload as TdJsonRaw);
+        if (update === null || update.type !== 'updateRecentStickers') {
+          return;
+        }
+        const recentUpdate: UpdateRecentStickers = update as UpdateRecentStickers;
+        this.logger.info(TAG, 'sticker_recent_update', `attached=${recentUpdate.is_attached ? 1 : 0}`);
+        if (recentUpdate.is_attached || !this.currentState.stickerBoard.recentRequested) {
+          return;
+        }
+        this.handleFetchRecentStickers();
+      }
+    );
   }
 
   private handleFetchStickerSet(setId: string): void {

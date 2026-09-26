@@ -767,6 +767,8 @@ export type ChatIntent =
   | OpenStickerBoard
   | OnStickerBoardLoaded
   | OnStickerBoardFailed
+  | OnRecentStickersLoaded
+  | OnRecentStickersFailed
   | OnTrendingLoaded
   | OnTrendingFailed
   | StartVoiceRecord
@@ -916,6 +918,34 @@ export class OnTrendingLoaded implements Intent {
  */
 export class OnTrendingFailed implements Intent {
   readonly kind: 'onTrendingFailed' = 'onTrendingFailed';
+  readonly error: string;
+
+  constructor(error: string) {
+    this.error = error;
+  }
+}
+
+/**
+ * STICKER-RECENT-101：最近使用回灌（TDLib `getRecentStickers` 的整串 sticker，顺序照它给的）。
+ * 整串替换本地列表：这一行是 TDLib 的视图，不是本地累加器。
+ */
+export class OnRecentStickersLoaded implements Intent {
+  readonly kind: 'onRecentStickersLoaded' = 'onRecentStickersLoaded';
+  readonly items: StickerSetItem[];
+
+  constructor(items: StickerSetItem[]) {
+    this.items = items;
+  }
+}
+
+/**
+ * STICKER-RECENT-101：最近使用读取失败。
+ *
+ * 与热门榜同一口径：不写 `errorMessage`（那个槽说的是「你自己的包没读到」），也没有最近使用
+ * 就是没有 —— 这一行空着不构成错误。它只把「问过了」这个事实落进状态，避免反复切页签反复打网络。
+ */
+export class OnRecentStickersFailed implements Intent {
+  readonly kind: 'onRecentStickersFailed' = 'onRecentStickersFailed';
   readonly error: string;
 
   constructor(error: string) {

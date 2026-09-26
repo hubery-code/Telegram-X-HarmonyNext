@@ -100,6 +100,8 @@ import {
   OpenStickerBoard,
   OnStickerBoardLoaded,
   OnStickerBoardFailed,
+  OnRecentStickersLoaded,
+  OnRecentStickersFailed,
   OnTrendingLoaded,
   OnTrendingFailed,
   OnStickerSetLoaded,
@@ -165,6 +167,8 @@ import {
   FetchStickerSet,
   FetchStickerBoard,
   FetchTrendingStickerSets,
+  FetchRecentStickers,
+  ClearRecentStickersInTdlib,
   ChangeStickerSetEffect,
   SendStickerMessage,
   SendAnimationMessage,
@@ -1281,11 +1285,12 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
     case 'openStickerBoard': {
       // 语义是「要看」不是「刷新」：同一次会话内反复切页签不重复打 TDLib。
       // 失败过的盘保持 isLoaded=false，下一次进来会再试一次（Android 也是进入即拉、
-      // 之后靠监听器增量更新，不做轮询）。热门榜另算一次问价，问过了就不再问。
+      // 之后靠监听器增量更新，不做轮询）。热门榜与最近使用各算一次问价，问过了就不再问。
       const board: StickerBoardState = state.stickerBoard;
       const needBoard: boolean = !board.isLoading && !board.isLoaded;
       const needTrending: boolean = !board.trendingRequested;
-      if (!needBoard && !needTrending) {
+      const needRecent: boolean = !board.recentRequested;
+      if (!needBoard && !needTrending && !needRecent) {
         return reduced(state);
       }
       const effects: ChatEffect[] = [];
@@ -1295,16 +1300,30 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
       if (needTrending) {
         effects.push(new FetchTrendingStickerSets());
       }
+      if (needRecent) {
+        effects.push(new FetchRecentStickers());
+      }
       return reduced(
         state.copyWith({
           stickerBoard: board.copyWith({
             isLoading: needBoard || board.isLoading,
             errorMessage: needBoard ? null : board.errorMessage,
-            trendingRequested: true
+            trendingRequested: true,
+            recentRequested: true
           })
         }),
         effects
       );
+    }
+
+    case 'onRecentStickersLoaded': {
+      const loadedRecents: OnRecentStickersLoaded = intent as OnRecentStickersLoaded;
+      return reduced(state.copyWith({ recentStickers: loadedRecents.items }));
+    }
+
+    case 'onRecentStickersFailed': {
+      // 没有最近使用就是没有：这一行不显示，也不占 `errorMessage`（那个槽说的是自己的包读不到）。
+      return reduced(state);
     }
 
     case 'onTrendingLoaded': {
@@ -1555,9 +1574,12 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
     }
 
     case 'clearRecentStickers': {
-      return reduced(state.copyWith({
-        recentStickers: []
-      }));
+      // 本地立刻撤掉那一行（Android 同序：`EmojiMediaListController.removeRecentStickers()` 先撤 UI，
+      // 再由 `EmojiLayout.java:141` 发 `ClearRecentStickers`）。服务端那半边写失败时由协调器重读回灌。
+      return reduced(
+        state.copyWith({ recentStickers: [] }),
+        [new ClearRecentStickersInTdlib()]
+      );
     }
 
     case 'sendGif': {

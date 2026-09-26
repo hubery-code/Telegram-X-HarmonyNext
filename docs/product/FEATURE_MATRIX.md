@@ -820,7 +820,7 @@
 > 全程只在 Saved Messages 之外的表情板内操作，未向任何真实群/频道发送内容。
 > 遗留：① 热门榜只取 regular 一类（mask / customEmoji 未露出，榜语义在 Android 是「与当前类型相关」）；
 > ② 无 TGS/Lottie 解码器 → 动效贴纸包在板卡与**消息气泡**里都只有 emoji/字母兜底；
-> ③ 最近使用仍吃 `DEFAULT_RECENT_STICKERS`（`getRecentStickers` 未接，101 遗留 ②）；
+> ③ ~~最近使用仍吃 `DEFAULT_RECENT_STICKERS`（`getRecentStickers` 未接，101 遗留 ②）~~（**2026-09-26 已由 STICKER-RECENT-101 结案**，见后面那条注）；
 > ④ 101 遗留 ③「贴纸气泡不出图」（**2026-09-26 已由 STICKER-MSG-101 结案**，见下一条注）。
 
 > **2026-09-26（STICKER-MSG-101，FEAT-P2-004 贴纸消息气泡渲染档位，结掉 101 遗留 ③ / 102 遗留 ④）**：
@@ -849,7 +849,7 @@
 > 卸载 Uni 包（`sticker_board_loaded rows=0,total=0`），**账号回到取证前原状**，全程未向任何群/频道发送内容。
 > 遗留：① 动效贴纸无逐帧动画（等 TGS/Lottie 渲染器，届时气泡/板卡/预览页三处一起换）；
 > ② ~~贴纸包预览页的 `.tgs` 格子仍空白（`stickerPathIsRenderable` 已可复用，纯接线活）~~（**2026-09-26 已由 STICKER-PREVIEW-101 接上同一取值链**，见下一条注）；
-> ③ 最近使用仍吃 `DEFAULT_RECENT_STICKERS`（`getRecentStickers` 未接）。
+> ③ ~~最近使用仍吃 `DEFAULT_RECENT_STICKERS`（`getRecentStickers` 未接）~~（**2026-09-26 已由 STICKER-RECENT-101 结案**，见 PREVIEW-101 之后那条注）。
 
 > **2026-09-26（STICKER-PREVIEW-101，FEAT-P2-004 贴纸包预览弹层，结掉上一条遗留 ②）**：
 > 接线活本身两行：`StickerSetPreviewSheet` 的格子原来写 `item.localPath ?? item.thumbnailPath` 直接进 `Image`，
@@ -879,6 +879,45 @@
 > 遗留：① **整包预览需 native 侧解掉 `messages.getStickerSet` 的 406**（不解决则预览页与整包页签恒空）；
 > ② 取数失败时弹层的 `isInstalled` 恒 false（真实态在 `stickerSetInfo.is_installed`，本可先行显示），
 > 装/卸按钮因此可能对已装包重复写；③ `tg://addstickers` 与 `internalLinkTypeStickerSet` 仍未接（DEEPLINK 收尾）。
+
+> **2026-09-26（STICKER-RECENT-101，FEAT-P2-004 表情板「最近使用」接真实数据，结掉 101 遗留 ② / 102 遗留 ③ / MSG-101 遗留 ③）**：
+> 这一行从 101 起就是**假的** —— `DEFAULT_RECENT_STICKERS` 四包预设贴纸常驻，屏上永远看不出「这个账号刚才用过什么」，
+> 也没有任何一条日志能证明读过 TDLib。而它偏偏是发消息时最常用的一格入口。
+> **语义先定案，再动手**：最近使用是**服务端记账**的列表 —— 本端 `MessagesManager` 发出贴纸后从不回调 StickersManager
+> 拼条目，TDLib 也**没有** `addRecentSticker` 这种请求，所以客户端只有三种合法动作：
+> **读**（`getRecentStickers(is_attached=false)`）、**显式清空**（`clearRecentStickers(false)`）、**收到 `updateRecentStickers` 重读**；
+> 自己合成条目就等于造出第二份真相。Android 完全同形
+> （`ui/EmojiMediaListController.java:1051` 读、`:309` + `ui/EmojiLayout.java:141` 清空、`:1252-1260` 的 `onRecentStickersUpdated`）。
+> **三条判据照板卡、不另起一套**：① **顺序不自作** —— TDLib 回的就是「最近 → 最早」，客户端再排一次只会和另一端打架；
+> ② **上限落在登记下载之前** —— `STICKER_BOARD_RECENT_MAX = 20`，`recentStickersFromStickers()`（Kit-free）超过上限的格子
+> **连 `downloadFile` 都不登记**（`Grid` 一次性建出全部子节点，先截断才有预算可言），有意不照 Android 的「先 10 张 + 展开」；
+> ③ **无文件句柄的不排进发送入口** —— 与板卡同一条丢弃规则。去重闩 `recentRequested` 与 `trendingRequested` 同口径，
+> `openStickerBoard` 一次问齐三路（板卡 / 热门榜 / 最近使用）各源独立；`onRecentStickersFailed` **不占 `errorMessage`**
+> （那个槽说的是「你自己的包没读到」，最近使用没有就是没有）。**清空是两段**：本地立刻撤（Android 同序）+ 写回服务端，
+> **写失败重读真实列表**收敛 —— 否则留下「看着清了、下次打开又全在」的假象。
+> **本轮最有价值的一条来自取证，而且是渲染层不是数据层**：`EmojiBoard` 板卡整行的 `ForEach` 键只写 `pack.setId`
+> → ArkUI 对同键项**沿用旧子树、不重跑 itemBuilder**，缩略图到货后那一行永远停在首帧的 emoji 兜底，
+> 而**同一帧**的包条（键里含路径）已经正常画图 —— 屏上同时出现「栏里是独角兽、行里是 😂」这种自相矛盾的画面。
+> 修法是新增纯函数 `stickerBoardPackKey(pack)` = `setId` + 每格 `stickerCellKey`（当前渲染路径）。
+> **热门榜那一行在 102 就吃过这个亏**（`stickerTrendingKey` 含 `coverPath`），板卡行是漏网的那一处：
+> 只要「数据后到 + 键不含后到的那个字段」，ArkUI 就会把那一格冻在首帧。
+> 测试另踩出一个可复用的坑：**coordinator 的订阅注册在 `start()` 里而不是构造函数**
+> （`subscribeChatNotificationSettings` / `subscribeChatPermissions` / `subscribeRecentStickers` 都在 `start()`），
+> 断言推送行为的单测必须先 `coordinator.start()`，否则表现是「推送发了、状态没翻」的 `expect 1 equals 2`。
+> 测试：`feature_chat` **390/390**（375 → 388：模型 +3（标题就是那一句 UI 文案、原序与丢不可发、上限即停止登记下载）、
+> reducer +4（只欠最近使用时只发那一条 Effect、初始态为空、`onRecentStickersLoaded` 整段替换、失败保列表保闩）、
+> coordinator +6（`is_attached=false` 只问一次、回包填行且只登记缩略图、失败静默不重试、推送只在开板后重读且忽略 attached、
+> 清空写回、写失败重读）；388 → 390：`packKey` 到货变键 / 稳定且不撞键），三守卫 0 违规。
+> 设备取证（127.0.0.1:5555，`.hvigor/outputs/sr101/`，**全程零写入账号**：没发任何消息、没装任何包，
+> `sticker_board_loaded rows=0,total=0` 且 Saved Messages 仍 `No messages yet`）：`sticker_recent_loaded rows=2` 出现两次
+> （第二次是缩略图到货后从 DTO 缓存重算）、真推送 `sticker_recent_update attached=0` → 立刻重读同一条请求；
+> `dumpLayout` 对照记录同一格从 `Text '😂'` 变成 `Image [25,2277][221,2473]` / `[278,2277][474,2473]`，
+> 截图里画出独角兽与那只绿青蛙。**没有点「清空」** —— 那一下会把 `clearRecentStickers` 写到真实账号上且**不可还原**
+> （这两条是账号原有数据，不是本次探针留下的），清空那两条分支只有单测覆盖。
+> 遗留：① 单条移除（Android 长按删一条，TDLib `removeRecentSticker`）未接；② `getFavoriteStickers`（收藏贴纸）未接；
+> ③ TDLib 无 `limit` 参数（列表上限 200 在 `StickersManager.h:1115`），20 只是本端显示口径；
+> ④ 发出贴纸后本地乐观前插（cap 32）与权威回灌（cap 20）并存，观感是「先看到自己那张、随后被服务端列表整段替换」；
+> ⑤ 动效贴纸无逐帧动画（等 TGS/Lottie 渲染器，届时这一行与板卡/预览页/气泡一起换）。
 
 
 | 功能 ID | 功能名 |

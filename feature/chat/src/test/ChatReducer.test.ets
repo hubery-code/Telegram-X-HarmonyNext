@@ -77,6 +77,8 @@ import {
   OnStickerBoardFailed,
   OnTrendingLoaded,
   OnTrendingFailed,
+  OnRecentStickersLoaded,
+  OnRecentStickersFailed,
   OnStickerSetLoaded,
   OnStickerSetLoadFailed,
   CloseStickerSetPreview,
@@ -1988,16 +1990,32 @@ export default function chatReducerTest() {
       );
 
       expect(result.state.stickerBoard.isLoading).assertTrue();
-      // 盘与榜是两次独立的问价：同一次开板一起发出，之后各自按自己的标志位去重
-      expect(result.effects.length).assertEqual(2);
+      // 盘、榜、最近使用是三次独立的问价：同一次开板一起发出，之后各自按自己的标志位去重
+      expect(result.effects.length).assertEqual(3);
       expect(result.effects[0].kind).assertEqual('fetchStickerBoard');
       expect(result.effects[1].kind).assertEqual('fetchTrendingStickerSets');
+      expect(result.effects[2].kind).assertEqual('fetchRecentStickers');
       expect(result.state.stickerBoard.trendingRequested).assertTrue();
+      expect(result.state.stickerBoard.recentRequested).assertTrue();
+    });
+
+    it('openStickerBoard_onlyRecentUnasked_emitsOnlyRecentFetch', 0, () => {
+      // 「最近使用」和榜一样要能被去重：切页签不是重读列表的理由。
+      // 这里盘已装好、榜已问过，只有最近使用没读过 —— 必须只发那一条。
+      const unasked: ChatUiState = makeState('').copyWith({
+        stickerBoard: new StickerBoardState([makeBoardPack('21')], false, true, null, [], true, null, false)
+      });
+      const res: ReducerResult<ChatUiState, ChatEffect> = chatReducer(unasked, new OpenStickerBoard(), makeEnv());
+      expect(res.effects.length).assertEqual(1);
+      expect(res.effects[0].kind).assertEqual('fetchRecentStickers');
+      // latch 在**发出请求那一帧**就置上，不等回执：等回执才置的话，用户在回包到达前
+      // 切走再切回来就是第二条 getRecentStickers。
+      expect(res.state.stickerBoard.recentRequested).assertTrue();
     });
 
     it('openStickerBoard_whileLoadingOrLoaded_doesNotRefetch', 0, () => {
       const loading: ChatUiState = makeState('').copyWith({
-        stickerBoard: new StickerBoardState([], true, false, null, [], true)
+        stickerBoard: new StickerBoardState([], true, false, null, [], true, null, true)
       });
       const loadingRes: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
         loading, new OpenStickerBoard(), makeEnv()
@@ -2006,7 +2024,7 @@ export default function chatReducerTest() {
       expect(loadingRes.effects.length).assertEqual(0);
 
       const loaded: ChatUiState = makeState('').copyWith({
-        stickerBoard: new StickerBoardState([makeBoardPack('21')], false, true, null, [], true)
+        stickerBoard: new StickerBoardState([makeBoardPack('21')], false, true, null, [], true, null, true)
       });
       const loadedRes: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
         loaded, new OpenStickerBoard(), makeEnv()
@@ -2014,9 +2032,9 @@ export default function chatReducerTest() {
       expect(loadedRes.effects.length).assertEqual(0);
       expect(loadedRes.state.stickerBoard.packs.length).assertEqual(1);
 
-      // 榜与盘的去重各自独立：盘已装好但榜还没问过，这一次只补榜、不重拉盘
+      // 三个来源的去重各自独立：盘已装好、最近已问过，但榜还没问过 —— 这一次只补榜
       const boardOnly: ChatUiState = makeState('').copyWith({
-        stickerBoard: new StickerBoardState([makeBoardPack('21')], false, true, null, [], false)
+        stickerBoard: new StickerBoardState([makeBoardPack('21')], false, true, null, [], false, null, true)
       });
       const boardOnlyRes: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
         boardOnly, new OpenStickerBoard(), makeEnv()
@@ -2187,6 +2205,76 @@ export default function chatReducerTest() {
       expect(result.state.stickerBoard.packs.length).assertEqual(1);
       // 失败也算「问过了」：切页签不该反复重试一个坏请求
       expect(result.state.stickerBoard.trendingRequested).assertTrue();
+    });
+
+    // --- STICKER-RECENT-101：最近使用改吃 TDLib `getRecentStickers` ---
+
+    it('initialState_hasNoRecentStickers', 0, () => {
+      // 这里曾经挂着 `DEFAULT_RECENT_STICKERS` 五颗假贴纸：真实账号第一次开板看到的就是它们。
+      expect(makeState('').recentStickers.length).assertEqual(0);
+      expect(ChatUiState.initial().recentStickers.length).assertEqual(0);
+    });
+
+    it('onRecentStickersLoaded_replacesTheList', 0, () => {
+      const old: StickerSetItem = {
+        id: 1,
+        fileId: 1,
+        emoji: '🔥',
+        width: 512,
+        height: 512,
+        localPath: null,
+        thumbnailPath: null,
+        isDownloaded: true,
+        isDownloading: false
+      };
+      const fresh: StickerSetItem = {
+        id: 2,
+        fileId: 2,
+        emoji: '🐼',
+        width: 512,
+        height: 512,
+        localPath: null,
+        thumbnailPath: null,
+        isDownloaded: false,
+        isDownloading: false
+      };
+      const initial: ChatUiState = makeState('').copyWith({ recentStickers: [old] });
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        initial, new OnRecentStickersLoaded([fresh]), makeEnv()
+      );
+
+      // TDLib 给的就是权威列表：整体替换，不与本地那份求并（并集会留下已被服务端剔掉的）
+      expect(result.state.recentStickers.length).assertEqual(1);
+      expect(result.state.recentStickers[0].id).assertEqual(2);
+      expect(result.effects.length).assertEqual(0);
+    });
+
+    it('onRecentStickersFailed_keepsListAndStaysSilent', 0, () => {
+      const kept: StickerSetItem = {
+        id: 3,
+        fileId: 3,
+        emoji: '🎉',
+        width: 512,
+        height: 512,
+        localPath: null,
+        thumbnailPath: null,
+        isDownloaded: true,
+        isDownloading: false
+      };
+      const initial: ChatUiState = makeState('').copyWith({
+        recentStickers: [kept],
+        stickerBoard: new StickerBoardState([makeBoardPack('21')], false, true, '盘读失败', [], true, null, true)
+      });
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        initial, new OnRecentStickersFailed('getRecentStickers failed'), makeEnv()
+      );
+
+      // 没有最近使用就是没有，不值得占错误槽位说「你的包读失败了」
+      expect(result.state.stickerBoard.errorMessage).assertEqual('盘读失败');
+      expect(result.state.recentStickers.length).assertEqual(1);
+      expect(result.state.recentStickers[0].id).assertEqual(3);
+      // 同样算「问过了」：一次开板只问一次
+      expect(result.state.stickerBoard.recentRequested).assertTrue();
     });
     it('onStickerSetLoaded_updatesPreviewState', 0, () => {
       const initial: ChatUiState = makeState('');
@@ -2685,6 +2773,10 @@ export default function chatReducerTest() {
         makeEnv()
       );
       expect(res.state.recentStickers.length).assertEqual(0);
+      // 先清本地这一份、再写 TDLib：Android 也是这个顺序（`EmojiMediaListController.java:309`
+      // 之后 `EmojiLayout.java:141` 才发 ClearRecentStickers）。反过来会先闪一次旧列表。
+      expect(res.effects.length).assertEqual(1);
+      expect(res.effects[0].kind).assertEqual('clearRecentStickersInTdlib');
     });
 
     it('sendStickerFromPreview_updatesRecentStickers', 0, () => {

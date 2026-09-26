@@ -9,7 +9,6 @@
 
 import { describe, it, expect } from '@ohos/hypium';
 import {
-  DEFAULT_RECENT_STICKERS,
   DEFAULT_STICKER_PACKS,
   isUnicodeEmojiSticker,
   StickerSetItem,
@@ -30,11 +29,9 @@ export default function stickerSendVetoTest(): void {
     });
 
     it('builtinStickerData_staysInsideTheUnicodeExemption', 0, () => {
-      // 内置贴纸（含最近使用）全部是 emoji 占位，越界的应当走真贴纸发送路径。
-      const recent: StickerSetItem[] = DEFAULT_RECENT_STICKERS.slice();
-      for (let i = 0; i < recent.length; i++) {
-        expect(isUnicodeEmojiSticker(recent[i].fileId)).assertTrue();
-      }
+      // 内置包全部是 emoji 占位，越界的应当走真贴纸发送路径。
+      // （STICKER-RECENT-101 之后「最近使用」不再是内置数据，它来自 TDLib `getRecentStickers`，
+      // 真实 fileId 本来就该落在豁免区间外。）
       for (let p = 0; p < DEFAULT_STICKER_PACKS.length; p++) {
         const stickers: StickerSetItem[] = DEFAULT_STICKER_PACKS[p].stickers;
         expect(stickers.length > 0).assertTrue();
