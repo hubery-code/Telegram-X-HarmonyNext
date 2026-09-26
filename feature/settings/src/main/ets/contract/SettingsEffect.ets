@@ -11,7 +11,7 @@ import { Effect } from '@tgx/feature-template';
 import { NotificationScopeKey } from '../model/NotificationSettings';
 import { PrivacyChoice, PrivacySettingKey } from '../model/PrivacySettings';
 import { ProxyForm } from '../model/ProxySettings';
-import { AutoDownloadPolicy, DataSaverSettings, DownloadLimitsByNetwork } from '@tgx/core-domain';
+import { AutoDownloadPolicy, AutoLockChoice, DataSaverSettings, DownloadLimitsByNetwork } from '@tgx/core-domain';
 
 export class LoadProfileEffect implements Effect {
   readonly kind: 'loadProfile' = 'loadProfile';
@@ -225,6 +225,69 @@ export class PersistDownloadLimitsEffect implements Effect {
   }
 }
 
+/**
+ * APPLOCK-101 — 应用锁副作用。
+ *
+ * 三条带 `pin` 的 effect 与 `PasscodeSubmitted` 同理：PIN 只在「reducer → coordinator →
+ * 安全存储」这条一次性通道上路过，不落脚任何可观察状态。`storePasscodeDraft` 的草稿
+ * 存在 coordinator 的私有字段里，流程取消或结束时清空。
+ */
+
+/** 读盘：本机是否已设 PIN + 档位。 */
+export class LoadPasscodeStateEffect implements Effect {
+  readonly kind: 'loadPasscodeState' = 'loadPasscodeState';
+}
+
+/** 暂存第一次输入的新密码，供确认步比对。 */
+export class StorePasscodeDraftEffect implements Effect {
+  readonly kind: 'storePasscodeDraft' = 'storePasscodeDraft';
+  readonly pin: string;
+
+  constructor(pin: string) {
+    this.pin = pin;
+  }
+}
+
+/** 与草稿比对后落盘（创建或修改）。 */
+export class CommitPasscodeEffect implements Effect {
+  readonly kind: 'commitPasscode' = 'commitPasscode';
+  readonly pin: string;
+
+  constructor(pin: string) {
+    this.pin = pin;
+  }
+}
+
+/** 校验当前密码；`purpose` 决定验完是关闭还是转修改。 */
+export class VerifyPasscodeEffect implements Effect {
+  readonly kind: 'verifyPasscode' = 'verifyPasscode';
+  readonly pin: string;
+  readonly purpose: 'disable' | 'change';
+
+  constructor(pin: string, purpose: 'disable' | 'change') {
+    this.pin = pin;
+    this.purpose = purpose;
+  }
+}
+
+/**
+ * 清掉确认步的草稿。取消、关闭子页、写盘失败都要走这一条：草稿留着，
+ * 下一次走到确认步就会拿上一次的输入来比对，等于用旧密码确认新密码。
+ */
+export class ClearPasscodeDraftEffect implements Effect {
+  readonly kind: 'clearPasscodeDraft' = 'clearPasscodeDraft';
+}
+
+/** 写自动锁定档位。 */
+export class PersistAutoLockChoiceEffect implements Effect {
+  readonly kind: 'persistAutoLockChoice' = 'persistAutoLockChoice';
+  readonly choice: AutoLockChoice;
+
+  constructor(choice: AutoLockChoice) {
+    this.choice = choice;
+  }
+}
+
 export type SettingsEffect =
   | LoadProfileEffect
   | LoadNotificationSettingsEffect
@@ -253,4 +316,10 @@ export type SettingsEffect =
   | LoadDataSaverSettingsEffect
   | PersistDataSaverSettingsEffect
   | LoadDownloadLimitsEffect
-  | PersistDownloadLimitsEffect;
+  | PersistDownloadLimitsEffect
+  | LoadPasscodeStateEffect
+  | StorePasscodeDraftEffect
+  | CommitPasscodeEffect
+  | VerifyPasscodeEffect
+  | ClearPasscodeDraftEffect
+  | PersistAutoLockChoiceEffect;

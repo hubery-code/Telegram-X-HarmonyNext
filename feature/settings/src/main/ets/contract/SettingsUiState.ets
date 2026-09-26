@@ -16,6 +16,7 @@ import { SettingsSectionKey } from '../model/SettingsSection';
 import { PrivacySettingItem, PrivacySettingKey } from '../model/PrivacySettings';
 import { ProxyItem, ProxyConnectionState } from '../model/ProxySettings';
 import { AutoDownloadPolicy, DataSaverSettings, DownloadLimitsByNetwork } from '@tgx/core-domain';
+import { AutoLockChoice, PasscodeFlowStage, AUTO_LOCK_DEFAULT } from '@tgx/core-domain';
 
 export type SettingsThemeMode = ThemePreference;
 
@@ -92,6 +93,21 @@ export interface SettingsUiStateOptions {
   readonly proxyPingFailure?: Map<number, string>;
   /** PROXY-102：TDLib 连接态；'unknown' 表示还没收到 `updateConnectionState`。 */
   readonly proxyConnection?: ProxyConnectionState;
+  /** APPLOCK-101：是否展示「屏幕锁定」子页。 */
+  readonly showPasscodePage?: boolean;
+  /** APPLOCK-101：本机是否已设应用锁 PIN；未读到盘时为 false（等同于「没开启」）。 */
+  readonly passcodeIsSet?: boolean;
+  /** APPLOCK-101：自动锁定档位。 */
+  readonly autoLockChoice?: AutoLockChoice;
+  /** APPLOCK-101：PIN 输入流程所处阶段；'idle' 表示键盘不出现。 */
+  readonly passcodeFlow?: PasscodeFlowStage;
+  /** APPLOCK-101：是否有一次 PIN 读写在途。 */
+  readonly isUpdatingPasscode?: boolean;
+  /**
+   * APPLOCK-101：流程提示（Lang key）；null 表示无。
+   * 只放 Lang key 不放文案，也不放任何用户输入 —— PIN 不进状态是这包的硬约束。
+   */
+  readonly passcodeNotice?: string | null;
 }
 
 export class SettingsUiState implements UiState {
@@ -162,6 +178,18 @@ export class SettingsUiState implements UiState {
   readonly proxyPingFailure: Map<number, string>;
   /** PROXY-102：TDLib 连接态。 */
   readonly proxyConnection: ProxyConnectionState;
+  /** APPLOCK-101：是否展示「屏幕锁定」子页。 */
+  readonly showPasscodePage: boolean;
+  /** APPLOCK-101：本机是否已设应用锁 PIN。 */
+  readonly passcodeIsSet: boolean;
+  /** APPLOCK-101：自动锁定档位。 */
+  readonly autoLockChoice: AutoLockChoice;
+  /** APPLOCK-101：PIN 输入流程阶段；'idle' 即键盘不出现。 */
+  readonly passcodeFlow: PasscodeFlowStage;
+  /** APPLOCK-101：是否有一次 PIN 读写在途。 */
+  readonly isUpdatingPasscode: boolean;
+  /** APPLOCK-101：流程提示（Lang key）；null 表示无。 */
+  readonly passcodeNotice: string | null;
 
   constructor(
     userId: number,
@@ -207,7 +235,13 @@ export class SettingsUiState implements UiState {
     downloadLimits: DownloadLimitsByNetwork | null = null,
     proxyPingMs: Map<number, number> = new Map(),
     proxyPingFailure: Map<number, string> = new Map(),
-    proxyConnection: ProxyConnectionState = 'unknown'
+    proxyConnection: ProxyConnectionState = 'unknown',
+    showPasscodePage: boolean = false,
+    passcodeIsSet: boolean = false,
+    autoLockChoice: AutoLockChoice = AUTO_LOCK_DEFAULT,
+    passcodeFlow: PasscodeFlowStage = 'idle',
+    isUpdatingPasscode: boolean = false,
+    passcodeNotice: string | null = null
   ) {
     this.userId = userId;
     this.displayName = displayName;
@@ -253,6 +287,12 @@ export class SettingsUiState implements UiState {
     this.proxyPingMs = proxyPingMs;
     this.proxyPingFailure = proxyPingFailure;
     this.proxyConnection = proxyConnection;
+    this.showPasscodePage = showPasscodePage;
+    this.passcodeIsSet = passcodeIsSet;
+    this.autoLockChoice = autoLockChoice;
+    this.passcodeFlow = passcodeFlow;
+    this.isUpdatingPasscode = isUpdatingPasscode;
+    this.passcodeNotice = passcodeNotice;
   }
 
   static initial(
@@ -351,7 +391,13 @@ export class SettingsUiState implements UiState {
       options.downloadLimits !== undefined ? options.downloadLimits : this.downloadLimits,
       options.proxyPingMs !== undefined ? options.proxyPingMs : this.proxyPingMs,
       options.proxyPingFailure !== undefined ? options.proxyPingFailure : this.proxyPingFailure,
-      options.proxyConnection !== undefined ? options.proxyConnection : this.proxyConnection
+      options.proxyConnection !== undefined ? options.proxyConnection : this.proxyConnection,
+      options.showPasscodePage !== undefined ? options.showPasscodePage : this.showPasscodePage,
+      options.passcodeIsSet !== undefined ? options.passcodeIsSet : this.passcodeIsSet,
+      options.autoLockChoice !== undefined ? options.autoLockChoice : this.autoLockChoice,
+      options.passcodeFlow !== undefined ? options.passcodeFlow : this.passcodeFlow,
+      options.isUpdatingPasscode !== undefined ? options.isUpdatingPasscode : this.isUpdatingPasscode,
+      options.passcodeNotice !== undefined ? options.passcodeNotice : this.passcodeNotice
     );
   }
 }

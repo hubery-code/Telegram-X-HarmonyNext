@@ -28,6 +28,9 @@
 import { LightTheme, Theme, ThemeManager, parseChatFontSize, CHAT_FONT_SIZE_DEFAULT } from '@tgx/core-design-system';
 import { saveChatFontSize } from '../store/SettingsStore';
 import { PreferencesAutoDownloadPolicyStore } from '../store/AutoDownloadStore';
+import { AppLockGate } from '../applock/AppLockGate';
+import { appLockGate, appLockStore } from '../applock/AppLockWiring';
+import { AppLockOverlay } from '../applock/AppLockOverlay';
 import { PreferencesDataSaverStore } from '../store/DataSaverStore';
 import { PreferencesDownloadLimitsStore } from '../store/DownloadLimitsStore';
 import { hilog } from '@kit.PerformanceAnalysisKit';
@@ -91,6 +94,8 @@ import {
   RequestAddAccount,
   CloseDevicesPage,
   ClosePrivacyPage,
+  ClosePasscodePage,
+  CancelPasscodeFlow,
   SectionFocused,
   CloseAccountSwitcher,
   CancelLogout
@@ -371,6 +376,12 @@ struct Index {
   }
 
   onBackPress(): boolean {
+    // 应用锁生效时返回键必须被吞掉：遮罩盖住的不是某一页，而是整个应用，
+    // 放行一次 pop 就等于绕过了 PIN（Android 侧同理 —— PasscodeView 是独立 window）。
+    const lockGate: AppLockGate | null = appLockGate();
+    if (lockGate !== null && lockGate.snapshot().stage !== 'unlocked') {
+      return true;
+    }
     if (this.currentRoute.name === 'chat') {
       // MSG-106：选择器打开时返回只关选择器，不退出会话页也不退出多选态。
       if (this.showForwardPicker) {
@@ -390,6 +401,15 @@ struct Index {
       }
       if (this.settingsUiState.showPrivacyPage) {
         this.settingsDispatch(new ClosePrivacyPage());
+        return true;
+      }
+      if (this.settingsUiState.showPasscodePage) {
+        // 键盘弹着时返回先收回键盘，再退子页 —— 和 Android 的 PasscodeActivity 一致。
+        if (this.settingsUiState.passcodeFlow !== 'idle') {
+          this.settingsDispatch(new CancelPasscodeFlow());
+          return true;
+        }
+        this.settingsDispatch(new ClosePasscodePage());
         return true;
       }
       if (this.settingsUiState.showAccountSwitcher) {
@@ -1349,6 +1369,10 @@ struct Index {
     coordinator.setAutoDownloadStore(this.getAutoDownloadStore());
     coordinator.setDataSaverStore(this.getDataSaverStore());
     coordinator.setDownloadLimitsStore(this.getDownloadLimitsStore());
+    // APPLOCK-101：PIN 存储来自 entry 装配的模块单例；没装上就传 null，
+    // 协调器会如实回「写盘失败」而不是把界面点亮。必须在 start() 之前注入 ——
+    // start() 会立刻发 loadPasscodeState 读盘。
+    coordinator.setAppLockStore(appLockStore());
     this.unsubscribeSettingsFn = coordinator.subscribe((uiState: SettingsUiState) => {
       this.settingsUiState = uiState;
     });
@@ -1671,6 +1695,9 @@ struct Index {
           }
         })
       }
+      // APPLOCK-101：应用锁遮罩压在包括链接弹窗在内的一切之上 —— 它自己决定何时出现，
+      // 未锁定时不渲染任何节点，所以这里无条件挂载。
+      AppLockOverlay()
     }
     .width('100%')
     .height('100%')

@@ -23,7 +23,15 @@ import {
 } from '@tgx/core-common';
 import { AccountScope } from '@tgx/core-account';
 import {
+  APP_LOCK_ERROR_STORE,
+  APP_LOCK_ERROR_WRONG,
+  APP_LOCK_NOTICE_REMOVED,
+  APP_LOCK_NOTICE_SAVED,
+  AUTO_LOCK_DEFAULT,
+  appLockNoticeKeyForError,
   AutoDownloadPolicy,
+  AutoLockChoice,
+  AppLockStore,
   AutoDownloadPolicyStore,
   DataSaverSettings,
   DataSaverStore,
@@ -173,7 +181,14 @@ import {
   LoadAutoDownloadPolicy,
   AutoDownloadPolicyLoaded,
   DataSaverSettingsLoaded,
-  DownloadLimitsLoaded
+  DownloadLimitsLoaded,
+  AutoLockChoiceRejected,
+  PasscodeMismatched,
+  PasscodeOperationDone,
+  PasscodeOperationFailed,
+  PasscodeRejected,
+  PasscodeStateLoaded,
+  PasscodeVerified
 } from '../contract/SettingsIntent';
 import {
   ClearCacheEffect,
@@ -203,7 +218,13 @@ import {
   LoadDataSaverSettingsEffect,
   PersistDataSaverSettingsEffect,
   LoadDownloadLimitsEffect,
-  PersistDownloadLimitsEffect
+  PersistDownloadLimitsEffect,
+  ClearPasscodeDraftEffect,
+  CommitPasscodeEffect,
+  LoadPasscodeStateEffect,
+  PersistAutoLockChoiceEffect,
+  StorePasscodeDraftEffect,
+  VerifyPasscodeEffect
 } from '../contract/SettingsEffect';
 import { settingsReducer } from '../reducer/SettingsReducer';
 import { Theme, ThemeManager } from '@tgx/core-design-system';
@@ -242,6 +263,15 @@ export class SettingsCoordinator {
    * 而这一位是可选能力（缺省时页面显示的就是默认策略，行为与 TGX 首装一致）。
    */
   private autoDownloadStore: AutoDownloadPolicyStore | null = null;
+  /** APPLOCK-101：应用锁存储；由 entry 装配层注入，未注入时子页各行只读不回写。 */
+  private appLockStore: AppLockStore | null = null;
+  /**
+   * 「输入两次」流程里第一次的草稿。
+   * 刻意不进 `SettingsUiState`：状态每帧被复制、可能被日志与调试面板快照，密码这种
+   * 短秘密值一旦进了状态就到处留副本。草稿只活在本 coordinator 实例的内存里，
+   * 取消 / 关闭子页 / 写盘失败都会由 `clearPasscodeDraft` effect 抹掉。
+   */
+  private passcodeDraft: string | null = null;
   /**
    * AUTODL-102：省流量设置的落盘端口。同样是 setter 注入、同样可选 ——
    * 没注入时页面显默认档（只勾「漫游」），与 Android 首装一致。
@@ -264,6 +294,16 @@ export class SettingsCoordinator {
   /** 注入策略存储；必须在 start() 之前调用。 */
   setAutoDownloadStore(store: AutoDownloadPolicyStore | null): void {
     this.autoDownloadStore = store;
+  }
+
+  /**
+   * APPLOCK-101：注入应用锁存储（entry 装配层调）。传 null 表示这台设备没接上安全存储，
+   * 此时子页仍然可读档位，但任何 PIN 写回都会回 `passcodeOperationFailed` —— 不做静默降级，
+   * 因为「界面说已开启、实际没有密码」是最坏的一种谎。
+   */
+  setAppLockStore(store: AppLockStore | null): void {
+    this.appLockStore = store;
+    this.passcodeDraft = null;
   }
 
   /** 注入省流量设置存储；必须在 start() 之前调用。 */
@@ -568,6 +608,39 @@ export class SettingsCoordinator {
       case 'persistDownloadLimits': {
         const persistEffect: PersistDownloadLimitsEffect = effect as PersistDownloadLimitsEffect;
         this.handlePersistDownloadLimits(persistEffect.limits);
+        break;
+      }
+
+      // ---- APPLOCK-101 应用锁 ----
+      case 'loadPasscodeState':
+        this.handleLoadPasscodeState();
+        break;
+
+      case 'storePasscodeDraft': {
+        const draftEffect: StorePasscodeDraftEffect = effect as StorePasscodeDraftEffect;
+        this.handleStorePasscodeDraft(draftEffect.pin);
+        break;
+      }
+
+      case 'clearPasscodeDraft':
+        this.handleClearPasscodeDraft();
+        break;
+
+      case 'commitPasscode': {
+        const commitEffect: CommitPasscodeEffect = effect as CommitPasscodeEffect;
+        this.handleCommitPasscode(commitEffect.pin);
+        break;
+      }
+
+      case 'verifyPasscode': {
+        const verifyEffect: VerifyPasscodeEffect = effect as VerifyPasscodeEffect;
+        this.handleVerifyPasscode(verifyEffect.pin, verifyEffect.purpose);
+        break;
+      }
+
+      case 'persistAutoLockChoice': {
+        const choiceEffect: PersistAutoLockChoiceEffect = effect as PersistAutoLockChoiceEffect;
+        this.handlePersistAutoLockChoice(choiceEffect.choice);
         break;
       }
 
@@ -1841,5 +1914,127 @@ export class SettingsCoordinator {
       restored !== null ? restored : DownloadLimitsByNetwork.defaultLimits()
     ));
     this.dispatch(new SetErrorMessage('Unable to save download limits.'));
+  }
+
+  // ---- APPLOCK-101 应用锁（Passcode）----
+
+  /**
+   * 读盘：本机是否已设 PIN + 自动锁定档位。
+   * `refreshPasscodeSet()` 是唯一一次异步确认（安全存储查询），档位是同步读偏好缓存。
+   * 读失败按「未设 PIN」回灌：锁本身没生效比多问一次密码更安全，且这条路径只有
+   * 设备被恢复出厂/系统清理过才会走到。
+   */
+  private handleLoadPasscodeState(): void {
+    const store: AppLockStore | null = this.appLockStore;
+    if (store === null) {
+      this.dispatch(new PasscodeStateLoaded(false, AUTO_LOCK_DEFAULT));
+      return;
+    }
+    const self: SettingsCoordinator = this;
+    store.refreshPasscodeSet().then((res: Result<boolean, AppError>): void => {
+      let isSet: boolean = false;
+      if (res.ok) {
+        isSet = res.value;
+      }
+      self.dispatch(new PasscodeStateLoaded(isSet, store.autoLockChoice()));
+    });
+  }
+
+  private handleStorePasscodeDraft(pin: string): void {
+    this.passcodeDraft = pin;
+  }
+
+  private handleClearPasscodeDraft(): void {
+    this.passcodeDraft = null;
+  }
+
+  /**
+   * 确认步提交：先与草稿比对，再落盘。
+   * 比对放在 coordinator 而不是 reducer，正是因为要比的两个值里有一个是密码 ——
+   * reducer 只能看见 state，而 state 里不许有它。
+   */
+  private handleCommitPasscode(pin: string): void {
+    const store: AppLockStore | null = this.appLockStore;
+    if (store === null) {
+      this.dispatch(new PasscodeOperationFailed(APP_LOCK_ERROR_STORE));
+      return;
+    }
+    const draft: string | null = this.passcodeDraft;
+    this.passcodeDraft = null;
+    if (draft === null || draft !== pin) {
+      this.dispatch(new PasscodeMismatched());
+      return;
+    }
+    const self: SettingsCoordinator = this;
+    store.setPasscode(pin).then((res: Result<void, AppError>): void => {
+      // ArkTS 不会在提前 return 后收窄 Result，成功/失败必须各写一个显式分支。
+      if (res.ok) {
+        self.dispatch(new PasscodeOperationDone(APP_LOCK_NOTICE_SAVED, store.isPasscodeSet()));
+      }
+      if (res.err) {
+        self.logger.logError(TAG, res.error);
+        self.dispatch(new PasscodeOperationFailed(appLockNoticeKeyForError(res.error)));
+      }
+    });
+  }
+
+  /**
+   * 校验当前密码。`purpose` 决定验完的下一步：
+   * - `disable` → 紧接着抹掉秘密值，两次派发（`passcodeVerified` 解在途、`passcodeOperationDone` 收尾）；
+   * - `change` → 只推进到「输入新密码」，秘密值还没变，中途退出也不会把用户锁在外面。
+   */
+  private handleVerifyPasscode(pin: string, purpose: 'disable' | 'change'): void {
+    const store: AppLockStore | null = this.appLockStore;
+    if (store === null) {
+      this.dispatch(new PasscodeOperationFailed(APP_LOCK_ERROR_STORE));
+      return;
+    }
+    const self: SettingsCoordinator = this;
+    store.verifyPasscode(pin).then((res: Result<boolean, AppError>): void => {
+      if (res.err) {
+        self.dispatch(new PasscodeOperationFailed(appLockNoticeKeyForError(res.error)));
+        return;
+      }
+      if (res.ok) {
+        self.handleVerifyOutcome(res.value, purpose, store);
+      }
+    });
+  }
+
+  /** 校验结论的下一步。抽成独立方法只为让上面那对 `res.err` / `res.ok` 分支保持显式。 */
+  private handleVerifyOutcome(matched: boolean, purpose: 'disable' | 'change', store: AppLockStore): void {
+    if (!matched) {
+      this.dispatch(new PasscodeRejected(APP_LOCK_ERROR_WRONG));
+      return;
+    }
+    if (purpose === 'change') {
+      this.dispatch(new PasscodeVerified('change'));
+      return;
+    }
+    this.dispatch(new PasscodeVerified('disable'));
+    const self: SettingsCoordinator = this;
+    store.removePasscode().then((removed: Result<void, AppError>): void => {
+      if (removed.ok) {
+        self.dispatch(new PasscodeOperationDone(APP_LOCK_NOTICE_REMOVED, store.isPasscodeSet()));
+      }
+      if (removed.err) {
+        self.dispatch(new PasscodeOperationFailed(appLockNoticeKeyForError(removed.error)));
+      }
+    });
+  }
+
+  /**
+   * 写档位。 reducer 已乐观改过界面值，这里失败就把它回灌成盘上真实的那一份 ——
+   * 显示「1 分钟」而按「立即」锁定，用户是在被误导，不是在用设置。
+   */
+  private handlePersistAutoLockChoice(choice: AutoLockChoice): void {
+    const store: AppLockStore | null = this.appLockStore;
+    if (store === null) {
+      return;
+    }
+    if (store.setAutoLockChoice(choice)) {
+      return;
+    }
+    this.dispatch(new AutoLockChoiceRejected(store.autoLockChoice()));
   }
 }

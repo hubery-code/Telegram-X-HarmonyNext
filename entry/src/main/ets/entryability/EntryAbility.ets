@@ -6,6 +6,8 @@ import { appDeepLinkQueue } from '../deeplink/DeepLinkQueue';
 import { TdlibParametersConfig } from '@tgx/feature-auth';
 import { TELEGRAM_CREDENTIALS } from '../config/AppCredentials';
 import { initSettingsStore, loadChatFontSize, KEY_CHAT_FONT_SIZE } from '../store/SettingsStore';
+import { AppLockGate } from '../applock/AppLockGate';
+import { appLockGate, installAppLock } from '../applock/AppLockWiring';
 
 const DOMAIN: number = 0x0000;
 const TAG: string = 'EntryAbility';
@@ -86,6 +88,16 @@ export default class EntryAbility extends UIAbility {
     AppStorage.setOrCreate<string>(KEY_CHAT_FONT_SIZE, `${restoredChatFontSize}`);
     hilog.info(DOMAIN, TAG, 'chatFontSize restored: %{public}s', `${restoredChatFontSize}`);
 
+    // 应用锁（APPLOCK-101）：自动锁定档位存在上面那条 preferences 盘上，
+    // 所以装配必须排在 initSettingsStore 之后；bootstrap() 决定「这次起来要不要锁」，
+    // 必须排在 loadContent 之前，否则解锁前会闪一帧主界面。
+    if (installAppLock(AppStorage.get<BootstrapResult>('bootstrapResult'))) {
+      const appLock: AppLockGate | null | undefined = appLockGate();
+      if (appLock !== null && appLock !== undefined) {
+        appLock.bootstrap();
+      }
+    }
+
     windowStage.loadContent('pages/Index', (err) => {
       if (err.code) {
         hilog.error(DOMAIN, TAG, 'loadContent failed: %{public}s', JSON.stringify(err));
@@ -105,6 +117,11 @@ export default class EntryAbility extends UIAbility {
     if (result !== undefined && result !== null) {
       result.lifecycle.onForeground();
     }
+    // 应用锁：回到前台先问一次「该锁吗」，判定用的是后台时长，不是这里的调用时机。
+    const appLock: AppLockGate | null = appLockGate();
+    if (appLock !== null) {
+      appLock.onForeground();
+    }
   }
 
   onBackground(): void {
@@ -112,6 +129,10 @@ export default class EntryAbility extends UIAbility {
     const result: BootstrapResult | undefined = AppStorage.get<BootstrapResult>('bootstrapResult');
     if (result !== undefined && result !== null) {
       result.lifecycle.onBackground();
+    }
+    const appLock: AppLockGate | null = appLockGate();
+    if (appLock !== null) {
+      appLock.onBackground();
     }
   }
 }

@@ -26,7 +26,9 @@ import { Theme, ThemeManager, LightTheme } from '@tgx/core-design-system';
 import { Lang, SupportedLanguage } from '@tgx/core-common';
 import { SettingsUiState } from '../contract/SettingsUiState';
 import {
+  LoadPasscodeState,
   LoadPrivacySettings,
+  OpenPasscodePage,
   SetErrorMessage,
   SettingsIntent,
   TogglePrivacySetting
@@ -63,6 +65,8 @@ export struct PrivacySubPage {
       self.effectiveLang = lang;
     });
     this.onDispatch(new LoadPrivacySettings());
+    // 「屏幕锁定」行的开/关文案要进页即真，不能等用户点进子页才回读。
+    this.onDispatch(new LoadPasscodeState());
   }
 
   aboutToDisappear(): void {
@@ -127,6 +131,7 @@ export struct PrivacySubPage {
             this.LoadingRowView()
           } else {
             this.PrivacyCardView()
+            this.ScreenLockCardView()
             this.HintView()
           }
         }
@@ -269,6 +274,48 @@ export struct PrivacySubPage {
     .onClick((): void => {
       this.onDispatch(new TogglePrivacySetting(key));
     })
+  }
+
+  /**
+   * 对标 Android 的「隐私和安全 → 屏幕锁定」入口（SettingsPrivacyController.java:111-112）：
+   * 隐私页只负责把用户带进子页，PIN 的建/验/清全部在 PasscodeSubPage 里。
+   */
+  @Builder
+  ScreenLockCardView() {
+    Column() {
+      Column() {
+        Row() {
+          Text(this.t('Screen Lock'))
+            .fontSize(this.getTheme().typography.body.fontSize)
+            .fontColor(this.getTheme().colors.textPrimary)
+            .layoutWeight(1)
+
+          Text(this.t(this.uiState.passcodeIsSet ? 'On' : 'Off'))
+            .fontSize(this.getTheme().typography.subheadline.fontSize)
+            .fontColor(this.getTheme().colors.textSecondary)
+        }
+        .width('100%')
+        .height(52)
+        .alignItems(VerticalAlign.Center)
+        .id('privacy-screen-lock-row')
+        .onClick((): void => {
+          this.onDispatch(new OpenPasscodePage());
+        })
+      }
+      .width('100%')
+      .padding({
+        left: this.getTheme().spacing.md,
+        right: this.getTheme().spacing.md
+      })
+    }
+    .width('100%')
+    .padding({
+      top: this.getTheme().spacing.xs,
+      bottom: this.getTheme().spacing.xs
+    })
+    .margin({ top: this.getTheme().spacing.md })
+    .backgroundColor(this.getTheme().colors.surface)
+    .borderRadius(this.getTheme().radius.md)
   }
 
   @Builder

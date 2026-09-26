@@ -24,6 +24,7 @@ export {
 } from './AppFilesPort';
 export { MonotonicClockPort } from './MonotonicClockPort';
 export { SecureRandomPort } from './SecureRandomPort';
+export { PasscodeStorePort } from './PasscodeStorePort';
 export { ClipboardPort } from './ClipboardPort';
 export { ToastPort } from './ToastPort';
 export { MediaPickerPort, PickedMedia } from './MediaPickerPort';
@@ -43,6 +44,7 @@ export { AudioRecorderPort, AudioRecordResult, ERR_MIC_PERMISSION_DENIED } from 
 export { FakePreferencesStore } from './fakes/FakePreferencesStore';
 export { FakeSecureKeyStore } from './fakes/FakeSecureKeyStore';
 export { FakeSecureRandom } from './fakes/FakeSecureRandom';
+export { FakePasscodeStore } from './fakes/FakePasscodeStore';
 export { FakeNetworkState } from './fakes/FakeNetworkState';
 export { FakeAppFiles } from './fakes/FakeAppFiles';
 export { FakeMonotonicClock } from './fakes/FakeMonotonicClock';

@@ -51,6 +51,10 @@ export {
   TogglePrivacySetting,
   PrivacySettingUpdated,
   PrivacySettingUpdateFailed,
+  OpenPasscodePage,
+  ClosePasscodePage,
+  LoadPasscodeState,
+  CancelPasscodeFlow,
   SettingsIntent
 } from './contract/SettingsIntent';
 
@@ -120,3 +124,5 @@ export {
 export { SettingsPage, AVATAR_PALETTE } from './pages/SettingsPage';
 export { DevicesSubPage, formatSessionDate } from './pages/DevicesSubPage';
 export { PrivacySubPage } from './pages/PrivacySubPage';
+export { PasscodeKeypad } from './pages/PasscodeKeypad';
+export { PasscodeSubPage } from './pages/PasscodeSubPage';

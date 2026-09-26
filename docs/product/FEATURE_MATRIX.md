@@ -920,6 +920,48 @@
 > ⑤ 动效贴纸无逐帧动画（等 TGS/Lottie 渲染器，届时这一行与板卡/预览页/气泡一起换）。
 
 
+> **追加（APPLOCK-101，FEAT-P2-008 Passcode 半边）**：四位本地 PIN + 自动锁定档位 + 后台回锁 + 连错冷却。
+> **对标 Android `Passcode.java` 的判定表，偏离三条且都写明理由**：
+> ① 存放与派生换掉 —— Android 是 SharedPreferences 里「双重 MD5 + 全局固定盐」，对 10⁴ 空间的 4 位数字
+> 等于没加盐（一次查表全解），本端存 `salt(16) ‖ sha256(salt ‖ utf8(pin))(32)` 共 48 字节进 Asset Store
+> （`ACCESSIBILITY=DEVICE_UNLOCKED`、`SYNC_TYPE=NEVER`），盐一事一生成；
+> ② 冷启动**只要设过 PIN 就锁**（Android 不锁）——遮罩必须在 `loadContent` 之前决定，否则解锁前闪一帧主界面；
+> ③ 超时从**后台时长**算而不是最后交互时间（用户停在会话页不算在用）。
+> 冷却表照抄：level 1 → 30 s，其后 `min(300, 30 + 15*(level-1))`，**每 4 次错误**才进一档；
+> `INSTANT = 170ms`、`NEVER = -1` 两个哨兵位保持 Android 数值语义。
+> **`set()` 必须是原子的（写完立刻读回、用同一 PIN 重派生并恒定时间比对，不匹配就抹掉回滚成「未设置」）**：
+> 本仓不允许卸载重装清数据（TDLib 会话要短信码），所以「写进去一个解不开的锁」是**不可恢复损失** ——
+> 宁可设置失败让用户重试，也不能留半个坏秘密。这道防线本轮真的救了一次（见下）。
+> **保密边界是这套代码的硬约束**：PIN / 盐 / 摘要不进 `UiState`、不进日志、不进 `AppError`；
+> 「确认密码」的比对放在 coordinator 而不是 reducer，正是因为要比的两个值里有一个是密码而 reducer 只看得到 state；
+> 摘要比较走恒定时间循环不做前缀短路；`PasscodeStorePort` 不提供任何把盐或摘要读出来的方法。
+> **设备取证逼出两个单测结构上抓不到的真 bug**（这是本轮最值得留档的部分）：
+> ① `SettingsCoordinator.setAppLockStore()` **声明了、全仓零调用点** —— 于是每一次写入都走 `store === null`
+> 分支，屏上永远是一句「Secure storage is unavailable on this device.」。单测抓不到是结构性的：
+> fake store 是测试自己 `new` 出来注入的，「装配层忘了注入」这件事只发生在真进程里。修在 `Index.openSettings()`
+> 里 `coordinator.setAppLockStore(appLockStore())`，且必须在 `start()` **之前**（`start()` 立刻发 `loadPasscodeState` 读盘）。
+> ② `HarmonyPasscodeStore.set()` **只写了 32 字节摘要、没前缀盐** —— `matches()` 只能从这一条资产里取盐，
+> 于是每次校验都在拿随机盐和旧摘要比，永远对不上。这条正是上面那道写后读回防线逮住的：
+> 回 `passcode-roundtrip-mismatch` 并回滚，**没有留下一个会把用户下次冷启动永久锁在外面的 PIN**。
+> **教训（会反复用到）**：界面文案**不分档**时不能作为诊断依据 —— `appLockNoticeKeyForError` 把除
+> `passcode-secret-corrupt` 之外的**所有**错误塌成同一句 store 话术，所以「没注入 store」和「资产真读不到」
+> 在屏上长得一模一样，一度得出「模拟器没有安全存储」的错误结论（实际 `asset_service` 好好在跑）。
+> 字节长度不是秘密值，取证时**临时打印写入/读回长度**是安全的（`32` vs 期望 `48` 一句话定案），用完删掉。
+> 设备取证（模拟器 127.0.0.1:5555，`.hvigor/outputs/al101/`，全程未发消息、未动账号数据）：
+> 设 PIN → `passcode-inline-notice 'Passcode set.'` + `passcode-toggle-state 'On'`；退后台回前台**回锁**；
+> 连错 4 次进冷却并倒计时 `'Too many attempts. Try again in 29s'`，**冷却期内输入正确 PIN 仍拒**（短路在触盘之前）；
+> 冷却到期正确 PIN 解锁；`aa force-stop` 冷启动直接是遮罩；档位循环六档且**重启后仍在**；
+> 切到 `'After 5 minutes'` 后 3 秒后台**不锁**（证明计时用的是档位而不是常量）；移除 PIN →
+> `'Passcode removed.'` + `'Off'`，冷启动无遮罩。收尾已把本机状态还原（PIN 已移除、档位回 `'Immediately'`、隐私页 `Screen Lock` 行读回 Off）。
+> 测试：应用锁四份用例文件 **60** 条（`core_domain` AppLock 11 + PasscodeFlow 5、`feature_settings` PasscodeReducer 24、
+> `entry` AppLockGate 20），模块全量 `core_domain` **177/177**、`feature_settings` **254/254**、`entry` **117/117**，
+> 三守卫 + secret_scan 0 违规。**`platform/keystore` 没有 `src/test` 目录**，因此该模块 `hvigorw test` 结构上跑不起来
+> （Rollup 找不到 `src/test/List.test`）—— 这一层是 Kit 相关代码，本轮由设备取证覆盖。
+> 遗留：① FEAT-P2-008 的**生物识别**与**活跃会话管理**两半未做；② 无「显示输入中的密码」小眼睛（Android 有）；
+> ③ 遮罩是应用内 overlay，不是系统级锁屏，拔电池/刷机不在防护范围；④ sha256 单次迭代不抗取证，
+> 强度与 Android 同级（换 PBKDF2/HMAC 需要同时定档迭代数与首启耗时）；⑤ 改密码中途退出不锁死（秘密尚未变更，已按此设计）。
+
+
 | 功能 ID | 功能名 |
 |---|---|
 | FEAT-P2-001 | 联系人同步与新建会话 |

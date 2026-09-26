@@ -8,6 +8,7 @@ import audioSessionOrchestratorTest from './platform/AudioSessionOrchestrator.te
 import appLinkRouterTest from './deeplink/AppLinkRouter.test';
 import appLinkPromptTest from './deeplink/AppLinkPrompt.test';
 import deepLinkQueueTest from './deeplink/DeepLinkQueue.test';
+import appLockGateTest from './applock/AppLockGate.test';
 
 const DOMAIN: number = 0x0000;
 const TAG: string = 'ListTest';
@@ -31,4 +32,5 @@ export default function listTest() {
   appLinkRouterTest();
   appLinkPromptTest();
   deepLinkQueueTest();
+  appLockGateTest();
 }

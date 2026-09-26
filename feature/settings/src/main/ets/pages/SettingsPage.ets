@@ -47,7 +47,9 @@ import {
   LoadProxies,
   OpenProxyPage,
   CloseAutoDownloadPage,
-  OpenAutoDownloadPage
+  OpenAutoDownloadPage,
+  ClosePasscodePage,
+  OpenPasscodePage
 } from '../contract/SettingsIntent';
 import { NotificationScopeKey } from '../model/NotificationSettings';
 import {
@@ -63,6 +65,7 @@ import { DevicesSubPage } from './DevicesSubPage';
 import { PrivacySubPage } from './PrivacySubPage';
 import { ProxySubPage } from './ProxySubPage';
 import { AutoDownloadSubPage } from './AutoDownloadSubPage';
+import { PasscodeSubPage } from './PasscodeSubPage';
 
 const AVATAR_SIZE: number = 64;
 const BACK_ARROW_SIZE: number = 44;
@@ -316,6 +319,16 @@ export struct SettingsPage {
           onDispatch: this.onDispatch,
           onBack: (): void => {
             this.onDispatch(new CloseAutoDownloadPage());
+          }
+        })
+      }
+
+      if (this.uiState.showPasscodePage) {
+        PasscodeSubPage({
+          uiState: this.uiState,
+          onDispatch: this.onDispatch,
+          onBack: (): void => {
+            this.onDispatch(new ClosePasscodePage());
           }
         })
       }

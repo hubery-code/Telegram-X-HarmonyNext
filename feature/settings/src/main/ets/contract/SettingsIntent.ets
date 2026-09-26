@@ -17,6 +17,7 @@ import {
   AutoDownloadChatScope,
   AutoDownloadMediaKind,
   AutoDownloadPolicy,
+  AutoLockChoice,
   DataSaverNetworkType,
   DataSaverSettings,
   DownloadLimitsByNetwork
@@ -578,6 +579,128 @@ export class SetDownloadLimitExclusion implements Intent {
   }
 }
 
+/**
+ * APPLOCK-101 — 应用锁（Passcode）意图。
+ *
+ * `PasscodeSubmitted` 是这里唯一带用户输入的一条：PIN 只作为**一次事件**的载荷穿过
+ * reducer（reducer 只读 `passcodeStepFor` 的判据，绝不把它写进 `SettingsUiState`），
+ * 落盘由 coordinator 的 effect 执行。这个方向是刻意的 —— 密码不能成为「可观察状态」的
+ * 一部分，否则每次快照、每条日志都会顺手带上它。
+ */
+
+/** 打开「屏幕锁定」子页（入口在「隐私和安全」里，对齐 Android 的 Privacy 页）。 */
+export class OpenPasscodePage implements Intent {
+  readonly kind: 'openPasscodePage' = 'openPasscodePage';
+}
+
+export class ClosePasscodePage implements Intent {
+  readonly kind: 'closePasscodePage' = 'closePasscodePage';
+}
+
+/** 读盘：本机是否已设 PIN + 自动锁定档位。 */
+export class LoadPasscodeState implements Intent {
+  readonly kind: 'loadPasscodeState' = 'loadPasscodeState';
+}
+
+export class PasscodeStateLoaded implements Intent {
+  readonly kind: 'passcodeStateLoaded' = 'passcodeStateLoaded';
+  readonly isSet: boolean;
+  readonly autoLock: AutoLockChoice;
+
+  constructor(isSet: boolean, autoLock: AutoLockChoice) {
+    this.isSet = isSet;
+    this.autoLock = autoLock;
+  }
+}
+
+/** 点「屏幕锁定」行：未开启则开始创建，已开启则开始关闭（先验密码）。 */
+export class TogglePasscodeRequested implements Intent {
+  readonly kind: 'togglePasscodeRequested' = 'togglePasscodeRequested';
+}
+
+/** 点「修改密码」行：先验当前密码，再走两步输入。 */
+export class ChangePasscodeRequested implements Intent {
+  readonly kind: 'changePasscodeRequested' = 'changePasscodeRequested';
+}
+
+/** 点「自动锁定」行：循环到下一档。 */
+export class CycleAutoLockChoice implements Intent {
+  readonly kind: 'cycleAutoLockChoice' = 'cycleAutoLockChoice';
+}
+
+/** 取消当前流程（键盘上的「取消」）。 */
+export class CancelPasscodeFlow implements Intent {
+  readonly kind: 'cancelPasscodeFlow' = 'cancelPasscodeFlow';
+}
+
+/** 键盘提交四位数字。`pin` 不进状态，见文件头。 */
+export class PasscodeSubmitted implements Intent {
+  readonly kind: 'passcodeSubmitted' = 'passcodeSubmitted';
+  readonly pin: string;
+
+  constructor(pin: string) {
+    this.pin = pin;
+  }
+}
+
+/** coordinator 校验当前密码的结论。 */
+export class PasscodeVerified implements Intent {
+  readonly kind: 'passcodeVerified' = 'passcodeVerified';
+  /** 这次校验是为哪个流程做的：'disable' 验完即关闭，'change' 验完转输入新密码。 */
+  readonly purpose: 'disable' | 'change';
+
+  constructor(purpose: 'disable' | 'change') {
+    this.purpose = purpose;
+  }
+}
+
+/** 密码不对，或存储层报错。`noticeKey` 是 Lang key，由 core/domain 常量给出。 */
+export class PasscodeRejected implements Intent {
+  readonly kind: 'passcodeRejected' = 'passcodeRejected';
+  readonly noticeKey: string;
+
+  constructor(noticeKey: string) {
+    this.noticeKey = noticeKey;
+  }
+}
+
+/** 两次输入不一致；草稿由 coordinator 清掉。 */
+export class PasscodeMismatched implements Intent {
+  readonly kind: 'passcodeMismatched' = 'passcodeMismatched';
+}
+
+/** 写盘失败（安全存储报错/自校验不通过）。 */
+export class PasscodeOperationFailed implements Intent {
+  readonly kind: 'passcodeOperationFailed' = 'passcodeOperationFailed';
+  readonly noticeKey: string;
+
+  constructor(noticeKey: string) {
+    this.noticeKey = noticeKey;
+  }
+}
+
+/** 流程成功收尾（已创建 / 已修改 / 已关闭）。 */
+export class PasscodeOperationDone implements Intent {
+  readonly kind: 'passcodeOperationDone' = 'passcodeOperationDone';
+  readonly noticeKey: string;
+  readonly isSet: boolean;
+
+  constructor(noticeKey: string, isSet: boolean) {
+    this.noticeKey = noticeKey;
+    this.isSet = isSet;
+  }
+}
+
+/** 档位写盘失败，回滚到上一个值。 */
+export class AutoLockChoiceRejected implements Intent {
+  readonly kind: 'autoLockChoiceRejected' = 'autoLockChoiceRejected';
+  readonly previous: AutoLockChoice;
+
+  constructor(previous: AutoLockChoice) {
+    this.previous = previous;
+  }
+}
+
 export type SettingsIntent =
   | LoadUserProfile
   | ToggleNotifications
@@ -641,4 +764,19 @@ export type SettingsIntent =
   | DownloadLimitsLoaded
   | SetDownloadLimitSize
   | SetDownloadLimitExclusion
+  | OpenPasscodePage
+  | ClosePasscodePage
+  | LoadPasscodeState
+  | PasscodeStateLoaded
+  | TogglePasscodeRequested
+  | ChangePasscodeRequested
+  | CycleAutoLockChoice
+  | CancelPasscodeFlow
+  | PasscodeSubmitted
+  | PasscodeVerified
+  | PasscodeRejected
+  | PasscodeMismatched
+  | PasscodeOperationFailed
+  | PasscodeOperationDone
+  | AutoLockChoiceRejected
   | SectionFocused;

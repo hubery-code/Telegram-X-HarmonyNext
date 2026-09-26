@@ -9,6 +9,7 @@ import proxySettingsTest from './ProxySettings.test';
 import autoDownloadRowsTest from './AutoDownloadRows.test';
 import dataSaverRowsTest from './DataSaverRows.test';
 import downloadLimitRowsTest from './DownloadLimitRows.test';
+import passcodeReducerTest from './PasscodeReducer.test';
 
 export default function testsuite(): void {
   settingsReducerTest();
@@ -22,4 +23,5 @@ export default function testsuite(): void {
   autoDownloadRowsTest();
   dataSaverRowsTest();
   downloadLimitRowsTest();
+  passcodeReducerTest();
 }

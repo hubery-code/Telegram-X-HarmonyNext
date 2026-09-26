@@ -260,7 +260,33 @@ const EN_DICTIONARY: Record<string, string> = {
   'Save for Later': 'Save for Later',
   'Join request sent': 'Join request sent',
   'Proxy enabled': 'Proxy enabled',
-  'Proxy saved for later use': 'Proxy saved for later use'
+  'Proxy saved for later use': 'Proxy saved for later use',
+
+  // Screen lock (APPLOCK-101)
+  'Screen Lock': 'Screen Lock',
+  'Passcode': 'Passcode',
+  'Auto-Lock': 'Auto-Lock',
+  'Change Passcode': 'Change Passcode',
+  'On': 'On',
+  'Immediately': 'Immediately',
+  'After 1 minute': 'After 1 minute',
+  'After 5 minutes': 'After 5 minutes',
+  'After 1 hour': 'After 1 hour',
+  'After 5 hours': 'After 5 hours',
+  'Never': 'Never',
+  'Enter a new passcode': 'Enter a new passcode',
+  'Repeat the passcode': 'Repeat the passcode',
+  'Enter your current passcode': 'Enter your current passcode',
+  'Enter your passcode': 'Enter your passcode',
+  'Too many attempts. Try again in {0}s': 'Too many attempts. Try again in {0}s',
+  'The passcode is stored in this device secure storage and never synced.': 'The passcode is stored in this device secure storage and never synced.',
+  'PasscodeNoticeInvalid': 'Passcode must be 4 digits.',
+  'PasscodeNoticeMismatch': 'The two passcodes did not match. Start again.',
+  'PasscodeNoticeSaved': 'Passcode set.',
+  'PasscodeNoticeRemoved': 'Passcode removed.',
+  'PasscodeErrorWrong': 'Wrong passcode. Try again.',
+  'PasscodeErrorStoreUnavailable': 'Secure storage is unavailable on this device.',
+  'PasscodeErrorCorrupt': 'Stored passcode is unreadable. Reset it to continue.'
 };
 
 const ZH_DICTIONARY: Record<string, string> = {
@@ -442,7 +468,33 @@ const ZH_DICTIONARY: Record<string, string> = {
   'Save for Later': '稍后使用',
   'Join request sent': '加入申请已发送',
   'Proxy enabled': '代理已启用',
-  'Proxy saved for later use': '代理已保存，稍后可使用'
+  'Proxy saved for later use': '代理已保存，稍后可使用',
+
+  // Screen lock (APPLOCK-101)
+  'Screen Lock': '屏幕锁定',
+  'Passcode': '密码',
+  'Auto-Lock': '自动锁定',
+  'Change Passcode': '更改密码',
+  'On': '开启',
+  'Immediately': '立即',
+  'After 1 minute': '1 分钟后',
+  'After 5 minutes': '5 分钟后',
+  'After 1 hour': '1 小时后',
+  'After 5 hours': '5 小时后',
+  'Never': '从不',
+  'Enter a new passcode': '输入新密码',
+  'Repeat the passcode': '再次输入以确认',
+  'Enter your current passcode': '输入当前密码',
+  'Enter your passcode': '输入你的密码',
+  'Too many attempts. Try again in {0}s': '尝试次数过多，请 {0} 秒后重试',
+  'The passcode is stored in this device secure storage and never synced.': '密码保存在本机安全存储中，不会同步到任何地方。',
+  'PasscodeNoticeInvalid': '密码必须是 4 位数字。',
+  'PasscodeNoticeMismatch': '两次输入的密码不一致，请重新开始。',
+  'PasscodeNoticeSaved': '密码已设置。',
+  'PasscodeNoticeRemoved': '密码已移除。',
+  'PasscodeErrorWrong': '密码错误，请重试。',
+  'PasscodeErrorStoreUnavailable': '本机安全存储当前不可用。',
+  'PasscodeErrorCorrupt': '已存储的密码无法读取，请重置后继续。'
 };
 
 export class Lang {

@@ -12,6 +12,40 @@ import { Reducer, ReducerEnv, ReducerResult, reduced } from '@tgx/feature-templa
 import { ThemeManager, clampChatFontSize } from '@tgx/core-design-system';
 import { Lang, LanguagePreference } from '@tgx/core-common';
 import { SettingsUiState, SettingsUiStateOptions } from '../contract/SettingsUiState';
+import {
+  APP_LOCK_NOTICE_INVALID,
+  APP_LOCK_NOTICE_MISMATCH,
+  AutoLockChoice,
+  PasscodeFlowStage,
+  nextAutoLockChoice,
+  passcodeStepFor,
+  PasscodeStepResult
+} from '@tgx/core-domain';
+import {
+  OpenPasscodePage,
+  ClosePasscodePage,
+  LoadPasscodeState,
+  PasscodeStateLoaded,
+  TogglePasscodeRequested,
+  ChangePasscodeRequested,
+  CycleAutoLockChoice,
+  CancelPasscodeFlow,
+  PasscodeSubmitted,
+  PasscodeVerified,
+  PasscodeRejected,
+  PasscodeMismatched,
+  PasscodeOperationFailed,
+  PasscodeOperationDone,
+  AutoLockChoiceRejected
+} from '../contract/SettingsIntent';
+import {
+  ClearPasscodeDraftEffect,
+  CommitPasscodeEffect,
+  LoadPasscodeStateEffect,
+  PersistAutoLockChoiceEffect,
+  StorePasscodeDraftEffect,
+  VerifyPasscodeEffect
+} from '../contract/SettingsEffect';
 import { parseSettingsSection } from '../model/SettingsSection';
 import {
   CacheCleared,
@@ -991,6 +1025,194 @@ export const settingsReducer: Reducer<SettingsUiState, SettingsIntent, SettingsE
         errorMessage: null
       };
       return reduced(state.copyWith(options), [new PersistDownloadLimitsEffect(next)]);
+    }
+
+
+    // ---- APPLOCK-101 应用锁（Passcode）----
+    // 判据全在 core/domain 的 `passcodeStepFor`：键盘在设置页和锁屏遮罩是两套界面，
+    // 「什么时候算一次提交、提交完该进哪一步」必须只有一个答案。
+
+    case 'openPasscodePage': {
+      const options: SettingsUiStateOptions = {
+        showPasscodePage: true,
+        passcodeFlow: 'idle',
+        passcodeNotice: null,
+        errorMessage: null
+      };
+      // 每次进来重读盘：PIN 与档位是本机状态，别的入口（锁屏遮罩）会改它。
+      return reduced(state.copyWith(options), [new LoadPasscodeStateEffect()]);
+    }
+
+    case 'closePasscodePage': {
+      if (!state.showPasscodePage) {
+        return reduced(state);
+      }
+      const options: SettingsUiStateOptions = {
+        showPasscodePage: false,
+        passcodeFlow: 'idle',
+        isUpdatingPasscode: false,
+        passcodeNotice: null
+      };
+      return reduced(state.copyWith(options), [new ClearPasscodeDraftEffect()]);
+    }
+
+    case 'loadPasscodeState': {
+      return reduced(state, [new LoadPasscodeStateEffect()]);
+    }
+
+    case 'passcodeStateLoaded': {
+      const loaded: PasscodeStateLoaded = intent as PasscodeStateLoaded;
+      const options: SettingsUiStateOptions = {
+        passcodeIsSet: loaded.isSet,
+        autoLockChoice: loaded.autoLock,
+        isUpdatingPasscode: false
+      };
+      return reduced(state.copyWith(options));
+    }
+
+    case 'togglePasscodeRequested': {
+      // 在途时重复点行不放行：两次写同一个秘密值没有意义，且第二次的结论会盖掉第一次的提示。
+      if (state.isUpdatingPasscode || state.passcodeFlow !== 'idle') {
+        return reduced(state);
+      }
+      const options: SettingsUiStateOptions = {
+        passcodeFlow: state.passcodeIsSet ? 'verify-disable' : 'enter',
+        passcodeNotice: null
+      };
+      return reduced(state.copyWith(options));
+    }
+
+    case 'changePasscodeRequested': {
+      if (state.isUpdatingPasscode || state.passcodeFlow !== 'idle' || !state.passcodeIsSet) {
+        return reduced(state);
+      }
+      const options: SettingsUiStateOptions = {
+        passcodeFlow: 'verify-change',
+        passcodeNotice: null
+      };
+      return reduced(state.copyWith(options));
+    }
+
+    case 'cycleAutoLockChoice': {
+      const next: AutoLockChoice = nextAutoLockChoice(state.autoLockChoice);
+      const options: SettingsUiStateOptions = {
+        autoLockChoice: next
+      };
+      // 乐观改档：写盘失败时 coordinator 回灌 `autoLockChoiceRejected`。
+      return reduced(state.copyWith(options), [new PersistAutoLockChoiceEffect(next)]);
+    }
+
+    case 'autoLockChoiceRejected': {
+      const rejected: AutoLockChoiceRejected = intent as AutoLockChoiceRejected;
+      const options: SettingsUiStateOptions = {
+        autoLockChoice: rejected.previous,
+        errorMessage: 'Failed to save the setting.'
+      };
+      return reduced(state.copyWith(options));
+    }
+
+    case 'cancelPasscodeFlow': {
+      if (state.passcodeFlow === 'idle') {
+        return reduced(state);
+      }
+      const options: SettingsUiStateOptions = {
+        passcodeFlow: 'idle',
+        isUpdatingPasscode: false,
+        passcodeNotice: null
+      };
+      return reduced(state.copyWith(options), [new ClearPasscodeDraftEffect()]);
+    }
+
+    case 'passcodeSubmitted': {
+      const submitted: PasscodeSubmitted = intent as PasscodeSubmitted;
+      const step: PasscodeStepResult = passcodeStepFor(state.passcodeFlow, submitted.pin);
+      if (step.action === 'ignore') {
+        return reduced(state);
+      }
+      if (step.action === 'invalid') {
+        const options: SettingsUiStateOptions = {
+          passcodeNotice: APP_LOCK_NOTICE_INVALID
+        };
+        return reduced(state.copyWith(options));
+      }
+      if (step.action === 'draft') {
+        const flowOptions: SettingsUiStateOptions = {
+          passcodeFlow: 'confirm',
+          passcodeNotice: null
+        };
+        return reduced(state.copyWith(flowOptions), [new StorePasscodeDraftEffect(submitted.pin)]);
+      }
+      if (step.action === 'commit') {
+        const busyOptions: SettingsUiStateOptions = {
+          isUpdatingPasscode: true,
+          passcodeNotice: null
+        };
+        return reduced(state.copyWith(busyOptions), [new CommitPasscodeEffect(submitted.pin)]);
+      }
+      const purpose: 'disable' | 'change' = state.passcodeFlow === 'verify-change' ? 'change' : 'disable';
+      const verifyOptions: SettingsUiStateOptions = {
+        isUpdatingPasscode: true,
+        passcodeNotice: null
+      };
+      return reduced(state.copyWith(verifyOptions), [new VerifyPasscodeEffect(submitted.pin, purpose)]);
+    }
+
+    case 'passcodeVerified': {
+      const verified: PasscodeVerified = intent as PasscodeVerified;
+      if (verified.purpose === 'change') {
+        // 旧密码验过 → 直接进「输入新密码」；草稿清掉，新密码要从头输两遍。
+        const options: SettingsUiStateOptions = {
+          passcodeFlow: 'enter',
+          isUpdatingPasscode: false,
+          passcodeNotice: null
+        };
+        return reduced(state.copyWith(options), [new ClearPasscodeDraftEffect()]);
+      }
+      // 'disable'：coordinator 紧接着抹掉秘密值，成功回 `passcodeOperationDone`。
+      const options: SettingsUiStateOptions = {
+        isUpdatingPasscode: false
+      };
+      return reduced(state.copyWith(options));
+    }
+
+    case 'passcodeRejected': {
+      const rejected: PasscodeRejected = intent as PasscodeRejected;
+      const options: SettingsUiStateOptions = {
+        isUpdatingPasscode: false,
+        passcodeNotice: rejected.noticeKey
+      };
+      // 阶段不动：密码错了留在原地重输，锁屏那边同一条规则。
+      return reduced(state.copyWith(options));
+    }
+
+    case 'passcodeMismatched': {
+      const options: SettingsUiStateOptions = {
+        passcodeFlow: 'enter',
+        isUpdatingPasscode: false,
+        passcodeNotice: APP_LOCK_NOTICE_MISMATCH
+      };
+      return reduced(state.copyWith(options), [new ClearPasscodeDraftEffect()]);
+    }
+
+    case 'passcodeOperationFailed': {
+      const failed: PasscodeOperationFailed = intent as PasscodeOperationFailed;
+      const options: SettingsUiStateOptions = {
+        passcodeFlow: 'idle',
+        isUpdatingPasscode: false,
+        passcodeNotice: failed.noticeKey
+      };
+      return reduced(state.copyWith(options), [new ClearPasscodeDraftEffect()]);
+    }
+
+    case 'passcodeOperationDone': {
+      const done: PasscodeOperationDone = intent as PasscodeOperationDone;
+      const options: SettingsUiStateOptions = {
+        passcodeFlow: 'idle',
+        isUpdatingPasscode: false,
+        passcodeIsSet: done.isSet,
+        passcodeNotice: done.noticeKey
+      };
+      return reduced(state.copyWith(options), [new ClearPasscodeDraftEffect()]);
     }
 
     default:

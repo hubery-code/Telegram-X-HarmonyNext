@@ -41,6 +41,13 @@ export interface BootstrapResult {
   readonly filesDir?: string;
   readonly cacheDir?: string;
   readonly tdlibParams?: TdlibParametersConfig;
+  /**
+   * APPLOCK-101：装配层留给上层的两个平台端口。
+   * 应用锁的秘密值必须进安全存储（`keyStore`）、盐必须来自安全随机（`secureRandom`），
+   * 而这两个对象在 bootstrap 内部已经建好 —— 再 new 一个是浪费，也是两套真相。
+   */
+  readonly keyStore?: SecureKeyStorePort;
+  readonly secureRandom?: SecureRandomPort;
 }
 
 export function bootstrap(
@@ -101,6 +108,8 @@ export function bootstrap(
     lifecycle: lifecycle,
     filesDir: filesDir,
     cacheDir: cacheDir,
-    tdlibParams: tdlibParams
+    tdlibParams: tdlibParams,
+    keyStore: keyStore,
+    secureRandom: secureRandom
   };
 }
