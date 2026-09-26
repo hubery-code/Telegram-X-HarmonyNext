@@ -89,7 +89,10 @@ import {
   viewerRendersPlayer,
   viewerZoomable
 } from '../model/ViewerPlayback';
-import { stickerBubbleRender } from '../model/StickerMessage';
+import { stickerBubbleRender, StickerBubbleRender } from '../model/StickerMessage';
+import { stickerAnimationTgsPath } from '../model/StickerAnimation';
+import { TgsDecoderPort } from '@tgx/platform-ports';
+import { AnimatedSticker } from './AnimatedSticker';
 import { LinkPreviewInfo } from '../model/LinkPreviewInfo';
 import {
   calculateMosaicLayout,
@@ -428,6 +431,12 @@ export struct ChatPage {
   @Prop @Watch('onUiStateChanged') uiState: ChatUiState = ChatUiState.initial();
 
   onDispatch: (intent: Object) => void = () => {};
+
+  /**
+   * TGS-101：动效贴纸的解码口（`.tgs` → Lottie JSON），由 entry 装配层注入。
+   * null 表示「本进程没接解码器」，此时贴纸气泡整档即使已落盘也照旧退回静态缩略图。
+   */
+  tgsDecoder: TgsDecoderPort | null = null;
 
   private dataSource: MessageListDataSource = new MessageListDataSource();
   private scroller: Scroller = new Scroller();
@@ -1821,16 +1830,33 @@ export struct ChatPage {
   }
 
   /**
-   * 贴纸渲染（STICKER-101 / STICKER-MSG-101）：对齐 Telegram X 标准，无气泡框透明渲染，
+   * 贴纸气泡的档位：把「本进程有没有解码器」这个装配事实喂给纯函数选择器。
+   * @Builder 的函数形参不被观察，所以每次分支判断都现算——选择器是纯的、廉价的，无所谓。
+   */
+  private stickerTier(media: MediaAttachment): StickerBubbleRender {
+    return stickerBubbleRender(media, this.tgsDecoder !== null);
+  }
+
+  /**
+   * 贴纸渲染（STICKER-101 / STICKER-MSG-101 / TGS-101）：对齐 Telegram X 标准，无气泡框透明渲染，
    * 右下角半透明胶囊时间戳。
    *
-   * 画哪一档由 `stickerBubbleRender` 决定：动效贴纸的整档是 `.tgs`，本端没有 Lottie 解码器，
-   * `Image` 吃了只会画一片空白（设备实测：气泡里只剩时间戳胶囊），所以这一档退回缩略图。
+   * 画哪一档由 `stickerBubbleRender` 决定：动效贴纸的整档是 `.tgs`（gzip 的 Lottie JSON），
+   * ArkUI `Image` 吃了只会画一片空白（设备实测：气泡里只剩时间戳胶囊），所以没有解码器时
+   * 这一档退回缩略图；有解码器时走 `AnimatedSticker`，组件内部自己负责「没解好先前显示缩略图」。
    */
   @Builder
   StickerBubble(media: MediaAttachment, item: MessageItem) {
     Stack({ alignContent: Alignment.BottomEnd }) {
-      if (stickerBubbleRender(media) === 'video' && media.localPath !== null) {
+      if (this.stickerTier(media) === 'tgs') {
+        AnimatedSticker({
+          tgsPath: stickerAnimationTgsPath(media),
+          decoder: this.tgsDecoder,
+          fallbackUri: media.thumbnailPath === null ? null : toSandboxUri(media.thumbnailPath)
+        })
+          .width('100%')
+          .height('100%')
+      } else if (this.stickerTier(media) === 'video' && media.localPath !== null) {
         Video({
           src: toSandboxUri(media.localPath),
           previewUri: toSandboxUri(media.thumbnailPath)
@@ -1843,12 +1869,12 @@ export struct ChatPage {
           .hitTestBehavior(HitTestMode.Transparent)
           .width('100%')
           .height('100%')
-      } else if (stickerBubbleRender(media) === 'image' && media.localPath !== null) {
+      } else if (this.stickerTier(media) === 'image' && media.localPath !== null) {
         Image(toSandboxUri(media.localPath))
           .objectFit(ImageFit.Contain)
           .width('100%')
           .height('100%')
-      } else if (stickerBubbleRender(media) === 'thumbnail' && media.thumbnailPath !== null) {
+      } else if (this.stickerTier(media) === 'thumbnail' && media.thumbnailPath !== null) {
         Image(toSandboxUri(media.thumbnailPath))
           .objectFit(ImageFit.Contain)
           .width('100%')

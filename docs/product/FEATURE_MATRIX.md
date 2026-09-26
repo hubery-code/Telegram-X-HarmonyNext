@@ -919,6 +919,49 @@
 > ④ 发出贴纸后本地乐观前插（cap 32）与权威回灌（cap 20）并存，观感是「先看到自己那张、随后被服务端列表整段替换」；
 > ⑤ 动效贴纸无逐帧动画（等 TGS/Lottie 渲染器，届时这一行与板卡/预览页/气泡一起换）。
 
+> **2026-09-26（TGS-101，FEAT-P2-004 动效贴纸在气泡里逐帧播）**：结掉上面挂了一整轮的 ⑤ —— 也结掉 STICKER-MSG-101 的
+> 「气泡里动效贴纸是静帧」、预览页与板卡那条同源的「三处一起换」。**这一包换掉的只有会话气泡**，理由见下面的范围取舍。
+> **一、渲染器选型：`@ohos/lottie@2.0.33`，本仓第一个第三方运行时依赖**。备选是「手写 Bodymovin 子集渲染器」和
+> 「rlottie 编进 native `.so`」，两条都被否：前者要重做 lottie 的表达式/遮罩/时间轴，工作量不在一个量级；
+> 后者要动 TDLib 之外第二条 native 构建链，而重编 `.so` 的代价在 STICKER-PREVIEW-101 已经量过。
+> **二、`.tgs` 是 gzip 后的 Bodymovin JSON**，ArkUI 的 `Image` 拿到它**画空白且不报错** —— 这正是上一轮「气泡里只剩时间戳」
+> 那条观感的下半截原因（上半截是缩略图路径）。
+> **三、分层照旧口径**：`platform/ports` 定 `TgsDecoderPort`（`decode(tgsPath): Promise<Result<string, AppError>>`，
+> 只承诺「交回一段以 `{` 开头的文本」）；`platform/files` 落 `HarmonyTgsDecoder`（`@ohos.zlib` 流式 inflate +
+> 32 条内存缓存 + 4 MB 上限）；`feature/chat` 只见 JSON 文本，Kit 一律不 import；`entry/Bootstrap` 装配注入。
+> **四、喂给 lottie 的是 `animationData`（`JSON.parse` 出来的对象），不是 `path`**：lottie 的沙盒装载分支要
+> `getContext().filesDir`，而它在异步装载里能不能拿到 context 我们赌不起；`animationData` 直接进 `setupAnimation`，零文件 IO。
+> **五、`autoSkip: false` 是必需项而不是优化项**：lottie 默认跳过它判定为不可见的画布，会话里的贴纸住在 `LazyForEach`，
+> 可见性判定慢一步就是**一片空白**（设备日志实锤：`canvas(845) has no area` / `is moved out`）。
+> `loop: false` 对齐 Telegram 气泡「播一次、停在末帧」的语义，实测 `setSegment: 0 ~ 180` @60 fps ≈ 3.0 s。
+> **六、动画挂上之前底下一直垫着静态缩略图**（`DOMLoaded` 才撤）—— 解码失败/JSON 语法坏掉（TDLib 回收了一半的文件）时
+> 气泡回到 TGS 之前的画法，不会退回成空白。
+> **七、范围取舍：板卡格与预览页格继续吃静态 WEBP，本包不动**。动它们要求把每一格的整档 `.tgs` 全下载
+> （几十 KB × 每屏十几格，滚动一次就是一批新请求），代价与收益不匹配；Android 那两处的格子同样是缩略图。
+> **八、本轮最贵的一条事实来自一个假通过的单测**：Local Test 运行时里 `@ohos.zlib` 的**流式接口是空壳** ——
+> 一次性探针实测 `deflateInit2`/`inflateInit2`/`inflate`/`deflate` 全部回 status 0，但 `getZStream()` 的
+> `totalIn`/`totalOut` 是 `undefined`，连「自己压再自己解」的闭环都产出 **0 字节**。
+> 也就是说：**gzip 分支在单测里永远不可能被证**（它只会以「解压停滞在 0 字节」的假失败出现），
+> 覆盖范围因此重划到「这个运行时真能干活的那一侧」：非 gzip 直通道、缓存命中、两个纯判定共 5 例，
+> gzip 那一支的取证口径改成设备 hilog 的 `tgs-decoded in=… out=…`。顺带清掉 `test_all_modules.py` 里
+> `platform_files` 那条早已失效的 EXEMPT 说明（该模块现在有真实本地套件，脱离豁免名单）。
+> 测试：`feature_chat` **402/402**（新 `StickerAnimation.test.ets` 6 例：只有 `.tgs`/`.json` 后缀算 Lottie、
+> 名字中间出现 `tgs` 不算、整档未下载不播、解码口没装配就不出 `tgs` 档、光栅与视频档无视解码口、无本地路径永不播）、
+> `platform_files` **5/5**（该模块首次有 `src/test`），四守卫 0 违规。
+> 设备取证（127.0.0.1:5555，`.hvigor/outputs/tgs-101/`，探针消息只发进 Saved Messages 且**收尾全部删除**、
+> 取证期间装的 `Uni` 包**卸回未添加**，全程未向任何群/频道发送内容）：
+> ① 真档解开 —— `tgs-decoded in=32157 out=454068 path=…/1052321353216032834.tgs`（32 KB 的 `.tgs` 解出 454 KB JSON）；
+> ② 完整生命周期 —— `tgs-N animation created from data → first play → start for drawing → completed. playing 1 times`；
+> ③ **像素级运动证据**（前两条只证明「在跑」，不证明「画面上在动」）：进会话瞬间设备侧连拍 16 帧，
+> 三个气泡框内每对相邻帧变化 **5.2 万–16.2 万像素**（框面积 33–37 万），而**同一批帧**里日期条框与输入栏框变化 **0 像素**
+> → 变化只可能来自贴纸自身；`burst3/motion-sheet.png` 把同一气泡的连续 7 帧拼在一起，肉眼可读：眯眼、`HA HA` 飞出、
+> 泪滴、身体前后摇，最后回到睁眼静帧。④ 播放一次即停：第 8 帧起全部相邻帧差为 0，与 `loop:false` 一致。
+> 遗留：① **新发出去的那张贴纸常常只画一帧** —— 消息插入会让列表重建，实测 `tgs-4` 创建后 **110 ms** 即被
+> `aboutToDisappear` 销毁（`completed explicitly. playing 0 times`），要「按消息 id 记已播/在播」才能保住这一次播放；
+> ② 板卡格与预览页格仍静帧（本包有意范围）；③ 点贴纸开大图循环播放未做（Android 有）；
+> ④ gzip 分支无单测（zlib 在 Local Test 是空壳），只靠设备日志；⑤ 视频贴纸（`is_video`）与 `.webm` 仍走静帧；
+> ⑥ lottie 是 har 里的第三方包，Release 构建链与全量 CI 尚未跑过（本轮只验到 debug `assembleHap` + 安装）。
+
 
 > **追加（APPLOCK-101，FEAT-P2-008 Passcode 半边）**：四位本地 PIN + 自动锁定档位 + 后台回锁 + 连错冷却。
 > **对标 Android `Passcode.java` 的判定表，偏离三条且都写明理由**：

@@ -28,9 +28,7 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 MIN_BASELINE_TEST_COUNT = int(os.environ.get("MIN_TEST_COUNT", "790"))
 
 
-EXEMPT_MODULE_REASONS = {
-    "platform_files": "System app files adapter; covered via entry integration tests and on-device test suites",
-}
+EXEMPT_MODULE_REASONS: dict = {}
 
 def parse_json5(text: str):
     """Strip single-line comments and trailing commas for simple JSON5 parsing."""

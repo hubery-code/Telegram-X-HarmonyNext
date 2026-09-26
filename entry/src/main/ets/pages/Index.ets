@@ -133,7 +133,7 @@ import {
   DownloadLimitsByNetwork,
   isDataSaverActive
 } from '@tgx/core-domain';
-import { NetworkSnapshot } from '@tgx/platform-ports';
+import { NetworkSnapshot, TgsDecoderPort } from '@tgx/platform-ports';
 import { BootstrapResult } from '../Bootstrap';
 import { ScopeAuthAdapter } from '../ScopeAuthAdapter';
 import { TELEGRAM_CREDENTIALS } from '../config/AppCredentials';
@@ -255,6 +255,13 @@ struct Index {
   private unsubscribeThemeFn: (() => void) | null = null;
   private accountScope: AccountScope | null = null;
   private bootstrapResult: BootstrapResult | null = null;
+  /**
+   * TGS-101：动效贴纸解码口，从 bootstrap 拿（它复用了账号那套 `AppFilesPort`）。
+   * 这里显式存一份而不是每次 `this.bootstrapResult?.tgsDecoder`，是因为 ChatPage 的
+   * 形参是 `TgsDecoderPort | null`，可选属性读出来是 `TgsDecoderPort | undefined`，两种
+   * undefined 要在装配层收掉，不该让 feature 页面去判。
+   */
+  private tgsDecoder: TgsDecoderPort | null = null;
   private currentAccountKey: string = 'default';
   /** DEEPLINK-101：链接解析器；只建一次，账号 scope 走提供者。 */
   private appLinkRouter: AppLinkRouter | null = null;
@@ -284,6 +291,9 @@ struct Index {
     this.coordinator = result.coordinator;
     this.accountScope = result.scope;
     this.currentAccountKey = result.scope.accountKey;
+    // TGS-101：动效贴纸解码口。bootstrap 已经把 `files` 端口复用给了它，这里只是递到页面上；
+    // 递不到（旧 bootstrap 桩）时 ChatPage 的动效档会整档退回静态缩略图，不会画空白。
+    this.tgsDecoder = result.tgsDecoder === undefined ? null : result.tgsDecoder;
     if (result.cacheDir !== undefined && result.cacheDir.length > 0) {
       this.cacheDir = result.cacheDir;
       this.mediaPickerAdapter.setCacheDir(result.cacheDir);
@@ -1513,6 +1523,7 @@ struct Index {
           Stack() {
             ChatPage({
               uiState: this.chatUiState,
+              tgsDecoder: this.tgsDecoder,
               onDispatch: (intent: Object) => {
                 this.chatDispatch(intent as ChatIntent);
               }

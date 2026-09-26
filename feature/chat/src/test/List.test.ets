@@ -23,6 +23,7 @@ import stickerSendVetoTest from './StickerSendVeto.test';
 import stickerBoardTest from './StickerBoard.test';
 import stickerBoardFetchTest from './StickerBoardFetch.test';
 import stickerMessageTest from './StickerMessage.test';
+import stickerAnimationTest from './StickerAnimation.test';
 import mediaA11yTest from './MediaA11y.test';
 
 export default function testsuite(): void {
@@ -51,6 +52,7 @@ export default function testsuite(): void {
   stickerBoardTest();
   stickerBoardFetchTest();
   stickerMessageTest();
+  stickerAnimationTest();
   mediaA11yTest();
 }
 

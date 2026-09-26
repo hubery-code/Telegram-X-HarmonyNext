@@ -14,7 +14,7 @@ import {
   AccountScope
 } from '@tgx/core-account';
 import { TdNativeBridgeLike } from '@tgx/td-gateway';
-import { HarmonyAppFilesAdapter } from '@tgx/platform-files';
+import { HarmonyAppFilesAdapter, HarmonyTgsDecoder } from '@tgx/platform-files';
 import { ManualClock, SequentialIdGenerator } from '@tgx/core-common';
 import { ReducerEnv } from '@tgx/feature-template';
 import {
@@ -22,7 +22,7 @@ import {
   AuthCoordinatorDeps,
   TdlibParametersConfig
 } from '@tgx/feature-auth';
-import { NetworkStatePort, SecureKeyStorePort, SecureRandomPort, AppFilesPort } from '@tgx/platform-ports';
+import { NetworkStatePort, SecureKeyStorePort, SecureRandomPort, AppFilesPort, TgsDecoderPort } from '@tgx/platform-ports';
 import { ConnectivityAdapter } from '@tgx/platform-network';
 import { HarmonySecureKeyStore, HarmonySecureRandom } from '@tgx/platform-keystore';
 import { ScopeAuthAdapter } from './ScopeAuthAdapter';
@@ -48,6 +48,11 @@ export interface BootstrapResult {
    */
   readonly keyStore?: SecureKeyStorePort;
   readonly secureRandom?: SecureRandomPort;
+  /**
+   * TGS-101：动效贴纸的解码口（`.tgs` → Lottie JSON）。
+   * 复用下面那个 `files` 端口，而不是再 new 一个 adapter —— 同一个沙盒目录只有一套真相。
+   */
+  readonly tgsDecoder?: TgsDecoderPort;
 }
 
 export function bootstrap(
@@ -110,6 +115,7 @@ export function bootstrap(
     cacheDir: cacheDir,
     tdlibParams: tdlibParams,
     keyStore: keyStore,
-    secureRandom: secureRandom
+    secureRandom: secureRandom,
+    tgsDecoder: new HarmonyTgsDecoder(files)
   };
 }

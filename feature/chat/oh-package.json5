@@ -15,9 +15,11 @@
     "@tgx/td-gateway": "file:../../core/td_gateway",
     "@tgx/platform-ports": "file:../../platform/ports",
     "@tgx/observability": "file:../../core/observability",
-    "@tgx/feature-template": "file:../_template"
+    "@tgx/feature-template": "file:../_template",
+    "@ohos/lottie": "2.0.33"
   },
   "devDependencies": {
     "@ohos/hypium": "1.0.21"
-  }
+  },
+  "dynamicDependencies": {}
 }

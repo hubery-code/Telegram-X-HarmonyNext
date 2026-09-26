@@ -24,6 +24,7 @@ export {
   AppFilesPort
 } from './AppFilesPort';
 export { MonotonicClockPort } from './MonotonicClockPort';
+export { TgsDecoderPort } from './TgsDecoderPort';
 export { SecureRandomPort } from './SecureRandomPort';
 export { PasscodeStorePort } from './PasscodeStorePort';
 export { ClipboardPort } from './ClipboardPort';
