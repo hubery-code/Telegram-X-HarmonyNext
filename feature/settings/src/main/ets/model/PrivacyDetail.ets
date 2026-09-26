@@ -11,6 +11,8 @@
  */
 
 import {
+  Chat,
+  ChatTypeSupergroup,
   UserPrivacySettingRuleAllowChatMembers,
   UserPrivacySettingRuleAllowUsers,
   UserPrivacySettingRuleRestrictChatMembers,
@@ -22,22 +24,13 @@ import { PrivacySettingKey } from './PrivacySettings';
 import {
   parsePrivacyRules,
   PrivacyRulesView,
+  privacyAlwaysAllowCount,
   privacyNeedAlwaysAllow,
-  privacyNeedNeverAllow
+  privacyNeedNeverAllow,
+  privacyNeverAllowCount
 } from './PrivacyRules';
 
 export type PrivacyExceptionTarget = 'always' | 'never';
-
-/** 例外名单行：userId + 已解析好的显示名（联系人没有名字时退回电话，不印裸 id）。 */
-export class PrivacyExceptionRow {
-  readonly userId: number;
-  readonly title: string;
-
-  constructor(userId: number, title: string) {
-    this.userId = userId;
-    this.title = title;
-  }
-}
 
 /** 选择器里的一行联系人。 */
 export class PrivacyContactRow {
@@ -59,27 +52,52 @@ export class PrivacyContactRow {
   }
 }
 
-/** 「谁总是允许 / 谁从不允许」两行的呈现数据（含只计人数的群成员例外）。 */
+/**
+ * 选择器里的一行会话（只有群与超大群，频道不可选 —— 见 `privacyChatSelectable`）。
+ * `memberCount` 是 TDLib 报的人员数，0 表示「不知道」（`supergroup.member_count` 允许未知），
+ * 未知就不编造文案。
+ */
+export class PrivacyChatRow {
+  readonly chatId: number;
+  readonly title: string;
+  readonly memberCount: number;
+  readonly selected: boolean;
+
+  constructor(chatId: number, title: string, memberCount: number, selected: boolean) {
+    this.chatId = chatId;
+    this.title = title;
+    this.memberCount = memberCount;
+    this.selected = selected;
+  }
+
+  withSelected(selected: boolean): PrivacyChatRow {
+    if (this.selected === selected) {
+      return this;
+    }
+    return new PrivacyChatRow(this.chatId, this.title, this.memberCount, selected);
+  }
+}
+
+/**
+ * 「总是允许 / 从不允许」两行的呈现数据。
+ * 只有人数没有名单：Android 的那两行 value 就是 `xUsers` 复数文案（`getPlusTotalCount`），
+ * 名字只在点开后于选择器里以勾选态出现，所以这里不携带行数组。
+ */
 export class PrivacyExceptionsView {
-  readonly alwaysRows: PrivacyExceptionRow[];
-  readonly neverRows: PrivacyExceptionRow[];
-  readonly alwaysChatMemberCount: number;
-  readonly neverChatMemberCount: number;
+  /** 人数口径照 Android：用户数 + 各会话成员数之和（不是会话条数）。 */
+  readonly alwaysCount: number;
+  readonly neverCount: number;
   readonly showAlwaysRow: boolean;
   readonly showNeverRow: boolean;
 
   constructor(
-    alwaysRows: PrivacyExceptionRow[],
-    neverRows: PrivacyExceptionRow[],
-    alwaysChatMemberCount: number,
-    neverChatMemberCount: number,
+    alwaysCount: number,
+    neverCount: number,
     showAlwaysRow: boolean,
     showNeverRow: boolean
   ) {
-    this.alwaysRows = alwaysRows;
-    this.neverRows = neverRows;
-    this.alwaysChatMemberCount = alwaysChatMemberCount;
-    this.neverChatMemberCount = neverChatMemberCount;
+    this.alwaysCount = alwaysCount;
+    this.neverCount = neverCount;
     this.showAlwaysRow = showAlwaysRow;
     this.showNeverRow = showNeverRow;
   }
@@ -96,12 +114,18 @@ export class PrivacyDetailState {
   readonly rules: TdUserPrivacySettingRule[];
   /** 服务端已生效的规则快照，用于判断有没有未保存的改动。 */
   readonly savedRules: TdUserPrivacySettingRule[];
-  /** 全量联系人，选择器的数据源（`selected` 只反映当前例外名单）。 */
+  /** 全量联系人，选择器的一组数据源（`selected` 只反映当前例外名单）。 */
   readonly contacts: PrivacyContactRow[];
+  /**
+   * 会话候选：最近会话里的群与超大群，**外加**例外名单已经引用到的会话（否则名单里的群在界
+   * 面上会退成一个没有名字的占位行）。选择器的另一组数据源。
+   */
+  readonly chats: PrivacyChatRow[];
   /** 正在编辑哪一份名单；null 表示选择器没开。 */
   readonly pickerTarget: PrivacyExceptionTarget | null;
   /** 选择器里的勾选集合（点「完成」前不写回规则）。 */
   readonly pickedUserIds: number[];
+  readonly pickedChatIds: number[];
   readonly errorMessage: string | null;
 
   constructor(
@@ -111,8 +135,10 @@ export class PrivacyDetailState {
     rules: TdUserPrivacySettingRule[],
     savedRules: TdUserPrivacySettingRule[],
     contacts: PrivacyContactRow[],
+    chats: PrivacyChatRow[],
     pickerTarget: PrivacyExceptionTarget | null,
     pickedUserIds: number[],
+    pickedChatIds: number[],
     errorMessage: string | null
   ) {
     this.key = key;
@@ -121,21 +147,26 @@ export class PrivacyDetailState {
     this.rules = rules;
     this.savedRules = savedRules;
     this.contacts = contacts;
+    this.chats = chats;
     this.pickerTarget = pickerTarget;
     this.pickedUserIds = pickedUserIds;
+    this.pickedChatIds = pickedChatIds;
     this.errorMessage = errorMessage;
   }
 
   static forLoading(key: PrivacySettingKey): PrivacyDetailState {
-    return new PrivacyDetailState(key, true, false, [], [], [], null, [], null);
+    return new PrivacyDetailState(key, true, false, [], [], [], [], null, [], [], null);
   }
 
   static forLoaded(
     key: PrivacySettingKey,
     rules: TdUserPrivacySettingRule[],
-    contacts: PrivacyContactRow[]
+    contacts: PrivacyContactRow[],
+    chats: PrivacyChatRow[]
   ): PrivacyDetailState {
-    return new PrivacyDetailState(key, false, false, rules, rules.slice(), contacts, null, [], null);
+    return new PrivacyDetailState(
+      key, false, false, rules, rules.slice(), contacts, chats, null, [], [], null
+    );
   }
 
   copyWith(
@@ -148,8 +179,10 @@ export class PrivacyDetailState {
       options.rules !== undefined ? options.rules : this.rules,
       options.savedRules !== undefined ? options.savedRules : this.savedRules,
       options.contacts !== undefined ? options.contacts : this.contacts,
+      options.chats !== undefined ? options.chats : this.chats,
       options.pickerTarget !== undefined ? options.pickerTarget : this.pickerTarget,
       options.pickedUserIds !== undefined ? options.pickedUserIds : this.pickedUserIds,
+      options.pickedChatIds !== undefined ? options.pickedChatIds : this.pickedChatIds,
       options.errorMessage !== undefined ? options.errorMessage : this.errorMessage
     );
   }
@@ -167,8 +200,10 @@ interface PrivacyDetailStateOptions {
   rules?: TdUserPrivacySettingRule[];
   savedRules?: TdUserPrivacySettingRule[];
   contacts?: PrivacyContactRow[];
+  chats?: PrivacyChatRow[];
   pickerTarget?: PrivacyExceptionTarget | null;
   pickedUserIds?: number[];
+  pickedChatIds?: number[];
   errorMessage?: string | null;
 }
 
@@ -273,26 +308,52 @@ export function privacyContactRows(
 }
 
 /**
- * 例外名单行：按规则里的 id 顺序取名。
- * 解析不到名字的人**保留成占位行**而不是丢掉 —— 名单里确实有这个人，
- * 静默删行等于在界面上谎报服务端状态。
- * 名字来源是联系人视图：Android 的选择器只列联系人，所以例外名单里的人正常都有名字；
- * 只有「后来被删出通讯录」的人才会落到占位文案。
+ * 会话是否可进选择器：群与超大群可以，**频道不行**，私聊 / 密聊 / Saved Messages 也不进。
+ * Android 的选择器是 `ContactsController` 带 `FLAG_NO_CHANNELS`，且「会话成员」这条例外
+ * 语义上只对群成立（频道没有「成员能把设置传给谁」这回事）。
  */
-export function privacyExceptionRows(
-  userIds: number[],
-  contacts: PrivacyContactRow[]
-): PrivacyExceptionRow[] {
-  const rows: PrivacyExceptionRow[] = [];
-  for (let i = 0; i < userIds.length; i++) {
-    let title: string = 'Unknown User';
-    for (let j = 0; j < contacts.length; j++) {
-      if (contacts[j].userId === userIds[i]) {
-        title = contacts[j].title;
-        break;
-      }
+export function privacyChatSelectable(chat: Chat): boolean {
+  if (chat.id === 0 || chat.type_ === null) {
+    return false;
+  }
+  if (chat.type_.type === 'chatTypeBasicGroup') {
+    return true;
+  }
+  if (chat.type_.type === 'chatTypeSupergroup') {
+    return (chat.type_ as ChatTypeSupergroup).is_channel === false;
+  }
+  return false;
+}
+
+/** 会话标题：TDLib 允许 title 为空（名字还没同步下来），此时回占位而不是留一行空白。 */
+export function privacyChatTitle(chat: Chat): string {
+  const title: string = chat.title.trim();
+  return title.length > 0 ? title : 'Unknown Chat';
+}
+
+/**
+ * 会话候选 → 选择器的「会话」分区。
+ * 顺序即候选顺序（最近会话在前、名单引用项补在后），不按标题重排 —— 与联系人分区同一条规矩：
+ * 不发明 Android 没有的排序。`memberCounts` 缺项或非正数按「未知」记 0，页面据此不编人数文案。
+ */
+export function privacyChatRows(
+  chats: Chat[],
+  memberCounts: Map<number, number>,
+  pickedChatIds: number[]
+): PrivacyChatRow[] {
+  const rows: PrivacyChatRow[] = [];
+  for (let i = 0; i < chats.length; i++) {
+    const chat: Chat = chats[i];
+    if (!privacyChatSelectable(chat)) {
+      continue;
     }
-    rows.push(new PrivacyExceptionRow(userIds[i], title));
+    const count: number | undefined = memberCounts.get(chat.id);
+    rows.push(new PrivacyChatRow(
+      chat.id,
+      privacyChatTitle(chat),
+      count !== undefined && count > 0 ? count : 0,
+      pickedChatIds.indexOf(chat.id) >= 0
+    ));
   }
   return rows;
 }
@@ -312,22 +373,44 @@ export function privacyContactsWithPicked(
   return rows;
 }
 
+/** 会话分区的勾选态，与 `privacyContactsWithPicked` 同理。 */
+export function privacyChatsWithPicked(
+  chats: PrivacyChatRow[],
+  pickedChatIds: number[]
+): PrivacyChatRow[] {
+  const rows: PrivacyChatRow[] = [];
+  for (let i = 0; i < chats.length; i++) {
+    rows.push(chats[i].withSelected(pickedChatIds.indexOf(chats[i].chatId) >= 0));
+  }
+  return rows;
+}
+
+/** chatId → 成员数的查表；成员数只存在 `chats` 行里，不留第二份真值。 */
+export function privacyChatMemberCounts(chats: PrivacyChatRow[]): Map<number, number> {
+  const counts: Map<number, number> = new Map<number, number>();
+  for (let i = 0; i < chats.length; i++) {
+    counts.set(chats[i].chatId, chats[i].memberCount);
+  }
+  return counts;
+}
+
 /**
  * 「总是允许 / 从不允许」两行的呈现数据（Android `needAlwaysAllow` / `needNeverAllow`）。
- * 群成员例外在本端不可编辑，但要照 Android 计入人数，否则人数和名单对不上。
+ * 存在与否由规则列表的**位置**决定；人数里会话按 Android 口径算**成员数**而不是条数，
+ * 所以 `chats` 要覆盖名单引用到的会话，读不到成员数时记 0（宁可少报也不猜）。
  */
 export function privacyExceptionsView(
   rules: TdUserPrivacySettingRule[],
-  contacts: PrivacyContactRow[]
+  chats: PrivacyChatRow[]
 ): PrivacyExceptionsView {
   const view: PrivacyRulesView = parsePrivacyRules(rules);
+  const counts: Map<number, number> = privacyChatMemberCounts(chats);
   return new PrivacyExceptionsView(
-    privacyExceptionRows(view.plusUserIds, contacts),
-    privacyExceptionRows(view.minusUserIds, contacts),
-    view.plusChatIds.length,
-    view.minusChatIds.length,
+    privacyAlwaysAllowCount(view, counts),
+    privacyNeverAllowCount(view, counts),
     privacyNeedAlwaysAllow(rules),
     privacyNeedNeverAllow(view)
   );
 }
+
 

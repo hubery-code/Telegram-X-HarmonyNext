@@ -27,7 +27,8 @@
  *    所以「所有人」档下只剩「从不允许」一行是正确结果，不是渲染漏了。
  *
  * 选择器是多选面板而不是页面：Android 那边压的是 `ContactsController`，本端为了不引入
- * 路由层级，用同一页上的覆盖层表达，勾选集合存在 `pickedUserIds`，点「完成」才并回规则。
+ * 路由层级，用同一页上的覆盖层表达。面板分「我的联系人 / 群聊」两个分区（PRIVACY-102），
+ * 勾选集合分别是 `pickedUserIds` 与 `pickedChatIds`，点「完成」才并回规则列表。
  */
 
 import { Theme, ThemeManager, LightTheme } from '@tgx/core-design-system';
@@ -41,10 +42,18 @@ import {
   SetErrorMessage,
   SetPrivacyMode,
   SettingsIntent,
+  TogglePrivacyPickerChat,
   TogglePrivacyPickerContact,
   TogglePrivacyPremium
 } from '../contract/SettingsIntent';
-import { PrivacySettingKey, privacySettingLabel } from '../model/PrivacySettings';
+import {
+  PrivacySettingKey,
+  privacyAlwaysAllowLabel,
+  privacyNeedNobodyOption,
+  privacyNeedExceptions,
+  privacyNeverAllowLabel,
+  privacySettingLabel
+} from '../model/PrivacySettings';
 import {
   parsePrivacyRules,
   PrivacyMode,
@@ -52,6 +61,7 @@ import {
   PrivacyRulesView
 } from '../model/PrivacyRules';
 import {
+  PrivacyChatRow,
   PrivacyContactRow,
   PrivacyDetailState,
   PrivacyExceptionsView,
@@ -144,15 +154,16 @@ export struct PrivacyKeySubPage {
   /**
    * 例外行的取数方法。为什么是一堆小方法而不是把 `PrivacyExceptionsView` 传进 @Builder：
    * 按值传进 @Builder 的结果不参与状态观察，点完档位后行数会停在旧值（SET-106 同一条坑）。
-   * detail 为空时回一个「两行都不显示」的空视图：调用点都在 `detail() !== null` 分支里，
+   * detail 为空、或这一项根本没有例外（`allow_find_by_phone`，Android `needExceptions()`）时，
+   * 回一个「两行都不显示」的空视图：调用点都在 `detail() !== null` 分支里，
    * 回空对象只是为了让类型不用到处判 null。
    */
   private exceptionsOf(): PrivacyExceptionsView {
     const detail: PrivacyDetailState | null = this.detail();
-    if (detail === null) {
-      return new PrivacyExceptionsView([], [], 0, 0, false, false);
+    if (detail === null || !privacyNeedExceptions(detail.key)) {
+      return new PrivacyExceptionsView(0, 0, false, false);
     }
-    return privacyExceptionsView(detail.rules, detail.contacts);
+    return privacyExceptionsView(detail.rules, detail.chats);
   }
 
   private showAlwaysRow(): boolean {
@@ -163,24 +174,67 @@ export struct PrivacyKeySubPage {
     return this.exceptionsOf().showNeverRow;
   }
 
+  /**
+   * 这一项到底有没有例外名单（Android `needExceptions()`）。没有的话整块卡片不渲染：
+   * 留一张空卡等于在界面上承诺一个不可编辑的功能。
+   */
+  private hasExceptions(): boolean {
+    return this.showAlwaysRow() || this.showNeverRow();
+  }
+
+  /**
+   * 例外行的标题：只有「最后上线时间」这一项在 Android 上读作「分享给谁」
+   * （`SettingsPrivacyKeyController:494-517`），其余项是「允许谁」。
+   */
+  private alwaysLabel(): string {
+    const detail: PrivacyDetailState | null = this.detail();
+    return detail === null ? 'Always Allow' : privacyAlwaysAllowLabel(detail.key);
+  }
+
+  private neverLabel(): string {
+    const detail: PrivacyDetailState | null = this.detail();
+    return detail === null ? 'Never Allow' : privacyNeverAllowLabel(detail.key);
+  }
+
+  /**
+   * 档位单选的行：「没有人」按这一项是否存在而定（Android `needNobodyOption()` ——
+   * 「通过手机号发现我」只有「所有人 / 我的联系人」两档，禁止它是无意义的）。
+   */
+  private modeRows(): PrivacyMode[] {
+    const detail: PrivacyDetailState | null = this.detail();
+    if (detail !== null && privacyNeedNobodyOption(detail.key)) {
+      return PRIVACY_MODES;
+    }
+    const rows: PrivacyMode[] = [];
+    for (let i = 0; i < PRIVACY_MODES.length; i++) {
+      if (PRIVACY_MODES[i] !== 'nobody') {
+        rows.push(PRIVACY_MODES[i]);
+      }
+    }
+    return rows;
+  }
+
   /** 例外行的人数文案：照 Android `Lang.plural(xUsers)` / `PrivacyAddUsers`。 */
   private exceptionValue(isAlways: boolean): string {
     const view: PrivacyExceptionsView = this.exceptionsOf();
-    const total: number = isAlways
-      ? view.alwaysRows.length + view.alwaysChatMemberCount
-      : view.neverRows.length + view.neverChatMemberCount;
+    // 人数含会话的**成员数**，不是会话条数（Android `getPlusTotalCount`）。
+    const total: number = isAlways ? view.alwaysCount : view.neverCount;
     if (total === 0) {
       return this.t('Add Users');
     }
     return this.t(total === 1 ? '{0} User' : '{0} Users', total);
   }
 
+  /**
+   * 面板标题沿用打开它的那一行的标题：Android 是同一个字符串推进去的。
+   * 之前写死「…Share With」，结果「 Bio」页面上行读「Never Allow」、点进去标题读「Never Share With」。
+   */
   private pickerTitle(): string {
     const detail: PrivacyDetailState | null = this.detail();
     if (detail !== null && detail.pickerTarget === 'never') {
-      return this.t('Never Share With');
+      return this.t(this.neverLabel());
     }
-    return this.t('Always Share With');
+    return this.t(this.alwaysLabel());
   }
 
   /** 分支判定统一收在方法里：build 里不写 `detail()!.x`，ArkTS 禁止非空断言。 */
@@ -218,7 +272,9 @@ export struct PrivacyKeySubPage {
               this.DetailErrorView()
             } else {
               this.ModeCardView()
-              this.ExceptionsView()
+              if (this.hasExceptions()) {
+                this.ExceptionsView()
+              }
               this.FootnoteView()
             }
           }
@@ -333,7 +389,7 @@ export struct PrivacyKeySubPage {
   @Builder
   ModeCardView() {
     Column() {
-      ForEach(PRIVACY_MODES, (mode: PrivacyMode, index: number) => {
+      ForEach(this.modeRows(), (mode: PrivacyMode, index: number) => {
         Column() {
           if (index > 0) {
             Divider()
@@ -428,13 +484,14 @@ export struct PrivacyKeySubPage {
   }
 
   /**
-   * 例外名单两行。存在与否由规则列表的**位置**决定（`privacyNeedAlwaysAllow`），
-   * 所以「所有人」档只剩「从不允许」一行是正确结果 —— 不是这里漏渲染。
+   * 例外名单两行（仅在 `hasExceptions()` 为真时由 build 调进来）。存在与否由规则列表的
+   * **位置**决定（`privacyNeedAlwaysAllow`），所以「所有人」档只剩「从不允许」一行是正确结果 ——
+   * 不是这里漏渲染。人数含会话成员数，见 `exceptionValue`。
    */
   @Builder
   ExceptionsView() {
     Column() {
-      if (this.showAlwaysRow() || this.showNeverRow()) {
+      if (this.hasExceptions()) {
         Text(this.t('Add Exceptions'))
           .fontSize(this.getTheme().typography.caption.fontSize)
           .fontColor(this.getTheme().colors.textSecondary)
@@ -449,7 +506,7 @@ export struct PrivacyKeySubPage {
         Column() {
           if (this.showAlwaysRow()) {
             Row() {
-              Text(this.t('Always Allow'))
+              Text(this.t(this.alwaysLabel()))
                 .fontSize(this.getTheme().typography.body.fontSize)
                 .fontColor(this.getTheme().colors.textPrimary)
                 .layoutWeight(1)
@@ -475,7 +532,7 @@ export struct PrivacyKeySubPage {
 
           if (this.showNeverRow()) {
             Row() {
-              Text(this.t('Never Allow'))
+              Text(this.t(this.neverLabel()))
                 .fontSize(this.getTheme().typography.body.fontSize)
                 .fontColor(this.getTheme().colors.textPrimary)
                 .layoutWeight(1)
@@ -563,7 +620,7 @@ export struct PrivacyKeySubPage {
         bottom: this.getTheme().spacing.sm
       })
 
-      if (this.pickerRows().length === 0) {
+      if (this.pickerIsEmpty()) {
         Text(this.t('No Contacts Yet'))
           .fontSize(this.getTheme().typography.subheadline.fontSize)
           .fontColor(this.getTheme().colors.textSecondary)
@@ -573,45 +630,108 @@ export struct PrivacyKeySubPage {
       }
 
       List({ space: 0 }) {
-        ForEach(this.pickerRows(), (row: PrivacyContactRow) => {
-          ListItem() {
-            Row() {
-              Stack() {
-                if (row.selected) {
-                  Image($r('app.media.ic_check_single'))
-                    .width(14)
-                    .height(14)
-                    .fillColor(this.getTheme().colors.accent)
-                }
-              }
-              .width(20)
-              .height(20)
-              .margin({ right: this.getTheme().spacing.md })
-              .borderRadius(5)
-              .border({
-                width: 1.5,
-                color: row.selected
-                  ? this.getTheme().colors.accent
-                  : this.getTheme().colors.textSecondary
-              })
+        // 两个分区：Android 压的是 ContactsController，它本身就有「我的联系人 / 群聊」
+        // 两段；例外名单允许填会话，所以只有联系人一段是功能缺失，不是简化。
+        if (this.pickerContacts().length > 0) {
+          ListItemGroup({ header: this.PickerSectionHeaderView('contacts', 'My Contacts') }) {
+            ForEach(this.pickerContacts(), (row: PrivacyContactRow) => {
+              ListItem() {
+                Row() {
+                  Stack() {
+                    if (row.selected) {
+                      Image($r('app.media.ic_check_single'))
+                        .width(14)
+                        .height(14)
+                        .fillColor(this.getTheme().colors.accent)
+                    }
+                  }
+                  .width(20)
+                  .height(20)
+                  .margin({ right: this.getTheme().spacing.md })
+                  .borderRadius(5)
+                  .border({
+                    width: 1.5,
+                    color: row.selected
+                      ? this.getTheme().colors.accent
+                      : this.getTheme().colors.textSecondary
+                  })
 
-              Text(row.title)
-                .fontSize(this.getTheme().typography.body.fontSize)
-                .fontColor(this.getTheme().colors.textPrimary)
-                .layoutWeight(1)
-                .maxLines(1)
-                .textOverflow({ overflow: TextOverflow.Ellipsis })
-            }
-            .width('100%')
-            .height(52)
-            .alignItems(VerticalAlign.Center)
-            .padding({ left: this.getTheme().spacing.md, right: this.getTheme().spacing.md })
-            .id(`privacy-picker-${row.userId}`)
-            .onClick((): void => {
-              this.onDispatch(new TogglePrivacyPickerContact(row.userId));
-            })
+                  Text(row.title)
+                    .fontSize(this.getTheme().typography.body.fontSize)
+                    .fontColor(this.getTheme().colors.textPrimary)
+                    .layoutWeight(1)
+                    .maxLines(1)
+                    .textOverflow({ overflow: TextOverflow.Ellipsis })
+                }
+                .width('100%')
+                .height(52)
+                .alignItems(VerticalAlign.Center)
+                .padding({ left: this.getTheme().spacing.md, right: this.getTheme().spacing.md })
+                .id(`privacy-picker-${row.userId}`)
+                .onClick((): void => {
+                  this.onDispatch(new TogglePrivacyPickerContact(row.userId));
+                })
+              }
+            }, (row: PrivacyContactRow): string => `u${row.userId}:${row.selected ? 1 : 0}`)
           }
-        }, (row: PrivacyContactRow): string => `${row.userId}:${row.selected ? 1 : 0}`)
+        }
+
+        if (this.pickerChats().length > 0) {
+          ListItemGroup({ header: this.PickerSectionHeaderView('chats', 'Group Chats') }) {
+            ForEach(this.pickerChats(), (row: PrivacyChatRow) => {
+              ListItem() {
+                Row() {
+                  Stack() {
+                    if (row.selected) {
+                      Image($r('app.media.ic_check_single'))
+                        .width(14)
+                        .height(14)
+                        .fillColor(this.getTheme().colors.accent)
+                    }
+                  }
+                  .width(20)
+                  .height(20)
+                  .margin({ right: this.getTheme().spacing.md })
+                  .borderRadius(5)
+                  .border({
+                    width: 1.5,
+                    color: row.selected
+                      ? this.getTheme().colors.accent
+                      : this.getTheme().colors.textSecondary
+                  })
+
+                  Column() {
+                    Text(row.title)
+                      .fontSize(this.getTheme().typography.body.fontSize)
+                      .fontColor(this.getTheme().colors.textPrimary)
+                      .width('100%')
+                      .maxLines(1)
+                      .textOverflow({ overflow: TextOverflow.Ellipsis })
+
+                    // 成员数是服务端给的，读不到就是 0 —— 宁可不出这行，也不编一个人数。
+                    if (row.memberCount > 0) {
+                      Text(this.t('{0} members', row.memberCount))
+                        .fontSize(this.getTheme().typography.caption.fontSize)
+                        .fontColor(this.getTheme().colors.textSecondary)
+                        .width('100%')
+                        .maxLines(1)
+                    }
+                  }
+                  .layoutWeight(1)
+                  .alignItems(HorizontalAlign.Start)
+                }
+                .width('100%')
+                .height(52)
+                .alignItems(VerticalAlign.Center)
+                .padding({ left: this.getTheme().spacing.md, right: this.getTheme().spacing.md })
+                .id(`privacy-picker-chat-${row.chatId}`)
+                .onClick((): void => {
+                  this.onDispatch(new TogglePrivacyPickerChat(row.chatId));
+                })
+              }
+            }, (row: PrivacyChatRow): string => `c${row.chatId}:${row.selected ? 1 : 0}`)
+          }
+        }
       }
       .layoutWeight(1)
       .scrollBar(BarState.Off)
@@ -621,8 +741,33 @@ export struct PrivacyKeySubPage {
     .backgroundColor(this.getTheme().colors.background)
   }
 
-  private pickerRows(): PrivacyContactRow[] {
+  @Builder
+  PickerSectionHeaderView(slug: string, label: string) {
+    Text(this.t(label))
+      .fontSize(this.getTheme().typography.caption.fontSize)
+      .fontColor(this.getTheme().colors.textSecondary)
+      .width('100%')
+      .padding({
+        left: this.getTheme().spacing.md,
+        right: this.getTheme().spacing.md,
+        top: this.getTheme().spacing.md,
+        bottom: this.getTheme().spacing.xs
+      })
+      .id(`privacy-picker-section-${slug}`)
+  }
+
+  private pickerContacts(): PrivacyContactRow[] {
     const detail: PrivacyDetailState | null = this.detail();
     return detail === null ? [] : detail.contacts;
+  }
+
+  private pickerChats(): PrivacyChatRow[] {
+    const detail: PrivacyDetailState | null = this.detail();
+    return detail === null ? [] : detail.chats;
+  }
+
+  /** 空态判据是「两个分区都没有候选」，只看联系人会误报「暂无联系人」。 */
+  private pickerIsEmpty(): boolean {
+    return this.pickerContacts().length === 0 && this.pickerChats().length === 0;
   }
 }

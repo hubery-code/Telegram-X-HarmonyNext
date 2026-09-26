@@ -120,7 +120,7 @@
 | FEAT-SET-002 | 语言切换（中/英） | P1 | `ui/SettingsLanguageController.java`, `core/Lang.java`, `telegram/Tdlib.java:5912`（SetOption language_pack_id） | SetOption(language_pack_id) | 切换后 UI 立即生效且重启保持，TDLib 语言包同步 | — | Accepted | 迁移组 |
 | FEAT-SET-003 | 通知设置入口 | P1 | `ui/SettingsNotificationController.java`, `telegram/LocalScopeNotificationSettings.java` | SetScopeNotificationSettings, SetChatNotificationSettings | 全局/单会话通知开关生效并持久化 | 通知权限 | Accepted | SET-106 |
 | FEAT-SET-004 | 存储与缓存入口 | P1 | `ui/SettingsCacheController.java`, `telegram/TdlibSettingsManager.java` | GetStorageStatistics, OptimizeStorage | 展示缓存占用并支持一键清理，清理后媒体可重下 | 文件 | Accepted | 迁移组 |
-| FEAT-SET-005 | 隐私和安全入口（可见范围规则） | P1 | `ui/PrivacySettingsActivity` + `ui/SettingsPrivacyKeyController.java` + `TD_getPrivacySettingRules` | getUserPrivacySettingRules, setUserPrivacySettingRules | 8 项可见范围（最后上线/手机号/头像/简介/生日/通话/入群/被搜索）读真值；点一行进详情页：主档位单选 + Premium 勾 +「总是/从不允许」例外名单与联系人多选器，**离开页面才写回并回读确认** | — | Accepted | SELF-102 → PRIVACY-101 |
+| FEAT-SET-005 | 隐私和安全入口（可见范围规则） | P1 | `ui/PrivacySettingsActivity` + `ui/SettingsPrivacyKeyController.java` + `TD_getPrivacySettingRules` | getUserPrivacySettingRules, setUserPrivacySettingRules | 8 项可见范围（最后上线/手机号/头像/简介/生日/通话/入群/被搜索）读真值；点一行进详情页：主档位单选 + Premium 勾 +「总是/从不允许」例外名单，名单支持**联系人与已加入群组的成员**（双分区多选器，频道不可选），**离开页面才写回并回读确认** | — | Accepted | SELF-102 → PRIVACY-101 → PRIVACY-102 |
 
 ### 外观与本地化
 
@@ -1056,6 +1056,34 @@
 > 离开 → `write <- [allowAll]` → 读回 `rules=[allowAll]` → 列表行 **Everybody**，**账号状态已还原**，其余 7 项隐私键未碰。
 > 遗留：① 例外名单只支持"人"（Android 还能选已加入的群/频道成员，本端 `allowChatMembers` 只读不回写）；
 > ② `PrivacySettingsActivity` 里 `btn_togglePermission` 那一类布尔开关项（自动删除、通话允许联系人等）尚未拆包。
+
+> **追加（PRIVACY-102，FEAT-SET-005 上一条遗留 ①）**：例外名单现在装得下**会话成员**，选择器从一列联系人变成
+> 「我的联系人 / 群聊」两个分区。四件事照 Android `PrivacySettings` 钉死，各自都有非显然的根据：
+> ① **写的是会话本身的 id**（`allowChatMembers` / `restrictChatMembers` 的 `chat_ids`），生效范围是"该会话的全体成员"，
+> 所以名单里一条会话在语义上等于几百个人 —— 因此候选会话只取 `getChats(chat_list=null)` 与规则里已引用的 id 的并集
+> （30 条上限，**不接 `searchChatMessages`**：Android 那个搜索框查的是"人"，为会话做全库搜索会误导）；
+> ② **频道不可选**（`privacyChatSelectable`：basic group 恒可选，supergroup 仅在 `is_channel=false` 时可选，
+> 照 `FLAG_NO_CHANNELS`；private 会话是"人"，归联系人分区）；
+> ③ **插入位置按方向不对称** —— Android `withExceptions`（790-925）里 allow 侧往前扫到"终结/一般规则"才停，
+> 于是新会话规则落在 `allowContacts` **之后**、`restrictAll` 之前；restrict 侧把 premium/bots/会话成员都算"一般规则"，
+> 于是新会话规则**紧跟用户规则**。同向剥离另一侧时**保留那条规则自己的方向**（不是照抄新名单的方向），剥空则整条丢弃；
+> 偏离 Android 两处并留档：bots 规则原样不动、分类读的是 `newRules` 而不是 Android 那个边写边循环的过期 `rules` 字段；
+> ④ **例外行的计数是成员数，不是会话条数**（`getPlusTotalCount`）：一条 5756 人的群在行末就写 `5756 Users`，
+> 成员数取不到时按 0 计（宁可少报不猜），来源是 `core/domain` 的 `GroupRegistry`（懒建 + `destroy()` 时 `stop()`）。
+> 另外把 Android 的三项**逐键门控**补齐：`allow_find_by_phone` 没有「没有人」档位、也**根本没有例外名单**
+> （整块卡片不渲染，留空卡等于承诺一个不可编辑的功能）；`show_last_seen` 的两行读「Always/Never **Share With**」，
+> 其余项读「Always/Never Allow」—— 且**选择器标题沿用打开它的那一行的标题**（取证时逼出这一处：Bio 页面上一行写
+> `Never Allow`、点进去标题写死 `Never Share With`，同屏两套话术）。
+> 测试：`feature_settings` **304/304**（286 → 304：会话成员规则的插入顺序/方向剥离/计数、选择器双分区勾选互不污染、
+> 三项门控），四守卫 0 违规。
+> 设备取证（127.0.0.1:5555，`.hvigor/outputs/privacy102/`）：`privacy_chats candidates=2,withMemberCount=2` →
+> 简介项（`show_bio`，仍是影响最小的一键）基线 `rules=[allowAll]` → 「从不允许」选择器两个分区都在（`be hu` /
+> `El CLUB · 5756 members` / 另一群 647 人）→ 勾群 → Done → 行末 `5756 Users` → 离开 →
+> `write <- [restrictChatMembers, allowAll]` → **读回同一形状**（服务端接受会话成员规则）→ 重开选择器**已勾选正确回灌** →
+> 取消勾选 → Done → 离开 → `write <- [allowAll]` → 读回 `[allowAll]`，**账号状态已还原**；另实证「无改动离开」
+> 一条 `write` 都不发，`allow_find_by_phone` 只有两档无例外卡，`show_last_seen` 行与标题都读 `Never Share With`。
+> 遗留：例外名单里**会话名靠 `getChat` 现取**，退群后那条规则仍在（Android 同样不清理）；
+> `btn_togglePermission` 一类布尔开关项仍未拆包。
 
 
 | 功能 ID | 功能名 |

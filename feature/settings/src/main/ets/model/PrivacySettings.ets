@@ -127,3 +127,32 @@ export function toUserPrivacySetting(key: PrivacySettingKey): TdUserPrivacySetti
   }
   return new UserPrivacySettingAllowFindingByPhoneNumber();
 }
+
+/**
+ * 这一项有没有「Nobody」档位。Android `needNobodyOption()`（:302-318）里唯一被关掉的是
+ * 「按手机号找到我」—— 它的档位只有「所有人 / 我的联系人」，因为「没有人能通过号码找到我」
+ * 这条语义在那一项上不存在（不搜索就是找不到，不需要一档）。
+ */
+export function privacyNeedNobodyOption(key: PrivacySettingKey): boolean {
+  return key !== 'allow_find_by_phone';
+}
+
+/**
+ * 这一项有没有例外名单区块。Android `needExceptions()`（:321-331）：同样只有
+ * 「按手机号找到我」没有 —— 那一档语义上不可再细分，加例外只会写出服务端不认的规则。
+ */
+export function privacyNeedExceptions(key: PrivacySettingKey): boolean {
+  return key !== 'allow_find_by_phone';
+}
+
+/**
+ * 两条例外行的标题。Android `buildCells()`（:494-517）按项分文案：
+ * 「最后上线」用 Always Share With / Never Share With，其余用 Always Allow / Never Allow。
+ */
+export function privacyAlwaysAllowLabel(key: PrivacySettingKey): string {
+  return key === 'show_last_seen' ? 'Always Share With' : 'Always Allow';
+}
+
+export function privacyNeverAllowLabel(key: PrivacySettingKey): string {
+  return key === 'show_last_seen' ? 'Never Share With' : 'Never Allow';
+}

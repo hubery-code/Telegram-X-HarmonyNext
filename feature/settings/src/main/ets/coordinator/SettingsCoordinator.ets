@@ -37,6 +37,7 @@ import {
   DataSaverStore,
   DownloadLimitsByNetwork,
   DownloadLimitsStore,
+  GroupRegistry,
   UserRegistry
 } from '@tgx/core-domain';
 import {
@@ -109,7 +110,17 @@ import {
   encodeEnableProxy,
   encodeGetProxies,
   encodePingProxy,
-  encodeRemoveProxy
+  encodeRemoveProxy,
+  Chat,
+  ChatTypeBasicGroup,
+  ChatTypeSupergroup,
+  Chats,
+  GetChat,
+  GetChats,
+  decodeChat,
+  decodeChats,
+  encodeGetChat,
+  encodeGetChats
 } from '@tgx/core-td-api-generated';
 import {
   TdPendingRequest,
@@ -136,7 +147,13 @@ import {
   toUserPrivacySetting
 } from '../model/PrivacySettings';
 import { parsePrivacyRules } from '../model/PrivacyRules';
-import { PrivacyContactRow, privacyContactRows } from '../model/PrivacyDetail';
+import {
+  PrivacyChatRow,
+  PrivacyContactRow,
+  privacyChatRows,
+  privacyChatSelectable,
+  privacyContactRows
+} from '../model/PrivacyDetail';
 import {
   classifyProxyFailure,
   pingProxyRequestFromItem,
@@ -240,6 +257,13 @@ import { Theme, ThemeManager } from '@tgx/core-design-system';
 
 const TAG: string = 'SettingsCoordinator';
 
+/**
+ * 隐私选择器的会话候选上限：主会话列表的前若干条。
+ * 隐私例外关心的是「常来往的群」，不是全量会话索引，所以按主列表顺序截断，
+ * 名单里已引用的会话另外补齐（见 `fetchPrivacyChatIds`）。
+ */
+const PRIVACY_CHAT_LIMIT: number = 30;
+
 /** 日志用的规则类型串：排查「写进去的和回读回来的不是一条」时唯一可辨识的信息。 */
 function privacyRuleTypesForLog(rules: TdUserPrivacySettingRule[]): string {
   const types: string[] = [];
@@ -254,6 +278,11 @@ export type SettingsUiStateListener = (state: SettingsUiState) => void;
 export class SettingsCoordinator {
   private readonly scope: AccountScope;
   private readonly userRegistry: UserRegistry;
+  /**
+   * 隐私选择器的会话人员数来源（`getSupergroup` / `getBasicGroup` 的缓存 + 实时更新）。
+   * 懒建：`GroupRegistry` 构造即订阅 update，而绝大多数用户不会打开隐私设置。
+   */
+  private groupRegistry: GroupRegistry | null = null;
   private readonly env: ReducerEnv;
   private readonly onNavigateToAuth: () => void;
   private readonly onSwitchAccount: (accountKey: string) => void;
@@ -440,6 +469,10 @@ export class SettingsCoordinator {
     if (this.connectionSubscription !== null) {
       this.connectionSubscription.unsubscribe();
       this.connectionSubscription = null;
+    }
+    if (this.groupRegistry !== null) {
+      this.groupRegistry.stop();
+      this.groupRegistry = null;
     }
     this.listeners.length = 0;
   }
@@ -1361,8 +1394,9 @@ export class SettingsCoordinator {
   }
 
   /**
-   * PRIVACY-101：打开详情页。除该项规则外还要一份联系人名单（例外名单取名 + 多选器数据源）；
-   * 两者是两次独立请求，联系人失败不挡规则展示 —— 页面照样能看到当前规则，选择器为空并报错。
+   * PRIVACY-101/102：打开详情页。除该项规则外还要两份候选 —— 联系人（`allowUsers` 一侧）
+   * 与群/超大群（`allowChatMembers` 一侧）。三者是独立请求：候选读不到不该挡规则展示，
+   * 页面照样能看到「谁能看」，选择器留空并明确报错。
    */
   private handleLoadPrivacyDetail(key: PrivacySettingKey): void {
     this.loadPrivacyDetail(key);
@@ -1383,29 +1417,41 @@ export class SettingsCoordinator {
         ));
         return;
       }
-      const contactsResult: Result<PrivacyContactRow[], AppError> =
-        await this.fetchPrivacyContacts();
-      if (this.destroyed) {
-        return;
-      }
       // ArkTS 不做类型收窄：`.value` / `.error` 必须各自待在 `ok` / `err` 分支里。
       let rules: TdUserPrivacySettingRule[] = [];
       if (rulesResult.ok) {
         rules = rulesResult.value;
       }
-      if (contactsResult.ok) {
-        this.dispatch(new PrivacyDetailLoaded(key, rules, contactsResult.value));
+      const contactsResult: Result<PrivacyContactRow[], AppError> =
+        await this.fetchPrivacyContacts();
+      if (this.destroyed) {
         return;
       }
-      // 联系人读不到不该挡规则展示：这一项「谁能看」照样呈现，选择器留空并明确报错，
-      // 而不是把整页变成错误态让用户以为规则没读到。
+      const chatsResult: Result<PrivacyChatRow[], AppError> =
+        await this.fetchPrivacyChats(rules);
+      if (this.destroyed) {
+        return;
+      }
+      let contacts: PrivacyContactRow[] = [];
+      if (contactsResult.ok) {
+        contacts = contactsResult.value;
+      }
+      let chats: PrivacyChatRow[] = [];
+      if (chatsResult.ok) {
+        chats = chatsResult.value;
+      }
+      this.dispatch(new PrivacyDetailLoaded(key, rules, contacts, chats));
       if (contactsResult.err) {
         this.logger.logError(TAG, contactsResult.error);
       }
-      this.dispatch(new PrivacyDetailLoaded(key, rules, []));
-      this.dispatch(new SetErrorMessage(
-        'Unable to load your contacts, so the exception list cannot be edited right now.'
-      ));
+      if (chatsResult.err) {
+        this.logger.logError(TAG, chatsResult.error);
+      }
+      const candidatesError: string =
+        this.privacyCandidatesError(contactsResult.err, chatsResult.err);
+      if (candidatesError.length > 0) {
+        this.dispatch(new SetErrorMessage(candidatesError));
+      }
     } catch (e) {
       if (this.destroyed) {
         return;
@@ -1420,6 +1466,26 @@ export class SettingsCoordinator {
       this.dispatch(new PrivacyDetailLoadFailed(key, this.privacyErrorMessage(error, 'load')));
     }
   }
+
+  /** 候选读取失败的提示：说清是哪一半读不到，而不是把整页变成错误态。 */
+  private privacyCandidatesError(
+    contactsFailed: boolean,
+    chatsFailed: boolean
+  ): string {
+    const parts: string[] = [];
+    if (contactsFailed) {
+      parts.push('contacts');
+    }
+    if (chatsFailed) {
+      parts.push('groups');
+    }
+    if (parts.length === 0) {
+      return '';
+    }
+    return `Unable to load your ${parts.join(' and ')}, ` +
+      'so the exception list cannot be edited right now.';
+  }
+
 
   /**
    * 选择器数据源：`getContacts` 拿 id，缺名字的逐个 `getUser` 补齐（走 UserRegistry 缓存）。
@@ -1459,9 +1525,180 @@ export class SettingsCoordinator {
         }
       }
       // 拉不到的 id 不进选择器：多选器列的是「可勾选的人」，缺一行不影响已有名单的正确性
-      // （例外名单里的陌生 id 会以占位行保留，见 `privacyExceptionRows`）。
+      // （名单里的陌生 id 仍会留在规则里，勾选集合按 id 走，见 reducer 的 openPrivacyPicker）。
     }
     return ok<PrivacyContactRow[], AppError>(privacyContactRows(users, selfUserId, []));
+  }
+
+  /**
+   * PRIVACY-102：选择器的会话候选 = 主会话列表的前若干条 + **例外名单已经引用到的会话**。
+   * 后者必须补：不补的话那条群在选择器里没有对应行，用户点开看不到自己已经勾过它，
+   * 而人数却把它算在里面（Android 的选择器列全部会话，天然没有这个问题）。
+   * 人员数逐个走 `getSupergroup` / `getBasicGroup` 读（经 GroupRegistry 缓存，命中不发请求），
+   * 全程串行 —— TDLib 同连接并发会回 too_many_requests。
+   */
+  private async fetchPrivacyChats(
+    rules: TdUserPrivacySettingRule[]
+  ): Promise<Result<PrivacyChatRow[], AppError>> {
+    const idsResult: Result<number[], AppError> = await this.fetchPrivacyChatIds(rules);
+    if (idsResult.err) {
+      return err<PrivacyChatRow[], AppError>(idsResult.error);
+    }
+    let chatIds: number[] = [];
+    if (idsResult.ok) {
+      chatIds = idsResult.value;
+    }
+    const groups: Chat[] = [];
+    for (let i = 0; i < chatIds.length; i++) {
+      if (this.destroyed) {
+        return err<PrivacyChatRow[], AppError>(
+          AppErrors.internal(
+            'settings_privacy_chats',
+            'Privacy chat fetch was cancelled while the page was closing'
+          )
+        );
+      }
+      const chat: Chat | null = await this.fetchChat(chatIds[i]);
+      if (chat !== null && privacyChatSelectable(chat)) {
+        groups.push(chat);
+      }
+    }
+    const memberCounts: Map<number, number> = new Map<number, number>();
+    for (let i = 0; i < groups.length; i++) {
+      const count: number = await this.privacyChatMemberCount(groups[i]);
+      if (count > 0) {
+        memberCounts.set(groups[i].id, count);
+      }
+    }
+    this.logger.info(
+      TAG,
+      'privacy_chats',
+      `candidates=${groups.length},withMemberCount=${memberCounts.size}`
+    );
+    return ok<PrivacyChatRow[], AppError>(privacyChatRows(groups, memberCounts, []));
+  }
+
+  /** 主列表前 PRIVACY_CHAT_LIMIT 条 + 规则引用的 chatId（去重、保持「最近在前」）。 */
+  private async fetchPrivacyChatIds(
+    rules: TdUserPrivacySettingRule[]
+  ): Promise<Result<number[], AppError>> {
+    const request: GetChats = new GetChats();
+    // `chat_list: null` 即主会话列表（TDLib: 传 null 从 main chat list 取）。
+    request.chat_list = null;
+    request.limit = PRIVACY_CHAT_LIMIT;
+    const pendingResult: Result<TdPendingRequest, AppError> = this.scope.request(
+      'getChats',
+      encodeGetChats(request) as TdWireObject
+    );
+    if (pendingResult.err) {
+      return err<number[], AppError>(pendingResult.error);
+    }
+    if (!pendingResult.ok) {
+      return err<number[], AppError>(
+        AppErrors.internal('settings_chats_request', 'TDLib chats request was not created')
+      );
+    }
+    const response: Result<TdWireObject, AppError> = await pendingResult.value.promise;
+    if (response.err) {
+      return err<number[], AppError>(response.error);
+    }
+    if (!response.ok) {
+      return err<number[], AppError>(
+        AppErrors.internal('settings_chats_response', 'TDLib returned no chats result')
+      );
+    }
+    const chats: Chats | null = decodeChats(response.value as TdJsonRaw);
+    if (chats === null) {
+      return err<number[], AppError>(
+        AppErrors.internal(
+          'settings_chats_decode',
+          'TDLib chats payload could not be decoded'
+        )
+      );
+    }
+    const ids: number[] = chats.chat_ids.slice();
+    const view = parsePrivacyRules(rules);
+    const referenced: number[] = view.plusChatIds.concat(view.minusChatIds);
+    for (let i = 0; i < referenced.length; i++) {
+      if (referenced[i] !== 0 && ids.indexOf(referenced[i]) < 0) {
+        ids.push(referenced[i]);
+      }
+    }
+    return ok<number[], AppError>(ids);
+  }
+
+  /** 按 id 取会话；解不出或请求失败回 null（调用方跳过该行，不编造会话）。 */
+  private async fetchChat(chatId: number): Promise<Chat | null> {
+    const request: GetChat = new GetChat();
+    request.chat_id = chatId;
+    const pendingResult: Result<TdPendingRequest, AppError> = this.scope.request(
+      'getChat',
+      encodeGetChat(request) as TdWireObject
+    );
+    if (pendingResult.err) {
+      this.logger.logError(TAG, pendingResult.error);
+      return null;
+    }
+    if (!pendingResult.ok) {
+      return null;
+    }
+    const response: Result<TdWireObject, AppError> = await pendingResult.value.promise;
+    if (response.err) {
+      this.logger.logError(TAG, response.error);
+      return null;
+    }
+    if (!response.ok) {
+      return null;
+    }
+    return decodeChat(response.value as TdJsonRaw);
+  }
+
+  /**
+   * 会话人员数：`basicGroup.member_count` / `supergroup.member_count`。
+   * 读不到回 0（TDLib 明确允许 supergroup 成员数未知），页面据此不显示人数 ——
+   * 但这一条会话照样可选、照样计入 Android 口径的人数（未知按 0 计，不猜）。
+   */
+  private async privacyChatMemberCount(chat: Chat): Promise<number> {
+    if (chat.type_ === null) {
+      return 0;
+    }
+    const registry: GroupRegistry = this.groups();
+    if (chat.type_.type === 'chatTypeBasicGroup') {
+      const groupId: number = (chat.type_ as ChatTypeBasicGroup).basic_group_id;
+      const cached = registry.getBasicGroup(groupId);
+      if (cached !== null) {
+        return cached.member_count;
+      }
+      const pending: Result<TdPendingRequest, AppError> = registry.requestBasicGroup(groupId);
+      if (!pending.ok) {
+        return 0;
+      }
+      await pending.value.promise;
+      const group = registry.getBasicGroup(groupId);
+      return group !== null ? group.member_count : 0;
+    }
+    if (chat.type_.type === 'chatTypeSupergroup') {
+      const groupId: number = (chat.type_ as ChatTypeSupergroup).supergroup_id;
+      const cached = registry.getSupergroup(groupId);
+      if (cached !== null) {
+        return cached.member_count;
+      }
+      const pending: Result<TdPendingRequest, AppError> = registry.requestSupergroup(groupId);
+      if (!pending.ok) {
+        return 0;
+      }
+      await pending.value.promise;
+      const group = registry.getSupergroup(groupId);
+      return group !== null ? group.member_count : 0;
+    }
+    return 0;
+  }
+
+  private groups(): GroupRegistry {
+    if (this.groupRegistry === null) {
+      this.groupRegistry = new GroupRegistry(this.scope);
+    }
+    return this.groupRegistry;
   }
 
   private async fetchContactUserIds(): Promise<Result<number[], AppError>> {

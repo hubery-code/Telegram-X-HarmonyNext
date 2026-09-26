@@ -93,6 +93,7 @@ import {
   OpenPrivacyPicker,
   ClosePrivacyPicker,
   TogglePrivacyPickerContact,
+  TogglePrivacyPickerChat,
   ApplyPrivacyPicker,
   PrivacyRulesSaved,
   PrivacyRulesSaveFailed,
@@ -153,11 +154,15 @@ import { PrivacySettingItem, PrivacySettingKey } from '../model/PrivacySettings'
 import {
   parsePrivacyRules,
   privacyRulesForMode,
-  privacyRulesWithAllowUsers,
-  privacyRulesWithRestrictUsers,
+  privacyRulesWithAllowExceptions,
+  privacyRulesWithRestrictExceptions,
   PrivacyRulesView
 } from '../model/PrivacyRules';
-import { PrivacyDetailState, privacyContactsWithPicked } from '../model/PrivacyDetail';
+import {
+  PrivacyDetailState,
+  privacyChatsWithPicked,
+  privacyContactsWithPicked
+} from '../model/PrivacyDetail';
 import {
   PROXY_NONE_ID,
   ProxyConnectionState,
@@ -213,6 +218,24 @@ function detailWithRules(
     return null;
   }
   return state.copyWith({ privacyDetail: detail.copyWith({ rules: rules }) });
+}
+
+/**
+ * 勾选集合的增删：已勾则去掉，未勾则追加到末尾。
+ * 顺序有语义 —— 写回规则时按这个顺序进 `user_ids` / `chat_ids`，TDLib 保留顺序，
+ * 所以后勾选的人排在名单后面（Android 的选择器同样是追加式）。
+ */
+function togglePickedId(picked: number[], id: number): number[] {
+  const next: number[] = [];
+  for (let i = 0; i < picked.length; i++) {
+    if (picked[i] !== id) {
+      next.push(picked[i]);
+    }
+  }
+  if (picked.indexOf(id) < 0) {
+    next.push(id);
+  }
+  return next;
 }
 
 /** 按 TDLib id 取代理行；列表里还没有该行时返回 null（调用方据此忽略点击）。 */
@@ -735,7 +758,9 @@ export const settingsReducer: Reducer<SettingsUiState, SettingsIntent, SettingsE
         return reduced(state);
       }
       return reduced(state.copyWith({
-        privacyDetail: PrivacyDetailState.forLoaded(loaded.key, loaded.rules, loaded.contacts)
+        privacyDetail: PrivacyDetailState.forLoaded(
+          loaded.key, loaded.rules, loaded.contacts, loaded.chats
+        )
       }));
     }
 
@@ -791,13 +816,18 @@ export const settingsReducer: Reducer<SettingsUiState, SettingsIntent, SettingsE
         return reduced(state);
       }
       const view: PrivacyRulesView = parsePrivacyRules(detail.rules);
-      const current: number[] =
+      // 人和会话各自一份勾选集合：两名单在规则里是两条独立规则，勾选不能互相覆盖。
+      const currentUsers: number[] =
         pickerIntent.target === 'always' ? view.plusUserIds : view.minusUserIds;
+      const currentChats: number[] =
+        pickerIntent.target === 'always' ? view.plusChatIds : view.minusChatIds;
       return reduced(state.copyWith({
         privacyDetail: detail.copyWith({
           pickerTarget: pickerIntent.target,
-          pickedUserIds: current.slice(),
-          contacts: privacyContactsWithPicked(detail.contacts, current)
+          pickedUserIds: currentUsers.slice(),
+          pickedChatIds: currentChats.slice(),
+          contacts: privacyContactsWithPicked(detail.contacts, currentUsers),
+          chats: privacyChatsWithPicked(detail.chats, currentChats)
         })
       }));
     }
@@ -811,7 +841,9 @@ export const settingsReducer: Reducer<SettingsUiState, SettingsIntent, SettingsE
         privacyDetail: detail.copyWith({
           pickerTarget: null,
           pickedUserIds: [],
-          contacts: privacyContactsWithPicked(detail.contacts, [])
+          pickedChatIds: [],
+          contacts: privacyContactsWithPicked(detail.contacts, []),
+          chats: privacyChatsWithPicked(detail.chats, [])
         })
       }));
     }
@@ -822,15 +854,8 @@ export const settingsReducer: Reducer<SettingsUiState, SettingsIntent, SettingsE
       if (detail === null || detail.pickerTarget === null) {
         return reduced(state);
       }
-      const next: number[] = [];
-      for (let i = 0; i < detail.pickedUserIds.length; i++) {
-        if (detail.pickedUserIds[i] !== toggleIntent.userId) {
-          next.push(detail.pickedUserIds[i]);
-        }
-      }
-      if (detail.pickedUserIds.indexOf(toggleIntent.userId) < 0) {
-        next.push(toggleIntent.userId);
-      }
+      const next: number[] =
+        togglePickedId(detail.pickedUserIds, toggleIntent.userId);
       return reduced(state.copyWith({
         privacyDetail: detail.copyWith({
           pickedUserIds: next,
@@ -839,9 +864,25 @@ export const settingsReducer: Reducer<SettingsUiState, SettingsIntent, SettingsE
       }));
     }
 
+    /** PRIVACY-102：会话分区与联系人分区同一条勾选语义，只是 id 是 chatId。 */
+    case 'togglePrivacyPickerChat': {
+      const toggleIntent: TogglePrivacyPickerChat = intent as TogglePrivacyPickerChat;
+      const detail: PrivacyDetailState | null = state.privacyDetail;
+      if (detail === null || detail.pickerTarget === null) {
+        return reduced(state);
+      }
+      const next: number[] = togglePickedId(detail.pickedChatIds, toggleIntent.chatId);
+      return reduced(state.copyWith({
+        privacyDetail: detail.copyWith({
+          pickedChatIds: next,
+          chats: privacyChatsWithPicked(detail.chats, next)
+        })
+      }));
+    }
+
     /**
      * 提交勾选 = 全量替换该侧名单（Android `allowExceptions` / `disallowExceptions`）：
-     * 新名单插到列表最前，另一侧里的同名 id 被摘掉 —— 同一个人不能既总是允许又从不允许。
+     * 新名单插到列表最前，另一侧里的同名 id 被摘掉 —— 同一个人/同一个群不能既总是允许又从不允许。
      */
     case 'applyPrivacyPicker': {
       const detail: PrivacyDetailState | null = state.privacyDetail;
@@ -849,14 +890,20 @@ export const settingsReducer: Reducer<SettingsUiState, SettingsIntent, SettingsE
         return reduced(state);
       }
       const nextRules: TdUserPrivacySettingRule[] = detail.pickerTarget === 'always'
-        ? privacyRulesWithAllowUsers(detail.rules, detail.pickedUserIds)
-        : privacyRulesWithRestrictUsers(detail.rules, detail.pickedUserIds);
+        ? privacyRulesWithAllowExceptions(
+          detail.rules, detail.pickedUserIds, detail.pickedChatIds
+        )
+        : privacyRulesWithRestrictExceptions(
+          detail.rules, detail.pickedUserIds, detail.pickedChatIds
+        );
       return reduced(state.copyWith({
         privacyDetail: detail.copyWith({
           rules: nextRules,
           pickerTarget: null,
           pickedUserIds: [],
-          contacts: privacyContactsWithPicked(detail.contacts, [])
+          pickedChatIds: [],
+          contacts: privacyContactsWithPicked(detail.contacts, []),
+          chats: privacyChatsWithPicked(detail.chats, [])
         })
       }));
     }

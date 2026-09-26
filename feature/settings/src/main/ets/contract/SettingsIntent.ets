@@ -14,7 +14,7 @@ import { ActiveSessionItem } from '../model/ActiveSessionItem';
 import { TdUserPrivacySettingRule } from '@tgx/core-td-api-generated';
 import { PrivacySettingItem, PrivacySettingKey } from '../model/PrivacySettings';
 import { PrivacyMode } from '../model/PrivacyRules';
-import { PrivacyContactRow, PrivacyExceptionTarget } from '../model/PrivacyDetail';
+import { PrivacyChatRow, PrivacyContactRow, PrivacyExceptionTarget } from '../model/PrivacyDetail';
 import { ProxyForm, ProxyItem, ProxyConnectionState } from '../model/ProxySettings';
 import {
   AutoDownloadChatScope,
@@ -357,21 +357,25 @@ export class ClosePrivacyKeyPage implements Intent {
   readonly kind: 'closePrivacyKeyPage' = 'closePrivacyKeyPage';
 }
 
-/** PRIVACY-101：详情页规则与联系人读取完成。 */
+/** PRIVACY-101：详情页规则、联系人与会话候选读取完成。 */
 export class PrivacyDetailLoaded implements Intent {
   readonly kind: 'privacyDetailLoaded' = 'privacyDetailLoaded';
   readonly key: PrivacySettingKey;
   readonly rules: TdUserPrivacySettingRule[];
   readonly contacts: PrivacyContactRow[];
+  /** PRIVACY-102：选择器的会话分区候选（群与超大群，含例外名单引用到的那些）。 */
+  readonly chats: PrivacyChatRow[];
 
   constructor(
     key: PrivacySettingKey,
     rules: TdUserPrivacySettingRule[],
-    contacts: PrivacyContactRow[]
+    contacts: PrivacyContactRow[],
+    chats: PrivacyChatRow[]
   ) {
     this.key = key;
     this.rules = rules;
     this.contacts = contacts;
+    this.chats = chats;
   }
 }
 
@@ -424,6 +428,16 @@ export class TogglePrivacyPickerContact implements Intent {
 
   constructor(userId: number) {
     this.userId = userId;
+  }
+}
+
+/** PRIVACY-102：多选器里勾选/取消一个会话（其成员即被允许/禁止的一侧）。 */
+export class TogglePrivacyPickerChat implements Intent {
+  readonly kind: 'togglePrivacyPickerChat' = 'togglePrivacyPickerChat';
+  readonly chatId: number;
+
+  constructor(chatId: number) {
+    this.chatId = chatId;
   }
 }
 
@@ -861,6 +875,7 @@ export type SettingsIntent =
   | OpenPrivacyPicker
   | ClosePrivacyPicker
   | TogglePrivacyPickerContact
+  | TogglePrivacyPickerChat
   | ApplyPrivacyPicker
   | PrivacyRulesSaved
   | PrivacyRulesSaveFailed

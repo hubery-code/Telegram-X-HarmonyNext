@@ -1,19 +1,25 @@
 /**
- * feature/settings — 隐私模型层单测（SELF-102 键序 + PRIVACY-101 规则列表语义）。
+ * feature/settings — 隐私模型层单测（SELF-102 键序 + PRIVACY-101 规则列表语义 + PRIVACY-102 会话成员例外）。
  *
  * 覆盖的是「读得准、改不坏」两件事：
  * 1. 解析：单条简单规则 → 对应档位；带例外名单仍是主档位 + 名单，不再被归成不可写的 custom；
  *    空列表 = nobody（设备实测：写 restrictAll 后 TDLib 读回 rules=[]）；
  * 2. 终结性：allowAll / restrictAll 之后的规则不参与判定；
  * 3. 改档：例外名单原样保留（这是本包最关键的一条语义，旧版会抹掉）；bots 规则不动；
- * 4. 例外名单：全量替换、插到列表最前、另一侧同名 id 被摘掉；
- * 5. dirty 判定：privacyRulesEqual 按序列化结果比，不按引用；
- * 6. 行数据：例外名单里解析不到名字的人保留为占位行，群成员只计人数；
- * 7. 8 个设置项的键序与 setting 对象映射（防止写回时张冠李戴）。
+ * 4. 例外名单：人和会话各自全量替换、另一侧同名 id 被摘掉，两条例外规则的**插入位置不同**；
+ * 5. 人数口径：会话按**成员数**计，不是按会话条数（Android `getPlusTotalCount`）；
+ * 6. dirty 判定：privacyRulesEqual 按序列化结果比，不按引用；
+ * 7. 候选行：频道不可进选择器，成员数读不到时记 0（页面据此不编文案）；
+ * 8. 逐项门禁：「通过手机号发现我」没有「没有人」档也没有例外名单，「最后上线时间」两行读「分享给谁」；
+ * 9. 8 个设置项的键序与 setting 对象映射（防止写回时张冠李戴）。
  */
 
 import { describe, it, expect } from '@ohos/hypium';
 import {
+  Chat,
+  ChatTypeBasicGroup,
+  ChatTypePrivate,
+  ChatTypeSupergroup,
   TdJsonRaw,
   TdUserPrivacySettingRule,
   UserPrivacySettingRules,
@@ -35,6 +41,10 @@ import {
   PrivacySettingItem,
   PrivacySettingKey,
   PRIVACY_SETTING_KEYS,
+  privacyAlwaysAllowLabel,
+  privacyNeedNobodyOption,
+  privacyNeedExceptions,
+  privacyNeverAllowLabel,
   privacyRowLabel,
   privacySettingLabel,
   toUserPrivacySetting
@@ -44,21 +54,25 @@ import {
   PrivacyRulesView,
   parsePrivacyRules,
   privacyAlwaysAllowCount,
+  privacyMembersOf,
   privacyModeLabel,
   privacyNeedAlwaysAllow,
   privacyNeedNeverAllow,
   privacyNeverAllowCount,
   privacyRulesForMode,
-  privacyRulesWithAllowUsers,
-  privacyRulesWithRestrictUsers
+  privacyRulesWithAllowExceptions,
+  privacyRulesWithRestrictExceptions
 } from '../main/ets/model/PrivacyRules';
 import {
+  PrivacyChatRow,
   PrivacyContactRow,
   PrivacyDetailState,
-  PrivacyExceptionRow,
   PrivacyExceptionsView,
+  privacyChatsWithPicked,
+  privacyChatMemberCounts,
+  privacyChatRows,
+  privacyChatSelectable,
   privacyContactsWithPicked,
-  privacyExceptionRows,
   privacyExceptionsView,
   privacyRulesEqual
 } from '../main/ets/model/PrivacyDetail';
@@ -132,8 +146,51 @@ function idsOf(rule: TdUserPrivacySettingRule): number[] {
   return [];
 }
 
+function chatIdsOf(rule: TdUserPrivacySettingRule): number[] {
+  if (rule.type === 'userPrivacySettingRuleAllowChatMembers') {
+    return (rule as UserPrivacySettingRuleAllowChatMembers).chat_ids;
+  }
+  if (rule.type === 'userPrivacySettingRuleRestrictChatMembers') {
+    return (rule as UserPrivacySettingRuleRestrictChatMembers).chat_ids;
+  }
+  return [];
+}
+
 function contact(userId: number, title: string): PrivacyContactRow {
   return new PrivacyContactRow(userId, title, false);
+}
+
+function chatRow(chatId: number, title: string, memberCount: number): PrivacyChatRow {
+  return new PrivacyChatRow(chatId, title, memberCount, false);
+}
+
+function basicGroupChat(chatId: number, title: string): Chat {
+  const chat: Chat = new Chat();
+  chat.id = chatId;
+  chat.title = title;
+  chat.type_ = new ChatTypeBasicGroup();
+  return chat;
+}
+
+function supergroupChat(chatId: number, title: string, isChannel: boolean): Chat {
+  const chat: Chat = new Chat();
+  chat.id = chatId;
+  chat.title = title;
+  const type: ChatTypeSupergroup = new ChatTypeSupergroup();
+  type.is_channel = isChannel;
+  chat.type_ = type;
+  return chat;
+}
+
+function privateChat(chatId: number): Chat {
+  const chat: Chat = new Chat();
+  chat.id = chatId;
+  chat.type_ = new ChatTypePrivate();
+  return chat;
+}
+
+function counts(pairs: PrivacyChatRow[]): Map<number, number> {
+  return privacyChatMemberCounts(pairs);
 }
 
 export default function privacySettingsTest(): void {
@@ -189,9 +246,11 @@ export default function privacySettingsTest(): void {
         ruleAllowContacts(),
         ruleRestrictAll()
       ]);
-      expect(privacyAlwaysAllowCount(view)).assertEqual(3);
-      expect(privacyNeverAllowCount(view)).assertEqual(2);
+      // 没有成员数时会话按 0 计：宁可少报也不按「条数」编一个人数。
+      expect(privacyAlwaysAllowCount(view, new Map<number, number>())).assertEqual(1);
+      expect(privacyNeverAllowCount(view, new Map<number, number>())).assertEqual(1);
       expect(view.plusChatIds.length).assertEqual(2);
+      expect(view.minusChatIds.length).assertEqual(1);
     });
 
     it('rulesForMode_keepsExceptionLists', 0, () => {
@@ -202,6 +261,16 @@ export default function privacySettingsTest(): void {
       expect(next.length).assertEqual(2);
       expect(next[0].type).assertEqual('userPrivacySettingRuleRestrictUsers');
       expect(next[1].type).assertEqual('userPrivacySettingRuleAllowAll');
+    });
+
+    it('rulesForMode_keepsChatMemberExceptions', 0, () => {
+      const next: TdUserPrivacySettingRule[] = privacyRulesForMode(
+        [ruleRestrictChatMembers([8001]), ruleAllowContacts(), ruleRestrictAll()],
+        'everybody', false
+      );
+      expect(typesOf(next).join('>')).assertEqual(
+        'userPrivacySettingRuleRestrictChatMembers>userPrivacySettingRuleAllowAll'
+      );
     });
 
     it('rulesForMode_rebuildsGeneralRulesAtTheEnd', 0, () => {
@@ -233,8 +302,8 @@ export default function privacySettingsTest(): void {
     });
 
     it('rulesWithAllowUsers_replacesAndMovesToFront', 0, () => {
-      const next: TdUserPrivacySettingRule[] = privacyRulesWithAllowUsers(
-        [ruleAllowUsers([999]), ruleAllowContacts(), ruleRestrictAll()], [1001, 1002]
+      const next: TdUserPrivacySettingRule[] = privacyRulesWithAllowExceptions(
+        [ruleAllowUsers([999]), ruleAllowContacts(), ruleRestrictAll()], [1001, 1002], []
       );
       expect(next[0].type).assertEqual('userPrivacySettingRuleAllowUsers');
       expect(idsOf(next[0]).join(',')).assertEqual('1001,1002');
@@ -243,8 +312,8 @@ export default function privacySettingsTest(): void {
 
     it('rulesWithAllowUsers_stripsSamePeopleFromOtherSide', 0, () => {
       // 同一个人不能既总是允许又从不允许。
-      const next: TdUserPrivacySettingRule[] = privacyRulesWithAllowUsers(
-        [ruleRestrictUsers([1001, 2002]), ruleAllowContacts(), ruleRestrictAll()], [1001]
+      const next: TdUserPrivacySettingRule[] = privacyRulesWithAllowExceptions(
+        [ruleRestrictUsers([1001, 2002]), ruleAllowContacts(), ruleRestrictAll()], [1001], []
       );
       expect(next[0].type).assertEqual('userPrivacySettingRuleAllowUsers');
       expect(next[1].type).assertEqual('userPrivacySettingRuleRestrictUsers');
@@ -253,8 +322,8 @@ export default function privacySettingsTest(): void {
     });
 
     it('rulesWithAllowUsers_dropsEmptiedOppositeRule', 0, () => {
-      const next: TdUserPrivacySettingRule[] = privacyRulesWithAllowUsers(
-        [ruleRestrictUsers([1001]), ruleAllowContacts(), ruleRestrictAll()], [1001]
+      const next: TdUserPrivacySettingRule[] = privacyRulesWithAllowExceptions(
+        [ruleRestrictUsers([1001]), ruleAllowContacts(), ruleRestrictAll()], [1001], []
       );
       expect(next.length).assertEqual(3);
       expect(next[0].type).assertEqual('userPrivacySettingRuleAllowUsers');
@@ -262,27 +331,78 @@ export default function privacySettingsTest(): void {
     });
 
     it('rulesWithAllowUsers_emptyPickMeansNoException', 0, () => {
-      const next: TdUserPrivacySettingRule[] = privacyRulesWithAllowUsers(
-        [ruleAllowUsers([1001]), ruleAllowContacts(), ruleRestrictAll()], []
+      const next: TdUserPrivacySettingRule[] = privacyRulesWithAllowExceptions(
+        [ruleAllowUsers([1001]), ruleAllowContacts(), ruleRestrictAll()], [], []
       );
       expect(next.length).assertEqual(2);
       expect(next[0].type).assertEqual('userPrivacySettingRuleAllowContacts');
     });
 
+    /**
+     * PRIVACY-102 的核心：两条例外规则的**插入位置不同**（Android 830-861 与 900-905 各自一套）。
+     * allowChatMembers 要排在主档位之前、但允许排在 allowContacts 之后（TDLib 逐条判定，
+     * 联系人规则不命中陌生人时仍会走到它）；用户名单永远在最前。
+     */
+    it('rulesWithAllowExceptions_insertsChatRuleBeforeTerminalGeneralRule', 0, () => {
+      const next: TdUserPrivacySettingRule[] = privacyRulesWithAllowExceptions(
+        [ruleAllowUsers([1001]), ruleAllowContacts(), ruleRestrictAll()], [1001], [7001]
+      );
+      expect(typesOf(next).join('>')).assertEqual(
+        'userPrivacySettingRuleAllowUsers>userPrivacySettingRuleAllowContacts' +
+        '>userPrivacySettingRuleAllowChatMembers>userPrivacySettingRuleRestrictAll'
+      );
+      expect(chatIdsOf(next[2]).join(',')).assertEqual('7001');
+    });
+
+    it('rulesWithRestrictExceptions_insertsChatRuleRightAfterUserRule', 0, () => {
+      // restrict 侧的索引判定把 premium/bots/chatMembers 都当 general，于是只有 users 类规则让位。
+      const next: TdUserPrivacySettingRule[] = privacyRulesWithRestrictExceptions(
+        [ruleAllowUsers([1001]), ruleAllowContacts(), ruleRestrictAll()], [], [8001]
+      );
+      expect(typesOf(next).join('>')).assertEqual(
+        'userPrivacySettingRuleAllowUsers>userPrivacySettingRuleRestrictChatMembers' +
+        '>userPrivacySettingRuleAllowContacts>userPrivacySettingRuleRestrictAll'
+      );
+    });
+
+    it('rulesWithAllowExceptions_keepsOppositeChatRuleDirection', 0, () => {
+      // 名单里同一个群从「从不允许」搬到「总是允许」：对侧只剩没被勾选的那个，方向不变。
+      const next: TdUserPrivacySettingRule[] = privacyRulesWithAllowExceptions(
+        [ruleRestrictChatMembers([7001, 8001]), ruleAllowContacts(), ruleRestrictAll()],
+        [], [7001]
+      );
+      expect(next[0].type).assertEqual('userPrivacySettingRuleRestrictChatMembers');
+      expect(chatIdsOf(next[0]).join(',')).assertEqual('8001');
+      expect(next[2].type).assertEqual('userPrivacySettingRuleAllowChatMembers');
+      expect(chatIdsOf(next[2]).join(',')).assertEqual('7001');
+    });
+
+    it('rulesWithAllowUsers_dropsEmptiedOppositeChatRule', 0, () => {
+      const next: TdUserPrivacySettingRule[] = privacyRulesWithAllowExceptions(
+        [ruleRestrictChatMembers([7001]), ruleAllowContacts(), ruleRestrictAll()], [], [7001]
+      );
+      expect(typesOf(next).join('>')).assertEqual(
+        'userPrivacySettingRuleAllowContacts>userPrivacySettingRuleAllowChatMembers' +
+        '>userPrivacySettingRuleRestrictAll'
+      );
+    });
+
     it('exceptionRewrite_doesNotMutateSavedSnapshot', 0, () => {
       // 旧列表还挂在 savedRules 上；就地改 user_ids 会把「有没有未保存的编辑」抹平。
       const original: TdUserPrivacySettingRule[] = [
-        ruleRestrictUsers([1001, 2002]), ruleAllowContacts(), ruleRestrictAll()
+        ruleRestrictUsers([1001, 2002]), ruleRestrictChatMembers([7001, 8001]),
+        ruleAllowContacts(), ruleRestrictAll()
       ];
       const snapshot: TdUserPrivacySettingRule[] = original.slice();
-      privacyRulesWithAllowUsers(original, [1001]);
+      privacyRulesWithAllowExceptions(original, [1001], [7001]);
       expect(idsOf(original[0]).join(',')).assertEqual('1001,2002');
+      expect(chatIdsOf(original[1]).join(',')).assertEqual('7001,8001');
       expect(privacyRulesEqual(original, snapshot)).assertTrue();
     });
 
     it('rulesWithRestrictUsers_isMirrorImage', 0, () => {
-      const next: TdUserPrivacySettingRule[] = privacyRulesWithRestrictUsers(
-        [ruleAllowUsers([1001, 2002]), ruleAllowContacts(), ruleRestrictAll()], [1001]
+      const next: TdUserPrivacySettingRule[] = privacyRulesWithRestrictExceptions(
+        [ruleAllowUsers([1001, 2002]), ruleAllowContacts(), ruleRestrictAll()], [1001], []
       );
       expect(next[0].type).assertEqual('userPrivacySettingRuleRestrictUsers');
       expect(idsOf(next[0]).join(',')).assertEqual('1001');
@@ -301,25 +421,53 @@ export default function privacySettingsTest(): void {
       expect(privacyNeedAlwaysAllow([ruleRestrictChatMembers([8001]), ruleAllowAll()])).assertTrue();
     });
 
+    it('membersOf_sumsMemberCountsAndTreatsUnknownAsZero', 0, () => {
+      // Android `getPlusTotalCount`：一条 300 人的群就是 300，不是 1。
+      const map: Map<number, number> = counts([chatRow(7001, 'El CLUB', 300), chatRow(7002, 'x', 0)]);
+      expect(privacyMembersOf([7001, 7002, 9999], map)).assertEqual(300);
+      expect(privacyMembersOf([], map)).assertEqual(0);
+    });
+
+    it('alwaysAllowCount_addsUsersAndChatMembers', 0, () => {
+      const view: PrivacyRulesView = parsePrivacyRules([
+        ruleAllowUsers([1001, 1002]),
+        ruleAllowChatMembers([7001, 7002]),
+        ruleAllowContacts(),
+        ruleRestrictAll()
+      ]);
+      const map: Map<number, number> = counts([chatRow(7001, 'El CLUB', 300), chatRow(7002, 'small', 5)]);
+      expect(privacyAlwaysAllowCount(view, map)).assertEqual(307);
+      expect(privacyNeverAllowCount(view, map)).assertEqual(0);
+    });
+
     it('rulesEqual_comparesByContentNotReference', 0, () => {
       expect(privacyRulesEqual([], [])).assertTrue();
       expect(privacyRulesEqual([ruleAllowUsers([1, 2])], [ruleAllowUsers([1, 2])])).assertTrue();
       expect(privacyRulesEqual([ruleAllowUsers([1, 2])], [ruleAllowUsers([2, 1])])).assertFalse();
       expect(privacyRulesEqual([ruleAllowAll()], [ruleRestrictAll()])).assertFalse();
       expect(privacyRulesEqual([ruleAllowAll()], [])).assertFalse();
+      // 会话例外同一条口径：类型相同、id 顺序不同也算变化。
+      expect(privacyRulesEqual(
+        [ruleAllowChatMembers([7001, 7002])], [ruleAllowChatMembers([7001, 7002])]
+      )).assertTrue();
+      expect(privacyRulesEqual(
+        [ruleAllowChatMembers([7001])], [ruleRestrictChatMembers([7001])]
+      )).assertFalse();
     });
 
     it('detailState_isDirtyOnlyAfterLocalEdits', 0, () => {
       const loaded: PrivacyDetailState = PrivacyDetailState.forLoaded(
-        'show_bio', [ruleAllowContacts(), ruleRestrictAll()], []
+        'show_bio', [ruleAllowContacts(), ruleRestrictAll()], [], []
       );
       expect(loaded.isDirty()).assertFalse();
       const edited: PrivacyDetailState = loaded.copyWith({
-        rules: privacyRulesWithAllowUsers(loaded.rules, [1001])
+        rules: privacyRulesWithAllowExceptions(loaded.rules, [], [7001])
       });
       expect(edited.isDirty()).assertTrue();
       // 原快照不能被改写：UiState 是不可变快照。
       expect(loaded.isDirty()).assertFalse();
+      // 会话候选不进 dirty 判定：只是读到了人，没有改规则。
+      expect(loaded.copyWith({ chats: [chatRow(7001, 'El CLUB', 300)] }).isDirty()).assertFalse();
     });
 
     it('modeLabel_usesMergedPremiumLabel', 0, () => {
@@ -334,30 +482,73 @@ export default function privacySettingsTest(): void {
     it('exceptionsView_labelsBothSidesByPosition', 0, () => {
       const view: PrivacyExceptionsView = privacyExceptionsView(
         [ruleAllowUsers([1001]), ruleRestrictUsers([2002]), ruleAllowContacts(), ruleRestrictAll()],
-        [contact(1001, 'Ada'), contact(2002, 'Lin')]
+        []
       );
       expect(view.showAlwaysRow).assertTrue();
       expect(view.showNeverRow).assertTrue();
-      expect(view.alwaysRows.length).assertEqual(1);
-      expect(view.alwaysRows[0].title).assertEqual('Ada');
-      expect(view.neverRows[0].title).assertEqual('Lin');
+      expect(view.alwaysCount).assertEqual(1);
+      expect(view.neverCount).assertEqual(1);
+    });
+
+    it('exceptionsView_countsChatMembers', 0, () => {
+      // 一行「3 个用户」里可能是 1 个人 + 一个 2 人群：口径必须是成员数。
+      const view: PrivacyExceptionsView = privacyExceptionsView(
+        [
+          ruleAllowUsers([1001]),
+          ruleAllowChatMembers([7001]),
+          ruleRestrictChatMembers([8001]),
+          ruleAllowContacts(),
+          ruleRestrictAll()
+        ],
+        [chatRow(7001, 'El CLUB', 2), chatRow(8001, 'other', 0)]
+      );
+      expect(view.alwaysCount).assertEqual(3);
+      expect(view.neverCount).assertEqual(0);
     });
 
     it('exceptionsView_everybodyHasNoAlwaysRow', 0, () => {
       const view: PrivacyExceptionsView = privacyExceptionsView(
-        [ruleRestrictUsers([2002]), ruleAllowAll()],
-        [contact(2002, 'Lin')]
+        [ruleRestrictUsers([2002]), ruleAllowAll()], []
       );
       expect(view.showAlwaysRow).assertFalse();
       expect(view.showNeverRow).assertTrue();
     });
 
-    it('exceptionRows_keepPlaceholderForUnresolvedIds', 0, () => {
-      // 名单里确实有这个人，静默删行等于谎报服务端状态。
-      const rows: PrivacyExceptionRow[] = privacyExceptionRows([1001, 4004], [contact(1001, 'Ada')]);
+    it('chatRows_skipChannelsAndPrivateChats', 0, () => {
+      // Android 的选择器带 FLAG_NO_CHANNELS：「会话成员」只对群成立。
+      const rows: PrivacyChatRow[] = privacyChatRows(
+        [
+          basicGroupChat(7001, '小群'),
+          supergroupChat(7002, '大群', false),
+          supergroupChat(7003, '公告频道', true),
+          privateChat(7004)
+        ],
+        counts([chatRow(7001, '小群', 4)]),
+        [7002]
+      );
       expect(rows.length).assertEqual(2);
-      expect(rows[0].title).assertEqual('Ada');
-      expect(rows[1].title).assertEqual('Unknown User');
+      expect(rows[0].title).assertEqual('小群');
+      expect(rows[0].memberCount).assertEqual(4);
+      expect(rows[0].selected).assertFalse();
+      expect(rows[1].chatId).assertEqual(7002);
+      // 成员数读不到就是 0，页面据此不出人数副标题。
+      expect(rows[1].memberCount).assertEqual(0);
+      expect(rows[1].selected).assertTrue();
+    });
+
+    it('chatTitle_fallsBackWhenUnresolved', 0, () => {
+      expect(privacyChatRows([basicGroupChat(7001, '  ')], new Map<number, number>(), [])[0].title)
+        .assertEqual('Unknown Chat');
+    });
+
+    it('chatSelectable_needsAType', 0, () => {
+      const untitled: Chat = new Chat();
+      untitled.id = 7001;
+      expect(privacyChatSelectable(untitled)).assertFalse();
+      expect(privacyChatSelectable(basicGroupChat(0, 'x'))).assertFalse();
+      expect(privacyChatSelectable(basicGroupChat(7001, 'x'))).assertTrue();
+      expect(privacyChatSelectable(supergroupChat(7002, 'x', false))).assertTrue();
+      expect(privacyChatSelectable(supergroupChat(7003, 'x', true))).assertFalse();
     });
 
     it('contactRows_rebuildSelectionFromPickedIds', 0, () => {
@@ -374,6 +565,21 @@ export default function privacySettingsTest(): void {
       expect(cleared[0] === source[0]).assertTrue();
     });
 
+    it('chatRows_rebuildSelectionWithoutLosingMemberCount', 0, () => {
+      const source: PrivacyChatRow[] = [chatRow(7001, 'El CLUB', 300)];
+      const rows: PrivacyChatRow[] = privacyChatsWithPicked(source, [7001]);
+      expect(rows[0].selected).assertTrue();
+      expect(rows[0].memberCount).assertEqual(300);
+      // 同值即复用，ForEach 的键才稳定。
+      expect(privacyChatsWithPicked(rows, [7001])[0] === rows[0]).assertTrue();
+      // 勾选变了才新建：换回来的行仍然带着成员数（不重新请求 group）。
+      const cleared: PrivacyChatRow[] = privacyChatsWithPicked(rows, []);
+      expect(cleared[0] === source[0]).assertFalse();
+      expect(cleared[0].selected).assertFalse();
+      expect(cleared[0].memberCount).assertEqual(300);
+      expect(privacyChatsWithPicked(source, [])[0] === source[0]).assertTrue();
+    });
+
     it('contactRow_withSelected_isIdentityWhenUnchanged', 0, () => {
       const row: PrivacyContactRow = new PrivacyContactRow(1001, 'Ada', true);
       expect(row.withSelected(true) === row).assertTrue();
@@ -381,6 +587,28 @@ export default function privacySettingsTest(): void {
       expect(next !== row).assertTrue();
       expect(next.selected).assertFalse();
       expect(row.selected).assertTrue();
+    });
+
+    it('findingByPhone_hasNoNobodyModeAndNoExceptions', 0, () => {
+      // Android `needNobodyOption()` / `needExceptions()`：禁止「没人能通过号码找到我」无意义，
+      // 因此这一项既没有第三档也没有例外名单 —— 其余 7 项两者齐备。
+      expect(privacyNeedNobodyOption('allow_find_by_phone')).assertFalse();
+      expect(privacyNeedExceptions('allow_find_by_phone')).assertFalse();
+      for (let i = 0; i < PRIVACY_SETTING_KEYS.length; i++) {
+        const key: PrivacySettingKey = PRIVACY_SETTING_KEYS[i];
+        if (key === 'allow_find_by_phone') {
+          continue;
+        }
+        expect(privacyNeedNobodyOption(key)).assertTrue();
+        expect(privacyNeedExceptions(key)).assertTrue();
+      }
+    });
+
+    it('lastSeen_exceptionRowsReadAsShareWith', 0, () => {
+      expect(privacyAlwaysAllowLabel('show_last_seen')).assertEqual('Always Share With');
+      expect(privacyNeverAllowLabel('show_last_seen')).assertEqual('Never Share With');
+      expect(privacyAlwaysAllowLabel('show_bio')).assertEqual('Always Allow');
+      expect(privacyNeverAllowLabel('show_bio')).assertEqual('Never Allow');
     });
 
     it('privacySettingKeys_areEightDistinctRows', 0, () => {
@@ -428,7 +656,13 @@ export default function privacySettingsTest(): void {
     it('decode_survivesEncodeRoundTripWithExceptions', 0, () => {
       // 过一遍生成的编解码器，证明解析吃的是真实 TDLib JSON 形状而不是手搓对象。
       const container: UserPrivacySettingRules = new UserPrivacySettingRules();
-      container.rules = contactsExceptUsers();
+      container.rules = [
+        ruleAllowUsers([1001]),
+        ruleAllowChatMembers([7001]),
+        ruleRestrictUsers([2002]),
+        ruleAllowContacts(),
+        ruleRestrictAll()
+      ];
       const wire: Record<string, TdJsonRaw> = encodeUserPrivacySettingRules(container);
       expect(wire['@type']).assertEqual('userPrivacySettingRules');
 
@@ -439,6 +673,7 @@ export default function privacySettingsTest(): void {
         const view: PrivacyRulesView = parsePrivacyRules(decoded.rules);
         expect(view.mode).assertEqual('contacts');
         expect(view.minusUserIds[0]).assertEqual(2002);
+        expect(view.plusChatIds[0]).assertEqual(7001);
       }
     });
   });

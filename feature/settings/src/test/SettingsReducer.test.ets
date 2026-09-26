@@ -49,6 +49,7 @@ import {
   OpenPrivacyPicker,
   ClosePrivacyPicker,
   TogglePrivacyPickerContact,
+  TogglePrivacyPickerChat,
   ApplyPrivacyPicker,
   PrivacyDetailLoaded,
   PrivacyDetailLoadFailed,
@@ -121,14 +122,20 @@ import {
 import { ActiveSessionItem } from '../main/ets/model/ActiveSessionItem';
 import { PrivacySettingItem, PrivacySettingKey, privacyRowLabel } from '../main/ets/model/PrivacySettings';
 import { parsePrivacyRules } from '../main/ets/model/PrivacyRules';
-import { PrivacyDetailState, PrivacyContactRow } from '../main/ets/model/PrivacyDetail';
+import {
+  PrivacyChatRow,
+  PrivacyContactRow,
+  PrivacyDetailState
+} from '../main/ets/model/PrivacyDetail';
 import {
   TdUserPrivacySettingRule,
   UserPrivacySettingRuleAllowAll,
+  UserPrivacySettingRuleAllowChatMembers,
   UserPrivacySettingRuleAllowContacts,
   UserPrivacySettingRuleAllowPremiumUsers,
   UserPrivacySettingRuleAllowUsers,
   UserPrivacySettingRuleRestrictAll,
+  UserPrivacySettingRuleRestrictChatMembers,
   UserPrivacySettingRuleRestrictUsers
 } from '@tgx/core-td-api-generated';
 import {
@@ -191,6 +198,20 @@ function restrictUsersRule(userIds: number[]): TdUserPrivacySettingRule {
   return rule;
 }
 
+function allowChatMembersRule(chatIds: number[]): TdUserPrivacySettingRule {
+  const rule: UserPrivacySettingRuleAllowChatMembers =
+    new UserPrivacySettingRuleAllowChatMembers();
+  rule.chat_ids = chatIds;
+  return rule;
+}
+
+function restrictChatMembersRule(chatIds: number[]): TdUserPrivacySettingRule {
+  const rule: UserPrivacySettingRuleRestrictChatMembers =
+    new UserPrivacySettingRuleRestrictChatMembers();
+  rule.chat_ids = chatIds;
+  return rule;
+}
+
 function privacyItem(key: PrivacySettingKey, rules: TdUserPrivacySettingRule[]): PrivacySettingItem {
   return new PrivacySettingItem(key, parsePrivacyRules(rules));
 }
@@ -199,13 +220,21 @@ function contacts(): PrivacyContactRow[] {
   return [new PrivacyContactRow(1001, 'Alice', false), new PrivacyContactRow(2002, 'Bob', false)];
 }
 
-/** 已读完、可直接编辑的详情态（`savedRules` 即服务端快照）。 */
+function chats(): PrivacyChatRow[] {
+  return [
+    new PrivacyChatRow(7001, 'El CLUB', 300, false),
+    new PrivacyChatRow(8001, '小群', 4, false)
+  ];
+}
+
+/** 已读完、可直接编辑的详情态（`savedRules` 即服务端快照）。会话候选默认空。 */
 function loadedDetail(
   key: PrivacySettingKey,
   rules: TdUserPrivacySettingRule[],
-  rows: PrivacyContactRow[]
+  rows: PrivacyContactRow[],
+  chatRows: PrivacyChatRow[] = []
 ): PrivacyDetailState {
-  return PrivacyDetailState.forLoaded(key, rules, rows);
+  return PrivacyDetailState.forLoaded(key, rules, rows, chatRows);
 }
 
 function stateWithDetail(detail: PrivacyDetailState): SettingsUiState {
@@ -244,6 +273,26 @@ function selectedIdsOf(rows: PrivacyContactRow[]): number[] {
   for (let i = 0; i < rows.length; i++) {
     if (rows[i].selected) {
       out.push(rows[i].userId);
+    }
+  }
+  return out;
+}
+
+function chatIdsOf(rule: TdUserPrivacySettingRule): number[] {
+  if (rule.type === 'userPrivacySettingRuleAllowChatMembers') {
+    return (rule as UserPrivacySettingRuleAllowChatMembers).chat_ids;
+  }
+  if (rule.type === 'userPrivacySettingRuleRestrictChatMembers') {
+    return (rule as UserPrivacySettingRuleRestrictChatMembers).chat_ids;
+  }
+  return [];
+}
+
+function selectedChatIdsOf(rows: PrivacyChatRow[]): number[] {
+  const out: number[] = [];
+  for (let i = 0; i < rows.length; i++) {
+    if (rows[i].selected) {
+      out.push(rows[i].chatId);
     }
   }
   return out;
@@ -1015,7 +1064,8 @@ export default function settingsReducerTest(): void {
       const loaded: PrivacyDetailLoaded = new PrivacyDetailLoaded(
         'show_bio',
         contactsRules(),
-        contacts()
+        contacts(),
+        chats()
       );
       const result = settingsReducer(state, loaded, makeEnv());
 
@@ -1024,6 +1074,7 @@ export default function settingsReducerTest(): void {
       if (detail !== null) {
         expect(detail.loading).assertFalse();
         expect(detail.rules.length).assertEqual(2);
+        expect(detail.chats.length).assertEqual(2);
         // 服务端快照 == 本地列表：刚读到的项不该被当成「有未保存的改动」。
         expect(detail.isDirty()).assertFalse();
       }
@@ -1031,7 +1082,8 @@ export default function settingsReducerTest(): void {
 
     it('privacyDetailLoaded_ignoresRepliesForAnotherKey', 0, () => {
       const state = stateWithDetail(loadedDetail('show_bio', everybodyRules(), contacts()));
-      const late: PrivacyDetailLoaded = new PrivacyDetailLoaded('show_phone_number', [], []);
+      const late: PrivacyDetailLoaded =
+        new PrivacyDetailLoaded('show_phone_number', [], [], []);
       const result = settingsReducer(state, late, makeEnv());
 
       expect(result.state === state).assertTrue();
@@ -1168,6 +1220,25 @@ export default function settingsReducerTest(): void {
       }
     });
 
+    it('openPrivacyPicker_seedsChatPicksSeparately', 0, () => {
+      // PRIVACY-102：两份名单在规则里是两条独立规则，勾了谁各算各的。
+      const rules: TdUserPrivacySettingRule[] = [
+        allowUsersRule([1001]),
+        allowChatMembersRule([8001]),
+        new UserPrivacySettingRuleAllowContacts(),
+        new UserPrivacySettingRuleRestrictAll()
+      ];
+      const state = stateWithDetail(loadedDetail('show_bio', rules, contacts(), chats()));
+      const detail: PrivacyDetailState | null =
+        settingsReducer(state, new OpenPrivacyPicker('always'), makeEnv()).state.privacyDetail;
+      expect(detail !== null).assertTrue();
+      if (detail !== null) {
+        expect(detail.pickedUserIds.join(',')).assertEqual('1001');
+        expect(detail.pickedChatIds.join(',')).assertEqual('8001');
+        expect(selectedChatIdsOf(detail.chats).join(',')).assertEqual('8001');
+      }
+    });
+
     it('togglePrivacyPickerContact_addsThenRemoves_andLeavesRulesAlone', 0, () => {
       const state = stateWithDetail(loadedDetail('show_bio', contactsRules(), contacts())
         .copyWith({ pickerTarget: 'always', pickedUserIds: [] }));
@@ -1197,9 +1268,57 @@ export default function settingsReducerTest(): void {
       expect(result.state === state).assertTrue();
     });
 
+    it('togglePrivacyPickerChat_addsThenRemoves_andLeavesRulesAlone', 0, () => {
+      const state = stateWithDetail(loadedDetail('show_bio', contactsRules(), contacts(), chats())
+        .copyWith({ pickerTarget: 'always', pickedUserIds: [], pickedChatIds: [] }));
+      const added: SettingsUiState =
+        settingsReducer(state, new TogglePrivacyPickerChat(7001), makeEnv()).state;
+      const addedDetail: PrivacyDetailState | null = added.privacyDetail;
+      expect(addedDetail !== null).assertTrue();
+      if (addedDetail !== null) {
+        expect(addedDetail.pickedChatIds.join(',')).assertEqual('7001');
+        expect(selectedChatIdsOf(addedDetail.chats).join(',')).assertEqual('7001');
+        // 勾选只是选择器内的态：没点「完成」之前规则列表一个字都不动。
+        expect(typesOf(addedDetail.rules)).assertEqual(typesOf(rulesOf(state)));
+        expect(addedDetail.isDirty()).assertFalse();
+      }
+
+      const removed: SettingsUiState =
+        settingsReducer(added, new TogglePrivacyPickerChat(7001), makeEnv()).state;
+      const removedDetail: PrivacyDetailState | null = removed.privacyDetail;
+      expect(removedDetail !== null).assertTrue();
+      if (removedDetail !== null) {
+        expect(removedDetail.pickedChatIds.length).assertEqual(0);
+        expect(selectedChatIdsOf(removedDetail.chats).length).assertEqual(0);
+      }
+    });
+
+    it('togglePrivacyPickerChat_doesNotTouchContactPicks', 0, () => {
+      // 两个分区各自一份勾选集合：勾群不能把已勾的人抹掉。
+      const state = stateWithDetail(loadedDetail('show_bio', contactsRules(), contacts(), chats())
+        .copyWith({ pickerTarget: 'always', pickedUserIds: [1001], pickedChatIds: [] }));
+      const detail: PrivacyDetailState | null =
+        settingsReducer(state, new TogglePrivacyPickerChat(8001), makeEnv()).state.privacyDetail;
+      expect(detail !== null).assertTrue();
+      if (detail !== null) {
+        expect(detail.pickedUserIds.join(',')).assertEqual('1001');
+        expect(detail.pickedChatIds.join(',')).assertEqual('8001');
+      }
+    });
+
+    it('togglePrivacyPickerChat_whenPickerClosed_isIdentity', 0, () => {
+      const state = stateWithDetail(loadedDetail('show_bio', contactsRules(), contacts(), chats()));
+      const result = settingsReducer(state, new TogglePrivacyPickerChat(7001), makeEnv());
+
+      expect(result.state === state).assertTrue();
+    });
+
     it('closePrivacyPicker_dropsPicksWithoutTouchingRules', 0, () => {
       const state = stateWithDetail(loadedDetail('show_bio', contactsRules(), contacts())
-        .copyWith({ pickerTarget: 'always', pickedUserIds: [2002] }));
+        .copyWith({
+          pickerTarget: 'always', pickedUserIds: [2002],
+          chats: chats(), pickedChatIds: [7001]
+        }));
       const result = settingsReducer(state, new ClosePrivacyPicker(), makeEnv());
 
       const detail: PrivacyDetailState | null = result.state.privacyDetail;
@@ -1207,8 +1326,11 @@ export default function settingsReducerTest(): void {
       if (detail !== null) {
         expect(detail.pickerTarget === null).assertTrue();
         expect(detail.pickedUserIds.length).assertEqual(0);
+        expect(detail.pickedChatIds.length).assertEqual(0);
         expect(detail.isDirty()).assertFalse();
         expect(selectedIdsOf(detail.contacts).length).assertEqual(0);
+        // 取消按钮丢弃未提交的勾选：会话分区同样回到未勾选。
+        expect(selectedChatIdsOf(detail.chats).length).assertEqual(0);
       }
     });
 
@@ -1257,6 +1379,34 @@ export default function settingsReducerTest(): void {
           'userPrivacySettingRuleAllowContacts>userPrivacySettingRuleRestrictAll'
         );
       }
+    });
+
+    it('applyPrivacyPicker_writesChatMembersRuleAndStripsTheSameChatFromNever', 0, () => {
+      // PRIVACY-102 的写回形状：8001 原本在「从不允许」，这次勾进「总是允许」，
+      // 对侧只剩 7002 且保持 restrict 方向 —— 同一条规则不能被两侧共用。
+      const rules: TdUserPrivacySettingRule[] = [
+        restrictChatMembersRule([8001, 7002]),
+        new UserPrivacySettingRuleAllowContacts(),
+        new UserPrivacySettingRuleRestrictAll()
+      ];
+      const state = stateWithDetail(loadedDetail('show_bio', rules, contacts(), chats())
+        .copyWith({ pickerTarget: 'always', pickedUserIds: [], pickedChatIds: [8001] }));
+      const result = settingsReducer(state, new ApplyPrivacyPicker(), makeEnv());
+
+      const detail: PrivacyDetailState | null = result.state.privacyDetail;
+      expect(detail !== null).assertTrue();
+      if (detail !== null) {
+        expect(typesOf(detail.rules)).assertEqual(
+          'userPrivacySettingRuleRestrictChatMembers>userPrivacySettingRuleAllowContacts' +
+          '>userPrivacySettingRuleAllowChatMembers>userPrivacySettingRuleRestrictAll'
+        );
+        expect(chatIdsOf(detail.rules[0]).join(',')).assertEqual('7002');
+        expect(chatIdsOf(detail.rules[2]).join(',')).assertEqual('8001');
+        expect(detail.pickedChatIds.length).assertEqual(0);
+        expect(detail.isDirty()).assertTrue();
+      }
+      // 页内编辑不发请求：写回只在离开详情页那一次。
+      expect(result.effects.length).assertEqual(0);
     });
 
     // ---- PRIVACY-101 详情页：写回结果 ----

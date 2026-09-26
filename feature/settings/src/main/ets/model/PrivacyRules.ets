@@ -12,9 +12,10 @@
  * - bots 规则（allowBots / restrictBots）**原样保留、不参与改档**。Android 会按新档位重写它
  *   （`toggleGlobal:299-308`），但本端界面没有 bots 行，重写等于在一个用户看不见的维度上
  *   产生副作用。
- * - chatMembers 例外（allowChatMembers / restrictChatMembers）**只读不改**：本端选择器只列
- *   联系人，不列群成员；人数照 Android 计入总数（`getPlusTotalCount`，935-969），所以读得到、
- *   改不坏。
+ * - 例外名单改写的**插入位置**照 Android，但分类的是新列表：`allowExceptions` 的索引循环里
+ *   读的是 `rules.get(index)`（字段，不是刚改完的 `newRules`），而循环边界却是
+ *   `index < newRules.size()` —— 两条列表长度不同时那个 index 判定就是错的。本端统一按
+ *   `newRules` 分类（PRIVACY-102），其余顺序规则一字不改。
  */
 
 import {
@@ -182,13 +183,34 @@ export function privacyNeedNeverAllow(view: PrivacyRulesView): boolean {
   return view.mode !== 'nobody';
 }
 
-/** 「总是允许」行的总人数：用户 + 群成员两个来源（Android `getPlusTotalCount`）。 */
-export function privacyAlwaysAllowCount(view: PrivacyRulesView): number {
-  return view.plusUserIds.length + view.plusChatIds.length;
+/**
+ * 「总是允许」行的人数。照 Android `getPlusTotalCount`（935-969）：用户数 + **各会话成员数之和**，
+ * 成员数读不到时按 0 计（不是按「会话条数」计）—— 一条 300 人的群在 Android 上就是 300。
+ */
+export function privacyAlwaysAllowCount(
+  view: PrivacyRulesView,
+  chatMemberCounts: Map<number, number>
+): number {
+  return view.plusUserIds.length + privacyMembersOf(view.plusChatIds, chatMemberCounts);
 }
 
-export function privacyNeverAllowCount(view: PrivacyRulesView): number {
-  return view.minusUserIds.length + view.minusChatIds.length;
+export function privacyNeverAllowCount(
+  view: PrivacyRulesView,
+  chatMemberCounts: Map<number, number>
+): number {
+  return view.minusUserIds.length + privacyMembersOf(view.minusChatIds, chatMemberCounts);
+}
+
+/** 成员数求和：未知（缺席或非正数）按 0，不猜。 */
+export function privacyMembersOf(chatIds: number[], chatMemberCounts: Map<number, number>): number {
+  let total: number = 0;
+  for (let i = 0; i < chatIds.length; i++) {
+    const count: number | undefined = chatMemberCounts.get(chatIds[i]);
+    if (count !== undefined && count > 0) {
+      total += count;
+    }
+  }
+  return total;
 }
 
 /**
@@ -232,23 +254,25 @@ export function privacyRulesForMode(
 
 /**
  * 设「总是允许」名单（Android `allowExceptions`：790-867）。
- * 名单是**全量替换**（选择器回传的即最终集合）：先摘掉旧的 `allowUsers`，再从
- * `restrictUsers` 里剔除这些 id（剔空就删规则），最后把 `allowUsers` 插在**列表最前**
- * —— 例外必须先于主档位规则才可能先命中。
+ * 名单是**全量替换**（选择器回传的即最终集合）：`allowUsers` 与 `allowChatMembers` 两条整条摘掉，
+ * 从对侧（`restrictUsers` / `restrictChatMembers`）里剔除本次勾选的 id（剔空就删规则），
+ * 然后按各自的位置插回 —— 例外必须先于主档位规则才可能先命中。
  */
-export function privacyRulesWithAllowUsers(
+export function privacyRulesWithAllowExceptions(
   rules: TdUserPrivacySettingRule[],
-  userIds: number[]
+  userIds: number[],
+  chatIds: number[]
 ): TdUserPrivacySettingRule[] {
-  return withUserException(rules, userIds, true);
+  return withExceptions(rules, userIds, chatIds, true);
 }
 
-/** 设「从不允许」名单，`privacyRulesWithAllowUsers` 的镜像（Android 869-925）。 */
-export function privacyRulesWithRestrictUsers(
+/** 设「从不允许」名单，`privacyRulesWithAllowExceptions` 的镜像（Android 869-925）。 */
+export function privacyRulesWithRestrictExceptions(
   rules: TdUserPrivacySettingRule[],
-  userIds: number[]
+  userIds: number[],
+  chatIds: number[]
 ): TdUserPrivacySettingRule[] {
-  return withUserException(rules, userIds, false);
+  return withExceptions(rules, userIds, chatIds, false);
 }
 
 /** 档位文案（Lang key）。「我的联系人 + Premium」是 Android 的合并标签写法。 */
@@ -272,42 +296,100 @@ function isGeneralRuleType(type: string): boolean {
 }
 
 /**
- * 两个方向的例外名单改写共用一套骨架：`allow` 为真时替换 `allowUsers`、从 `restrictUsers`
- * 里剔除；为假时反过来。 picked 为空就不插入规则（Android 同：空名单等于「这一侧没有例外」）。
+ * 两个方向的例外名单改写共用一套骨架（Android `allowExceptions` / `disallowExceptions`）。
+ *
+ * 位置规则是这一段的重点，两种方向**不一样**：
+ * - 用户名单永远插在**列表最前**（`add(0, …)`）。
+ * - 会话名单插在「用户/联系人例外之后、第一条主档位规则之前」：`allow` 侧（allowChatMembers）
+ *   跳过 users/contacts/restrictChatMembers/premiumUsers 类规则，遇到 all、bots 或另一条
+ *   allowChatMembers 即停；`restrict` 侧（restrictChatMembers）按 `isGeneral(…, premium 与 bots
+ *   与 chatMembers 全算 general)` 判定，于是只跳过 users 类规则。两条都是 Android 原样。
  */
-function withUserException(
+function withExceptions(
   rules: TdUserPrivacySettingRule[],
   userIds: number[],
+  chatIds: number[],
   allow: boolean
 ): TdUserPrivacySettingRule[] {
-  const picked: number[] = distinctIds(userIds);
-  const sameKind: string = allow
+  const pickedUsers: number[] = distinctIds(userIds);
+  const pickedChats: number[] = distinctIds(chatIds);
+  const sameUserKind: string = allow
     ? 'userPrivacySettingRuleAllowUsers'
     : 'userPrivacySettingRuleRestrictUsers';
-  const oppositeKind: string = allow
-    ? 'userPrivacySettingRuleRestrictUsers'
-    : 'userPrivacySettingRuleAllowUsers';
+  const sameChatKind: string = allow
+    ? 'userPrivacySettingRuleAllowChatMembers'
+    : 'userPrivacySettingRuleRestrictChatMembers';
   const next: TdUserPrivacySettingRule[] = [];
   for (let i = 0; i < rules.length; i++) {
     const rule: TdUserPrivacySettingRule = rules[i];
-    if (rule.type === sameKind) {
+    if (rule.type === sameUserKind || rule.type === sameChatKind) {
+      // 同侧整条替换：勾选集合是全量的，旧的那条没有保留价值。
       continue;
     }
-    if (rule.type === oppositeKind) {
+    if (rule.type === 'userPrivacySettingRuleAllowUsers' ||
+      rule.type === 'userPrivacySettingRuleRestrictUsers') {
       // 另一侧里被本次勾选命中的人要摘掉，摘空则整条删除。这里另起新对象而不是原地改
       // `user_ids`：旧列表还挂在 `savedRules` 上，就地改动会把「有没有未保存的编辑」抹平。
-      const rest: number[] = withoutIds(userIdsOf(rule), picked);
+      const rest: number[] = withoutIds(privacyRuleUserIds(rule), pickedUsers);
       if (rest.length > 0) {
-        next.push(ruleWithUserIds(!allow, rest));
+        // 重建时保持**原规则自己的方向**（这里是另一侧），不是本次的 allow。
+        next.push(ruleWithUserIds(typeAllowsUsers(rule.type), rest));
+      }
+      continue;
+    }
+    if (rule.type === 'userPrivacySettingRuleAllowChatMembers' ||
+      rule.type === 'userPrivacySettingRuleRestrictChatMembers') {
+      const rest: number[] = withoutIds(privacyRuleChatIds(rule), pickedChats);
+      if (rest.length > 0) {
+        next.push(ruleWithChatIds(typeAllowsChatMembers(rule.type), rest));
       }
       continue;
     }
     next.push(rule);
   }
-  if (picked.length > 0) {
-    next.unshift(ruleWithUserIds(allow, picked));
+  if (pickedChats.length > 0) {
+    insertAt(next, chatExceptionIndex(next, allow), ruleWithChatIds(allow, pickedChats));
+  }
+  if (pickedUsers.length > 0) {
+    next.unshift(ruleWithUserIds(allow, pickedUsers));
   }
   return next;
+}
+
+/** 会话例外规则的插入位置：返回首个「该停下来」的下标，没有就 appended 到末尾。 */
+function chatExceptionIndex(rules: TdUserPrivacySettingRule[], allow: boolean): number {
+  for (let i = 0; i < rules.length; i++) {
+    const type: string = rules[i].type;
+    if (allow) {
+      // Android 830-861：users / contacts / restrictChatMembers / premium 之后，
+      // 遇 all、bots 或另一条 allowChatMembers 停。
+      if (type === 'userPrivacySettingRuleAllowUsers' ||
+        type === 'userPrivacySettingRuleRestrictUsers' ||
+        type === 'userPrivacySettingRuleAllowContacts' ||
+        type === 'userPrivacySettingRuleRestrictContacts' ||
+        type === 'userPrivacySettingRuleRestrictChatMembers' ||
+        type === 'userPrivacySettingRuleAllowPremiumUsers') {
+        continue;
+      }
+      return i;
+    }
+    // Android 900-905：`isGeneral(rule, premium=true, bots=true, chatMembers=true)` 的否定，
+    // 于是只有一条例外规则（users 两类）能让位。
+    if (type === 'userPrivacySettingRuleAllowUsers' ||
+      type === 'userPrivacySettingRuleRestrictUsers') {
+      continue;
+    }
+    return i;
+  }
+  return rules.length;
+}
+
+function insertAt(rules: TdUserPrivacySettingRule[], index: number, rule: TdUserPrivacySettingRule): void {
+  if (index < rules.length) {
+    rules.splice(index, 0, rule);
+    return;
+  }
+  rules.push(rule);
 }
 
 function ruleWithUserIds(allow: boolean, userIds: number[]): TdUserPrivacySettingRule {
@@ -322,7 +404,21 @@ function ruleWithUserIds(allow: boolean, userIds: number[]): TdUserPrivacySettin
   return restricted;
 }
 
-function userIdsOf(rule: TdUserPrivacySettingRule): number[] {
+function ruleWithChatIds(allow: boolean, chatIds: number[]): TdUserPrivacySettingRule {
+  if (allow) {
+    const allowed: UserPrivacySettingRuleAllowChatMembers =
+      new UserPrivacySettingRuleAllowChatMembers();
+    allowed.chat_ids = chatIds.slice();
+    return allowed;
+  }
+  const restricted: UserPrivacySettingRuleRestrictChatMembers =
+    new UserPrivacySettingRuleRestrictChatMembers();
+  restricted.chat_ids = chatIds.slice();
+  return restricted;
+}
+
+/** users 两类规则携带的 userIds；其余规则回空。 */
+function privacyRuleUserIds(rule: TdUserPrivacySettingRule): number[] {
   if (rule.type === 'userPrivacySettingRuleAllowUsers') {
     return (rule as UserPrivacySettingRuleAllowUsers).user_ids;
   }
@@ -330,6 +426,27 @@ function userIdsOf(rule: TdUserPrivacySettingRule): number[] {
     return (rule as UserPrivacySettingRuleRestrictUsers).user_ids;
   }
   return [];
+}
+
+/** chatMembers 两类规则携带的 chatIds；其余规则回空。 */
+function privacyRuleChatIds(rule: TdUserPrivacySettingRule): number[] {
+  if (rule.type === 'userPrivacySettingRuleAllowChatMembers') {
+    return (rule as UserPrivacySettingRuleAllowChatMembers).chat_ids;
+  }
+  if (rule.type === 'userPrivacySettingRuleRestrictChatMembers') {
+    return (rule as UserPrivacySettingRuleRestrictChatMembers).chat_ids;
+  }
+  return [];
+}
+
+/** 这条规则类型是不是「允许」侧（users 两类）。 */
+function typeAllowsUsers(type: string): boolean {
+  return type === 'userPrivacySettingRuleAllowUsers';
+}
+
+/** 这条规则类型是不是「允许」侧（chatMembers 两类）。 */
+function typeAllowsChatMembers(type: string): boolean {
+  return type === 'userPrivacySettingRuleAllowChatMembers';
 }
 
 function appendIds(target: number[], source: number[]): void {
