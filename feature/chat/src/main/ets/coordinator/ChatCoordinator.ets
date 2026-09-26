@@ -320,6 +320,8 @@ const OLDER_PAGE_SIZE: number = 20;
 const BACKFILL_THRESHOLD: number = 20;
 /** 补拉延迟：给 TDLib 后台 preload 留时间窗（服务器往返 1-2s）。 */
 const BACKFILL_DELAY_MS: number = 900;
+/** CHAT-HIST-101：补拉（首屏重试与更早翻页合用）的尝试次数上限。 */
+const BACKFILL_MAX_TRIES: number = 6;
 /** SEARCH-102：单次聊天内搜索返回的最大命中条数（TDLib 上限 100）。 */
 const CHAT_SEARCH_LIMIT: number = 30;
 /** SEARCH-102：跳转定位时围绕目标消息拉取的上下半径。 */
@@ -589,6 +591,8 @@ export class ChatCoordinator {
   private syncScheduled: boolean = false;
   private throttledSyncScheduled: boolean = false;
   private backfillScheduled: boolean = false;
+  /** CHAT-HIST-101：本次进会话已自动补拉/重试首屏的次数（拿到整屏内容即清零）。 */
+  private backfillTries: number = 0;
   private destroyed: boolean = false;
   /** MSG-102：会话种类（getChat 一次性解析，群聊才出署名）。 */
   private chatKind: ChatKind = 'unknown';
@@ -1467,21 +1471,38 @@ export class ChatCoordinator {
    * TDLib getChatHistory 首屏常只回内存中已有的末条消息（后台异步 preload
    * 更旧历史），需要再次请求才能拿到 preload 结果；投影侧以空页/全重复判顶，
    * 消息真实不足一屏的会话多拉一两页后自然终止。延迟给 preload 留时间窗。
+   *
+   * CHAT-HIST-101：列表**为空**时另走一条 —— 翻页要靠 orderedIds 首元素当游标，
+   * 空列表连游标都没有，只会拿到 null；此时该重走首屏（`loadInitialMessages`
+   * 从 from_message_id=0 取最新一页）。并且不看 hasMoreOlder：那个标志说的是
+   * 「没有更早的历史」，而连续空页在首屏阶段同样会把投影判到「到顶」，
+   * 拿它当「这一页不该是空的」来使会把重试彻底锁死（本轮事故成因）。
+   * 两条路径共用一个尝试次数上限，拿到内容即清零。
    */
   private maybeBackfillOlder(state: MessageListState): void {
-    if (this.destroyed || state.isLoading || !state.hasMoreOlder) {
+    if (this.destroyed || state.isLoading || this.backfillScheduled) {
       return;
     }
-    if (state.messages.length === 0 || state.messages.length >= BACKFILL_THRESHOLD) {
+    if (state.messages.length >= BACKFILL_THRESHOLD) {
+      this.backfillTries = 0;
       return;
     }
-    if (this.backfillScheduled) {
+    if (state.messages.length > 0 && !state.hasMoreOlder) {
+      return;
+    }
+    if (this.backfillTries >= BACKFILL_MAX_TRIES) {
       return;
     }
     this.backfillScheduled = true;
+    this.backfillTries += 1;
     setTimeout(() => {
       this.backfillScheduled = false;
-      if (!this.destroyed && this.currentState.hasMoreOlder && !this.currentState.isLoading) {
+      if (this.destroyed || this.currentState.isLoading) {
+        return;
+      }
+      if (this.currentState.messages.length === 0) {
+        this.dispatch(new LoadInitialMessages());
+      } else if (this.currentState.hasMoreOlder) {
         this.dispatch(new LoadOlderMessages());
       }
     }, BACKFILL_DELAY_MS);

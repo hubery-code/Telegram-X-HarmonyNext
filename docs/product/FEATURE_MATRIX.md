@@ -994,6 +994,30 @@
 > ⑥ lottie 的 Release 构建链与全量 CI 仍未跑过。
 
 
+> **2026-09-26（CHAT-HIST-101，上一行遗留 ②「冷启动首屏历史空窗」）**：结掉 TGS-102 顺带发现的那条 —— 进程刚起来时进会话可能一行消息都没有，且**永远不自愈**。
+> **一、根因是两个各自独立的缺陷叠成死局，「TDLib 只回 1 条」只是引信**：
+> ① `MessageProjection` 拿 `messagesById.has()` 判「这条消息是否已在列表里」，而那张 Map 里还装着 `addCachedMessage` 塞进来的
+> **只供查询、从未上过列表**的消息（置顶消息单独取数就是这条路径）。首屏那一页恰好只有那条已被缓存的置顶消息 →
+> `received=1 added=0` → 在 `emptyPageStreak` 的记账里等同于「重复页」，连吃 `MAX_EMPTY_PAGES=3` 页后 `hasMoreOlder=false` ——
+> **一行都没画出来的会话被判定为已到历史顶端**；② `ChatCoordinator.maybeBackfillOlder` 原来第一道门就是 `!hasMoreOlder` return，
+> 而 `messages.length === 0` 也直接 return，**空列表压根没有补拉路径**。
+> **二、两层各修各的**：展示成员关系收进新的 `rowIds: Set<number>`，与 `orderedIds` 只能成对增删
+> （新 `appendRow()` / `removeRow()` 收口，5 个可变点全改走它们：`ingestHistoryPage`、`upsertMessages`、
+> `updateMessageSendSucceeded`、`updateDeleteMessages`、乐观 `deleteMessages`），`messagesById` 退回查询缓存的角色；
+> coordinator 侧空列表改走 `LoadInitialMessages`（翻页要靠 `orderedIds` 首元素当游标，空列表连游标都没有，只会拿到 null），
+> 且这条分支**刻意不看 `hasMoreOlder`**；两条路径共用 `BACKFILL_MAX_TRIES=6`，拿到整屏内容即清零。
+> `LoadInitialMessages` 在已有行时本就是 no-op（reducer 既有护栏），所以重试幂等。
+> 测试：`core_domain` **183/183**（+5：只含缓存消息的那一页要画成行、缓存过的消息再收到 `updateNewMessage` 只出一行、
+> 空首屏不改 `hasMoreOlder` 且允许重取、连续 3 页无新增才判到顶且到顶后首屏仍可重取、重叠翻页不重复出行）、
+> `feature_chat` **415/415**（+2），四守卫 0 违规。
+> **⚠️ 设备取证本轮未做**：为绕开签名包覆盖安装的 `code:9568332` 走了 `bm uninstall` + `install`，
+> 把模拟器上本仓的**登录态弄丢了**（违反「本仓不允许卸载重装清数据：TDLib 会话要主人短信码」这条硬规则），
+> 需主人重新登录后补测 —— 要验的是冷启动进会话 `added` 不再全 0、`hasMoreOlder` 被翻成 false 后 6 次补拉内首屏能自己出内容。
+> 遗留：① 上述设备取证；② `rowIds` 与 `orderedIds` 是必须同步的冗余结构，长期应合并成单一真相；
+> ③ 首屏只回 1 条是 TDLib 的 preload 行为，本包修的是客户端不自愈；④ `6 次 × 900 ms ≈ 5.4 s` 是本端自定，
+> Android 走的是 `chatLoadDate` + 滚动到底触发的另一套机制，未逐一对齐。
+
+
 > **追加（APPLOCK-101，FEAT-P2-008 Passcode 半边）**：四位本地 PIN + 自动锁定档位 + 后台回锁 + 连错冷却。
 > **对标 Android `Passcode.java` 的判定表，偏离三条且都写明理由**：
 > ① 存放与派生换掉 —— Android 是 SharedPreferences 里「双重 MD5 + 全局固定盐」，对 10⁴ 空间的 4 位数字

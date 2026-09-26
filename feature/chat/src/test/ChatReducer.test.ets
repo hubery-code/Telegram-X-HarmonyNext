@@ -17,6 +17,7 @@ import {
   OnMessageSendFailed,
   OnMessagesLoaded,
   BackToChatList,
+  LoadInitialMessages,
   MessageActionRequested,
   OnMessageActionMenuLoaded,
   ReplyToMessage,
@@ -319,6 +320,25 @@ export default function chatReducerTest() {
       const send: SendTextMessage = effect as SendTextMessage;
       expect(send.chatId).assertEqual(42);
       expect(send.text).assertEqual('hello world');
+    });
+
+    // CHAT-HIST-101：列表为空时补拉只能重走首屏（翻页要拿 orderedIds 首元素当游标，
+    // 空列表连游标都没有）。Coordinator 的重试路径以这条收口为前提。
+    it('loadInitialMessages_onEmptyList_emitsFetchInitialMessages', 0, () => {
+      const state: ChatUiState = makeState();
+      const result: ReducerResult<ChatUiState, ChatEffect> =
+        chatReducer(state, new LoadInitialMessages(), makeEnv());
+      expect(result.state.isLoading).assertTrue();
+      expect(result.effects.length).assertEqual(1);
+      expect(result.effects[0].kind).assertEqual('fetchInitialMessages');
+    });
+
+    it('loadInitialMessages_withExistingMessages_isNoOp', 0, () => {
+      const state: ChatUiState = makeStateWith([makeTextMessage(7, false)]);
+      const result: ReducerResult<ChatUiState, ChatEffect> =
+        chatReducer(state, new LoadInitialMessages(), makeEnv());
+      expect(result.state === state).assertTrue();
+      expect(result.effects.length).assertEqual(0);
     });
 
     it('onMessageSendFailed_setsErrorMessage_keepsComposerCleared', 0, () => {

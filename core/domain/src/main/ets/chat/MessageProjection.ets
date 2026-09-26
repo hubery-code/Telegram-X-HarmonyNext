@@ -10,9 +10,11 @@
  * - loadOlderMessages(limit)：from_message_id=当前最旧消息 id、offset=0 向前翻页
  *   （回包含 from 消息本身，经 Map 去重吸收）；
  * - 消息按 message.id 升序维护（会话内 id 与时间序单调一致），渲染层最旧在前；
- *   Map 按 id 去重，回包边界重复天然被吸收；
+ *   是否「已在列表里」以 rowIds 为准，不以 messagesById 为准 —— 后者还装着
+ *   addCachedMessage 塞进来的只读缓存（置顶消息单独取数），拿它判重会把
+ *   首屏真实回包当成重复页丢掉（CHAT-HIST-101 的成因）；
  * - TDLib 按"最优性能"自选回包条数（首屏常只回内存里已有的 1 条，同时后台
- *   preload 更旧历史），因此空页或整页重复（无新增 id）才判定到达历史顶端。
+ *   preload 更旧历史），因此连续 MAX_EMPTY_PAGES 页没有新行才判定到达历史顶端。
  *
  * 注意：本模块不 import ArkUI / Kit（与 core 层约束一致）。
  *
@@ -159,6 +161,13 @@ export class MessageProjection {
 
   private readonly messagesById: Map<number, Message> = new Map();
   private orderedIds: number[] = [];
+  /**
+   * 展示列表的集合视图（与 orderedIds 同步增删，见 appendRow / removeRow）。
+   * 判重不能用 messagesById.has —— 那张 Map 还装着 addCachedMessage 塞进来的
+   * 「只供查询、从未上过列表」的消息（如置顶消息单独取数），命中它会把
+   * 首屏真实回包当成重复页丢掉，会话就永远停在空列表。
+   */
+  private readonly rowIds: Set<number> = new Set();
 
   private isLoading: boolean = false;
   private hasMoreOlder: boolean = true;
@@ -260,6 +269,29 @@ export class MessageProjection {
     if (!this.messagesById.has(message.id)) {
       this.messagesById.set(message.id, message);
     }
+  }
+
+  /** 把一条消息加进展示列表；已在列表中返回 false（调用方据此决定是否重排）。 */
+  private appendRow(messageId: number): boolean {
+    if (this.rowIds.has(messageId)) {
+      return false;
+    }
+    this.rowIds.add(messageId);
+    this.orderedIds.push(messageId);
+    return true;
+  }
+
+  /** 把一条消息从查询缓存与展示列表一并移除；任一侧真删掉了就返回 true。 */
+  private removeRow(messageId: number): boolean {
+    const cached: boolean = this.messagesById.delete(messageId);
+    const listed: boolean = this.rowIds.delete(messageId);
+    if (listed) {
+      const idx: number = this.orderedIds.indexOf(messageId);
+      if (idx >= 0) {
+        this.orderedIds.splice(idx, 1);
+      }
+    }
+    return cached || listed;
   }
 
   /**
@@ -845,11 +877,7 @@ export class MessageProjection {
         if (res.ok) {
           let removed: boolean = false;
           for (let i = 0; i < messageIds.length; i++) {
-            if (self.messagesById.delete(messageIds[i])) {
-              const idx: number = self.orderedIds.indexOf(messageIds[i]);
-              if (idx >= 0) {
-                self.orderedIds.splice(idx, 1);
-              }
+            if (self.removeRow(messageIds[i])) {
               removed = true;
             }
           }
@@ -1048,11 +1076,10 @@ export class MessageProjection {
           continue;
         }
         received += 1;
-        if (!this.messagesById.has(message.id)) {
-          added += 1;
-          this.orderedIds.push(message.id);
-        }
         this.messagesById.set(message.id, message);
+        if (this.appendRow(message.id)) {
+          added += 1;
+        }
       }
       if (added > 0) {
         this.orderedIds.sort((a: number, b: number): number => a - b);
@@ -1080,12 +1107,7 @@ export class MessageProjection {
       const sendUpdate: UpdateMessageSendSucceeded = update as UpdateMessageSendSucceeded;
       const message: Message | null = sendUpdate.message;
       if (message !== null && message.chat_id === this.chatId) {
-        if (this.messagesById.delete(sendUpdate.old_message_id)) {
-          const idx: number = this.orderedIds.indexOf(sendUpdate.old_message_id);
-          if (idx >= 0) {
-            this.orderedIds.splice(idx, 1);
-          }
-        }
+        this.removeRow(sendUpdate.old_message_id);
         this.upsertMessages([message]);
         this.notifyStateChanged();
       }
@@ -1113,11 +1135,7 @@ export class MessageProjection {
         let removed: boolean = false;
         for (let i = 0; i < deleteUpdate.message_ids.length; i++) {
           const messageId: number = deleteUpdate.message_ids[i];
-          if (this.messagesById.delete(messageId)) {
-            const idx: number = this.orderedIds.indexOf(messageId);
-            if (idx >= 0) {
-              this.orderedIds.splice(idx, 1);
-            }
+          if (this.removeRow(messageId)) {
             removed = true;
           }
         }
@@ -1228,11 +1246,10 @@ export class MessageProjection {
     let added: boolean = false;
     for (let i = 0; i < messages.length; i++) {
       const message: Message = messages[i];
-      if (!this.messagesById.has(message.id)) {
-        this.orderedIds.push(message.id);
+      this.messagesById.set(message.id, message);
+      if (this.appendRow(message.id)) {
         added = true;
       }
-      this.messagesById.set(message.id, message);
     }
     if (added) {
       this.orderedIds.sort((a: number, b: number): number => a - b);

@@ -205,6 +205,50 @@ function makeReadInboxFields(chatId: number, lastReadInbox: number): Record<stri
   return fields;
 }
 
+// ---- CHAT-HIST-101 首屏历史分页 ----
+
+function rawMessage(id: number, chatId: number): Record<string, TdWireValue> {
+  const payload: Record<string, TdWireValue> = {};
+  payload['@type'] = 'message';
+  payload['id'] = id;
+  payload['chat_id'] = chatId;
+  payload['date'] = 1700000000;
+  return payload;
+}
+
+function historyPageFields(messages: Record<string, TdWireValue>[]): Record<string, TdWireValue> {
+  const fields: Record<string, TdWireValue> = {};
+  fields['@type'] = 'messages';
+  fields['messages'] = messages;
+  return fields;
+}
+
+/** 取出已发的 getChatHistory 请求（按发出顺序）。 */
+function historyRequests(bridge: TestNativeBridge): Record<string, TdWireValue>[] {
+  const out: Record<string, TdWireValue>[] = [];
+  for (let i = 0; i < bridge.sent.length; i++) {
+    const json: Record<string, TdWireValue> = JSON.parse(bridge.sent[i].utf8) as Record<string, TdWireValue>;
+    if (json['@type'] === 'getChatHistory') {
+      out.push(json);
+    }
+  }
+  return out;
+}
+
+/** 回一帧历史页，并把投影的异步收尾跑完。 */
+async function replyHistory(
+  bridge: TestNativeBridge,
+  scope: AccountScope,
+  reqIndex: number,
+  messages: Record<string, TdWireValue>[]
+): Promise<void> {
+  const reqs: Record<string, TdWireValue>[] = historyRequests(bridge);
+  const req: Record<string, TdWireValue> = reqs[reqIndex];
+  bridge.emitResponse(scope.clientId, sentRequestId(req), historyPageFields(messages));
+  await flushAsync();
+  await flushAsync();
+}
+
 export default function messageProjectionTest(): void {
   describe('MessageProjection', (): void => {
 
@@ -1270,8 +1314,7 @@ export default function messageProjectionTest(): void {
       projection.stop();
     });
 
-    it('POLL101_setPollAnswer_sendsZeroBasedOptionIds', 0, (): void => {
-      const bridge: TestNativeBridge = new TestNativeBridge();
+    it('POLL101_setPollAnswer_sendsZeroBasedOptionIds', 0, (): void => {      const bridge: TestNativeBridge = new TestNativeBridge();
       const scope: AccountScope = createScope(bridge);
       const projection: MessageProjection = new MessageProjection(42, scope);
       projection.start();
@@ -1284,6 +1327,113 @@ export default function messageProjectionTest(): void {
         expect(req['message_id']).assertEqual(5678);
         expect((req['option_ids'] as number[]).join(',')).assertEqual('1');
       }
+      projection.stop();
+    });
+
+    // ---- CHAT-HIST-101 冷启动首屏空窗 ----
+
+    it('CHAT_HIST101_firstPageHoldingCacheOnlyMessageRendersItAsRow', 0, async (): Promise<void> => {
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const scope: AccountScope = createScope(bridge);
+      const projection: MessageProjection = new MessageProjection(42, scope);
+      projection.start();
+
+      // 置顶消息经 getChatPinnedMessage → addCachedMessage 只进了查询缓存；
+      // 首屏历史页把同一条带回来时，旧实现按 messagesById.has 判重把它当重复页丢掉，
+      // 于是列表恒空、连续「无新增」还把 hasMoreOlder 判成到顶 —— 本轮事故。
+      const pinned: Message = new Message();
+      pinned.id = 100;
+      pinned.chat_id = 42;
+      projection.addCachedMessage(pinned);
+
+      const res: Result<TdPendingRequest, AppError> | null = projection.loadInitialMessages(30);
+      expect(res !== null).assertTrue();
+      await replyHistory(bridge, scope, 0, [rawMessage(100, 42)]);
+
+      expect(projection.state.messages.length).assertEqual(1);
+      expect(projection.state.messages[0].id).assertEqual(100);
+      expect(projection.state.hasMoreOlder).assertTrue();
+      projection.stop();
+    });
+
+    it('CHAT_HIST101_updateNewMessageForCacheOnlyMessageAddsExactlyOneRow', 0, async (): Promise<void> => {
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const scope: AccountScope = createScope(bridge);
+      const projection: MessageProjection = new MessageProjection(42, scope);
+      projection.start();
+
+      const cached: Message = new Message();
+      cached.id = 200;
+      cached.chat_id = 42;
+      projection.addCachedMessage(cached);
+
+      const fields: Record<string, TdWireValue> = {};
+      fields['chat_id'] = 42;
+      fields['message'] = rawMessage(200, 42);
+      bridge.emitUpdate(scope.clientId, 'updateNewMessage', fields);
+      await flushAsync();
+      bridge.emitUpdate(scope.clientId, 'updateNewMessage', fields);
+      await flushAsync();
+
+      expect(projection.state.messages.length).assertEqual(1);
+      expect(projection.state.messages[0].id).assertEqual(200);
+      projection.stop();
+    });
+
+    it('CHAT_HIST101_emptyFirstPageKeepsHasMoreOlderAndAllowsInitialRetry', 0, async (): Promise<void> => {
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const scope: AccountScope = createScope(bridge);
+      const projection: MessageProjection = new MessageProjection(42, scope);
+
+      const first: Result<TdPendingRequest, AppError> | null = projection.loadInitialMessages(30);
+      expect(first !== null).assertTrue();
+      await replyHistory(bridge, scope, 0, []);
+      expect(projection.state.messages.length).assertEqual(0);
+      // 单页为空只算「preload 还在飞」，一次不能判到顶
+      expect(projection.state.hasMoreOlder).assertTrue();
+
+      // 首屏重试必须还能发出去：列表为空时翻页没有游标，只能重走首屏
+      const second: Result<TdPendingRequest, AppError> | null = projection.loadInitialMessages(30);
+      expect(second !== null).assertTrue();
+      expect(historyRequests(bridge).length).assertEqual(2);
+      projection.stop();
+    });
+
+    it('CHAT_HIST101_threeNoAddPagesMarkHistoryExhaustedButInitialStillRetriable', 0, async (): Promise<void> => {
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const scope: AccountScope = createScope(bridge);
+      const projection: MessageProjection = new MessageProjection(42, scope);
+
+      for (let i = 0; i < 3; i++) {
+        const res: Result<TdPendingRequest, AppError> | null = projection.loadInitialMessages(30);
+        expect(res !== null).assertTrue();
+        await replyHistory(bridge, scope, i, []);
+      }
+      expect(projection.state.hasMoreOlder).assertFalse();
+      // hasMoreOlder 说的是「没有更早的历史」，不该锁死首屏重试
+      expect(projection.loadInitialMessages(30) !== null).assertTrue();
+      projection.stop();
+    });
+
+    it('CHAT_HIST101_overlappingOlderPageDoesNotDuplicateRows', 0, async (): Promise<void> => {
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const scope: AccountScope = createScope(bridge);
+      const projection: MessageProjection = new MessageProjection(42, scope);
+
+      const first: Result<TdPendingRequest, AppError> | null = projection.loadInitialMessages(30);
+      expect(first !== null).assertTrue();
+      await replyHistory(bridge, scope, 0, [rawMessage(102, 42), rawMessage(101, 42)]);
+      expect(projection.state.messages.length).assertEqual(2);
+
+      const older: Result<TdPendingRequest, AppError> | null = projection.loadOlderMessages(20);
+      expect(older !== null).assertTrue();
+      const reqs: Record<string, TdWireValue>[] = historyRequests(bridge);
+      expect(reqs[1]['from_message_id']).assertEqual(101);
+      // 翻页回包带上游标消息本身（offset=0 语义），去重后只能新增一条
+      await replyHistory(bridge, scope, 1, [rawMessage(101, 42), rawMessage(100, 42)]);
+      expect(projection.state.messages.length).assertEqual(3);
+      expect(projection.state.messages[0].id).assertEqual(100);
+      expect(projection.state.messages[2].id).assertEqual(102);
       projection.stop();
     });
 
