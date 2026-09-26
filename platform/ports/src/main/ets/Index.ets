@@ -7,6 +7,7 @@ export {
 } from './PreferencesPort';
 export {
   SECURE_KEY_STORE_LOCKED_PLATFORM_CODE,
+  SecureKeyStoreAvailability,
   SecureKeyStoreStatus,
   SecureKeyStorePort
 } from './SecureKeyStorePort';

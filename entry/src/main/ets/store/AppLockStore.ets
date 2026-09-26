@@ -27,10 +27,14 @@ import { readSettingsNumber, writeSettingsNumber } from './SettingsStore';
 /** 自动锁定档位在偏好里的键；值是 `AUTO_LOCK_CHOICES` 的索引。 */
 export const KEY_APP_LOCK_AUTO_LOCK: string = 'appLockAutoLock';
 
+/** 输入时是否明文显示已按位（Android `pc_visible`）；存 0/1，缺键按 0。 */
+export const KEY_APP_LOCK_PIN_VISIBLE: string = 'appLockPinVisible';
+
 export class PreferencesAppLockStore implements AppLockStore {
   private readonly passcode: PasscodeStorePort;
   private cachedIsSet: boolean = false;
   private cachedChoice: AutoLockChoice | null = null;
+  private cachedVisible: boolean | null = null;
 
   constructor(passcode: PasscodeStorePort) {
     this.passcode = passcode;
@@ -66,6 +70,22 @@ export class PreferencesAppLockStore implements AppLockStore {
       return false;
     }
     this.cachedChoice = choice;
+    return true;
+  }
+
+  passcodeVisible(): boolean {
+    if (this.cachedVisible === null) {
+      // 只认写入过的 1；缺键、脏值一律按「不明文」，安全默认与 Android 的 `pc_visible=false` 一致。
+      this.cachedVisible = readSettingsNumber(KEY_APP_LOCK_PIN_VISIBLE) === 1;
+    }
+    return this.cachedVisible;
+  }
+
+  setPasscodeVisible(visible: boolean): boolean {
+    if (!writeSettingsNumber(KEY_APP_LOCK_PIN_VISIBLE, visible ? 1 : 0)) {
+      return false;
+    }
+    this.cachedVisible = visible;
     return true;
   }
 

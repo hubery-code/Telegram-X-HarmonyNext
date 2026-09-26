@@ -7,7 +7,9 @@
  *    弄丢了这个值，coordinator 就不知道验完是「关闭」还是「转修改」；
  * 3. 长度不足四位一律 `invalid`，不进草稿也不进存储；
  * 4. 每条阶段都要有文案，且校验两步共用同一句「输入当前密码」是有意的 —— 用户不需要
- *    在输密码时被告知「你是来关密码的还是来改密码的」。
+ *    在输密码时被告知「你是来关密码的还是来改密码的」；
+ * 5. 「明文显示输入」的覆盖关系：设置步首次输入恒明文、确认步恒不明文，与偏好无关
+ *    （Android `PasscodeController:663` / `PasscodeView:238-240` 的语义）。
  */
 
 import { describe, it, expect } from '@ohos/hypium';
@@ -15,6 +17,7 @@ import {
   PasscodeFlowStage,
   PasscodeStepResult,
   passcodeStagePrompt,
+  passcodeStageReveal,
   passcodeStepFor
 } from '../../main/ets/applock/PasscodeFlow';
 
@@ -63,6 +66,23 @@ export default function passcodeFlowTest(): void {
       expect(passcodeStagePrompt('enter') === passcodeStagePrompt('confirm')).assertFalse();
       // 两个校验步共用一句是刻意的（见文件头 4.）。
       expect(passcodeStagePrompt('verify-disable')).assertEqual(passcodeStagePrompt('verify-change'));
+    });
+
+    it('revealPrefOnlyAppliesToVerifyStages', 0, () => {
+      // 设置密码的首次输入即使偏好是「圆点」也要明文：用户正在写的东西看不见，
+      // 打错一位就会在确认步变成「两次不一致」，比明文多露一位数字代价大得多。
+      expect(passcodeStageReveal('enter', false)).assertTrue();
+      expect(passcodeStageReveal('enter', true)).assertTrue();
+      // 确认步反过来：即使偏好明文也不显示，这一步的产出是比对不是复读。
+      expect(passcodeStageReveal('confirm', true)).assertFalse();
+      expect(passcodeStageReveal('confirm', false)).assertFalse();
+      // 校验旧密码的两步与锁屏（idle）交给偏好，两边各自跟随、互不覆盖。
+      expect(passcodeStageReveal('verify-disable', true)).assertTrue();
+      expect(passcodeStageReveal('verify-disable', false)).assertFalse();
+      expect(passcodeStageReveal('verify-change', true)).assertTrue();
+      expect(passcodeStageReveal('verify-change', false)).assertFalse();
+      expect(passcodeStageReveal('idle', true)).assertTrue();
+      expect(passcodeStageReveal('idle', false)).assertFalse();
     });
   });
 }

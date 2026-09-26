@@ -105,6 +105,14 @@ export class AppLockGate {
     };
   }
 
+  /**
+   * 遮罩输入时是否明文（APPLOCK-102）：与设置页读同一个持久偏好，
+   * 否则「设置里说明文、锁屏上按圆点」，用户会以为自己按错了。
+   */
+  passcodeVisible(): boolean {
+    return this.store.passcodeVisible();
+  }
+
   subscribe(listener: (snapshot: AppLockSnapshot) => void): () => void {
     this.listeners.push(listener);
     const self: AppLockGate = this;

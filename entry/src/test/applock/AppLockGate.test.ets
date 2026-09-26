@@ -27,6 +27,8 @@ class FakeAppLockStore implements AppLockStore {
   isSet: boolean = false;
   choice: AutoLockChoice = 'instant';
   accepted: string = PIN;
+  visible: boolean = false;
+  visibleWritesFail: boolean = false;
   refreshFails: boolean = false;
   verifyError: AppError | null = null;
 
@@ -52,6 +54,18 @@ class FakeAppLockStore implements AppLockStore {
 
   setAutoLockChoice(choice: AutoLockChoice): boolean {
     this.choice = choice;
+    return true;
+  }
+
+  passcodeVisible(): boolean {
+    return this.visible;
+  }
+
+  setPasscodeVisible(visible: boolean): boolean {
+    if (this.visibleWritesFail) {
+      return false;
+    }
+    this.visible = visible;
     return true;
   }
 

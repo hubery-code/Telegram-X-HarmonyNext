@@ -4,6 +4,10 @@
  * 基于 @kit.AssetStoreKit（asset）：关键资产明文由系统安全服务（TEE/安全芯片）加密托管，
  * adapter 自身不做密码学运算；alias = ALIAS_PREFIX + key 作为每条资产的唯一索引。
  *
+ * 错误码分类、alias 前缀、探测码到可用性的归类都在 `core/AssetErrorMap.ets`（无 Kit、有单测）。
+ * 本类只负责三件事：组 `asset.AssetMap`、调 `asset` 的同步/异步接口、把 catch 到的
+ * 业务错误拆成 (code, message) 交给映射层。
+ *
  * 锁屏语义（契约约定）：
  * - 资产以 ACCESSIBILITY = DEVICE_UNLOCKED 写入：设备锁屏期间 add/query/remove
  *   抛 STATUS_MISMATCH (24000005)，统一映射为
@@ -22,14 +26,7 @@
  * - 值按字节拷贝存取（slice()），调用方持有的数组不被后续修改影响；
  * - SYNC_TYPE = NEVER：密钥不参与跨设备同步/备份。
  *
- * 错误映射：
- * - 锁屏/服务不可用映射到契约稳定平台码（与 FakeSecureKeyStore 口径一致：
- *   locked = SECURE_KEY_STORE_LOCKED_PLATFORM_CODE retryable=true；
- *   unavailable = LOCKED_CODE + 1 retryable=false）；
- * - INVALID_ARGUMENT (401) 说明 adapter 属性组装有误 → internal；
- * - 其余 Asset 数字错误码原样作为 platform/<code>，retryable 按瞬时性分类
- *   （内存不足/数据库/IPC/系统服务失败 → true；损坏/算法/权限/不支持 → false）；
- * - 敏感值本身绝不进入 message/cause（cause 只含系统错误码与系统文案）。
+ * 敏感值本身绝不进入 message/cause（cause 只含系统错误码与系统文案）。
  */
 
 import { asset } from '@kit.AssetStoreKit';
@@ -37,35 +34,22 @@ import { util } from '@kit.ArkTS';
 import { BusinessError } from '@ohos.base';
 import { Result, AppError, ok, err, AppErrors } from '@tgx/core-common';
 import {
-  SECURE_KEY_STORE_LOCKED_PLATFORM_CODE,
   SecureKeyStoreStatus,
-  SecureKeyStorePort
+  SecureKeyStorePort,
+  SecureKeyStoreAvailability
 } from '@tgx/platform-ports';
+import {
+  ASSET_NOT_FOUND,
+  aliasFor,
+  mapAssetFailure,
+  probeAvailability,
+  validateKeyError
+} from './core/AssetErrorMap';
 
-const ALIAS_PREFIX: string = 'tgx.keystore.';
-const PROBE_ALIAS: string = ALIAS_PREFIX + '__probe__';
-
-const ASSET_PERMISSION_DENIED: number = 201;
-const ASSET_INVALID_ARGUMENT: number = 401;
-const ASSET_SERVICE_UNAVAILABLE: number = 24000001;
-const ASSET_NOT_FOUND: number = 24000002;
-const ASSET_ACCESS_DENIED: number = 24000004;
-const ASSET_STATUS_MISMATCH: number = 24000005;
-const ASSET_OUT_OF_MEMORY: number = 24000006;
-const ASSET_DATABASE_ERROR: number = 24000008;
-const ASSET_IPC_ERROR: number = 24000010;
-const ASSET_BMS_ERROR: number = 24000011;
-const ASSET_ACCOUNT_ERROR: number = 24000012;
-const ASSET_ACCESS_TOKEN_ERROR: number = 24000013;
-const ASSET_FILE_OPERATION_ERROR: number = 24000014;
-const ASSET_GET_SYSTEM_TIME_ERROR: number = 24000015;
-const ASSET_UNSUPPORTED: number = 24000017;
-
-/** 不可用状态使用的稳定平台错误码（与 FakeSecureKeyStore 口径一致）。 */
-const SECURE_KEY_STORE_UNAVAILABLE_PLATFORM_CODE: number = SECURE_KEY_STORE_LOCKED_PLATFORM_CODE + 1;
+const PROBE_ALIAS: string = aliasFor('__probe__');
 
 function encodeAlias(key: string): Uint8Array {
-  return new util.TextEncoder().encodeInto(ALIAS_PREFIX + key);
+  return new util.TextEncoder().encodeInto(aliasFor(key));
 }
 
 function businessErrorCode(e: Object): number | null {
@@ -76,57 +60,12 @@ function businessErrorCode(e: Object): number | null {
   return null;
 }
 
-function isRetryableAssetError(code: number): boolean {
-  return code === ASSET_OUT_OF_MEMORY
-    || code === ASSET_DATABASE_ERROR
-    || code === ASSET_IPC_ERROR
-    || code === ASSET_BMS_ERROR
-    || code === ASSET_ACCOUNT_ERROR
-    || code === ASSET_ACCESS_TOKEN_ERROR
-    || code === ASSET_FILE_OPERATION_ERROR
-    || code === ASSET_GET_SYSTEM_TIME_ERROR;
-}
-
-function mapAssetError(origin: string, e: Object): AppError {
-  const code: number | null = businessErrorCode(e);
-  if (code === null) {
-    return AppErrors.unknown(origin, `${origin} failed (non-business error)`);
-  }
+function businessErrorMessage(e: Object): string | null {
   const be: BusinessError = e as BusinessError;
-  const cause: string = `${code}:${be.message}`;
-  if (code === ASSET_STATUS_MISMATCH) {
-    return AppErrors.platform(
-      SECURE_KEY_STORE_LOCKED_PLATFORM_CODE,
-      'secure key store is locked (device locked)',
-      true,
-      undefined,
-      cause
-    );
+  if (be === null || be === undefined || be.message === undefined) {
+    return null;
   }
-  if (code === ASSET_SERVICE_UNAVAILABLE) {
-    return AppErrors.platform(
-      SECURE_KEY_STORE_UNAVAILABLE_PLATFORM_CODE,
-      'secure key store unavailable on this device',
-      false,
-      undefined,
-      cause
-    );
-  }
-  if (code === ASSET_INVALID_ARGUMENT) {
-    return AppErrors.internal(
-      'asset-invalid-argument',
-      `${origin} rejected by asset store parameter check`,
-      cause
-    );
-  }
-  return AppErrors.platform(code, `${origin} failed`, isRetryableAssetError(code), undefined, cause);
-}
-
-function validateKey(key: string): AppError | null {
-  if (key.length === 0) {
-    return AppErrors.parameter('invalid', 'key', 'key must not be empty');
-  }
-  return null;
+  return be.message;
 }
 
 export class HarmonySecureKeyStore implements SecureKeyStorePort {
@@ -142,22 +81,11 @@ export class HarmonySecureKeyStore implements SecureKeyStorePort {
       if (code === null) {
         return err(AppErrors.unknown('getStatus', 'getStatus probe failed (non-business error)'));
       }
-      if (code === ASSET_NOT_FOUND) {
-        return ok<SecureKeyStoreStatus, AppError>({ availability: 'available' });
+      const availability: SecureKeyStoreAvailability | null = probeAvailability(code);
+      if (availability !== null) {
+        return ok<SecureKeyStoreStatus, AppError>({ availability });
       }
-      if (code === ASSET_STATUS_MISMATCH) {
-        return ok<SecureKeyStoreStatus, AppError>({ availability: 'locked' });
-      }
-      if (code === ASSET_SERVICE_UNAVAILABLE) {
-        return ok<SecureKeyStoreStatus, AppError>({ availability: 'unavailable_no_hardware' });
-      }
-      if (code === ASSET_UNSUPPORTED) {
-        return ok<SecureKeyStoreStatus, AppError>({ availability: 'unavailable_unsupported' });
-      }
-      if (code === ASSET_ACCESS_DENIED || code === ASSET_PERMISSION_DENIED) {
-        return ok<SecureKeyStoreStatus, AppError>({ availability: 'unavailable_disabled' });
-      }
-      return err(mapAssetError('getStatus', e));
+      return err(mapAssetFailure('getStatus', code, businessErrorMessage(e)));
     }
   }
 
@@ -170,7 +98,7 @@ export class HarmonySecureKeyStore implements SecureKeyStorePort {
   }
 
   async put(key: string, value: Uint8Array): Promise<Result<void, AppError>> {
-    const keyError: AppError | null = validateKey(key);
+    const keyError: AppError | null = validateKeyError(key);
     if (keyError !== null) {
       return err<void, AppError>(keyError);
     }
@@ -184,12 +112,12 @@ export class HarmonySecureKeyStore implements SecureKeyStorePort {
       await asset.add(attributes);
       return ok<void, AppError>(undefined);
     } catch (e) {
-      return err<void, AppError>(mapAssetError('put', e));
+      return err<void, AppError>(mapAssetFailure('put', businessErrorCode(e), businessErrorMessage(e)));
     }
   }
 
   async get(key: string): Promise<Result<Uint8Array | null, AppError>> {
-    const keyError: AppError | null = validateKey(key);
+    const keyError: AppError | null = validateKeyError(key);
     if (keyError !== null) {
       return err<Uint8Array | null, AppError>(keyError);
     }
@@ -214,12 +142,12 @@ export class HarmonySecureKeyStore implements SecureKeyStorePort {
       if (code === ASSET_NOT_FOUND) {
         return ok<Uint8Array | null, AppError>(null);
       }
-      return err<Uint8Array | null, AppError>(mapAssetError('get', e));
+      return err<Uint8Array | null, AppError>(mapAssetFailure('get', code, businessErrorMessage(e)));
     }
   }
 
   async remove(key: string): Promise<Result<void, AppError>> {
-    const keyError: AppError | null = validateKey(key);
+    const keyError: AppError | null = validateKeyError(key);
     if (keyError !== null) {
       return err<void, AppError>(keyError);
     }
@@ -233,7 +161,7 @@ export class HarmonySecureKeyStore implements SecureKeyStorePort {
       if (code === ASSET_NOT_FOUND) {
         return ok<void, AppError>(undefined);
       }
-      return err<void, AppError>(mapAssetError('remove', e));
+      return err<void, AppError>(mapAssetFailure('remove', code, businessErrorMessage(e)));
     }
   }
 }

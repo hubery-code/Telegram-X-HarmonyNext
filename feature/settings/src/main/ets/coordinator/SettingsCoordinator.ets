@@ -183,6 +183,8 @@ import {
   DataSaverSettingsLoaded,
   DownloadLimitsLoaded,
   AutoLockChoiceRejected,
+  TogglePasscodeVisible,
+  PasscodeVisibleRejected,
   PasscodeMismatched,
   PasscodeOperationDone,
   PasscodeOperationFailed,
@@ -223,6 +225,7 @@ import {
   CommitPasscodeEffect,
   LoadPasscodeStateEffect,
   PersistAutoLockChoiceEffect,
+  PersistPasscodeVisibleEffect,
   StorePasscodeDraftEffect,
   VerifyPasscodeEffect
 } from '../contract/SettingsEffect';
@@ -641,6 +644,12 @@ export class SettingsCoordinator {
       case 'persistAutoLockChoice': {
         const choiceEffect: PersistAutoLockChoiceEffect = effect as PersistAutoLockChoiceEffect;
         this.handlePersistAutoLockChoice(choiceEffect.choice);
+        break;
+      }
+
+      case 'persistPasscodeVisible': {
+        const visibleEffect: PersistPasscodeVisibleEffect = effect as PersistPasscodeVisibleEffect;
+        this.handlePersistPasscodeVisible(visibleEffect.visible);
         break;
       }
 
@@ -1936,7 +1945,7 @@ export class SettingsCoordinator {
       if (res.ok) {
         isSet = res.value;
       }
-      self.dispatch(new PasscodeStateLoaded(isSet, store.autoLockChoice()));
+      self.dispatch(new PasscodeStateLoaded(isSet, store.autoLockChoice(), store.passcodeVisible()));
     });
   }
 
@@ -2036,5 +2045,20 @@ export class SettingsCoordinator {
       return;
     }
     this.dispatch(new AutoLockChoiceRejected(store.autoLockChoice()));
+  }
+
+  /**
+   * 写「显示输入的密码」偏好（APPLOCK-102）。与档位同一套乐观回灌：
+   * 写盘失败就把开关倒回去，避免屏上说明文、实际按圆点存着走。
+   */
+  private handlePersistPasscodeVisible(visible: boolean): void {
+    const store: AppLockStore | null = this.appLockStore;
+    if (store === null) {
+      return;
+    }
+    if (store.setPasscodeVisible(visible)) {
+      return;
+    }
+    this.dispatch(new PasscodeVisibleRejected(store.passcodeVisible()));
   }
 }

@@ -288,6 +288,16 @@ export class PersistAutoLockChoiceEffect implements Effect {
   }
 }
 
+/** 写「显示输入的密码」偏好（APPLOCK-102）。 */
+export class PersistPasscodeVisibleEffect implements Effect {
+  readonly kind: 'persistPasscodeVisible' = 'persistPasscodeVisible';
+  readonly visible: boolean;
+
+  constructor(visible: boolean) {
+    this.visible = visible;
+  }
+}
+
 export type SettingsEffect =
   | LoadProfileEffect
   | LoadNotificationSettingsEffect
@@ -322,4 +332,5 @@ export type SettingsEffect =
   | CommitPasscodeEffect
   | VerifyPasscodeEffect
   | ClearPasscodeDraftEffect
-  | PersistAutoLockChoiceEffect;
+  | PersistAutoLockChoiceEffect
+  | PersistPasscodeVisibleEffect;

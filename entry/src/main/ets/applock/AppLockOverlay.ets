@@ -141,6 +141,7 @@ export struct AppLockOverlay {
           notice: this.notice,
           themeMode: this.themePreference,
           busy: this.submitting,
+          reveal: this.gate !== null && this.gate.passcodeVisible(),
           cancellable: false,
           onSubmit: (pin: string): void => {
             this.onSubmit(pin);

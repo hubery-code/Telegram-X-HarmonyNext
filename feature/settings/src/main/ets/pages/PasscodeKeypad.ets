@@ -40,6 +40,12 @@ export struct PasscodeKeypad {
   @Prop busy: boolean = false;
   /** 锁屏遮罩里没有「取消」可点 —— 不解锁就是不让进。 */
   @Prop cancellable: boolean = true;
+  /**
+   * APPLOCK-102：输入时是否明文显示已按下的位数（Android `pc_visible`）。
+   * 由设置页与锁屏遮罩从同一个持久偏好取值传进来，两处必须一致，
+   * 否则会出现「设置里说明文、锁屏上按圆点」。
+   */
+  @Prop reveal: boolean = false;
   onSubmit: (pin: string) => void = (): void => {};
   onCancel: () => void = (): void => {};
 
@@ -144,21 +150,47 @@ export struct PasscodeKeypad {
       .margin({ bottom: this.getTheme().spacing.lg })
   }
 
+  /** 明文位：已按下才渲染数字，空位仍是圆点，避免暴露「输入了几个字符」以外的信息。 */
+  @Builder
+  RevealSlotView(slot: number) {
+    if (slot < this.entry.length) {
+      Text(this.entry[slot])
+        .fontSize(this.getTheme().typography.title.fontSize)
+        .fontWeight(this.getTheme().typography.title.fontWeight)
+        .fontColor(this.getTheme().colors.textPrimary)
+        .width(16)
+        .textAlign(TextAlign.Center)
+        .margin({ left: this.getTheme().spacing.md, right: this.getTheme().spacing.md })
+        .id('passcode-reveal-' + slot.toString())
+    } else {
+      this.DotView(slot)
+    }
+  }
+
+  @Builder
+  DotView(slot: number) {
+    // 用圆角矩形而不是 Circle().fill()：后者在当前兼容 SDK（6.1.1/24）上是
+    // 26.0.0 才有的属性，编译器会报版本告警，而这里不需要形状组件。
+    Column()
+      .width(16)
+      .height(16)
+      .borderRadius(8)
+      .margin({ left: this.getTheme().spacing.md, right: this.getTheme().spacing.md })
+      .backgroundColor(slot < this.entry.length
+        ? this.getTheme().colors.textPrimary
+        : this.getTheme().colors.textSecondary)
+      .opacity(slot < this.entry.length ? 1 : 0.32)
+  }
+
   @Builder
   DotsView() {
     Row() {
       ForEach([0, 1, 2, 3], (slot: number) => {
-        // 用圆角矩形而不是 Circle().fill()：后者在当前兼容 SDK（6.1.1/24）上是
-        // 26.0.0 才有的属性，编译器会报版本告警，而这里不需要形状组件。
-        Column()
-          .width(16)
-          .height(16)
-          .borderRadius(8)
-          .margin({ left: this.getTheme().spacing.md, right: this.getTheme().spacing.md })
-          .backgroundColor(slot < this.entry.length
-            ? this.getTheme().colors.textPrimary
-            : this.getTheme().colors.textSecondary)
-          .opacity(slot < this.entry.length ? 1 : 0.32)
+        if (this.reveal) {
+          this.RevealSlotView(slot)
+        } else {
+          this.DotView(slot)
+        }
       })
     }
     .id('passcode-dots')

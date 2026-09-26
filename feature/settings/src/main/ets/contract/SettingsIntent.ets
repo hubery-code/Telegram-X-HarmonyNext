@@ -597,7 +597,7 @@ export class ClosePasscodePage implements Intent {
   readonly kind: 'closePasscodePage' = 'closePasscodePage';
 }
 
-/** 读盘：本机是否已设 PIN + 自动锁定档位。 */
+/** 读盘：本机是否已设 PIN + 自动锁定档位 + 密码可见性偏好。 */
 export class LoadPasscodeState implements Intent {
   readonly kind: 'loadPasscodeState' = 'loadPasscodeState';
 }
@@ -606,10 +606,33 @@ export class PasscodeStateLoaded implements Intent {
   readonly kind: 'passcodeStateLoaded' = 'passcodeStateLoaded';
   readonly isSet: boolean;
   readonly autoLock: AutoLockChoice;
+  /** APPLOCK-102：Android `pc_visible`；缺省 false，读不到偏好时按圆点显示。 */
+  readonly visible: boolean;
 
-  constructor(isSet: boolean, autoLock: AutoLockChoice) {
+  constructor(isSet: boolean, autoLock: AutoLockChoice, visible: boolean = false) {
     this.isSet = isSet;
     this.autoLock = autoLock;
+    this.visible = visible;
+  }
+}
+
+/**
+ * 点「显示输入的密码」行：翻转持久偏好（Android `PasscodeSetupController` 的同名设置行）。
+ *
+ * 刻意**不是**输入框上的临时小眼睛：Android 那里没有小眼睛，可见性是一个跨会话记住的设置，
+ * 且对设置流程与锁屏遮罩同时生效。
+ */
+export class TogglePasscodeVisible implements Intent {
+  readonly kind: 'togglePasscodeVisible' = 'togglePasscodeVisible';
+}
+
+/** 可见性写盘失败，回滚开关。 */
+export class PasscodeVisibleRejected implements Intent {
+  readonly kind: 'passcodeVisibleRejected' = 'passcodeVisibleRejected';
+  readonly previous: boolean;
+
+  constructor(previous: boolean) {
+    this.previous = previous;
   }
 }
 
@@ -779,4 +802,6 @@ export type SettingsIntent =
   | PasscodeOperationFailed
   | PasscodeOperationDone
   | AutoLockChoiceRejected
+  | TogglePasscodeVisible
+  | PasscodeVisibleRejected
   | SectionFocused;

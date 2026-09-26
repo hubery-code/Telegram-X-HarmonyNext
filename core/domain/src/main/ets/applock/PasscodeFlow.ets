@@ -60,6 +60,25 @@ export function passcodeStagePrompt(stage: PasscodeFlowStage): string {
 }
 
 /**
+ * 某阶段输入时是否明文显示已按位数（APPLOCK-102）。
+ *
+ * 照 Android `PasscodeController.isPasscodeVisible()`：
+ * - `enter` **恒明文**（`PasscodeController.java:663`）—— 正在定的密码，看不见就等于给自己埋坑；
+ * - `confirm` **恒圆点**（`PasscodeView.java:238-240` 配一句「重复一遍」）—— 这一步的作用是比对，
+ *   明文会让「抄上一步」和「真的记得」看起来一样；
+ * - 其余阶段（验旧密码、锁屏遮罩）跟随用户的持久偏好。
+ */
+export function passcodeStageReveal(stage: PasscodeFlowStage, visiblePref: boolean): boolean {
+  if (stage === 'enter') {
+    return true;
+  }
+  if (stage === 'confirm') {
+    return false;
+  }
+  return visiblePref;
+}
+
+/**
  * 键盘在某个阶段收到一次提交后的迁移判据（纯函数，reducer 与单测共用）。
  *
  * 长度不够四位不算一次提交 —— 键盘本身就不允许满四位之前把 `submit` 发出来，

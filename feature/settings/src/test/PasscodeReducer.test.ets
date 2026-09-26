@@ -7,7 +7,9 @@
  * 2. 进子页必须重读盘：锁屏遮罩会改本机状态，用缓存的「有没有 PIN」会显示成假；
  * 3. 在途与已有流程时不放行第二次开关（重复点行不该起两次写盘）；
  * 4. 档位是乐观改 + 失败回灌，且回灌的是**盘上真值**而不是猜的默认值；
- * 5. 密码错误只改提示、不改阶段（留在原地重输），锁屏与设置页同一条规则。
+ * 5. 密码错误只改提示、不改阶段（留在原地重输），锁屏与设置页同一条规则；
+ * 6. 「显示输入的密码」是**持久偏好**而不是输入框上的临时小眼睛：进子页从盘上读回、
+ *    点行乐观翻转并派发持久化、写盘失败回灌盘上真值（与档位同一套协议）。
  */
 
 import { describe, it, expect } from '@ohos/hypium';
@@ -41,13 +43,16 @@ import {
   PasscodeStateLoaded,
   PasscodeSubmitted,
   PasscodeVerified,
-  TogglePasscodeRequested
+  PasscodeVisibleRejected,
+  TogglePasscodeRequested,
+  TogglePasscodeVisible
 } from '../main/ets/contract/SettingsIntent';
 import {
   ClearPasscodeDraftEffect,
   CommitPasscodeEffect,
   LoadPasscodeStateEffect,
   PersistAutoLockChoiceEffect,
+  PersistPasscodeVisibleEffect,
   StorePasscodeDraftEffect,
   VerifyPasscodeEffect
 } from '../main/ets/contract/SettingsEffect';
@@ -276,6 +281,45 @@ export default function passcodeReducerTest(): void {
       const state = passcodeState({ autoLockChoice: 'one_hour' });
       const result = settingsReducer(state, new AutoLockChoiceRejected('five_hours'), makeEnv());
       expect(result.state.autoLockChoice).assertEqual('five_hours');
+    });
+
+    it('passcodeStateLoadedReadsBackVisiblePref', 0, () => {
+      const on = settingsReducer(SettingsUiState.initial(),
+        new PasscodeStateLoaded(true, 'one_minute', true), makeEnv());
+      expect(on.state.passcodeVisible).assertTrue();
+
+      // 不传第三位（老调用点）时必须落在「不明文」—— 安全默认，和 Android 的 pc_visible 一致。
+      const off = settingsReducer(passcodeState({ passcodeVisible: true }),
+        new PasscodeStateLoaded(true, 'one_minute'), makeEnv());
+      expect(off.state.passcodeVisible).assertFalse();
+    });
+
+    it('visibleToggleIsOptimisticAndPersists', 0, () => {
+      const result = settingsReducer(passcodeState({ passcodeVisible: false }),
+        new TogglePasscodeVisible(), makeEnv());
+      expect(result.state.passcodeVisible).assertTrue();
+      expect(result.effects.length).assertEqual(1);
+      expect((result.effects[0] as PersistPasscodeVisibleEffect).visible).assertTrue();
+
+      // 再点一次翻回去：这条偏好可逆，且不看当前有没有 PIN 之外的任何状态。
+      const back = settingsReducer(result.state, new TogglePasscodeVisible(), makeEnv());
+      expect(back.state.passcodeVisible).assertFalse();
+      expect((back.effects[0] as PersistPasscodeVisibleEffect).visible).assertFalse();
+    });
+
+    it('visibleRollbackRestoresDiskValue', 0, () => {
+      // 乐观翻转成 true、写盘失败 → 回灌的是盘上真值 false，不是猜的默认值。
+      const result = settingsReducer(passcodeState({ passcodeVisible: true }),
+        new PasscodeVisibleRejected(false), makeEnv());
+      expect(result.state.passcodeVisible).assertFalse();
+      expect(result.effects.length).assertEqual(0);
+    });
+
+    it('visibleToggleDoesNotTouchThePasscodeFlow', 0, () => {
+      // 偏好行在键盘弹起时点不到（卡片被遮罩盖住），但状态上必须留得住正在进行的流程。
+      const state = passcodeState({ passcodeIsSet: true, passcodeFlow: 'confirm' });
+      const result = settingsReducer(state, new TogglePasscodeVisible(), makeEnv());
+      expect(result.state.passcodeFlow).assertEqual('confirm');
     });
 
     it('fullCreateFlowNeverLeaksThePin', 0, () => {

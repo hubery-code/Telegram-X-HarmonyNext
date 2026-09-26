@@ -992,6 +992,47 @@
 > ③ 系统 dumpLayout 看不到 `accessibilityText`，若将来要在设备上验证播报内容，只能靠真机 SR 听或 `hilog` 的 SR 文本，
 > 本轮 1.1MB `sr_hilog.txt` 里没找到可用的应用侧播报行。
 
+> **追加（APPLOCK-102，FEAT-P2-008 的「显示输入中的密码」半边 + `platform/keystore` 进 CI）**：
+> **先纠正上一段自己写的口径**：Android 的 `pc_visible` **不是输入框上的「小眼睛」按钮**（`PasscodeView` 里没有任何
+> 切换控件），而是「屏幕锁定」子页里的一条**持久设置行**。本端因此做的是一行 **Show Typed Passcode**，
+> 不是键盘上的图标 —— 上一段把它写成「小眼睛」会让人去找一个 Android 里根本不存在的按钮。
+> **明文档照 Android 的三档语义**，抽成 `core/domain` 纯函数 `passcodeStageReveal(stage, visiblePref)`：
+> `enter` **恒明文**（`PasscodeController.java:663`）、`confirm` **恒圆点**（`PasscodeView.java:238-240` 配一句「重复一遍」）、
+> 其余阶段（验旧密码、锁屏遮罩）跟随偏好。理由：正在定的密码看不见等于给自己埋坑；比对步明文则让「抄上一步」
+> 和「真的记得」看起来一样。**偏好落点**：`entry/store/AppLockStore` 的 `appLockPinVisible`（0/1 整数，取不到按 `=== 1`
+> 判为关）→ `PasscodePort.passcodeVisible()/setPasscodeVisible()`（端口里**没有任何把密码读出来的方法**，这条不是秘密值）
+> → 设置页与 `AppLockGate.passcodeVisible()` **读同一份缓存**，所以「设置里说明文、锁屏上按圆点」这种两套真相结构上不可能。
+> reducer 走乐观翻转 + `PersistPasscodeVisibleEffect`，写盘失败由 `PasscodeVisibleRejected` 回滚。
+> **键盘侧** `@Prop reveal`：明文位只在 `slot < entry.length` 时渲染数字，空位仍是圆点 —— 不暴露「输了几位」之外的信息；
+> 节点 id `passcode-reveal-<n>` 是本轮取证的可观察点。
+> **`platform/keystore` 第一次进 CI**：把 Kit-free 的判定从两个 adapter 里抽出来 —— `core/PasscodeSecret.ets`
+> （长度常量、`isAsciiDigits`/`validatePin`/`pinBytes`、`packSecret`/`unpackSecret`（48 字节 = 盐 16 + 摘要 32，
+> 长度不符回 `passcode-secret-corrupt` 且**消息里只带字节数**）、`constantTimeEquals`）与 `core/AssetErrorMap.ets`
+> （alias 前缀、`ASSET_*` 码表、`isRetryableAssetCode`、`mapAssetFailure`、`probeAvailability`），两个 adapter 只剩 Kit
+> 调用与 catch 分支；`tools/ci/test_all_modules.py` 撤掉 `platform_keystore` 豁免（现在只剩 `platform_files` 一项）。
+> **生物识别拆到 APPLOCK-103，理由是环境不是工作量**：装机 SDK 里只有 OpenHarmony 的 `@ohos.userIAM.userAuth`
+> （没有 HMS 生物识别 Kit），本快照的 `@ohos.security.asset` **没有** `AUTH_ACCESS`/`ACCESS_WHEN_LOCKED` 标签
+> （HUKS 侧倒是有 `HUKS_TAG_USER_AUTH_TYPE`/`AUTH_TIMEOUT`/`AUTH_TOKEN`/`KEY_AUTH_PURPOSE`，即「鉴权绑定密钥」
+> 这条路在 HUKS 成立、在 asset 不成立），且模拟器没有指纹/人脸传感器 —— 写了也验不了。顺带记 Android 的真相：
+> `pc_finger_hash = MD5(MD5(0 + SALT_OLD))` 是个**常量**、不绑定任何生物特征模板，那套生物识别本身就是安全剧场；
+> 本端要做就做 HUKS auth-bound key，不做「存个哈希当开关」。
+> **设备取证**（`.hvigor/outputs/applock102/`，127.0.0.1:5555，全程只在设置页内、未发消息）：A/B 覆盖四条分支 ——
+> `enter` 在偏好 Off 时仍出 `passcode-reveal-0='4'`/`-1='2'`（证明恒明文不受偏好影响）、`confirm` 恒 4 个 Column 圆点、
+> `verify-change` 在偏好 Off 时是圆点、偏好 On 时验旧密码出明文；点行让 `passcode-visible-state` 在 `'Off'`↔`'On'`
+> 之间翻转，且 `aa force-stop` 冷启动后**仍是 On**（落盘成功），冷启动遮罩在偏好 On 时渲染 `passcode-reveal-0='4'`、
+> 偏好 Off 时渲染 4 个圆点且**零** `passcode-reveal-*` 节点（「设置页与遮罩共用同一份偏好」至此得证）；
+> 两条分支各用正确 PIN 解锁成功。收尾还原：PIN 移除（`'Passcode removed.'` + `passcode-toggle-state 'Off'`）、
+> 档位 `'Immediately'`。**残留一处**：`appLockPinVisible` 停在 `1`（移除 PIN 后该行不再显示，偏好惰化，无可见状态差异）。
+> **一条工具事实（本轮为它绕了远路）**：`hdc shell uitest uiInput click $xy` 在 zsh 下**不做词分割** ——
+> `xy="217 1633"` 会作为**一个**参数送进去，uitest 回 `No Error` 却什么都没点。表现是「键盘吞输入」，
+> 一度以为组件有 bug（`busy` 卡死 / `entry` 被清空）。循环里发 uiInput 要么写死两个参数，要么 `${=xy}` 强制分割。
+> 测试：`platform_keystore` **16/16**（该模块首套用例）、`core_domain` **178/178**（`passcodeStageReveal` 五分支）、
+> `feature_settings` **258/258**（偏好回读 / 乐观翻转 / 回滚 / 不触碰密码流 4 条）、`entry` **117/117**
+> （fake store 补齐端口新增的两方法），四守卫 + secret_scan 0 违规。
+> 遗留：① 生物识别（APPLOCK-103，需真机 + HUKS auth-bound key 设计）；② 改密码中途退出不锁死已按此设计、
+> sha256 单次迭代不抗取证（与 Android 同级）；③ 移除 PIN 时不清 `appLockPinVisible`（本端认为「偏好属于用户，
+> 不属于这条秘密值」，Android 同样保留 `pc_visible`）。
+
 
 | 功能 ID | 功能名 |
 |---|---|

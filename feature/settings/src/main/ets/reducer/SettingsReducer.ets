@@ -36,13 +36,16 @@ import {
   PasscodeMismatched,
   PasscodeOperationFailed,
   PasscodeOperationDone,
-  AutoLockChoiceRejected
+  AutoLockChoiceRejected,
+  TogglePasscodeVisible,
+  PasscodeVisibleRejected
 } from '../contract/SettingsIntent';
 import {
   ClearPasscodeDraftEffect,
   CommitPasscodeEffect,
   LoadPasscodeStateEffect,
   PersistAutoLockChoiceEffect,
+  PersistPasscodeVisibleEffect,
   StorePasscodeDraftEffect,
   VerifyPasscodeEffect
 } from '../contract/SettingsEffect';
@@ -1065,6 +1068,7 @@ export const settingsReducer: Reducer<SettingsUiState, SettingsIntent, SettingsE
       const options: SettingsUiStateOptions = {
         passcodeIsSet: loaded.isSet,
         autoLockChoice: loaded.autoLock,
+        passcodeVisible: loaded.visible,
         isUpdatingPasscode: false
       };
       return reduced(state.copyWith(options));
@@ -1106,6 +1110,24 @@ export const settingsReducer: Reducer<SettingsUiState, SettingsIntent, SettingsE
       const rejected: AutoLockChoiceRejected = intent as AutoLockChoiceRejected;
       const options: SettingsUiStateOptions = {
         autoLockChoice: rejected.previous,
+        errorMessage: 'Failed to save the setting.'
+      };
+      return reduced(state.copyWith(options));
+    }
+
+    case 'togglePasscodeVisible': {
+      const next: boolean = !state.passcodeVisible;
+      const options: SettingsUiStateOptions = {
+        passcodeVisible: next
+      };
+      // 乐观翻转，写盘失败由 coordinator 回灌 `passcodeVisibleRejected`。
+      return reduced(state.copyWith(options), [new PersistPasscodeVisibleEffect(next)]);
+    }
+
+    case 'passcodeVisibleRejected': {
+      const rejected: PasscodeVisibleRejected = intent as PasscodeVisibleRejected;
+      const options: SettingsUiStateOptions = {
+        passcodeVisible: rejected.previous,
         errorMessage: 'Failed to save the setting.'
       };
       return reduced(state.copyWith(options));

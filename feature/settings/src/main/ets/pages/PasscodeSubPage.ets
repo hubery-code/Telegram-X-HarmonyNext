@@ -37,13 +37,15 @@ import {
   APP_LOCK_NOTICE_SAVED,
   AutoLockChoice,
   autoLockLabelKey,
-  passcodeStagePrompt
+  passcodeStagePrompt,
+  passcodeStageReveal
 } from '@tgx/core-domain';
 import { SettingsUiState } from '../contract/SettingsUiState';
 import {
   CancelPasscodeFlow,
   ChangePasscodeRequested,
   CycleAutoLockChoice,
+  TogglePasscodeVisible,
   PasscodeSubmitted,
   SettingsIntent,
   TogglePasscodeRequested
@@ -153,6 +155,7 @@ export struct PasscodeSubPage {
           notice: this.noticeText(),
           themeMode: this.uiState.themeMode,
           busy: this.uiState.isUpdatingPasscode,
+          reveal: passcodeStageReveal(this.uiState.passcodeFlow, this.uiState.passcodeVisible),
           cancellable: true,
           onSubmit: (pin: string): void => {
             this.onDispatch(new PasscodeSubmitted(pin));
@@ -212,6 +215,12 @@ export struct PasscodeSubPage {
           .color(this.getTheme().colors.divider)
           .margin({ top: this.getTheme().spacing.xs, bottom: this.getTheme().spacing.xs })
 
+        this.VisibleRowView()
+
+        Divider()
+          .color(this.getTheme().colors.divider)
+          .margin({ top: this.getTheme().spacing.xs, bottom: this.getTheme().spacing.xs })
+
         this.ChangeRowView()
       }
     }
@@ -267,6 +276,28 @@ export struct PasscodeSubPage {
     .alignItems(VerticalAlign.Center)
     .onClick((): void => {
       this.onDispatch(new CycleAutoLockChoice());
+    })
+  }
+
+  /** 「显示输入的密码」行：翻转的是持久偏好（Android 同一处也是一个设置行，不是键盘上的小眼睛）。 */
+  @Builder
+  VisibleRowView() {
+    Row() {
+      Text(this.t('Show Typed Passcode'))
+        .fontSize(this.getTheme().typography.body.fontSize)
+        .fontColor(this.getTheme().colors.textPrimary)
+        .layoutWeight(1)
+
+      Text(this.uiState.passcodeVisible ? this.t('On') : this.t('Off'))
+        .fontSize(this.getTheme().typography.subheadline.fontSize)
+        .fontColor(this.getTheme().colors.textSecondary)
+        .id('passcode-visible-state')
+    }
+    .width('100%')
+    .height(52)
+    .alignItems(VerticalAlign.Center)
+    .onClick((): void => {
+      this.onDispatch(new TogglePasscodeVisible());
     })
   }
 

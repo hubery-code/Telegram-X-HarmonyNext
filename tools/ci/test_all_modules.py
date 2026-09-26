@@ -30,7 +30,6 @@ MIN_BASELINE_TEST_COUNT = int(os.environ.get("MIN_TEST_COUNT", "790"))
 
 EXEMPT_MODULE_REASONS = {
     "platform_files": "System app files adapter; covered via entry integration tests and on-device test suites",
-    "platform_keystore": "Hardware HUKS keystore & random; covered via entry/src/test/lifecycle/BootstrapKeystore.test.ets (8 tests) and on-device test suites",
 }
 
 def parse_json5(text: str):

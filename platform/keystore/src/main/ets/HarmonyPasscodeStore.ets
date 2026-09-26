@@ -21,58 +21,40 @@
  * 对不上就抹掉刚写入的值、把状态回成「未设置」，并回 `err` —— 宁可设置失败让用户重试，
  * 也不能留下一个解不开的锁。
  *
+ * ## 本文件与 core/PasscodeSecret.ets 的分界
+ *
+ * 长度、字符集、`salt ‖ digest` 的打包拆包、恒定时间比对全部在 `core/PasscodeSecret.ets`
+ * 里（无 Kit、有单测）；本类只剩「取随机盐」「算摘要」「读写资产」三件必须真机的动作。
+ * 分界的意义是：CI 能跑的那一半负责判据，跑不动的那一半只负责跟系统打交道。
+ *
  * ## 保密边界
  *
  * 本类不提供任何把盐或摘要读出来的方法（端口语义）；错误对象里也不出现 PIN、盐、摘要，
- * `cause` 只带系统错误码与文案。比对摘要走恒定时间循环，不做前缀短路。
+ * `cause` 只带系统错误码与文案。
  */
 
 import { cryptoFramework } from '@kit.CryptoArchitectureKit';
-import { util } from '@kit.ArkTS';
 import { Result, AppError, ok, err, AppErrors } from '@tgx/core-common';
 import {
   PasscodeStorePort,
   SecureKeyStorePort,
   SecureRandomPort
 } from '@tgx/platform-ports';
+import {
+  DIGEST_LENGTH,
+  PIN_LENGTH,
+  SALT_LENGTH,
+  SECRET_LENGTH,
+  PasscodeSecret,
+  constantTimeEquals,
+  packSecret,
+  pinBytes,
+  unpackSecret,
+  validatePin
+} from './core/PasscodeSecret';
 
 /** 安全存储中的别名（唯一一条应用锁资产）。 */
 const PASSCODE_ALIAS: string = 'applock.passcode';
-
-/** Android `Passcode.PINCODE_SIZE`：本端只支持 4 位数字 PIN。 */
-const PIN_LENGTH: number = 4;
-
-const SALT_LENGTH: number = 16;
-const DIGEST_LENGTH: number = 32;
-
-function isAsciiDigits(pin: string): boolean {
-  if (pin.length !== PIN_LENGTH) {
-    return false;
-  }
-  for (let i: number = 0; i < pin.length; i = i + 1) {
-    const c: number = pin.charCodeAt(i);
-    if (c < 48 || c > 57) {
-      return false;
-    }
-  }
-  return true;
-}
-
-function utf8(value: string): Uint8Array {
-  return new util.TextEncoder().encodeInto(value);
-}
-
-/** 恒定长度比较：不相等时也不提前返回，避免按前缀命中与否测出摘要字节。 */
-function constantTimeEquals(a: Uint8Array, b: Uint8Array): boolean {
-  if (a.length !== b.length) {
-    return false;
-  }
-  let diff: number = 0;
-  for (let i: number = 0; i < a.length; i = i + 1) {
-    diff = diff | (a[i] ^ b[i]);
-  }
-  return diff === 0;
-}
 
 /**
  * 取 `Result` 里的值。ArkTS 不会在 `if (x.err) return` 之后收窄判别联合（AGENTS.md 第 3.1 条），
@@ -128,9 +110,13 @@ export class HarmonyPasscodeStore implements PasscodeStorePort {
     }
     // 落盘的是 `salt ‖ digest`：`matches()` 只能从这一条资产里取回盐，
     // 少了前缀就等于每次校验都在拿随机盐和旧摘要比，永远对不上。
-    const secret: Uint8Array = new Uint8Array(SALT_LENGTH + DIGEST_LENGTH);
-    secret.set(salt, 0);
-    secret.set(digest, SALT_LENGTH);
+    const secret: Uint8Array | null = packSecret(salt, digest);
+    if (secret === null) {
+      return err<void, AppError>(AppErrors.internal(
+        'passcode-secret-length',
+        `salt+digest do not fill exactly ${SECRET_LENGTH} bytes`
+      ));
+    }
 
     const written: Result<void, AppError> = await this.keyStore.put(PASSCODE_ALIAS, secret);
     if (written.err) {
@@ -168,18 +154,20 @@ export class HarmonyPasscodeStore implements PasscodeStorePort {
     if (stored === null) {
       return ok<boolean, AppError>(false);
     }
-    if (stored.length !== SALT_LENGTH + DIGEST_LENGTH) {
-      // 长度不对说明这条资产不是本类写的（或已被截断）。此时静默回 false 会让用户
-      // 以为「密码错了」，永远猜不到是数据坏了，所以要成一条可诊断的错误。
+
+    const unpacked: Result<PasscodeSecret, AppError> = unpackSecret(stored);
+    if (unpacked.err) {
+      return err<boolean, AppError>(unpacked.error);
+    }
+    const secret: PasscodeSecret | null = valueOr(unpacked);
+    if (secret === null) {
       return err<boolean, AppError>(AppErrors.internal(
-        'passcode-secret-corrupt',
-        `stored secret has unexpected length ${stored.length}`
+        'passcode-secret-empty',
+        'stored secret unpacked to nothing'
       ));
     }
 
-    const salt: Uint8Array = stored.slice(0, SALT_LENGTH);
-    const digest: Uint8Array = stored.slice(SALT_LENGTH);
-    const derivedResult: Result<Uint8Array, AppError> = await this.derive(salt, pin);
+    const derivedResult: Result<Uint8Array, AppError> = await this.derive(secret.salt, pin);
     if (derivedResult.err) {
       return err<boolean, AppError>(derivedResult.error);
     }
@@ -187,7 +175,7 @@ export class HarmonyPasscodeStore implements PasscodeStorePort {
     if (derived === null) {
       return err<boolean, AppError>(AppErrors.internal('digest-empty', 'sha256 returned no bytes'));
     }
-    return ok<boolean, AppError>(constantTimeEquals(digest, derived));
+    return ok<boolean, AppError>(constantTimeEquals(secret.digest, derived));
   }
 
   async wipe(): Promise<Result<void, AppError>> {
@@ -196,10 +184,9 @@ export class HarmonyPasscodeStore implements PasscodeStorePort {
 
   /** `sha256(salt ‖ utf8(pin))`，返回 32 字节摘要。 */
   private async derive(salt: Uint8Array, pin: string): Promise<Result<Uint8Array, AppError>> {
-    const pinBytes: Uint8Array = utf8(pin);
-    const input: Uint8Array = new Uint8Array(salt.length + pinBytes.length);
+    const input: Uint8Array = new Uint8Array(salt.length + PIN_LENGTH);
     input.set(salt, 0);
-    input.set(pinBytes, salt.length);
+    input.set(pinBytes(pin), salt.length);
 
     try {
       const md: cryptoFramework.Md = cryptoFramework.createMd('SHA256');
@@ -223,11 +210,4 @@ export class HarmonyPasscodeStore implements PasscodeStorePort {
       ));
     }
   }
-}
-
-function validatePin(pin: string): AppError | null {
-  if (!isAsciiDigits(pin)) {
-    return AppErrors.parameter('invalid', 'pin', `pin must be ${PIN_LENGTH} ASCII digits`);
-  }
-  return null;
 }

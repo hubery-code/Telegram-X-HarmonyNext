@@ -108,6 +108,11 @@ export interface SettingsUiStateOptions {
    * 只放 Lang key 不放文案，也不放任何用户输入 —— PIN 不进状态是这包的硬约束。
    */
   readonly passcodeNotice?: string | null;
+  /**
+   * APPLOCK-102：输入 PIN 时是否明文显示已按下的位数（Android `Passcode.setVisible` / `pc_visible`）。
+   * 与 Android 同为**持久偏好**而不是输入框上的临时小眼睛；缺省 false（圆点）。
+   */
+  readonly passcodeVisible?: boolean;
 }
 
 export class SettingsUiState implements UiState {
@@ -190,6 +195,8 @@ export class SettingsUiState implements UiState {
   readonly isUpdatingPasscode: boolean;
   /** APPLOCK-101：流程提示（Lang key）；null 表示无。 */
   readonly passcodeNotice: string | null;
+  /** APPLOCK-102：输入时是否明文显示已按位数。 */
+  readonly passcodeVisible: boolean;
 
   constructor(
     userId: number,
@@ -241,7 +248,8 @@ export class SettingsUiState implements UiState {
     autoLockChoice: AutoLockChoice = AUTO_LOCK_DEFAULT,
     passcodeFlow: PasscodeFlowStage = 'idle',
     isUpdatingPasscode: boolean = false,
-    passcodeNotice: string | null = null
+    passcodeNotice: string | null = null,
+    passcodeVisible: boolean = false
   ) {
     this.userId = userId;
     this.displayName = displayName;
@@ -293,6 +301,7 @@ export class SettingsUiState implements UiState {
     this.passcodeFlow = passcodeFlow;
     this.isUpdatingPasscode = isUpdatingPasscode;
     this.passcodeNotice = passcodeNotice;
+    this.passcodeVisible = passcodeVisible;
   }
 
   static initial(
@@ -397,7 +406,8 @@ export class SettingsUiState implements UiState {
       options.autoLockChoice !== undefined ? options.autoLockChoice : this.autoLockChoice,
       options.passcodeFlow !== undefined ? options.passcodeFlow : this.passcodeFlow,
       options.isUpdatingPasscode !== undefined ? options.isUpdatingPasscode : this.isUpdatingPasscode,
-      options.passcodeNotice !== undefined ? options.passcodeNotice : this.passcodeNotice
+      options.passcodeNotice !== undefined ? options.passcodeNotice : this.passcodeNotice,
+      options.passcodeVisible !== undefined ? options.passcodeVisible : this.passcodeVisible
     );
   }
 }

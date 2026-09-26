@@ -227,6 +227,15 @@ export interface AppLockStore {
   /** 写档位；返回是否落盘成功，调用方据此决定页面是回滚还是提示。 */
   setAutoLockChoice(choice: AutoLockChoice): boolean;
 
+  /**
+   * 输入时是否明文显示已按下的位数（Android `Passcode.setVisible` / 偏好 `pc_visible`）。
+   * 默认 `false`（圆点）。这只影响**输入过程**的呈现，设置的 PIN 本身从不落盘（见 `HarmonyPasscodeStore`）。
+   */
+  passcodeVisible(): boolean;
+
+  /** 写可见性偏好；返回是否落盘成功，页面据此回滚开关。 */
+  setPasscodeVisible(visible: boolean): boolean;
+
   setPasscode(pin: string): Promise<Result<void, AppError>>;
 
   verifyPasscode(pin: string): Promise<Result<boolean, AppError>>;
