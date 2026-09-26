@@ -44,7 +44,7 @@
  */
 
 import { LightTheme, Theme, chatTextSizeOf } from '@tgx/core-design-system';
-import { Lang } from '@tgx/core-common';
+import { A11y, a11y, Lang } from '@tgx/core-common';
 import { isTelegramLinkCandidate } from '@tgx/core-navigation';
 import {
   AttachmentEntry,
@@ -65,6 +65,7 @@ import { common } from '@kit.AbilityKit';
 import { display } from '@kit.ArkUI';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { fileUri } from '@kit.CoreFileKit';
+import { mediaCircleA11ySlot } from '../model/MediaA11y';
 import { MessageItem } from '../model/MessageItem';
 import { ReactionChip } from '../model/ReactionChip';
 import { MessageTextSpan } from '../model/MessageTextSpan';
@@ -1055,6 +1056,7 @@ export struct ChatPage {
         .height(BACK_ARROW_SIZE)
         .justifyContent(FlexAlign.Center)
         .alignItems(VerticalAlign.Center)
+        .accessibilityText(a11y(A11y.CLOSE))
         .onClick(() => {
           this.onDispatch(new ExitMessageSelection());
         })
@@ -1076,6 +1078,7 @@ export struct ChatPage {
         .height(BACK_ARROW_SIZE)
         .justifyContent(FlexAlign.Center)
         .alignItems(VerticalAlign.Center)
+        .accessibilityText(a11y(A11y.FORWARD))
         .onClick(() => {
           if (this.uiState.selectedMessageIds.length > 0) {
             this.onDispatch(new ConfirmForwardSelection());
@@ -1092,6 +1095,7 @@ export struct ChatPage {
         .height(BACK_ARROW_SIZE)
         .justifyContent(FlexAlign.Center)
         .alignItems(VerticalAlign.Center)
+        .accessibilityText(a11y(A11y.BACK))
         .onClick(() => {
           this.onDispatch(new BackToChatList());
         })
@@ -1132,6 +1136,7 @@ export struct ChatPage {
           .height(SEARCH_BUTTON_SIZE)
           .justifyContent(FlexAlign.Center)
           .alignItems(VerticalAlign.Center)
+          .accessibilityText(a11y(A11y.CALL))
           .onClick(() => {
             hilog.info(DOMAIN, TAG, 'chat_call_placeholder');
           })
@@ -1148,6 +1153,7 @@ export struct ChatPage {
         .height(SEARCH_BUTTON_SIZE)
         .justifyContent(FlexAlign.Center)
         .alignItems(VerticalAlign.Center)
+        .accessibilityText(a11y(A11y.SEARCH))
         .onClick(() => {
           this.onDispatch(new OpenChatSearch());
         })
@@ -1163,6 +1169,7 @@ export struct ChatPage {
         .height(SEARCH_BUTTON_SIZE)
         .justifyContent(FlexAlign.Center)
         .alignItems(VerticalAlign.Center)
+        .accessibilityText(a11y(A11y.MORE))
         .bindMenu(this.HeaderOverflowMenu)
       }
     }
@@ -1376,6 +1383,7 @@ export struct ChatPage {
       .height(36)
       .justifyContent(FlexAlign.Center)
       .alignItems(VerticalAlign.Center)
+      .accessibilityText(a11y(A11y.CLOSE_PINNED))
       .onClick(() => {
         this.onDispatch(new DismissPinnedBar());
       })
@@ -1480,6 +1488,7 @@ export struct ChatPage {
             .borderRadius(this.T.radius.full)
             .objectFit(ImageFit.Cover)
             .margin({ right: this.T.spacing.xs })
+          .accessibilityText(a11y(A11y.OPEN_PROFILE, item.senderName))
             .onClick(() => this.onSenderAvatarClick(item))
         } else {
           Text(avatarLettersForName(item.senderName))
@@ -1745,6 +1754,7 @@ export struct ChatPage {
     .justifyContent(FlexAlign.Center)
     .alignItems(VerticalAlign.Center)
     .margin({ left: this.T.spacing.xs, right: this.T.spacing.xs })
+    .accessibilityText(a11y(this.isSelected(item.messageId) ? A11y.DESELECT_MESSAGE : A11y.SELECT_MESSAGE))
     .onClick(() => {
       this.onDispatch(new ToggleMessageSelection(item.messageId));
     })
@@ -1980,6 +1990,7 @@ export struct ChatPage {
       .flexShrink(0)
       .constraintSize({ minWidth: 44, maxWidth: 44 })
       .margin({ right: this.T.spacing.sm })
+      .accessibilityText(a11y(mediaCircleA11ySlot(isFailed, media.isUploading, media.isDownloading, media.isDownloaded, false, false)))
       .onClick(() => {
         if (isFailed) {
           // FILE-103：失败重试发送
@@ -2074,6 +2085,7 @@ export struct ChatPage {
       .flexShrink(0)
       .constraintSize({ minWidth: 40, maxWidth: 40 })
       .margin({ right: this.T.spacing.sm })
+      .accessibilityText(a11y(mediaCircleA11ySlot(false, false, media.isDownloading, media.isDownloaded, this.uiState.playingVoiceMessageId === item.messageId, true)))
       .onClick(() => {
         if (media.isDownloading) {
           this.onDispatch(new CancelMediaDownload(media.fileId));
@@ -2189,6 +2201,7 @@ export struct ChatPage {
       .flexShrink(0)
       .constraintSize({ minWidth: 44, maxWidth: 44 })
       .margin({ right: this.T.spacing.sm })
+      .accessibilityText(a11y(mediaCircleA11ySlot(isFailed, media.isUploading, media.isDownloading, media.isDownloaded, this.uiState.playingVoiceMessageId === messageId, true)))
       .onClick(() => {
         if (isFailed) {
           this.onDispatch(new TapFailedMessage(messageId));
@@ -2352,6 +2365,7 @@ export struct ChatPage {
       .height(220)
       .borderRadius(110)
       .clip(true)
+      .accessibilityText(a11y(mediaCircleA11ySlot(isFailed, false, media.isDownloading, media.isDownloaded, this.activeVideoNoteId === item.messageId, true)))
       .onClick(() => {
         if (isFailed) {
           this.onDispatch(new TapFailedMessage(item.messageId));
@@ -2384,6 +2398,7 @@ export struct ChatPage {
         .backgroundColor(this.T.colors.scrim)
         .borderRadius(this.T.radius.full)
         .position({ x: 10, y: 10 })
+        .accessibilityText(a11y(this.activeVideoNoteId === item.messageId ? A11y.MUTE_SOUND : A11y.UNMUTE_SOUND))
         .onClick(() => {
           if (this.activeVideoNoteId === item.messageId) {
             this.activeVideoNoteId = null;
@@ -2619,6 +2634,7 @@ export struct ChatPage {
         .backgroundColor(this.T.colors.destructive)
         .justifyContent(FlexAlign.Center)
         .alignItems(HorizontalAlign.Center)
+        .accessibilityText(a11y(A11y.RETRY_SEND))
         .onClick(() => {
           this.onDispatch(new TapFailedMessage(messageId));
         })
@@ -2674,6 +2690,7 @@ export struct ChatPage {
             .backgroundColor(this.T.colors.scrim)
             .justifyContent(FlexAlign.Center)
             .alignItems(HorizontalAlign.Center)
+            .accessibilityText(a11y(A11y.DOWNLOAD))
             .onClick(() => {
               this.onDispatch(new RequestMediaDownload(media.fileId));
             })
@@ -2726,6 +2743,7 @@ export struct ChatPage {
             .backgroundColor(this.T.colors.scrim)
             .justifyContent(FlexAlign.Center)
             .alignItems(HorizontalAlign.Center)
+            .accessibilityText(a11y(A11y.DOWNLOAD))
             .onClick(() => {
               this.onDispatch(new RequestMediaDownload(media.fileId));
             })
@@ -2814,6 +2832,7 @@ export struct ChatPage {
           .backgroundColor(this.T.colors.scrim)
           .justifyContent(FlexAlign.Center)
           .alignItems(HorizontalAlign.Center)
+          .accessibilityText(a11y(A11y.DOWNLOAD))
           .onClick(() => {
             this.onDispatch(new RequestMediaDownload(media.fileId));
           })
@@ -2858,6 +2877,7 @@ export struct ChatPage {
     .borderRadius(this.T.radius.md)
     .clip(true)
     .margin({ bottom: this.T.spacing.xs })
+    .accessibilityText(a11y(A11y.OPEN_MEDIA))
     .onClick(() => {
       if (isFailed || media.isUploading || media.isDownloading || !media.isDownloaded) {
         return;
@@ -3139,6 +3159,7 @@ export struct ChatPage {
       .height(32)
       .justifyContent(FlexAlign.Center)
       .alignItems(VerticalAlign.Center)
+      .accessibilityText(a11y(A11y.CLOSE))
       .onClick(() => {
         this.onDispatch(new CancelComposerMode());
       })
@@ -3806,6 +3827,7 @@ export struct ChatPage {
                       .width(18)
                       .height(18)
                       .fillColor(this.T.colors.textSecondary)
+                    .accessibilityText(a11y(A11y.DELETE))
                       .onClick(() => {
                         this.onDispatch(new RemovePollComposerOption(index));
                       })
@@ -4389,6 +4411,7 @@ export struct ChatPage {
       // 测试」，下层那台全屏 Swiper 于是和返回键抢同一次点击。Block 在自身这里截断祖先链，
       // 该热区只报给浮层。（SDK：Default 只挡兄弟、不挡祖先；Block 挡子/兄/祖三级。）
       .hitTestBehavior(HitTestMode.Block)
+      .accessibilityText(a11y(A11y.BACK))
       .onClick(() => {
         this.onDispatch(new CloseMediaViewer());
       })
@@ -4487,6 +4510,7 @@ export struct ChatPage {
       .justifyContent(FlexAlign.Center)
       .alignItems(VerticalAlign.Center)
       .margin({ right: this.T.spacing.xs })
+      .accessibilityText(a11y(this.uiState.showEmojiBoard ? A11y.KEYBOARD : A11y.EMOJI))
       .onClick(() => {
         this.onDispatch(new ToggleEmojiBoard());
       })
@@ -4534,6 +4558,7 @@ export struct ChatPage {
         .justifyContent(FlexAlign.Center)
         .alignItems(VerticalAlign.Center)
         .margin({ left: this.T.spacing.xs, right: this.T.spacing.xs })
+        .accessibilityText(a11y(A11y.ATTACH))
         .onClick(() => {
           this.onDispatch(new ToggleAttachmentMenu());
         })
@@ -4553,6 +4578,7 @@ export struct ChatPage {
       .borderRadius(this.T.radius.full)
       .justifyContent(FlexAlign.Center)
       .alignItems(VerticalAlign.Center)
+      .accessibilityText(a11y(this.canSend() ? A11y.SEND : A11y.RECORD_VOICE))
       .onClick(() => {
         if (this.canSend()) {
           this.dispatchSend();
@@ -4611,6 +4637,7 @@ export struct ChatPage {
       .justifyContent(FlexAlign.Center)
       .alignItems(VerticalAlign.Center)
       .margin({ right: this.T.spacing.sm })
+      .accessibilityText(a11y(A11y.CANCEL_RECORDING))
       .onClick(() => {
         this.onDispatch(new CancelVoiceRecord());
       })
@@ -4628,6 +4655,7 @@ export struct ChatPage {
       .borderRadius(this.T.radius.full)
       .justifyContent(FlexAlign.Center)
       .alignItems(VerticalAlign.Center)
+      .accessibilityText(a11y(A11y.SEND_RECORDING))
       .onClick(() => {
         this.onDispatch(new StopAndSendVoiceRecord());
       })
@@ -4987,6 +5015,7 @@ export struct ChatPage {
         .height(BACK_ARROW_SIZE)
         .justifyContent(FlexAlign.Center)
         .alignItems(VerticalAlign.Center)
+        .accessibilityText(a11y(A11y.CLOSE))
         .onClick(() => {
           this.onDispatch(new CloseChatSearch());
         })

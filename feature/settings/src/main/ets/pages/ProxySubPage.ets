@@ -27,7 +27,7 @@
  */
 
 import { Theme, ThemeManager, LightTheme } from '@tgx/core-design-system';
-import { Lang, SupportedLanguage } from '@tgx/core-common';
+import { A11y, a11y, Lang, SupportedLanguage } from '@tgx/core-common';
 import { SettingsUiState } from '../contract/SettingsUiState';
 import {
   LoadProxies,
@@ -326,6 +326,7 @@ export struct ProxySubPage {
         .height(24)
         .fillColor(this.getTheme().colors.accent)
         .margin({ right: this.getTheme().spacing.md })
+      .accessibilityText(a11y(A11y.BACK))
         .onClick((): void => {
           this.onBack();
         })
@@ -505,6 +506,7 @@ export struct ProxySubPage {
               .height(20)
               .fillColor(this.getTheme().colors.textSecondary)
               .margin({ right: this.getTheme().spacing.md })
+            .accessibilityText(a11y(A11y.EDIT))
               .onClick((): void => {
                 this.openEditForm(item);
               })
@@ -513,6 +515,7 @@ export struct ProxySubPage {
               .width(20)
               .height(20)
               .fillColor(this.getTheme().colors.destructive)
+            .accessibilityText(a11y(A11y.DELETE))
               .onClick((): void => {
                 this.deleteTarget = item;
               })
@@ -606,6 +609,7 @@ export struct ProxySubPage {
               .width(20)
               .height(20)
               .fillColor(this.getTheme().colors.textSecondary)
+            .accessibilityText(a11y(A11y.CLOSE))
               .onClick((): void => {
                 this.formOpen = false;
               })

@@ -9,6 +9,7 @@
  */
 
 import { LightTheme, Theme } from '@tgx/core-design-system';
+import { A11y, a11y } from '@tgx/core-common';
 import { CommentItem, CommentsCoordinator, CommentsUiState } from '../coordinator/CommentsCoordinator';
 
 
@@ -41,6 +42,7 @@ export struct CommentsPage {
         .height(44)
         .justifyContent(FlexAlign.Center)
         .alignItems(VerticalAlign.Center)
+        .accessibilityText(a11y(A11y.BACK))
         .onClick(() => {
           this.onBack();
         })
@@ -205,6 +207,7 @@ export struct CommentsPage {
         .borderRadius(this.T.radius.full)
         .backgroundColor(this.uiState.inputText.trim().length > 0 ? this.T.colors.accent : this.T.colors.textTertiary)
         .margin({ left: this.T.spacing.sm })
+        .accessibilityText(a11y(A11y.SEND))
         .onClick(() => {
           if (this.coordinator !== undefined) {
             this.coordinator.sendComment();

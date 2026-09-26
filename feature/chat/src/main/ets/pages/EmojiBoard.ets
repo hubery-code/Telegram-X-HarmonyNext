@@ -14,6 +14,7 @@
  */
 
 import { LightTheme, Theme } from '@tgx/core-design-system';
+import { A11y, a11y } from '@tgx/core-common';
 import { StickerSetItem } from '../model/StickerSetPreviewState';
 import { GifItem, GIF_CATEGORIES, DEFAULT_RECENT_GIFS, DEFAULT_GIF_PACKS } from '../model/GifItem';
 import {
@@ -244,6 +245,7 @@ export struct EmojiBoard {
           .padding({ left: this.T.spacing.md, right: this.T.spacing.md })
           .justifyContent(FlexAlign.Center)
           .alignItems(VerticalAlign.Center)
+          .accessibilityText(a11y(A11y.BOARD_TAB_EMOJI))
           .onClick(() => {
             this.currentMainTab = 'emoji';
           })
@@ -259,6 +261,7 @@ export struct EmojiBoard {
           .padding({ left: this.T.spacing.md, right: this.T.spacing.md })
           .justifyContent(FlexAlign.Center)
           .alignItems(VerticalAlign.Center)
+          .accessibilityText(a11y(A11y.BOARD_TAB_STICKERS))
           .onClick(() => {
             this.currentMainTab = 'sticker';
             this.onStickerBoardVisible();
@@ -275,6 +278,7 @@ export struct EmojiBoard {
           .padding({ left: this.T.spacing.md, right: this.T.spacing.md })
           .justifyContent(FlexAlign.Center)
           .alignItems(VerticalAlign.Center)
+          .accessibilityText(a11y(A11y.BOARD_TAB_GIF))
           .onClick(() => {
             this.currentMainTab = 'gif';
           })
@@ -294,6 +298,7 @@ export struct EmojiBoard {
         .height('100%')
         .justifyContent(FlexAlign.Center)
         .alignItems(VerticalAlign.Center)
+        .accessibilityText(a11y(A11y.DELETE_CHAR))
         .onClick(() => {
           this.onDeleteChar();
         })
@@ -505,6 +510,7 @@ export struct EmojiBoard {
             .alignItems(HorizontalAlign.Center)
             .borderRadius(this.T.radius.sm)
             .backgroundColor(this.currentStickerPackIndex === index ? this.T.colors.surfaceVariant : Color.Transparent)
+            .accessibilityText(a11y(A11y.BOARD_PACK, pack.title))
             .onClick(() => {
               this.currentStickerPackIndex = index;
               this.stickerScroller.scrollToIndex(index, true);
@@ -601,6 +607,7 @@ export struct EmojiBoard {
                       .justifyContent(FlexAlign.Center)
                       .alignItems(VerticalAlign.Center)
                       .borderRadius(this.T.radius.sm)
+                      .accessibilityText(a11y(A11y.BOARD_CELL, item.emoji))
                       .onClick(() => {
                         if (this.onSendSticker) {
                           this.onSendSticker(item);

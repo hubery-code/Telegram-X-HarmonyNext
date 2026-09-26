@@ -9,6 +9,7 @@
  */
 
 import { LightTheme, Theme } from '@tgx/core-design-system';
+import { A11y, a11y } from '@tgx/core-common';
 import { StickerSetPreviewState, StickerSetItem } from '../model/StickerSetPreviewState';
 import { stickerCellImagePath } from '../model/StickerBoard';
 
@@ -90,6 +91,7 @@ export struct StickerSetPreviewSheet {
             .justifyContent(FlexAlign.Center)
             .alignItems(VerticalAlign.Center)
             .backgroundColor(this.T.colors.surfaceVariant)
+            .accessibilityText(a11y(A11y.CLOSE))
             .onClick(() => {
               this.onClose();
             })
@@ -157,6 +159,7 @@ export struct StickerSetPreviewSheet {
                     .justifyContent(FlexAlign.Center)
                     .alignItems(VerticalAlign.Center)
                     .borderRadius(this.T.radius.md)
+                    .accessibilityText(a11y(A11y.BOARD_CELL, item.emoji))
                     .onClick(() => {
                       this.onSelectSticker(item);
                     })

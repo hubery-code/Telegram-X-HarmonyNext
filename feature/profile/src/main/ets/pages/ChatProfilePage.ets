@@ -10,6 +10,7 @@
  */
 
 import { LightTheme, Theme } from '@tgx/core-design-system';
+import { A11y, a11y } from '@tgx/core-common';
 import { ChatProfileUiState, ChatMemberUiItem } from '../contract/ChatProfileUiState';
 import {
   ChatProfileIntent,
@@ -75,6 +76,7 @@ export struct ChatProfilePage {
         .height(24)
         .fillColor(this.T.colors.accent)
         .margin({ left: this.T.spacing.xs, right: this.T.spacing.md })
+      .accessibilityText(a11y(A11y.BACK))
         .onClick(() => {
           this.onBack();
         })

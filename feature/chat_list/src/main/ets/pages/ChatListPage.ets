@@ -16,6 +16,7 @@
  */
 
 import { LightTheme, Theme } from '@tgx/core-design-system';
+import { A11y, a11y } from '@tgx/core-common';
 import { ChatListItem } from '../model/ChatListItem';
 import { ChatListUiState, ChatActionMenuState, ChatFolderTab, filterChatsByFolder } from '../contract/ChatListUiState';
 import { DrawerItemKey } from '../contract/DrawerState';
@@ -252,6 +253,7 @@ export struct ChatListPage {
               .height(SETTINGS_BUTTON_SIZE * 0.6)
               .fillColor(this.T.colors.accent)
               .margin({ right: this.T.spacing.sm })
+              .accessibilityText(a11y(A11y.BACK))
               .onClick(() => {
                 this.onDispatch(new CloseArchivedChats());
               })
@@ -266,6 +268,7 @@ export struct ChatListPage {
               .width(22)
               .height(22)
               .fillColor(this.T.colors.accent)
+              .accessibilityText(a11y(A11y.SETTINGS))
               .onClick(() => {
                 this.onOpenSettings();
               })
@@ -286,6 +289,7 @@ export struct ChatListPage {
               .height(22)
               .fillColor(this.T.colors.accent)
               .margin({ right: this.T.spacing.sm })
+              .accessibilityText(a11y(A11y.MENU))
               .onClick(() => {
                 this.showDrawer = true;
                 // DRAWER-101：开抽屉时确保账号头有数据（reducer 幂等）。
@@ -303,6 +307,7 @@ export struct ChatListPage {
               .width(22)
               .height(22)
               .fillColor(this.T.colors.accent)
+              .accessibilityText(a11y(A11y.SEARCH))
               .onClick(() => {
                 this.onOpenSearch();
               })

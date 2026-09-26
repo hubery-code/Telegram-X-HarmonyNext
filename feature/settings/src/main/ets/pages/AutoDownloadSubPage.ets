@@ -37,7 +37,7 @@
  */
 
 import { Theme, ThemeManager, LightTheme } from '@tgx/core-design-system';
-import { Lang, SupportedLanguage } from '@tgx/core-common';
+import { A11y, a11y, Lang, SupportedLanguage } from '@tgx/core-common';
 import {
   AutoDownloadChatScope,
   AutoDownloadFlags,
@@ -392,6 +392,7 @@ export struct AutoDownloadSubPage {
         .height(24)
         .fillColor(this.getTheme().colors.accent)
         .margin({ right: this.getTheme().spacing.md })
+      .accessibilityText(a11y(A11y.BACK))
         .onClick((): void => {
           this.onBack();
         })
@@ -474,6 +475,7 @@ export struct AutoDownloadSubPage {
             .width(20)
             .height(20)
             .fillColor(this.getTheme().colors.textSecondary)
+          .accessibilityText(a11y(A11y.CLOSE))
             .onClick((): void => {
               this.editingScope = null;
             })
@@ -601,6 +603,7 @@ export struct AutoDownloadSubPage {
             .width(20)
             .height(20)
             .fillColor(this.getTheme().colors.textSecondary)
+          .accessibilityText(a11y(A11y.CLOSE))
             .onClick((): void => {
               this.showAutoOnSheet = false;
             })
@@ -718,6 +721,7 @@ export struct AutoDownloadSubPage {
             .width(20)
             .height(20)
             .fillColor(this.getTheme().colors.textSecondary)
+          .accessibilityText(a11y(A11y.CLOSE))
             .onClick((): void => {
               this.editingLimitNetwork = null;
             })

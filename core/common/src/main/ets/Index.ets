@@ -27,3 +27,4 @@ export {
   resolveLanguage,
   formatString
 } from './Lang';
+export { A11y, A11Y_SLOTS, a11y } from './A11y';

@@ -19,6 +19,7 @@
  */
 
 import { LightTheme, Theme } from '@tgx/core-design-system';
+import { A11y, a11y } from '@tgx/core-common';
 import { ForwardTarget, matchesForwardQuery } from '../model/ForwardTarget';
 
 
@@ -80,6 +81,7 @@ export struct ForwardPickerPage {
         .width(HEADER_BUTTON_WIDTH)
         .height(40)
         .alignItems(VerticalAlign.Center)
+        .accessibilityText(a11y(A11y.CANCEL))
         .onClick(() => {
           this.onCancel();
         })

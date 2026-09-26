@@ -16,6 +16,7 @@
  */
 
 import { LightTheme, Theme } from '@tgx/core-design-system';
+import { A11y, a11y } from '@tgx/core-common';
 import { DrawerState, DrawerItemKey } from '../contract/DrawerState';
 
 
@@ -134,6 +135,7 @@ export struct DrawerMenu {
             .width(DRAWER_CHEVRON_SIZE * 0.8)
             .height(DRAWER_CHEVRON_SIZE * 0.8)
             .fillColor(this.T.colors.textOnAccent)
+            .accessibilityText(a11y(A11y.SWITCH_ACCOUNT))
             .onClick(() => {
               this.onSwitchAccount();
             })

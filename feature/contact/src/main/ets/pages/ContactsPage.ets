@@ -23,6 +23,7 @@
  */
 
 import { LightTheme, Theme } from '@tgx/core-design-system';
+import { A11y, a11y } from '@tgx/core-common';
 import { fileUri } from '@kit.CoreFileKit';
 import { ContactsItem, ContactsSection, ContactsUiState } from '../contract/ContactsUiState';
 import {
@@ -233,6 +234,7 @@ export struct ContactsPage {
           .height(24)
           .fillColor(this.T.colors.accent)
           .margin({ left: this.T.spacing.xs, right: this.T.spacing.md })
+        .accessibilityText(a11y(A11y.BACK))
           .onClick(() => {
             this.onBack();
           })
@@ -247,6 +249,7 @@ export struct ContactsPage {
           .width(24)
           .height(24)
           .fillColor(this.T.colors.accent)
+        .accessibilityText(a11y(A11y.ADD_CONTACT))
           .onClick(() => {
             this.onAddContact();
           })

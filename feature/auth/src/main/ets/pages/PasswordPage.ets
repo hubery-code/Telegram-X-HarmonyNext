@@ -6,6 +6,7 @@
  */
 
 import { LightTheme, Theme } from '@tgx/core-design-system';
+import { A11y, a11y } from '@tgx/core-common';
 
 
 @Component
@@ -61,6 +62,7 @@ export struct PasswordPage {
           .height(24)
           .fillColor(this.T.colors.icon)
           .margin({ left: this.T.spacing.sm })
+        .accessibilityText(a11y(this.isPasswordVisible ? A11y.HIDE_PASSWORD : A11y.SHOW_PASSWORD))
           .onClick(() => {
             this.onToggleVisibility();
           })

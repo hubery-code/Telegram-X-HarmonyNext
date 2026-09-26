@@ -20,7 +20,7 @@ import {
   chatFontSizeIndex,
   chatTextSizeOf
 } from '@tgx/core-design-system';
-import { Lang, LanguagePreference, SupportedLanguage } from '@tgx/core-common';
+import { A11y, a11y, Lang, LanguagePreference, SupportedLanguage } from '@tgx/core-common';
 import { AutoDownloadPolicy } from '@tgx/core-domain';
 import { SettingsThemeMode, SettingsUiState } from '../contract/SettingsUiState';
 import {
@@ -349,6 +349,7 @@ export struct SettingsPage {
         .height(24)
         .fillColor(this.getTheme().colors.accent)
         .margin({ right: this.getTheme().spacing.md })
+      .accessibilityText(a11y(A11y.BACK))
         .onClick((): void => {
           this.onBack();
         })

@@ -10,6 +10,7 @@
  */
 
 import { LightTheme, Theme } from '@tgx/core-design-system';
+import { A11y, a11y } from '@tgx/core-common';
 import { fileUri } from '@kit.CoreFileKit';
 import { SelfProfileUiState } from '../contract/SelfProfileUiState';
 import { SelfProfileIntent, EditTapped, SettingsSectionTapped } from '../contract/SelfProfileIntent';
@@ -90,6 +91,7 @@ export struct SelfProfilePage {
           .height(24)
           .fillColor(this.T.colors.textOnAccent)
           .margin({ left: this.T.spacing.xs })
+        .accessibilityText(a11y(A11y.BACK))
           .onClick(() => {
             this.onBack();
           })
@@ -307,6 +309,7 @@ export struct SelfProfilePage {
         .backgroundColor(this.T.colors.accent)
         .justifyContent(FlexAlign.Center)
         .alignItems(HorizontalAlign.Center)
+        .accessibilityText(a11y(A11y.EDIT))
         .onClick(() => {
           this.onDispatch(new EditTapped());
         })

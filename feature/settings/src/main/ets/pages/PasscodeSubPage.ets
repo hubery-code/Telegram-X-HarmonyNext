@@ -26,7 +26,7 @@
  */
 
 import { Theme, ThemeManager, LightTheme } from '@tgx/core-design-system';
-import { Lang, SupportedLanguage } from '@tgx/core-common';
+import { A11y, a11y, Lang, SupportedLanguage } from '@tgx/core-common';
 import {
   APP_LOCK_ERROR_CORRUPT,
   APP_LOCK_ERROR_STORE,
@@ -175,6 +175,7 @@ export struct PasscodeSubPage {
         .height(24)
         .fillColor(this.getTheme().colors.accent)
         .margin({ right: this.getTheme().spacing.md })
+      .accessibilityText(a11y(A11y.BACK))
         .onClick((): void => {
           this.onBack();
         })

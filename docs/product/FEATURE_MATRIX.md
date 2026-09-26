@@ -962,6 +962,37 @@
 > 强度与 Android 同级（换 PBKDF2/HMAC 需要同时定档迭代数与首启耗时）；⑤ 改密码中途退出不锁死（秘密尚未变更，已按此设计）。
 
 
+> **追加（A11Y-101，FEAT-P2-011 无障碍半边）**：全仓**只有图标、没有文字**的可按控件补无障碍标签 —— 本轮之前
+> 这样的控件全仓 **56 处零标签**，屏幕朗读下聊天页头部一排按钮念出来是「按钮」两字，用户不知道哪个是搜索、哪个是附件。
+> **口径**：ArkUI 的 `.accessibilityText(value)` 才是 Android `setContentDescription` 的对应物（覆盖控件自身文本、
+> 供读屏单独播报）；`accessibilityDescription` 是「补充描述」，语义上对应 Android 的 `contentDescription` 之外的 hint，
+> 所以本包统一走 `accessibilityText`。
+> **一条实测的取证边界（很重要，别再重复走一遍）**：`uitest dumpLayout` **根本不导出 `accessibilityText`** ——
+> 本轮在同一份布局上做过对照：临时给一个控件挂 `accessibilityDescription('A11YDESC-PROBE')`，dump 里以 `description`
+> 字段如实出现；而同页 20+ 处 `accessibilityText(...)` **一个字段都没有**。也就是说这类改动
+> **不能靠 dumpLayout 做 A/B 自证**（打开屏幕朗读同样在 dump 里看不出差别），可强制的防线只剩**静态守卫 + 词典级单测**；
+> 设备侧能自证的只有「没把页面点崩」（本轮收尾重跑了一次：会话列表 107 节点、文案与上一轮一致）。
+> 附带两条工具事实：dumpLayout 想稳定拿单一窗口要加 `-b <bundleName>`（否则系统窗口和 SR 的引导气泡会混进来）；
+> `-p /dev/stdout` 不支持，落盘到 `/data/local/tmp` 再 `file recv`；屏幕朗读关不掉时用
+> `aa force-stop com.huawei.hmos.screenreader`（比在设置页里双击切换可靠，`client num: 0` 才算真关掉）。
+> **标签不许散落写字符串**：`tools/ci/generate_a11y_labels.py` 里的 `LABELS` 是**唯一清单**（42 个槽位，
+> 每项带 key / 英文 / 中文），同一个脚本生成 `core/common/A11y.ets`（槽位类 + `A11Y_SLOTS` + `a11y()`）
+> **并把词条注入 `Lang.ets` 的中英文两张表**（`A11Y-101 BEGIN/END` 标记之间）——「表里有 = 词典里有」是构造出来的，
+> 不靠人记。页面写法固定 `a11y(A11y.SLOT[, args])`，带参槽位（`Open profile, {1}`、`{1} sticker`）走 `Lang.getString` 的变参。
+> **守卫 `tools/ci/check_accessibility_labels.py`（CI 第 6 步 / 共 10 步）三条规则**：
+> R1 覆盖（图标控件必须有标签）、R2 路由（参数必须以 `a11y(` 开头并引用 `A11y.X`，禁止字面量）、R3 翻译（声明的槽位中英都要有）。
+> R2 有一处例外要写清：媒体气泡的标签随下载/播放态变化，这条判定抽成纯函数
+> `feature/chat/model/MediaA11y.ets:mediaCircleA11ySlot()`（失败 > 上传中 > 下载中 > 未下载 > 不可播 > 播放/暂停），
+> 守卫放行白名单内的槽位来源函数，函数体由单测断言而不是由正则断言。
+> 测试：`core_common` 新增 2 条（**42 个槽位在中英两种语言下都能取到非空、且不等于 key**；带参槽位的实参真替换进去）、
+> `feature_chat` 新增 6 条（优先级六分支）。**一条反直觉的坑**：EN 表以英文句子本身为 key，
+> 所以复用通用文案时（`A11y.CANCEL = 'Cancel'`）`getString('Cancel','en')` **合法地回显 key**，
+> 「回显即缺翻译」的启发式只对 `A11y*` 前缀的 key 和 ZH 表成立。
+> 遗留：① RTL（FEAT-P2-011 的另一半）与平板双栏未做；② `accessibilityLevel`/焦点顺序未管（读屏下的遍历次序还是布局次序）；
+> ③ 系统 dumpLayout 看不到 `accessibilityText`，若将来要在设备上验证播报内容，只能靠真机 SR 听或 `hilog` 的 SR 文本，
+> 本轮 1.1MB `sr_hilog.txt` 里没找到可用的应用侧播报行。
+
+
 | 功能 ID | 功能名 |
 |---|---|
 | FEAT-P2-001 | 联系人同步与新建会话 |

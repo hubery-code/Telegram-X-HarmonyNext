@@ -11,6 +11,7 @@
  */
 
 import { LightTheme, Theme } from '@tgx/core-design-system';
+import { A11y, a11y } from '@tgx/core-common';
 import { SearchChatItem } from '../contract/SearchChatItem';
 import { SearchMessageItem } from '../contract/SearchMessageItem';
 import { SearchTab, SearchUiState } from '../contract/SearchUiState';
@@ -156,6 +157,7 @@ export struct SearchPage {
           .height(24)
           .fillColor(this.T.colors.accent)
           .margin({ right: this.T.spacing.sm })
+        .accessibilityText(a11y(A11y.BACK))
           .onClick(() => {
             this.onBack();
           })
