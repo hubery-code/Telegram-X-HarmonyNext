@@ -10,8 +10,12 @@ SEARCH-101 的 SearchPage 有 5 处 `caption1`、2 处 `caption2`、2 处 `radiu
 因为搜索结果分段只在"有结果"时渲染，所以单测（reducer 纯函数）与空态真机都
 测不出来；直到 INTEG-002 把搜索页接上导航、输入真实关键词才必现崩溃。
 
-本脚本把这类缺陷前移到 CI：扫描所有 `T.<namespace>.<name>` 用法，与
+本脚本把这类缺陷前移到 CI：扫描所有 `.<namespace>.<name>` 用法，与
 core/design_system 里真实定义的 token 名逐一比对，发现未定义即失败。
+
+正则不限定接收者：PRIVACY-101 的详情页选择器写 `this.getTheme().typography.title3`
+而不是 `T.typography.title3`，旧的「只认 T. 前缀」口径完全看不见它，装上真机一打开就
+JsError 杀进程。写法五花八门，未定义的 token 名才是问题本身。
 
 用法：python3 tools/ci/check_design_tokens.py [--quiet]
 退出码：0 = 全部合法；1 = 存在未定义 token
@@ -34,7 +38,7 @@ NAMESPACES = {
 }
 
 SKIP_PARTS = ('/oh_modules/', '/build/', '/.test/', '/design_system/')
-USAGE_RE = re.compile(r'\bT\.(typography|colors|spacing|radius)\.([A-Za-z0-9_]+)')
+USAGE_RE = re.compile(r'\.(typography|colors|spacing|radius)\.([A-Za-z0-9_]+)')
 
 
 def load_defined() -> dict:

@@ -42,9 +42,18 @@ import {
   ClosePrivacyPage,
   LoadPrivacySettings,
   PrivacySettingsLoaded,
-  TogglePrivacySetting,
-  PrivacySettingUpdated,
-  PrivacySettingUpdateFailed,
+  OpenPrivacyKeyPage,
+  ClosePrivacyKeyPage,
+  SetPrivacyMode,
+  TogglePrivacyPremium,
+  OpenPrivacyPicker,
+  ClosePrivacyPicker,
+  TogglePrivacyPickerContact,
+  ApplyPrivacyPicker,
+  PrivacyDetailLoaded,
+  PrivacyDetailLoadFailed,
+  PrivacyRulesSaved,
+  PrivacyRulesSaveFailed,
   OpenProxyPage,
   CloseProxyPage,
   LoadProxies,
@@ -110,7 +119,18 @@ import {
   NetworkDownloadLimits
 } from '@tgx/core-domain';
 import { ActiveSessionItem } from '../main/ets/model/ActiveSessionItem';
-import { PrivacySettingItem } from '../main/ets/model/PrivacySettings';
+import { PrivacySettingItem, PrivacySettingKey, privacyRowLabel } from '../main/ets/model/PrivacySettings';
+import { parsePrivacyRules } from '../main/ets/model/PrivacyRules';
+import { PrivacyDetailState, PrivacyContactRow } from '../main/ets/model/PrivacyDetail';
+import {
+  TdUserPrivacySettingRule,
+  UserPrivacySettingRuleAllowAll,
+  UserPrivacySettingRuleAllowContacts,
+  UserPrivacySettingRuleAllowPremiumUsers,
+  UserPrivacySettingRuleAllowUsers,
+  UserPrivacySettingRuleRestrictAll,
+  UserPrivacySettingRuleRestrictUsers
+} from '@tgx/core-td-api-generated';
 import {
   PROXY_NONE_ID,
   PROXY_NEW_ID,
@@ -139,6 +159,94 @@ function privacyState(items: PrivacySettingItem[]): SettingsUiState {
     privacyItems: items,
     isLoadingPrivacy: false
   });
+}
+
+/**
+ * PRIVACY-101：隐私测试的小工具。
+ * 规则列表直接用 TDLib 生成类构造，断言时压成 `a>b>c` 的类型串 —— 例外名单的
+ * 语义全在「顺序 + 类型」上，比逐条 cast 好读得多。
+ */
+function everybodyRules(): TdUserPrivacySettingRule[] {
+  return [new UserPrivacySettingRuleAllowAll()];
+}
+
+function contactsRules(): TdUserPrivacySettingRule[] {
+  return [new UserPrivacySettingRuleAllowContacts(), new UserPrivacySettingRuleRestrictAll()];
+}
+
+function nobodyRules(): TdUserPrivacySettingRule[] {
+  // 设备实测：TDLib 对「没有人能看到」读回的就是空列表。
+  return [];
+}
+
+function allowUsersRule(userIds: number[]): TdUserPrivacySettingRule {
+  const rule: UserPrivacySettingRuleAllowUsers = new UserPrivacySettingRuleAllowUsers();
+  rule.user_ids = userIds;
+  return rule;
+}
+
+function restrictUsersRule(userIds: number[]): TdUserPrivacySettingRule {
+  const rule: UserPrivacySettingRuleRestrictUsers = new UserPrivacySettingRuleRestrictUsers();
+  rule.user_ids = userIds;
+  return rule;
+}
+
+function privacyItem(key: PrivacySettingKey, rules: TdUserPrivacySettingRule[]): PrivacySettingItem {
+  return new PrivacySettingItem(key, parsePrivacyRules(rules));
+}
+
+function contacts(): PrivacyContactRow[] {
+  return [new PrivacyContactRow(1001, 'Alice', false), new PrivacyContactRow(2002, 'Bob', false)];
+}
+
+/** 已读完、可直接编辑的详情态（`savedRules` 即服务端快照）。 */
+function loadedDetail(
+  key: PrivacySettingKey,
+  rules: TdUserPrivacySettingRule[],
+  rows: PrivacyContactRow[]
+): PrivacyDetailState {
+  return PrivacyDetailState.forLoaded(key, rules, rows);
+}
+
+function stateWithDetail(detail: PrivacyDetailState): SettingsUiState {
+  return privacyState([privacyItem(detail.key, detail.savedRules)]).copyWith({
+    showPrivacyPage: true,
+    privacyDetail: detail
+  });
+}
+
+/** 详情页当前的规则列表；没有打开详情时回空列表（调用方据此断言「什么都没发生」）。 */
+function rulesOf(state: SettingsUiState): TdUserPrivacySettingRule[] {
+  const detail: PrivacyDetailState | null = state.privacyDetail;
+  return detail === null ? [] : detail.rules;
+}
+
+function typesOf(rules: TdUserPrivacySettingRule[]): string {
+  const out: string[] = [];
+  for (let i = 0; i < rules.length; i++) {
+    out.push(rules[i].type);
+  }
+  return out.join('>');
+}
+
+function idsOf(rule: TdUserPrivacySettingRule): number[] {
+  if (rule.type === 'userPrivacySettingRuleAllowUsers') {
+    return (rule as UserPrivacySettingRuleAllowUsers).user_ids;
+  }
+  if (rule.type === 'userPrivacySettingRuleRestrictUsers') {
+    return (rule as UserPrivacySettingRuleRestrictUsers).user_ids;
+  }
+  return [];
+}
+
+function selectedIdsOf(rows: PrivacyContactRow[]): number[] {
+  const out: number[] = [];
+  for (let i = 0; i < rows.length; i++) {
+    if (rows[i].selected) {
+      out.push(rows[i].userId);
+    }
+  }
+  return out;
 }
 
 /** PROXY-101：已读到代理列表、首屏加载结束的起始态。 */
@@ -844,13 +952,16 @@ export default function settingsReducerTest(): void {
       expect(result.effects[0].kind).assertEqual('loadPrivacySettings');
     });
 
-    it('closePrivacyPage_onlyTogglesFlag', 0, () => {
-      const state = privacyState([]).copyWith({ showPrivacyPage: true });
+    it('closePrivacyPage_clearsFlagAndUncommittedDetail', 0, () => {
+      const state = stateWithDetail(loadedDetail('show_bio', everybodyRules(), contacts())).copyWith({
+        showPrivacyPage: true
+      });
       const result = settingsReducer(state, new ClosePrivacyPage(), makeEnv());
 
       expect(result.state.showPrivacyPage).assertFalse();
-      // 关闭子页不得把已读到的档位清空：回到设置页时卡片副标题还要用。
-      expect(result.state.privacyItems.length).assertEqual(0);
+      // 未提交的编辑不带回列表页，但已读到的行视图要留着（卡片副标题还在用）。
+      expect(result.state.privacyDetail === null).assertTrue();
+      expect(result.state.privacyItems.length).assertEqual(1);
       expect(result.effects.length).assertEqual(0);
     });
 
@@ -870,87 +981,309 @@ export default function settingsReducerTest(): void {
 
     it('privacySettingsLoaded_populatesItems_andClearsLoading', 0, () => {
       const items: PrivacySettingItem[] = [
-        new PrivacySettingItem('show_last_seen', 'contacts'),
-        new PrivacySettingItem('allow_calls', 'everybody')
+        privacyItem('show_last_seen', contactsRules()),
+        privacyItem('allow_calls', everybodyRules())
       ];
       const state = SettingsUiState.initial().copyWith({ isLoadingPrivacy: true });
       const result = settingsReducer(state, new PrivacySettingsLoaded(items), makeEnv());
 
       expect(result.state.privacyItems.length).assertEqual(2);
-      expect(result.state.privacyItems[0].choice).assertEqual('contacts');
-      expect(result.state.privacyItems[1].choice).assertEqual('everybody');
+      expect(privacyRowLabel(result.state.privacyItems[0])).assertEqual('My Contacts');
+      expect(privacyRowLabel(result.state.privacyItems[1])).assertEqual('Everybody');
       expect(result.state.isLoadingPrivacy).assertFalse();
     });
 
-    it('togglePrivacySetting_writesNextChoice_andMarksRowBusy', 0, () => {
-      const state = privacyState([new PrivacySettingItem('show_last_seen', 'everybody')]);
-      const result = settingsReducer(state, new TogglePrivacySetting('show_last_seen'), makeEnv());
+    // ---- PRIVACY-101 详情页：开合与写回时机 ----
 
-      expect(result.state.updatingPrivacyKey).assertEqual('show_last_seen');
+    it('openPrivacyKeyPage_opensDetailLoading_andEmitsDetailEffect', 0, () => {
+      const state = privacyState([privacyItem('show_bio', everybodyRules())]);
+      const result = settingsReducer(state, new OpenPrivacyKeyPage('show_bio'), makeEnv());
+
+      const detail: PrivacyDetailState | null = result.state.privacyDetail;
+      expect(detail !== null).assertTrue();
+      if (detail !== null) {
+        expect(detail.key).assertEqual('show_bio');
+        expect(detail.loading).assertTrue();
+        expect(detail.rules.length).assertEqual(0);
+      }
       expect(result.effects.length).assertEqual(1);
-      const effect = result.effects[0] as SetPrivacySettingEffect;
+      expect(result.effects[0].kind).assertEqual('loadPrivacyDetail');
+    });
+
+    it('privacyDetailLoaded_fillsRulesAndContacts_andClearsLoading', 0, () => {
+      const state = stateWithDetail(PrivacyDetailState.forLoading('show_bio'));
+      const loaded: PrivacyDetailLoaded = new PrivacyDetailLoaded(
+        'show_bio',
+        contactsRules(),
+        contacts()
+      );
+      const result = settingsReducer(state, loaded, makeEnv());
+
+      const detail: PrivacyDetailState | null = result.state.privacyDetail;
+      expect(detail !== null).assertTrue();
+      if (detail !== null) {
+        expect(detail.loading).assertFalse();
+        expect(detail.rules.length).assertEqual(2);
+        // 服务端快照 == 本地列表：刚读到的项不该被当成「有未保存的改动」。
+        expect(detail.isDirty()).assertFalse();
+      }
+    });
+
+    it('privacyDetailLoaded_ignoresRepliesForAnotherKey', 0, () => {
+      const state = stateWithDetail(loadedDetail('show_bio', everybodyRules(), contacts()));
+      const late: PrivacyDetailLoaded = new PrivacyDetailLoaded('show_phone_number', [], []);
+      const result = settingsReducer(state, late, makeEnv());
+
+      expect(result.state === state).assertTrue();
+    });
+
+    it('privacyDetailLoadFailed_keepsDetailOpenWithErrorMessage', 0, () => {
+      const state = stateWithDetail(PrivacyDetailState.forLoading('show_bio'));
+      const failed: PrivacyDetailLoadFailed =
+        new PrivacyDetailLoadFailed('show_bio', 'Unable to load privacy settings.');
+      const result = settingsReducer(state, failed, makeEnv());
+
+      const detail: PrivacyDetailState | null = result.state.privacyDetail;
+      expect(detail !== null).assertTrue();
+      if (detail !== null) {
+        expect(detail.loading).assertFalse();
+        expect(detail.errorMessage).assertEqual('Unable to load privacy settings.');
+      }
+    });
+
+    it('closePrivacyKeyPage_withoutEdits_writesNothing', 0, () => {
+      const state = stateWithDetail(loadedDetail('show_bio', contactsRules(), contacts()));
+      const result = settingsReducer(state, new ClosePrivacyKeyPage(), makeEnv());
+
+      expect(result.state.privacyDetail === null).assertTrue();
+      expect(result.effects.length).assertEqual(0);
+      expect(result.state.updatingPrivacyKey === null).assertTrue();
+    });
+
+    it('closePrivacyKeyPage_withEdits_writesLocalRulesOnce', 0, () => {
+      const state = stateWithDetail(loadedDetail('show_bio', contactsRules(), contacts())
+        .copyWith({ rules: everybodyRules() }));
+      const result = settingsReducer(state, new ClosePrivacyKeyPage(), makeEnv());
+
+      expect(result.state.privacyDetail === null).assertTrue();
+      expect(result.state.updatingPrivacyKey).assertEqual('show_bio');
+      expect(result.effects.length).assertEqual(1);
+      const effect: SetPrivacySettingEffect = result.effects[0] as SetPrivacySettingEffect;
       expect(effect.kind).assertEqual('setPrivacySetting');
-      expect(effect.key).assertEqual('show_last_seen');
-      expect(effect.choice).assertEqual('contacts');
-      // 写回成功前不改显示档位：界面必须反映服务端值而不是猜的值。
-      expect(result.state.privacyItems[0].choice).assertEqual('everybody');
+      expect(effect.key).assertEqual('show_bio');
+      // 写回的是本地编辑后的整条列表（含例外名单），不是重新拼出来的单条规则。
+      expect(typesOf(effect.rules)).assertEqual('userPrivacySettingRuleAllowAll');
     });
 
-    it('togglePrivacySetting_ignoresWhileAnotherRowIsUpdating', 0, () => {
-      const state = privacyState([
-        new PrivacySettingItem('show_last_seen', 'everybody'),
-        new PrivacySettingItem('allow_calls', 'contacts')
-      ]).copyWith({ updatingPrivacyKey: 'show_last_seen' });
-      const result = settingsReducer(state, new TogglePrivacySetting('allow_calls'), makeEnv());
+    it('closePrivacyKeyPage_whileAnotherWriteIsPending_skipsWrite', 0, () => {
+      const state = stateWithDetail(loadedDetail('show_bio', contactsRules(), contacts())
+        .copyWith({ rules: everybodyRules() }))
+        .copyWith({ updatingPrivacyKey: 'allow_calls' });
+      const result = settingsReducer(state, new ClosePrivacyKeyPage(), makeEnv());
+
+      expect(result.state.privacyDetail === null).assertTrue();
+      expect(result.effects.length).assertEqual(0);
+    });
+
+    // ---- PRIVACY-101 详情页：主档位与 Premium ----
+
+    it('setPrivacyMode_rewritesGeneralRules_andKeepsExceptions', 0, () => {
+      const rules: TdUserPrivacySettingRule[] =
+        [restrictUsersRule([2002]), new UserPrivacySettingRuleAllowContacts(), new UserPrivacySettingRuleRestrictAll()];
+      const state = stateWithDetail(loadedDetail('show_bio', rules, contacts()));
+      const result = settingsReducer(state, new SetPrivacyMode('everybody'), makeEnv());
+
+      const detail: PrivacyDetailState | null = result.state.privacyDetail;
+      expect(detail !== null).assertTrue();
+      if (detail !== null) {
+        expect(typesOf(detail.rules))
+          .assertEqual('userPrivacySettingRuleRestrictUsers>userPrivacySettingRuleAllowAll');
+        // 改档只动本地：没离开页面前不发 setUserPrivacySettingRules。
+        expect(detail.savedRules.length).assertEqual(3);
+        expect(detail.isDirty()).assertTrue();
+      }
+      expect(result.effects.length).assertEqual(0);
+    });
+
+    it('setPrivacyMode_whenDetailClosed_isIdentity', 0, () => {
+      const state = privacyState([privacyItem('show_bio', everybodyRules())]);
+      const result = settingsReducer(state, new SetPrivacyMode('nobody'), makeEnv());
 
       expect(result.state === state).assertTrue();
       expect(result.effects.length).assertEqual(0);
     });
 
-    it('togglePrivacySetting_ignoresUnknownRowKey', 0, () => {
-      // 该项还没读到（首屏加载中）：点了不能凭默认值写服务端。
-      const state = privacyState([new PrivacySettingItem('show_bio', 'nobody')]);
-      const result = settingsReducer(state, new TogglePrivacySetting('allow_calls'), makeEnv());
-
-      expect(result.state === state).assertTrue();
-      expect(result.effects.length).assertEqual(0);
-    });
-
-    it('togglePrivacySetting_fromCustom_resetsToContacts', 0, () => {
-      const state = privacyState([new PrivacySettingItem('show_phone_number', 'custom')]);
-      const result = settingsReducer(state, new TogglePrivacySetting('show_phone_number'), makeEnv());
-
-      const effect = result.effects[0] as SetPrivacySettingEffect;
-      expect(effect.choice).assertEqual('contacts');
-    });
-
-    it('privacySettingUpdated_replacesSingleRowAndKeepsOthers', 0, () => {
-      const state = privacyState([
-        new PrivacySettingItem('show_last_seen', 'everybody'),
-        new PrivacySettingItem('allow_calls', 'nobody')
-      ]).copyWith({ updatingPrivacyKey: 'show_last_seen' });
-      const result = settingsReducer(
-        state,
-        new PrivacySettingUpdated('show_last_seen', 'nobody'),
-        makeEnv()
+    it('togglePrivacyPremium_inContactsMode_addsThenRemovesPremiumRule', 0, () => {
+      const state = stateWithDetail(loadedDetail('show_bio', contactsRules(), contacts()));
+      const on: SettingsUiState = settingsReducer(state, new TogglePrivacyPremium(), makeEnv()).state;
+      expect(typesOf(rulesOf(on))).assertEqual(
+        'userPrivacySettingRuleAllowPremiumUsers>userPrivacySettingRuleAllowContacts>userPrivacySettingRuleRestrictAll'
       );
 
-      expect(result.state.privacyItems[0].choice).assertEqual('nobody');
-      expect(result.state.privacyItems[1].choice).assertEqual('nobody');
+      const off: SettingsUiState = settingsReducer(on, new TogglePrivacyPremium(), makeEnv()).state;
+      expect(typesOf(rulesOf(off))).assertEqual(
+        'userPrivacySettingRuleAllowContacts>userPrivacySettingRuleRestrictAll'
+      );
+      // 两次点完回到原样：不该留下「未保存的改动」。
+      const offDetail: PrivacyDetailState | null = off.privacyDetail;
+      expect(offDetail !== null).assertTrue();
+      if (offDetail !== null) {
+        expect(offDetail.isDirty()).assertFalse();
+      }
+    });
+
+    it('togglePrivacyPremium_outsideContactsMode_isIgnored', 0, () => {
+      const state = stateWithDetail(loadedDetail('show_bio', everybodyRules(), contacts()));
+      const result = settingsReducer(state, new TogglePrivacyPremium(), makeEnv());
+
+      // 「所有人」档下点 Premium 不该顺手把可见面缩到联系人。
+      expect(result.state === state).assertTrue();
+    });
+
+    // ---- PRIVACY-101 详情页：例外名单选择器 ----
+
+    it('openPrivacyPicker_seedsPickedIdsFromTheEditedSide', 0, () => {
+      const rules: TdUserPrivacySettingRule[] = [
+        allowUsersRule([1001]),
+        new UserPrivacySettingRuleAllowContacts(),
+        new UserPrivacySettingRuleRestrictAll()
+      ];
+      const state = stateWithDetail(loadedDetail('show_bio', rules, contacts()));
+      const result = settingsReducer(state, new OpenPrivacyPicker('always'), makeEnv());
+
+      const detail: PrivacyDetailState | null = result.state.privacyDetail;
+      expect(detail !== null).assertTrue();
+      if (detail !== null) {
+        expect(detail.pickedUserIds.join(',')).assertEqual('1001');
+        expect(selectedIdsOf(detail.contacts).join(',')).assertEqual('1001');
+      }
+
+      const never: SettingsUiState =
+        settingsReducer(result.state, new OpenPrivacyPicker('never'), makeEnv()).state;
+      const neverDetail: PrivacyDetailState | null = never.privacyDetail;
+      expect(neverDetail !== null).assertTrue();
+      if (neverDetail !== null) {
+        expect(neverDetail.pickedUserIds.length).assertEqual(0);
+        expect(selectedIdsOf(neverDetail.contacts).length).assertEqual(0);
+      }
+    });
+
+    it('togglePrivacyPickerContact_addsThenRemoves_andLeavesRulesAlone', 0, () => {
+      const state = stateWithDetail(loadedDetail('show_bio', contactsRules(), contacts())
+        .copyWith({ pickerTarget: 'always', pickedUserIds: [] }));
+      const added: SettingsUiState =
+        settingsReducer(state, new TogglePrivacyPickerContact(2002), makeEnv()).state;
+      const addedDetail: PrivacyDetailState | null = added.privacyDetail;
+      expect(addedDetail !== null).assertTrue();
+      if (addedDetail !== null) {
+        expect(addedDetail.pickedUserIds.join(',')).assertEqual('2002');
+        expect(selectedIdsOf(addedDetail.contacts).join(',')).assertEqual('2002');
+        expect(typesOf(addedDetail.rules)).assertEqual(typesOf(rulesOf(state)));
+      }
+
+      const removed: SettingsUiState =
+        settingsReducer(added, new TogglePrivacyPickerContact(2002), makeEnv()).state;
+      const removedDetail: PrivacyDetailState | null = removed.privacyDetail;
+      expect(removedDetail !== null).assertTrue();
+      if (removedDetail !== null) {
+        expect(removedDetail.pickedUserIds.length).assertEqual(0);
+      }
+    });
+
+    it('togglePrivacyPickerContact_whenPickerClosed_isIdentity', 0, () => {
+      const state = stateWithDetail(loadedDetail('show_bio', contactsRules(), contacts()));
+      const result = settingsReducer(state, new TogglePrivacyPickerContact(2002), makeEnv());
+
+      expect(result.state === state).assertTrue();
+    });
+
+    it('closePrivacyPicker_dropsPicksWithoutTouchingRules', 0, () => {
+      const state = stateWithDetail(loadedDetail('show_bio', contactsRules(), contacts())
+        .copyWith({ pickerTarget: 'always', pickedUserIds: [2002] }));
+      const result = settingsReducer(state, new ClosePrivacyPicker(), makeEnv());
+
+      const detail: PrivacyDetailState | null = result.state.privacyDetail;
+      expect(detail !== null).assertTrue();
+      if (detail !== null) {
+        expect(detail.pickerTarget === null).assertTrue();
+        expect(detail.pickedUserIds.length).assertEqual(0);
+        expect(detail.isDirty()).assertFalse();
+        expect(selectedIdsOf(detail.contacts).length).assertEqual(0);
+      }
+    });
+
+    it('applyPrivacyPicker_replacesAlwaysListAndStripsTheSamePersonFromNever', 0, () => {
+      // 1001、2002 原本都在「从不允许」里，这次只把 1001 勾进「总是允许」：
+      // 同一个人不能两侧都留，但没被勾选的 2002 必须原地不动。
+      const rules: TdUserPrivacySettingRule[] = [
+        restrictUsersRule([1001, 2002]),
+        new UserPrivacySettingRuleAllowContacts(),
+        new UserPrivacySettingRuleRestrictAll()
+      ];
+      const state = stateWithDetail(loadedDetail('show_bio', rules, contacts())
+        .copyWith({ pickerTarget: 'always', pickedUserIds: [1001] }));
+      const result = settingsReducer(state, new ApplyPrivacyPicker(), makeEnv());
+
+      const detail: PrivacyDetailState | null = result.state.privacyDetail;
+      expect(detail !== null).assertTrue();
+      if (detail !== null) {
+        expect(typesOf(detail.rules)).assertEqual(
+          'userPrivacySettingRuleAllowUsers>userPrivacySettingRuleRestrictUsers>userPrivacySettingRuleAllowContacts>userPrivacySettingRuleRestrictAll'
+        );
+        // 新名单插到最前，例外必须先于主档位规则才可能先命中。
+        expect(idsOf(detail.rules[0]).join(',')).assertEqual('1001');
+        expect(idsOf(detail.rules[1]).join(',')).assertEqual('2002');
+        expect(detail.pickerTarget === null).assertTrue();
+        expect(detail.pickedUserIds.length).assertEqual(0);
+        expect(detail.isDirty()).assertTrue();
+      }
+      expect(result.effects.length).assertEqual(0);
+    });
+
+    it('applyPrivacyPicker_withEmptyPicks_clearsThatSide', 0, () => {
+      const rules: TdUserPrivacySettingRule[] = [
+        allowUsersRule([1001]),
+        new UserPrivacySettingRuleAllowContacts(),
+        new UserPrivacySettingRuleRestrictAll()
+      ];
+      const state = stateWithDetail(loadedDetail('show_bio', rules, contacts())
+        .copyWith({ pickerTarget: 'always', pickedUserIds: [] }));
+      const result = settingsReducer(state, new ApplyPrivacyPicker(), makeEnv());
+
+      const detail: PrivacyDetailState | null = result.state.privacyDetail;
+      expect(detail !== null).assertTrue();
+      if (detail !== null) {
+        expect(typesOf(detail.rules)).assertEqual(
+          'userPrivacySettingRuleAllowContacts>userPrivacySettingRuleRestrictAll'
+        );
+      }
+    });
+
+    // ---- PRIVACY-101 详情页：写回结果 ----
+
+    it('privacyRulesSaved_updatesThatRowFromServerTruth', 0, () => {
+      const state = privacyState([
+        privacyItem('show_bio', everybodyRules()),
+        privacyItem('allow_calls', contactsRules())
+      ]).copyWith({ updatingPrivacyKey: 'show_bio' });
+      const saved: PrivacyRulesSaved = new PrivacyRulesSaved('show_bio', nobodyRules());
+      const result = settingsReducer(state, saved, makeEnv());
+
+      expect(privacyRowLabel(result.state.privacyItems[0])).assertEqual('Nobody');
+      expect(privacyRowLabel(result.state.privacyItems[1])).assertEqual('My Contacts');
       expect(result.state.updatingPrivacyKey === null).assertTrue();
       expect(result.state.errorMessage === null).assertTrue();
     });
 
-    it('privacySettingUpdateFailed_keepsShownChoice_andReportsError', 0, () => {
-      const state = privacyState([new PrivacySettingItem('show_last_seen', 'everybody')])
-        .copyWith({ updatingPrivacyKey: 'show_last_seen' });
-      const result = settingsReducer(
-        state,
-        new PrivacySettingUpdateFailed('show_last_seen', 'Unable to update privacy settings.'),
-        makeEnv()
-      );
+    it('privacyRulesSaveFailed_keepsShownRow_andReportsError', 0, () => {
+      const state = privacyState([privacyItem('show_bio', everybodyRules())])
+        .copyWith({ updatingPrivacyKey: 'show_bio' });
+      const failed: PrivacyRulesSaveFailed =
+        new PrivacyRulesSaveFailed('show_bio', 'Unable to update privacy settings.');
+      const result = settingsReducer(state, failed, makeEnv());
 
-      expect(result.state.privacyItems[0].choice).assertEqual('everybody');
+      // 失败时行上显示的仍是服务端真值，靠横幅说明这次没写进去。
+      expect(privacyRowLabel(result.state.privacyItems[0])).assertEqual('Everybody');
       expect(result.state.updatingPrivacyKey === null).assertTrue();
       expect(result.state.errorMessage).assertEqual('Unable to update privacy settings.');
     });
@@ -967,7 +1300,7 @@ export default function settingsReducerTest(): void {
     });
 
     it('copyWith_keepsPrivacyFieldsWhenUnspecified', 0, () => {
-      const state = privacyState([new PrivacySettingItem('show_bio', 'nobody')])
+      const state = privacyState([privacyItem('show_bio', nobodyRules())])
         .copyWith({ showPrivacyPage: true, updatingPrivacyKey: 'show_bio' });
       const next = state.copyWith({ displayName: 'hubery' });
 

@@ -83,6 +83,10 @@ import {
   UserPrivacySettingRules,
   TdUserPrivacySettingRule,
   decodeUserPrivacySettingRules,
+  GetContacts,
+  encodeGetContacts,
+  Users,
+  decodeUsers,
   AddedProxies,
   AddedProxy,
   DisableProxy,
@@ -125,15 +129,14 @@ import {
 } from '../model/NotificationSettings';
 import { ActiveSessionItem } from '../model/ActiveSessionItem';
 import {
-  choiceFromRules,
-  PrivacyChoice,
   PrivacySettingItem,
   PrivacySettingKey,
   PRIVACY_SETTING_KEYS,
   privacySettingLabel,
-  rulesForChoice,
   toUserPrivacySetting
 } from '../model/PrivacySettings';
+import { parsePrivacyRules } from '../model/PrivacyRules';
+import { PrivacyContactRow, privacyContactRows } from '../model/PrivacyDetail';
 import {
   classifyProxyFailure,
   pingProxyRequestFromItem,
@@ -168,8 +171,10 @@ import {
   NotificationSettingsUpdateFailed,
   ProfileLoaded,
   PrivacySettingsLoaded,
-  PrivacySettingUpdated,
-  PrivacySettingUpdateFailed,
+  PrivacyDetailLoaded,
+  PrivacyDetailLoadFailed,
+  PrivacyRulesSaved,
+  PrivacyRulesSaveFailed,
   SetAvailableAccounts,
   SetErrorMessage,
   SettingsIntent,
@@ -209,6 +214,7 @@ import {
   TerminateAllOtherSessionsEffect,
   TerminateSessionEffect,
   LoadPrivacySettingsEffect,
+  LoadPrivacyDetailEffect,
   SetPrivacySettingEffect,
   LoadProxiesEffect,
   EnableProxyEffect,
@@ -550,7 +556,13 @@ export class SettingsCoordinator {
 
       case 'setPrivacySetting': {
         const privacyEffect: SetPrivacySettingEffect = effect as SetPrivacySettingEffect;
-        this.handleSetPrivacySetting(privacyEffect.key, privacyEffect.choice);
+        this.handleSetPrivacySetting(privacyEffect.key, privacyEffect.rules);
+        break;
+      }
+
+      case 'loadPrivacyDetail': {
+        const detailEffect: LoadPrivacyDetailEffect = effect as LoadPrivacyDetailEffect;
+        this.handleLoadPrivacyDetail(detailEffect.key);
         break;
       }
 
@@ -1307,7 +1319,7 @@ export class SettingsCoordinator {
    * 读取 8 项隐私设置。
    * 串行而不是 Promise.all：TDLib 对同一连接的并发请求会回 too_many_requests，
    * 通知设置（SET-106）同口径处理，这里保持一致。
-   * 单项失败不整屏报错，只把该项落成 unknown，其余 7 项照常显示。
+   * 单项失败不整屏报错，只把该项落成「没读到」（行上显示 Unknown），其余项照常显示。
    */
   private handleLoadPrivacySettings(): void {
     this.loadPrivacySettings();
@@ -1318,13 +1330,14 @@ export class SettingsCoordinator {
       const items: PrivacySettingItem[] = [];
       for (let i = 0; i < PRIVACY_SETTING_KEYS.length; i++) {
         const key: PrivacySettingKey = PRIVACY_SETTING_KEYS[i];
-        const result: Result<PrivacyChoice, AppError> = await this.fetchPrivacyChoice(key);
+        const result: Result<TdUserPrivacySettingRule[], AppError> =
+          await this.fetchPrivacyRules(key);
         if (result.ok) {
-          items.push(new PrivacySettingItem(key, result.value));
+          items.push(new PrivacySettingItem(key, parsePrivacyRules(result.value)));
         }
         if (result.err) {
           this.logger.logError(TAG, result.error);
-          items.push(new PrivacySettingItem(key, 'unknown'));
+          items.push(new PrivacySettingItem(key, null));
         }
       }
       if (this.destroyed) {
@@ -1347,8 +1360,184 @@ export class SettingsCoordinator {
     }
   }
 
-  private handleSetPrivacySetting(key: PrivacySettingKey, choice: PrivacyChoice): void {
-    this.setPrivacySetting(key, choice);
+  /**
+   * PRIVACY-101：打开详情页。除该项规则外还要一份联系人名单（例外名单取名 + 多选器数据源）；
+   * 两者是两次独立请求，联系人失败不挡规则展示 —— 页面照样能看到当前规则，选择器为空并报错。
+   */
+  private handleLoadPrivacyDetail(key: PrivacySettingKey): void {
+    this.loadPrivacyDetail(key);
+  }
+
+  private async loadPrivacyDetail(key: PrivacySettingKey): Promise<void> {
+    try {
+      const rulesResult: Result<TdUserPrivacySettingRule[], AppError> =
+        await this.fetchPrivacyRules(key);
+      if (this.destroyed) {
+        return;
+      }
+      if (rulesResult.err) {
+        this.logger.logError(TAG, rulesResult.error);
+        this.dispatch(new PrivacyDetailLoadFailed(
+          key,
+          this.privacyErrorMessage(rulesResult.error, 'load')
+        ));
+        return;
+      }
+      const contactsResult: Result<PrivacyContactRow[], AppError> =
+        await this.fetchPrivacyContacts();
+      if (this.destroyed) {
+        return;
+      }
+      // ArkTS 不做类型收窄：`.value` / `.error` 必须各自待在 `ok` / `err` 分支里。
+      let rules: TdUserPrivacySettingRule[] = [];
+      if (rulesResult.ok) {
+        rules = rulesResult.value;
+      }
+      if (contactsResult.ok) {
+        this.dispatch(new PrivacyDetailLoaded(key, rules, contactsResult.value));
+        return;
+      }
+      // 联系人读不到不该挡规则展示：这一项「谁能看」照样呈现，选择器留空并明确报错，
+      // 而不是把整页变成错误态让用户以为规则没读到。
+      if (contactsResult.err) {
+        this.logger.logError(TAG, contactsResult.error);
+      }
+      this.dispatch(new PrivacyDetailLoaded(key, rules, []));
+      this.dispatch(new SetErrorMessage(
+        'Unable to load your contacts, so the exception list cannot be edited right now.'
+      ));
+    } catch (e) {
+      if (this.destroyed) {
+        return;
+      }
+      const cause: string = e instanceof Error ? e.name : 'non-error';
+      const error: AppError = AppErrors.unknown(
+        'settings-privacy-detail',
+        'Unexpected privacy detail load failure',
+        cause
+      );
+      this.logger.logError(TAG, error);
+      this.dispatch(new PrivacyDetailLoadFailed(key, this.privacyErrorMessage(error, 'load')));
+    }
+  }
+
+  /**
+   * 选择器数据源：`getContacts` 拿 id，缺名字的逐个 `getUser` 补齐（走 UserRegistry 缓存）。
+   * 串行补拉而不是并发：TDLib 同连接并发会回 too_many_requests，与列表页 8 项读取同口径。
+   */
+  private async fetchPrivacyContacts(): Promise<Result<PrivacyContactRow[], AppError>> {
+    const idsResult: Result<number[], AppError> = await this.fetchContactUserIds();
+    if (idsResult.err) {
+      return err<PrivacyContactRow[], AppError>(idsResult.error);
+    }
+    const selfIdResult: Result<number, AppError> = await this.fetchMyUserId();
+    if (selfIdResult.err) {
+      return err<PrivacyContactRow[], AppError>(selfIdResult.error);
+    }
+    // ArkTS 不做类型收窄：`.value` 只能待在各自的 `ok` 分支里读出来。
+    let userIds: number[] = [];
+    if (idsResult.ok) {
+      userIds = idsResult.value;
+    }
+    let selfUserId: number = 0;
+    if (selfIdResult.ok) {
+      selfUserId = selfIdResult.value;
+    }
+    const users: User[] = [];
+    for (let i = 0; i < userIds.length; i++) {
+      const cached: User | null = this.userRegistry.getUser(userIds[i]);
+      if (cached !== null) {
+        users.push(cached);
+        continue;
+      }
+      const pending: Result<TdPendingRequest, AppError> = this.userRegistry.requestUser(userIds[i]);
+      if (pending.ok) {
+        await pending.value.promise;
+        const fetched: User | null = this.userRegistry.getUser(userIds[i]);
+        if (fetched !== null) {
+          users.push(fetched);
+        }
+      }
+      // 拉不到的 id 不进选择器：多选器列的是「可勾选的人」，缺一行不影响已有名单的正确性
+      // （例外名单里的陌生 id 会以占位行保留，见 `privacyExceptionRows`）。
+    }
+    return ok<PrivacyContactRow[], AppError>(privacyContactRows(users, selfUserId, []));
+  }
+
+  private async fetchContactUserIds(): Promise<Result<number[], AppError>> {
+    const request: GetContacts = new GetContacts();
+    const pendingResult: Result<TdPendingRequest, AppError> = this.scope.request(
+      'getContacts',
+      encodeGetContacts(request) as TdWireObject
+    );
+    if (pendingResult.err) {
+      return err<number[], AppError>(pendingResult.error);
+    }
+    if (pendingResult.ok) {
+      const response: Result<TdWireObject, AppError> = await pendingResult.value.promise;
+      if (response.err) {
+        return err<number[], AppError>(response.error);
+      }
+      if (response.ok) {
+        const users: Users | null = decodeUsers(response.value as TdJsonRaw);
+        if (users === null) {
+          return err<number[], AppError>(
+            AppErrors.internal(
+              'settings_contacts_decode',
+              'TDLib contacts payload could not be decoded'
+            )
+          );
+        }
+        return ok<number[], AppError>(users.user_ids.slice());
+      }
+      return err<number[], AppError>(
+        AppErrors.internal('settings_contacts_response', 'TDLib returned no contacts result')
+      );
+    }
+    return err<number[], AppError>(
+      AppErrors.internal('settings_contacts_request', 'TDLib contacts request was not created')
+    );
+  }
+
+  /** 选择器要排除自己（Android picker 的 `FLAG_NO_SELF`）；`getMe` 顺带暖 UserRegistry。 */
+  private async fetchMyUserId(): Promise<Result<number, AppError>> {
+    const request: GetMe = new GetMe();
+    const pendingResult: Result<TdPendingRequest, AppError> = this.scope.request(
+      'getMe',
+      encodeGetMe(request) as TdWireObject
+    );
+    if (pendingResult.err) {
+      return err<number, AppError>(pendingResult.error);
+    }
+    if (pendingResult.ok) {
+      const response: Result<TdWireObject, AppError> = await pendingResult.value.promise;
+      if (response.err) {
+        return err<number, AppError>(response.error);
+      }
+      if (response.ok) {
+        const me: User | null = decodeUser(response.value as TdJsonRaw);
+        if (me === null) {
+          return err<number, AppError>(
+            AppErrors.internal(
+              'settings_me_decode',
+              'TDLib current user could not be decoded'
+            )
+          );
+        }
+        this.userRegistry.putUser(me);
+        return ok<number, AppError>(me.id);
+      }
+      return err<number, AppError>(
+        AppErrors.internal('settings_me_response', 'TDLib returned no getMe result')
+      );
+    }
+    return err<number, AppError>(
+      AppErrors.internal('settings_me_request', 'TDLib getMe request was not created')
+    );
+  }
+
+  private handleSetPrivacySetting(key: PrivacySettingKey, rules: TdUserPrivacySettingRule[]): void {
+    this.setPrivacySetting(key, rules);
   }
 
   /**
@@ -1356,30 +1545,34 @@ export class SettingsCoordinator {
    * TDLib 会把规则原样存下来，但「写 A 读到 B」才是真问题（例如账号无 Premium
    * 时写 allowPremiumUsers 会被规范化），所以不能用请求值乐观更新。
    */
-  private async setPrivacySetting(key: PrivacySettingKey, choice: PrivacyChoice): Promise<void> {
+  private async setPrivacySetting(
+    key: PrivacySettingKey,
+    rules: TdUserPrivacySettingRule[]
+  ): Promise<void> {
     try {
-      const writeResult: Result<void, AppError> = await this.writePrivacyRules(key, choice);
+      const writeResult: Result<void, AppError> = await this.writePrivacyRules(key, rules);
       if (writeResult.err) {
         if (!this.destroyed) {
           this.logger.logError(TAG, writeResult.error);
-          this.dispatch(new PrivacySettingUpdateFailed(
+          this.dispatch(new PrivacyRulesSaveFailed(
             key,
             this.privacyErrorMessage(writeResult.error, 'update')
           ));
         }
         return;
       }
-      const readResult: Result<PrivacyChoice, AppError> = await this.fetchPrivacyChoice(key);
+      const readResult: Result<TdUserPrivacySettingRule[], AppError> =
+        await this.fetchPrivacyRules(key);
       if (this.destroyed) {
         return;
       }
       if (readResult.ok) {
-        this.dispatch(new PrivacySettingUpdated(key, readResult.value));
+        this.dispatch(new PrivacyRulesSaved(key, readResult.value));
         return;
       }
       if (readResult.err) {
         this.logger.logError(TAG, readResult.error);
-        this.dispatch(new PrivacySettingUpdateFailed(
+        this.dispatch(new PrivacyRulesSaveFailed(
           key,
           this.privacyErrorMessage(readResult.error, 'update')
         ));
@@ -1395,11 +1588,13 @@ export class SettingsCoordinator {
         cause
       );
       this.logger.logError(TAG, error);
-      this.dispatch(new PrivacySettingUpdateFailed(key, this.privacyErrorMessage(error, 'update')));
+      this.dispatch(new PrivacyRulesSaveFailed(key, this.privacyErrorMessage(error, 'update')));
     }
   }
 
-  private async fetchPrivacyChoice(key: PrivacySettingKey): Promise<Result<PrivacyChoice, AppError>> {
+  private async fetchPrivacyRules(
+    key: PrivacySettingKey
+  ): Promise<Result<TdUserPrivacySettingRule[], AppError>> {
     const request: GetUserPrivacySettingRules = new GetUserPrivacySettingRules();
     request.setting = toUserPrivacySetting(key);
     const pendingResult: Result<TdPendingRequest, AppError> = this.scope.request(
@@ -1412,49 +1607,48 @@ export class SettingsCoordinator {
         const rules: UserPrivacySettingRules | null =
           decodeUserPrivacySettingRules(response.value as TdJsonRaw);
         if (rules === null) {
-          return err<PrivacyChoice, AppError>(
+          return err<TdUserPrivacySettingRule[], AppError>(
             AppErrors.internal(
               'settings_privacy_decode',
               `TDLib privacy rules for ${privacySettingLabel(key)} could not be decoded`
             )
           );
         }
-        const choice: PrivacyChoice = choiceFromRules(rules.rules);
         this.logger.info(
           TAG,
           'privacy_rules_read',
-          `${key} -> ${choice},rules=[${privacyRuleTypesForLog(rules.rules)}]`
+          `${key} -> rules=[${privacyRuleTypesForLog(rules.rules)}]`
         );
-        return ok<PrivacyChoice, AppError>(choice);
+        return ok<TdUserPrivacySettingRule[], AppError>(rules.rules.slice());
       }
       if (response.err) {
-        return err<PrivacyChoice, AppError>(response.error);
+        return err<TdUserPrivacySettingRule[], AppError>(response.error);
       }
-      return err<PrivacyChoice, AppError>(
+      return err<TdUserPrivacySettingRule[], AppError>(
         AppErrors.internal('settings_privacy_response', 'TDLib returned no privacy rules result')
       );
     }
     if (pendingResult.err) {
-      return err<PrivacyChoice, AppError>(pendingResult.error);
+      return err<TdUserPrivacySettingRule[], AppError>(pendingResult.error);
     }
-    return err<PrivacyChoice, AppError>(
+    return err<TdUserPrivacySettingRule[], AppError>(
       AppErrors.internal('settings_privacy_request', 'TDLib privacy rules request was not created')
     );
   }
 
   private async writePrivacyRules(
     key: PrivacySettingKey,
-    choice: PrivacyChoice
+    rules: TdUserPrivacySettingRule[]
   ): Promise<Result<void, AppError>> {
-    const rules: UserPrivacySettingRules = new UserPrivacySettingRules();
-    rules.rules = rulesForChoice(choice);
+    const payload: UserPrivacySettingRules = new UserPrivacySettingRules();
+    payload.rules = rules.slice();
     const request: SetUserPrivacySettingRules = new SetUserPrivacySettingRules();
     request.setting = toUserPrivacySetting(key);
-    request.rules = rules;
+    request.rules = payload;
     this.logger.info(
       TAG,
       'privacy_rules_write',
-      `${key} <- ${choice},rules=[${privacyRuleTypesForLog(rules.rules)}]`
+      `${key} <- rules=[${privacyRuleTypesForLog(payload.rules)}]`
     );
     const pendingResult: Result<TdPendingRequest, AppError> = this.scope.request(
       'setUserPrivacySettingRules',

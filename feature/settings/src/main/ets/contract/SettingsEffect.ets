@@ -9,7 +9,8 @@
 
 import { Effect } from '@tgx/feature-template';
 import { NotificationScopeKey } from '../model/NotificationSettings';
-import { PrivacyChoice, PrivacySettingKey } from '../model/PrivacySettings';
+import { PrivacySettingKey } from '../model/PrivacySettings';
+import { TdUserPrivacySettingRule } from '@tgx/core-td-api-generated';
 import { ProxyForm } from '../model/ProxySettings';
 import { AutoDownloadPolicy, AutoLockChoice, DataSaverSettings, DownloadLimitsByNetwork } from '@tgx/core-domain';
 
@@ -105,15 +106,29 @@ export class LoadPrivacySettingsEffect implements Effect {
   readonly kind: 'loadPrivacySettings' = 'loadPrivacySettings';
 }
 
+/**
+ * PRIVACY-101：读单个隐私项的完整规则列表 + 联系人名单（详情页的数据源）。
+ * 单独一条效应而不是复用 `loadPrivacySettings`：详情页只要一项的真值，全量八项的读取
+ * 是列表页的事。
+ */
+export class LoadPrivacyDetailEffect implements Effect {
+  readonly kind: 'loadPrivacyDetail' = 'loadPrivacyDetail';
+  readonly key: PrivacySettingKey;
+
+  constructor(key: PrivacySettingKey) {
+    this.key = key;
+  }
+}
+
 /** SELF-102：写回 setUserPrivacySettingRules 后回读该项。 */
 export class SetPrivacySettingEffect implements Effect {
   readonly kind: 'setPrivacySetting' = 'setPrivacySetting';
   readonly key: PrivacySettingKey;
-  readonly choice: PrivacyChoice;
+  readonly rules: TdUserPrivacySettingRule[];
 
-  constructor(key: PrivacySettingKey, choice: PrivacyChoice) {
+  constructor(key: PrivacySettingKey, rules: TdUserPrivacySettingRule[]) {
     this.key = key;
-    this.choice = choice;
+    this.rules = rules;
   }
 }
 
@@ -314,6 +329,7 @@ export type SettingsEffect =
   | TerminateSessionEffect
   | TerminateAllOtherSessionsEffect
   | LoadPrivacySettingsEffect
+  | LoadPrivacyDetailEffect
   | SetPrivacySettingEffect
   | LoadProxiesEffect
   | EnableProxyEffect

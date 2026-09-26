@@ -120,7 +120,7 @@
 | FEAT-SET-002 | 语言切换（中/英） | P1 | `ui/SettingsLanguageController.java`, `core/Lang.java`, `telegram/Tdlib.java:5912`（SetOption language_pack_id） | SetOption(language_pack_id) | 切换后 UI 立即生效且重启保持，TDLib 语言包同步 | — | Accepted | 迁移组 |
 | FEAT-SET-003 | 通知设置入口 | P1 | `ui/SettingsNotificationController.java`, `telegram/LocalScopeNotificationSettings.java` | SetScopeNotificationSettings, SetChatNotificationSettings | 全局/单会话通知开关生效并持久化 | 通知权限 | Accepted | SET-106 |
 | FEAT-SET-004 | 存储与缓存入口 | P1 | `ui/SettingsCacheController.java`, `telegram/TdlibSettingsManager.java` | GetStorageStatistics, OptimizeStorage | 展示缓存占用并支持一键清理，清理后媒体可重下 | 文件 | Accepted | 迁移组 |
-| FEAT-SET-005 | 隐私和安全入口（可见范围规则） | P1 | `ui/PrivacySettingsActivity` + `TD_getPrivacySettingRules` | getUserPrivacySettingRules, setUserPrivacySettingRules | 8 项可见范围（最后上线/手机号/头像/简介/生日/通话/入群/被搜索）读真值、点一行即写回并回读确认 | — | Accepted | SELF-102 |
+| FEAT-SET-005 | 隐私和安全入口（可见范围规则） | P1 | `ui/PrivacySettingsActivity` + `ui/SettingsPrivacyKeyController.java` + `TD_getPrivacySettingRules` | getUserPrivacySettingRules, setUserPrivacySettingRules | 8 项可见范围（最后上线/手机号/头像/简介/生日/通话/入群/被搜索）读真值；点一行进详情页：主档位单选 + Premium 勾 +「总是/从不允许」例外名单与联系人多选器，**离开页面才写回并回读确认** | — | Accepted | SELF-102 → PRIVACY-101 |
 
 ### 外观与本地化
 
@@ -1032,6 +1032,30 @@
 > 遗留：① 生物识别（APPLOCK-103，需真机 + HUKS auth-bound key 设计）；② 改密码中途退出不锁死已按此设计、
 > sha256 单次迭代不抗取证（与 Android 同级）；③ 移除 PIN 时不清 `appLockPinVisible`（本端认为「偏好属于用户，
 > 不属于这条秘密值」，Android 同样保留 `pc_visible`）。
+
+> **追加（PRIVACY-101，FEAT-SET-005 的隐私项详情页半边）**：把 SELF-102 那套「点一行=循环写回」换成 Android 的
+> `SettingsPrivacyKeyController` 结构 —— 独立详情页 = 主档位单选 + Premium 勾 +「总是允许 / 从不允许」两条例外名单
+> + 联系人多选器。三条语义从 Android 抄死：**提交时机**是离开页面（`onBlur()` 里的 `saveChanges()`），页内改多少下
+> 都不落盘，且 `nothingChanged()` 时连写都不发（设备取证第二轮复原路径上 `write` 那一行**根本没出现**）；
+> **`allowAll`/`restrictAll` 是终止规则**，命中即停止扫描、也停止收集 id，所以「所有人 + 例外某人」的可观察口径是
+> 主档位仍为 Everybody 而名单非空；**例外改写**是新选名单 `unshift` 到最前、同 id 从对侧剥掉、剥空的那条规则整条删除。
+> 例外行的值照 `Lang.plural(xUsers)`：0 → `Add Users`、1 → `1 User`、n → `N Users`（原先自造 `No Exceptions` 与
+> `1 Users` 已换掉）。**不做乐观更新**：写后一律以回读为准，因为服务端会归一化 —— 实测写
+> `[allowUsers, allowContacts, restrictAll]` 读回 `[allowUsers, allowContacts]`（尾部 `restrictAll` 被 TDLib 丢掉），
+> 解析结果仍是 `contacts`，所以本端不能假设"写进去的就是读出来的"。
+> 一处**守卫口径缺陷**顺带修掉：`tools/ci/check_design_tokens.py` 原先只认 `T.<ns>.<name>`，而详情页写的是
+> `this.getTheme().typography.title3`（`title3` 不存在），正则看不见这种接收者 → 装真机一开选择器就
+> `TypeError: Cannot read property fontSize of undefined` 被 ArkUI 记成 JsError **杀进程**。改成不限定接收者
+> （`\.(typography|colors|spacing|radius)\.\w+`），并用一次性探针文件验过 A/B（能抓到、清理后 0 误报）。
+> 契约侧：原来 3 条一次性 intent 被 12 条（进页/选档/勾 Premium/开合选择器/勾选/完成/离开…）替代，规则模型
+> `PrivacyRules`（有序数组 + 档位解析）与视图模型 `PrivacyDetail`（例外行 + 选择器种子）都是 `core` 内 Kit-free 纯函数。
+> 测试：`feature_settings` **286/286**、`core_common` **52/52**（Lang 键替换），四守卫 0 违规。
+> 设备取证（127.0.0.1:5555，`.hvigor/outputs/privacy101/`）：基线 `rules=[allowAll]` → 简介项（`show_bio`，挑的是
+> 影响最小的一键）改 contacts（Premium + 两条例外行同时出现）→ 选 `be hu` → Done → `1 User` → 离开 → `write <- [allowUsers, allowContacts, restrictAll]` →
+> 读回 `[allowUsers, allowContacts]` → 列表行 **My Contacts** → 重开（选择正确回灌）→ 取消勾选 → Everybody →
+> 离开 → `write <- [allowAll]` → 读回 `rules=[allowAll]` → 列表行 **Everybody**，**账号状态已还原**，其余 7 项隐私键未碰。
+> 遗留：① 例外名单只支持"人"（Android 还能选已加入的群/频道成员，本端 `allowChatMembers` 只读不回写）；
+> ② `PrivacySettingsActivity` 里 `btn_togglePermission` 那一类布尔开关项（自动删除、通话允许联系人等）尚未拆包。
 
 
 | 功能 ID | 功能名 |

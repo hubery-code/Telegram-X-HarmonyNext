@@ -48,9 +48,18 @@ export {
   ClosePrivacyPage,
   LoadPrivacySettings,
   PrivacySettingsLoaded,
-  TogglePrivacySetting,
-  PrivacySettingUpdated,
-  PrivacySettingUpdateFailed,
+  OpenPrivacyKeyPage,
+  ClosePrivacyKeyPage,
+  PrivacyDetailLoaded,
+  PrivacyDetailLoadFailed,
+  SetPrivacyMode,
+  TogglePrivacyPremium,
+  OpenPrivacyPicker,
+  ClosePrivacyPicker,
+  TogglePrivacyPickerContact,
+  ApplyPrivacyPicker,
+  PrivacyRulesSaved,
+  PrivacyRulesSaveFailed,
   OpenPasscodePage,
   ClosePasscodePage,
   LoadPasscodeState,
@@ -75,6 +84,7 @@ export {
   TerminateSessionEffect,
   TerminateAllOtherSessionsEffect,
   LoadPrivacySettingsEffect,
+  LoadPrivacyDetailEffect,
   SetPrivacySettingEffect,
   SettingsEffect
 } from './contract/SettingsEffect';
@@ -83,18 +93,40 @@ export {
 export { ActiveSessionItem } from './model/ActiveSessionItem';
 export { formatBytes, formatStorageLabel } from './model/StorageSize';
 export {
-  PrivacyChoice,
   PrivacySettingItem,
   PrivacySettingKey,
   PRIVACY_SETTING_KEYS,
-  choiceFromRules,
-  isPrivacyChoiceWritable,
-  nextPrivacyChoice,
-  privacyChoiceLabel,
+  privacyRowLabel,
   privacySettingLabel,
-  rulesForChoice,
   toUserPrivacySetting
 } from './model/PrivacySettings';
+export {
+  PrivacyBotsException,
+  PrivacyMode,
+  PrivacyRulesView,
+  parsePrivacyRules,
+  privacyAlwaysAllowCount,
+  privacyModeLabel,
+  privacyNeedAlwaysAllow,
+  privacyNeedNeverAllow,
+  privacyNeverAllowCount,
+  privacyRulesForMode,
+  privacyRulesWithAllowUsers,
+  privacyRulesWithRestrictUsers
+} from './model/PrivacyRules';
+export {
+  PrivacyContactRow,
+  PrivacyDetailState,
+  PrivacyExceptionRow,
+  PrivacyExceptionTarget,
+  PrivacyExceptionsView,
+  privacyContactSelectable,
+  privacyContactRows,
+  privacyExceptionRows,
+  privacyRuleIds,
+  privacyRulesEqual,
+  privacyUserTitle
+} from './model/PrivacyDetail';
 export {
   SettingsSectionKey,
   SettingsCardKey,

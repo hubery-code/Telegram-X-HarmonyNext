@@ -14,12 +14,11 @@
  */
 
 /**
- * feature/settings — 「隐私和安全」子页（SELF-102 / FEAT-SET-001 隐私分区）。
+ * feature/settings — 「隐私和安全」子页（SELF-102 / PRIVACY-101 / FEAT-SET-001 隐私分区）。
  *
  * 对齐 Telegram X 的 Privacy 页：一行一个设置项，右侧显示当前可见范围。
- * 例外名单编辑器（谁总是允许 / 谁从不允许）属于未拆包范围，故这里点行即在
- * 「所有人 → 我的联系人 → 没有人」之间循环；带例外名单的项显示为「自定义」
- * 且不会被静默改写成单条规则。
+ * PRIVACY-101 起，点一行不再是「三档循环」，而是进入该项的详情页
+ * （`PrivacyKeySubPage`）—— 循环写回会发**单条**规则，把用户维护的例外名单静默删掉。
  */
 
 import { Theme, ThemeManager, LightTheme } from '@tgx/core-design-system';
@@ -29,16 +28,15 @@ import {
   LoadPasscodeState,
   LoadPrivacySettings,
   OpenPasscodePage,
+  OpenPrivacyKeyPage,
   SetErrorMessage,
-  SettingsIntent,
-  TogglePrivacySetting
+  SettingsIntent
 } from '../contract/SettingsIntent';
 import {
-  PrivacyChoice,
   PrivacySettingItem,
   PrivacySettingKey,
   PRIVACY_SETTING_KEYS,
-  privacyChoiceLabel,
+  privacyRowLabel,
   privacySettingLabel
 } from '../model/PrivacySettings';
 
@@ -103,14 +101,14 @@ export struct PrivacySubPage {
    * 必须在 builder 内部读 this.uiState：@Builder 的按值入参不参与状态观察，
    * 传成品的档位文案会导致点完一行文字不变（SET-106 同一条坑）。
    */
-  private choiceOf(key: PrivacySettingKey): PrivacyChoice {
+  private itemOf(key: PrivacySettingKey): PrivacySettingItem | null {
     const items: readonly PrivacySettingItem[] = this.uiState.privacyItems;
     for (let i = 0; i < items.length; i++) {
       if (items[i].key === key) {
-        return items[i].choice;
+        return items[i];
       }
     }
-    return 'unknown';
+    return null;
   }
 
   private isRowBusy(key: PrivacySettingKey): boolean {
@@ -263,17 +261,24 @@ export struct PrivacySubPage {
           .margin({ right: this.getTheme().spacing.sm })
       }
 
-      Text(this.t(privacyChoiceLabel(this.choiceOf(key))))
+      Text(this.t(privacyRowLabel(this.itemOf(key))))
         .fontSize(this.getTheme().typography.subheadline.fontSize)
         .fontColor(this.getTheme().colors.textSecondary)
         .maxLines(1)
         .textOverflow({ overflow: TextOverflow.Ellipsis })
+
+      Image($r('app.media.ic_chevron_right'))
+        .width(16)
+        .height(16)
+        .fillColor(this.getTheme().colors.textTertiary)
+        .margin({ left: this.getTheme().spacing.xs })
     }
     .width('100%')
     .height(52)
     .alignItems(VerticalAlign.Center)
+    .id(`privacy-row-${key}`)
     .onClick((): void => {
-      this.onDispatch(new TogglePrivacySetting(key));
+      this.onDispatch(new OpenPrivacyKeyPage(key));
     })
   }
 

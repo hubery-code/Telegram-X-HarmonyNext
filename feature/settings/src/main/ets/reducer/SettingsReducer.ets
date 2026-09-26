@@ -84,9 +84,18 @@ import {
   ClosePrivacyPage,
   LoadPrivacySettings,
   PrivacySettingsLoaded,
-  TogglePrivacySetting,
-  PrivacySettingUpdated,
-  PrivacySettingUpdateFailed,
+  OpenPrivacyKeyPage,
+  ClosePrivacyKeyPage,
+  PrivacyDetailLoaded,
+  PrivacyDetailLoadFailed,
+  SetPrivacyMode,
+  TogglePrivacyPremium,
+  OpenPrivacyPicker,
+  ClosePrivacyPicker,
+  TogglePrivacyPickerContact,
+  ApplyPrivacyPicker,
+  PrivacyRulesSaved,
+  PrivacyRulesSaveFailed,
   OpenProxyPage,
   CloseProxyPage,
   LoadProxies,
@@ -123,6 +132,7 @@ import {
   TerminateSessionEffect,
   TerminateAllOtherSessionsEffect,
   LoadPrivacySettingsEffect,
+  LoadPrivacyDetailEffect,
   SetPrivacySettingEffect,
   LoadProxiesEffect,
   EnableProxyEffect,
@@ -137,14 +147,17 @@ import {
   LoadDownloadLimitsEffect,
   PersistDownloadLimitsEffect
 } from '../contract/SettingsEffect';
+import { TdUserPrivacySettingRule } from '@tgx/core-td-api-generated';
 import { NotificationScopeKey } from '../model/NotificationSettings';
+import { PrivacySettingItem, PrivacySettingKey } from '../model/PrivacySettings';
 import {
-  isPrivacyChoiceWritable,
-  nextPrivacyChoice,
-  PrivacyChoice,
-  PrivacySettingItem,
-  PrivacySettingKey
-} from '../model/PrivacySettings';
+  parsePrivacyRules,
+  privacyRulesForMode,
+  privacyRulesWithAllowUsers,
+  privacyRulesWithRestrictUsers,
+  PrivacyRulesView
+} from '../model/PrivacyRules';
+import { PrivacyDetailState, privacyContactsWithPicked } from '../model/PrivacyDetail';
 import {
   PROXY_NONE_ID,
   ProxyConnectionState,
@@ -173,29 +186,33 @@ function notificationScopeEnabled(state: SettingsUiState, scope: NotificationSco
   return state.channelNotificationsEnabled;
 }
 
-/** 按 key 取行；未加载到该设置时返回 null（调用方据此忽略点击）。 */
-function privacyItemByKey(
-  items: readonly PrivacySettingItem[],
-  key: PrivacySettingKey
-): PrivacySettingItem | null {
-  for (let i = 0; i < items.length; i++) {
-    if (items[i].key === key) {
-      return items[i];
-    }
-  }
-  return null;
-}
-
+/** 用回读到的规则列表刷新某一行的展示值（列表页文案的唯一来源）。 */
 function privacyItemsWithUpdated(
   items: readonly PrivacySettingItem[],
   key: PrivacySettingKey,
-  choice: PrivacyChoice
+  rules: TdUserPrivacySettingRule[]
 ): PrivacySettingItem[] {
   const next: PrivacySettingItem[] = [];
+  const view: PrivacyRulesView = parsePrivacyRules(rules);
   for (let i = 0; i < items.length; i++) {
-    next.push(items[i].key === key ? items[i].withChoice(choice) : items[i]);
+    next.push(items[i].key === key ? items[i].withView(view) : items[i]);
   }
   return next;
+}
+
+/**
+ * 详情页的每一次本地编辑都走这里：换规则、不动 `savedRules`，`isDirty()` 因此成立。
+ * 返回 null 表示当前没有打开任何一项（调用方据此忽略意图，不凭空造详情态）。
+ */
+function detailWithRules(
+  state: SettingsUiState,
+  rules: TdUserPrivacySettingRule[]
+): SettingsUiState | null {
+  const detail: PrivacyDetailState | null = state.privacyDetail;
+  if (detail === null) {
+    return null;
+  }
+  return state.copyWith({ privacyDetail: detail.copyWith({ rules: rules }) });
 }
 
 /** 按 TDLib id 取代理行；列表里还没有该行时返回 null（调用方据此忽略点击）。 */
@@ -596,6 +613,7 @@ export const settingsReducer: Reducer<SettingsUiState, SettingsIntent, SettingsE
         const options: SettingsUiStateOptions = {
           section: 'all',
           showPrivacyPage: true,
+          privacyDetail: null,
           isLoadingPrivacy: true,
           errorMessage: null
         };
@@ -656,8 +674,10 @@ export const settingsReducer: Reducer<SettingsUiState, SettingsIntent, SettingsE
       if (!state.showPrivacyPage) {
         return reduced(state);
       }
+      // 离列表页时把详情页状态一起丢掉：未提交的编辑不该在下次进入时复活。
       const options: SettingsUiStateOptions = {
-        showPrivacyPage: false
+        showPrivacyPage: false,
+        privacyDetail: null
       };
       return reduced(state.copyWith(options));
     }
@@ -679,37 +699,175 @@ export const settingsReducer: Reducer<SettingsUiState, SettingsIntent, SettingsE
       return reduced(state.copyWith(options));
     }
 
-    case 'togglePrivacySetting': {
-      const toggleIntent: TogglePrivacySetting = intent as TogglePrivacySetting;
-      if (state.updatingPrivacyKey !== null) {
-        return reduced(state);
-      }
-      const item: PrivacySettingItem | null =
-        privacyItemByKey(state.privacyItems, toggleIntent.key);
-      // 该项还没读到规则，忽略点击而不是写一个猜出来的默认值。
-      if (item === null) {
-        return reduced(state);
-      }
-      const nextChoice: PrivacyChoice = nextPrivacyChoice(item.choice);
-      // custom / unknown 没有等价的单条规则，写回会把例外名单刷成「没有人」。
-      if (!isPrivacyChoiceWritable(nextChoice)) {
-        return reduced(state);
-      }
+    case 'openPrivacyKeyPage': {
+      const openIntent: OpenPrivacyKeyPage = intent as OpenPrivacyKeyPage;
       const options: SettingsUiStateOptions = {
-        updatingPrivacyKey: toggleIntent.key
+        privacyDetail: PrivacyDetailState.forLoading(openIntent.key),
+        errorMessage: null
       };
-      return reduced(state.copyWith(options), [
-        new SetPrivacySettingEffect(toggleIntent.key, nextChoice)
-      ]);
+      return reduced(state.copyWith(options), [new LoadPrivacyDetailEffect(openIntent.key)]);
     }
 
-    case 'privacySettingUpdated': {
-      const updatedIntent: PrivacySettingUpdated = intent as PrivacySettingUpdated;
+    /**
+     * 离开详情页 = 唯一一次写回（Android `onBlur → saveChanges()`）：
+     * 没有改动就不发请求（`nothingChanged()`），有改动才带上本地规则列表去写。
+     * 详情态立即清空 —— 写回失败的报错由列表页横幅承担，用户在那一行看到服务端真值。
+     */
+    case 'closePrivacyKeyPage': {
+      const detail: PrivacyDetailState | null = state.privacyDetail;
+      if (detail === null) {
+        return reduced(state);
+      }
+      if (state.updatingPrivacyKey !== null || !detail.isDirty()) {
+        return reduced(state.copyWith({ privacyDetail: null }));
+      }
+      return reduced(
+        state.copyWith({ privacyDetail: null, updatingPrivacyKey: detail.key }),
+        [new SetPrivacySettingEffect(detail.key, detail.rules)]
+      );
+    }
+
+    case 'privacyDetailLoaded': {
+      const loaded: PrivacyDetailLoaded = intent as PrivacyDetailLoaded;
+      const detail: PrivacyDetailState | null = state.privacyDetail;
+      // 只接受当前打开的项的回包：详情页可能已经被关掉或切走，晚到的回包不能把它复活。
+      if (detail === null || detail.key !== loaded.key) {
+        return reduced(state);
+      }
+      return reduced(state.copyWith({
+        privacyDetail: PrivacyDetailState.forLoaded(loaded.key, loaded.rules, loaded.contacts)
+      }));
+    }
+
+    case 'privacyDetailLoadFailed': {
+      const failed: PrivacyDetailLoadFailed = intent as PrivacyDetailLoadFailed;
+      const detail: PrivacyDetailState | null = state.privacyDetail;
+      if (detail === null || detail.key !== failed.key) {
+        return reduced(state);
+      }
+      return reduced(state.copyWith({
+        privacyDetail: detail.copyWith({ loading: false, errorMessage: failed.errorMessage })
+      }));
+    }
+
+    case 'setPrivacyMode': {
+      const modeIntent: SetPrivacyMode = intent as SetPrivacyMode;
+      const detail: PrivacyDetailState | null = state.privacyDetail;
+      if (detail === null) {
+        return reduced(state);
+      }
+      const next: TdUserPrivacySettingRule[] = privacyRulesForMode(
+        detail.rules,
+        modeIntent.mode,
+        parsePrivacyRules(detail.rules).plusPremium
+      );
+      const reducedState: SettingsUiState | null = detailWithRules(state, next);
+      return reducedState === null ? reduced(state) : reduced(reducedState);
+    }
+
+    /**
+     * Premium 勾只在「我的联系人」档有意义（Android `togglePlusPremium`）；
+     * 其余档位下点它没有任何结果，所以直接忽略而不是悄悄改档位。
+     */
+    case 'togglePrivacyPremium': {
+      const detail: PrivacyDetailState | null = state.privacyDetail;
+      if (detail === null) {
+        return reduced(state);
+      }
+      const view: PrivacyRulesView = parsePrivacyRules(detail.rules);
+      if (view.mode !== 'contacts') {
+        return reduced(state);
+      }
+      const next: TdUserPrivacySettingRule[] =
+        privacyRulesForMode(detail.rules, 'contacts', !view.plusPremium);
+      const reducedState: SettingsUiState | null = detailWithRules(state, next);
+      return reducedState === null ? reduced(state) : reduced(reducedState);
+    }
+
+    case 'openPrivacyPicker': {
+      const pickerIntent: OpenPrivacyPicker = intent as OpenPrivacyPicker;
+      const detail: PrivacyDetailState | null = state.privacyDetail;
+      if (detail === null) {
+        return reduced(state);
+      }
+      const view: PrivacyRulesView = parsePrivacyRules(detail.rules);
+      const current: number[] =
+        pickerIntent.target === 'always' ? view.plusUserIds : view.minusUserIds;
+      return reduced(state.copyWith({
+        privacyDetail: detail.copyWith({
+          pickerTarget: pickerIntent.target,
+          pickedUserIds: current.slice(),
+          contacts: privacyContactsWithPicked(detail.contacts, current)
+        })
+      }));
+    }
+
+    case 'closePrivacyPicker': {
+      const detail: PrivacyDetailState | null = state.privacyDetail;
+      if (detail === null || detail.pickerTarget === null) {
+        return reduced(state);
+      }
+      return reduced(state.copyWith({
+        privacyDetail: detail.copyWith({
+          pickerTarget: null,
+          pickedUserIds: [],
+          contacts: privacyContactsWithPicked(detail.contacts, [])
+        })
+      }));
+    }
+
+    case 'togglePrivacyPickerContact': {
+      const toggleIntent: TogglePrivacyPickerContact = intent as TogglePrivacyPickerContact;
+      const detail: PrivacyDetailState | null = state.privacyDetail;
+      if (detail === null || detail.pickerTarget === null) {
+        return reduced(state);
+      }
+      const next: number[] = [];
+      for (let i = 0; i < detail.pickedUserIds.length; i++) {
+        if (detail.pickedUserIds[i] !== toggleIntent.userId) {
+          next.push(detail.pickedUserIds[i]);
+        }
+      }
+      if (detail.pickedUserIds.indexOf(toggleIntent.userId) < 0) {
+        next.push(toggleIntent.userId);
+      }
+      return reduced(state.copyWith({
+        privacyDetail: detail.copyWith({
+          pickedUserIds: next,
+          contacts: privacyContactsWithPicked(detail.contacts, next)
+        })
+      }));
+    }
+
+    /**
+     * 提交勾选 = 全量替换该侧名单（Android `allowExceptions` / `disallowExceptions`）：
+     * 新名单插到列表最前，另一侧里的同名 id 被摘掉 —— 同一个人不能既总是允许又从不允许。
+     */
+    case 'applyPrivacyPicker': {
+      const detail: PrivacyDetailState | null = state.privacyDetail;
+      if (detail === null || detail.pickerTarget === null) {
+        return reduced(state);
+      }
+      const nextRules: TdUserPrivacySettingRule[] = detail.pickerTarget === 'always'
+        ? privacyRulesWithAllowUsers(detail.rules, detail.pickedUserIds)
+        : privacyRulesWithRestrictUsers(detail.rules, detail.pickedUserIds);
+      return reduced(state.copyWith({
+        privacyDetail: detail.copyWith({
+          rules: nextRules,
+          pickerTarget: null,
+          pickedUserIds: [],
+          contacts: privacyContactsWithPicked(detail.contacts, [])
+        })
+      }));
+    }
+
+    case 'privacyRulesSaved': {
+      const savedIntent: PrivacyRulesSaved = intent as PrivacyRulesSaved;
       const options: SettingsUiStateOptions = {
         privacyItems: privacyItemsWithUpdated(
           state.privacyItems,
-          updatedIntent.key,
-          updatedIntent.choice
+          savedIntent.key,
+          savedIntent.rules
         ),
         updatingPrivacyKey: null,
         errorMessage: null
@@ -717,8 +875,8 @@ export const settingsReducer: Reducer<SettingsUiState, SettingsIntent, SettingsE
       return reduced(state.copyWith(options));
     }
 
-    case 'privacySettingUpdateFailed': {
-      const failedIntent: PrivacySettingUpdateFailed = intent as PrivacySettingUpdateFailed;
+    case 'privacyRulesSaveFailed': {
+      const failedIntent: PrivacyRulesSaveFailed = intent as PrivacyRulesSaveFailed;
       const options: SettingsUiStateOptions = {
         updatingPrivacyKey: null,
         errorMessage: failedIntent.errorMessage

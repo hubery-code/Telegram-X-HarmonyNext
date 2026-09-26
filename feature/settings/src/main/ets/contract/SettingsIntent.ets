@@ -11,7 +11,10 @@ import { LanguagePreference } from '@tgx/core-common';
 import { SettingsThemeMode } from './SettingsUiState';
 import { NotificationScopeKey } from '../model/NotificationSettings';
 import { ActiveSessionItem } from '../model/ActiveSessionItem';
-import { PrivacyChoice, PrivacySettingItem, PrivacySettingKey } from '../model/PrivacySettings';
+import { TdUserPrivacySettingRule } from '@tgx/core-td-api-generated';
+import { PrivacySettingItem, PrivacySettingKey } from '../model/PrivacySettings';
+import { PrivacyMode } from '../model/PrivacyRules';
+import { PrivacyContactRow, PrivacyExceptionTarget } from '../model/PrivacyDetail';
 import { ProxyForm, ProxyItem, ProxyConnectionState } from '../model/ProxySettings';
 import {
   AutoDownloadChatScope,
@@ -323,7 +326,7 @@ export class LoadPrivacySettings implements Intent {
   readonly kind: 'loadPrivacySettings' = 'loadPrivacySettings';
 }
 
-/** SELF-102：规则读取完成（未取到的项以 unknown 呈现，不冒充默认值）。 */
+/** SELF-102：规则读取完成（未取到的项 view 为 null，行上显示 Unknown，不冒充默认值）。 */
 export class PrivacySettingsLoaded implements Intent {
   readonly kind: 'privacySettingsLoaded' = 'privacySettingsLoaded';
   readonly items: readonly PrivacySettingItem[];
@@ -333,9 +336,12 @@ export class PrivacySettingsLoaded implements Intent {
   }
 }
 
-/** SELF-102：点某一行，循环到下一个可见范围并写回。 */
-export class TogglePrivacySetting implements Intent {
-  readonly kind: 'togglePrivacySetting' = 'togglePrivacySetting';
+/**
+ * PRIVACY-101：打开某一项的详情页（主档位 + 例外名单）。
+ * 对齐 Android `SettingsPrivacyKeyController` 的进入：先读该项的完整规则列表。
+ */
+export class OpenPrivacyKeyPage implements Intent {
+  readonly kind: 'openPrivacyKeyPage' = 'openPrivacyKeyPage';
   readonly key: PrivacySettingKey;
 
   constructor(key: PrivacySettingKey) {
@@ -343,21 +349,104 @@ export class TogglePrivacySetting implements Intent {
   }
 }
 
-/** SELF-102：写回成功（以 TDLib 回读值为准）。 */
-export class PrivacySettingUpdated implements Intent {
-  readonly kind: 'privacySettingUpdated' = 'privacySettingUpdated';
-  readonly key: PrivacySettingKey;
-  readonly choice: PrivacyChoice;
+/**
+ * PRIVACY-101：离开详情页。**唯一一次写回服务端的地方** —— 照 Android
+ * `onBlur → saveChanges()`：页内编辑只改本地规则，没有改动就不发请求。
+ */
+export class ClosePrivacyKeyPage implements Intent {
+  readonly kind: 'closePrivacyKeyPage' = 'closePrivacyKeyPage';
+}
 
-  constructor(key: PrivacySettingKey, choice: PrivacyChoice) {
+/** PRIVACY-101：详情页规则与联系人读取完成。 */
+export class PrivacyDetailLoaded implements Intent {
+  readonly kind: 'privacyDetailLoaded' = 'privacyDetailLoaded';
+  readonly key: PrivacySettingKey;
+  readonly rules: TdUserPrivacySettingRule[];
+  readonly contacts: PrivacyContactRow[];
+
+  constructor(
+    key: PrivacySettingKey,
+    rules: TdUserPrivacySettingRule[],
+    contacts: PrivacyContactRow[]
+  ) {
     this.key = key;
-    this.choice = choice;
+    this.rules = rules;
+    this.contacts = contacts;
   }
 }
 
-/** SELF-102：写回失败，行内值退回读到的状态。 */
-export class PrivacySettingUpdateFailed implements Intent {
-  readonly kind: 'privacySettingUpdateFailed' = 'privacySettingUpdateFailed';
+/** PRIVACY-101：详情页读取失败（页内横幅 + 返回，不用假数据顶替）。 */
+export class PrivacyDetailLoadFailed implements Intent {
+  readonly kind: 'privacyDetailLoadFailed' = 'privacyDetailLoadFailed';
+  readonly key: PrivacySettingKey;
+  readonly errorMessage: string;
+
+  constructor(key: PrivacySettingKey, errorMessage: string) {
+    this.key = key;
+    this.errorMessage = errorMessage;
+  }
+}
+
+/** PRIVACY-101：改主档位（例外名单原样保留，见 `PrivacyRules.privacyRulesForMode`）。 */
+export class SetPrivacyMode implements Intent {
+  readonly kind: 'setPrivacyMode' = 'setPrivacyMode';
+  readonly mode: PrivacyMode;
+
+  constructor(mode: PrivacyMode) {
+    this.mode = mode;
+  }
+}
+
+/** PRIVACY-101：在「我的联系人」档下勾选/取消 Premium 用户。 */
+export class TogglePrivacyPremium implements Intent {
+  readonly kind: 'togglePrivacyPremium' = 'togglePrivacyPremium';
+}
+
+/** PRIVACY-101：打开「总是允许 / 从不允许」联系人多选器。 */
+export class OpenPrivacyPicker implements Intent {
+  readonly kind: 'openPrivacyPicker' = 'openPrivacyPicker';
+  readonly target: PrivacyExceptionTarget;
+
+  constructor(target: PrivacyExceptionTarget) {
+    this.target = target;
+  }
+}
+
+/** PRIVACY-101：关闭多选器并丢弃未提交的勾选。 */
+export class ClosePrivacyPicker implements Intent {
+  readonly kind: 'closePrivacyPicker' = 'closePrivacyPicker';
+}
+
+/** PRIVACY-101：多选器里勾选/取消一个联系人。 */
+export class TogglePrivacyPickerContact implements Intent {
+  readonly kind: 'togglePrivacyPickerContact' = 'togglePrivacyPickerContact';
+  readonly userId: number;
+
+  constructor(userId: number) {
+    this.userId = userId;
+  }
+}
+
+/** PRIVACY-101：把多选器的勾选结果写进规则列表（全量替换该侧名单）。 */
+export class ApplyPrivacyPicker implements Intent {
+  readonly kind: 'applyPrivacyPicker' = 'applyPrivacyPicker';
+}
+
+/** PRIVACY-101：详情页规则写回成功，回读值为准（同时刷新列表行的文案）。 */
+export class PrivacyRulesSaved implements Intent {
+  readonly kind: 'privacyRulesSaved' = 'privacyRulesSaved';
+  readonly key: PrivacySettingKey;
+  readonly rules: TdUserPrivacySettingRule[];
+
+  constructor(key: PrivacySettingKey, rules: TdUserPrivacySettingRule[]) {
+    this.key = key;
+    this.rules = rules;
+  }
+}
+
+/** PRIVACY-101：详情页规则写回失败（列表行报错，不静默退回本地值）。 */
+export class PrivacyRulesSaveFailed implements Intent {
+  readonly kind: 'privacyRulesSaveFailed' = 'privacyRulesSaveFailed';
   readonly key: PrivacySettingKey;
   readonly errorMessage: string;
 
@@ -763,9 +852,18 @@ export type SettingsIntent =
   | ClosePrivacyPage
   | LoadPrivacySettings
   | PrivacySettingsLoaded
-  | TogglePrivacySetting
-  | PrivacySettingUpdated
-  | PrivacySettingUpdateFailed
+  | OpenPrivacyKeyPage
+  | ClosePrivacyKeyPage
+  | PrivacyDetailLoaded
+  | PrivacyDetailLoadFailed
+  | SetPrivacyMode
+  | TogglePrivacyPremium
+  | OpenPrivacyPicker
+  | ClosePrivacyPicker
+  | TogglePrivacyPickerContact
+  | ApplyPrivacyPicker
+  | PrivacyRulesSaved
+  | PrivacyRulesSaveFailed
   | OpenProxyPage
   | CloseProxyPage
   | LoadProxies

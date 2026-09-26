@@ -159,6 +159,19 @@ const EN_DICTIONARY: Record<string, string> = {
   'Unknown': 'Unknown',
   'Tap a row to change who can see it.': 'Tap a row to change who can see it.',
 
+  // Privacy detail page (PRIVACY-101)
+  'My Contacts & Premium': 'My Contacts & Premium',
+  'Add Exceptions': 'Add Exceptions',
+  'Always Allow': 'Always Allow',
+  'Never Allow': 'Never Allow',
+  'Always Share With': 'Always Share With',
+  'Never Share With': 'Never Share With',
+  'Add Users': 'Add Users',
+  '{0} User': '{0} User',
+  '{0} Users': '{0} Users',
+  'No Contacts Yet': 'No Contacts Yet',
+  'Custom Share Settings Help': 'People who are always allowed or never allowed win over the setting above.',
+
   // Network proxies (PROXY-101)
   'Proxies': 'Proxies',
   'Tap to set up': 'Tap to set up',
@@ -413,6 +426,37 @@ const ZH_DICTIONARY: Record<string, string> = {
   'English': 'English',
   'Simplified Chinese': '简体中文',
   'Chinese': '简体中文',
+
+  // Privacy & Security (SELF-102 / PRIVACY-101)
+  'PRIVACY': '隐私',
+  'Privacy & Security': '隐私和安全',
+  'Last Seen': '最后上线时间',
+  'Phone Number': '手机号码',
+  'Profile Photo': '个人头像',
+  'Bio': '个人简介',
+  'Date of Birth': '生日',
+  'Calls': '通话',
+  'Group and Channel Invites': '群组与频道邀请',
+  'Discoverable by Phone Number': '可通过手机号找到我',
+  'Everybody': '所有人',
+  'Premium Users': 'Premium 用户',
+  'My Contacts': '我的联系人',
+  'Nobody': '没有人',
+  'Custom': '自定义',
+  'Unknown': '未知',
+  'Tap a row to change who can see it.': '点按任意一行即可设置谁可以看到。',
+  'My Contacts & Premium': '我的联系人与 Premium',
+  'Add Exceptions': '添加例外',
+  'Always Allow': '总是允许',
+  'Never Allow': '从不允许',
+  'Always Share With': '总是分享给',
+  'Never Share With': '从不分享给',
+  'Add Users': '添加用户',
+  // 中文没有单复数变形，两档同文案。
+  '{0} User': '{0} 位用户',
+  '{0} Users': '{0} 位用户',
+  'No Contacts Yet': '还没有联系人',
+  'Custom Share Settings Help': '「总是允许」和「从不允许」里的人优先于上面的设置。',
 
   // Network proxies (PROXY-101)
   'Proxies': '代理',

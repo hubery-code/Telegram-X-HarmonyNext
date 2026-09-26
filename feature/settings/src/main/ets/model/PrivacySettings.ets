@@ -1,31 +1,26 @@
 /**
- * feature/settings — 隐私设置读写模型（SELF-102 / FEAT-SET-001 隐私分区）。
+ * feature/settings — 隐私设置项与页面投影（SELF-102 / FEAT-SET-001 隐私分区）。
  *
- * TDLib 的隐私项是 `userPrivacySettingRules`（有序规则列表，首个命中的规则生效），
- * 而设置页要展示的是 Telegram 那种「所有人 / 我的联系人 / 没有人」单选行。
- * 这里做两端都纯的映射：
- * - `choiceFromRules`：只有单条简单规则才认成一个明确选项，带例外名单（多条规则）
- *   一律归 `custom`，避免把「联系人但排除某几人」错显示成「联系人」；
- * - `rulesForChoice`：写回时只发一条简单规则，与 Telegram 改主可见范围即重置
- *   例外名单的行为一致。
+ * TDLib 的隐私项是 `userPrivacySettingRules`（有序规则列表，首个命中的规则生效）。
+ * 列表 → 行文案的解析、改档、例外名单改写全部在 `PrivacyRules.ets`（纯函数、Kit-free）；
+ * 本文件只留「有哪几项、叫什么、对应哪个 TDLib 设置对象」与页面上的一行。
+ *
+ * PRIVACY-101 起列表行不再自己持有规则：一行要显示的是主档位 + 例外人数，而详情页要的是
+ * 整条列表，所以列表页与详情页共用 `PrivacyRulesView`，写回一律经详情页。
  */
 
 import {
   UserPrivacySettingAllowCalls,
   UserPrivacySettingAllowChatInvites,
   UserPrivacySettingAllowFindingByPhoneNumber,
-  UserPrivacySettingRuleAllowAll,
-  UserPrivacySettingRuleAllowContacts,
-  UserPrivacySettingRuleAllowPremiumUsers,
-  UserPrivacySettingRuleRestrictAll,
   UserPrivacySettingShowBio,
   UserPrivacySettingShowBirthdate,
   UserPrivacySettingShowPhoneNumber,
   UserPrivacySettingShowProfilePhoto,
   UserPrivacySettingShowStatus,
-  TdUserPrivacySetting,
-  TdUserPrivacySettingRule
+  TdUserPrivacySetting
 } from '@tgx/core-td-api-generated';
+import { PrivacyRulesView, privacyModeLabel } from './PrivacyRules';
 
 export type PrivacySettingKey =
   | 'show_last_seen'
@@ -37,24 +32,33 @@ export type PrivacySettingKey =
   | 'allow_chat_invites'
   | 'allow_find_by_phone';
 
-export type PrivacyChoice = 'everybody' | 'premium' | 'contacts' | 'nobody' | 'custom' | 'unknown';
-
-/** 页面上的一行：设置项 + 当前可见范围。 */
+/**
+ * 列表里的一行。
+ * `view === null` 只表示「这一项 TDLib 没读到」，绝不退成一个猜出来的默认档。
+ */
 export class PrivacySettingItem {
   readonly key: PrivacySettingKey;
-  readonly choice: PrivacyChoice;
+  readonly view: PrivacyRulesView | null;
 
-  constructor(key: PrivacySettingKey, choice: PrivacyChoice) {
+  constructor(key: PrivacySettingKey, view: PrivacyRulesView | null) {
     this.key = key;
-    this.choice = choice;
+    this.view = view;
   }
 
-  withChoice(choice: PrivacyChoice): PrivacySettingItem {
-    if (this.choice === choice) {
-      return this;
-    }
-    return new PrivacySettingItem(this.key, choice);
+  withView(view: PrivacyRulesView): PrivacySettingItem {
+    return new PrivacySettingItem(this.key, view);
   }
+}
+
+/**
+ * 行的副标题（当前可见范围）。返回 Lang key，由页面 `t()` 翻译。
+ * 入参可为 null：列表页在项未加载到时会先渲染占位，这里统一回「Unknown」而不是猜一个档位。
+ */
+export function privacyRowLabel(item: PrivacySettingItem | null): string {
+  if (item === null || item.view === null) {
+    return 'Unknown';
+  }
+  return privacyModeLabel(item.view.mode, item.view.plusPremium);
 }
 
 /** 设置页展示顺序（对齐 TGX：在线状态与手机号在前）。 */
@@ -70,8 +74,7 @@ export const PRIVACY_SETTING_KEYS: PrivacySettingKey[] = [
 ];
 
 /**
- * 行标题与档位文案。
- * 返回的是 Lang 字典里的英文 key（不是成品文案），由页面 `t()` 翻译；
+ * 行标题。返回的是 Lang 字典里的英文 key（不是成品文案），由页面 `t()` 翻译；
  * 模型层保持零 Kit / 零 Lang 依赖，单测可直接断言。
  */
 export function privacySettingLabel(key: PrivacySettingKey): string {
@@ -99,25 +102,6 @@ export function privacySettingLabel(key: PrivacySettingKey): string {
   return 'Discoverable by Phone Number';
 }
 
-export function privacyChoiceLabel(choice: PrivacyChoice): string {
-  if (choice === 'everybody') {
-    return 'Everybody';
-  }
-  if (choice === 'premium') {
-    return 'Premium Users';
-  }
-  if (choice === 'contacts') {
-    return 'My Contacts';
-  }
-  if (choice === 'nobody') {
-    return 'Nobody';
-  }
-  if (choice === 'custom') {
-    return 'Custom';
-  }
-  return 'Unknown';
-}
-
 /** TDLib 设置对象（请求负载里的 `setting`）。 */
 export function toUserPrivacySetting(key: PrivacySettingKey): TdUserPrivacySetting {
   if (key === 'show_last_seen') {
@@ -142,80 +126,4 @@ export function toUserPrivacySetting(key: PrivacySettingKey): TdUserPrivacySetti
     return new UserPrivacySettingAllowChatInvites();
   }
   return new UserPrivacySettingAllowFindingByPhoneNumber();
-}
-
-/**
- * 规则 → 选项。
- * 列表里的规则全是 allow 语义（`restrictAll` 表示「到此为止，不再往下匹配」），
- * 因此空列表意味着没有任何人能看到 → `nobody`，不是读取失败。
- * 设备实测依据：给 `show_birthdate` 写入 `restrictAll` 后，TDLib 读回的就是
- * `rules=[]`（该设置的「没有人」不需要落库），所以这里必须认成 nobody，
- * 否则页面上会出现一个用户看不懂的 Unknown 行。
- * `unknown` 只保留给「该项读取失败」这一种情况，由 coordinator 直接构造。
- */
-export function choiceFromRules(rules: TdUserPrivacySettingRule[]): PrivacyChoice {
-  if (rules.length === 0) {
-    return 'nobody';
-  }
-  if (rules.length !== 1) {
-    return 'custom';
-  }
-  const type: string = rules[0].type;
-  if (type === 'userPrivacySettingRuleAllowAll') {
-    return 'everybody';
-  }
-  if (type === 'userPrivacySettingRuleAllowPremiumUsers') {
-    return 'premium';
-  }
-  if (type === 'userPrivacySettingRuleAllowContacts') {
-    return 'contacts';
-  }
-  if (type === 'userPrivacySettingRuleRestrictAll') {
-    return 'nobody';
-  }
-  return 'custom';
-}
-
-/** 选项 → 规则；`custom`/`unknown` 没有对应的单条规则，写回路径必须挡掉。 */
-export function rulesForChoice(choice: PrivacyChoice): TdUserPrivacySettingRule[] {
-  const rules: TdUserPrivacySettingRule[] = [];
-  if (choice === 'everybody') {
-    rules.push(new UserPrivacySettingRuleAllowAll());
-    return rules;
-  }
-  if (choice === 'premium') {
-    rules.push(new UserPrivacySettingRuleAllowPremiumUsers());
-    return rules;
-  }
-  if (choice === 'contacts') {
-    rules.push(new UserPrivacySettingRuleAllowContacts());
-    return rules;
-  }
-  rules.push(new UserPrivacySettingRuleRestrictAll());
-  return rules;
-}
-
-/**
- * 点一行即在下拉的三档间循环（TGX 的例外名单编辑器尚未拆包，
- * 自定义/未知态从「我的联系人」重新开始，保证点一下就有确定结果）。
- */
-export function nextPrivacyChoice(current: PrivacyChoice): PrivacyChoice {
-  if (current === 'everybody') {
-    return 'contacts';
-  }
-  if (current === 'premium') {
-    return 'contacts';
-  }
-  if (current === 'contacts') {
-    return 'nobody';
-  }
-  if (current === 'nobody') {
-    return 'everybody';
-  }
-  return 'contacts';
-}
-
-/** 该选项能否直接写回 TDLib。 */
-export function isPrivacyChoiceWritable(choice: PrivacyChoice): boolean {
-  return choice === 'everybody' || choice === 'premium' || choice === 'contacts' || choice === 'nobody';
 }

@@ -42,6 +42,7 @@ import {
   ToggleNotificationScope,
   ToggleNotifications,
   ClosePrivacyPage,
+  ClosePrivacyKeyPage,
   OpenPrivacyPage,
   CloseProxyPage,
   LoadProxies,
@@ -53,16 +54,16 @@ import {
 } from '../contract/SettingsIntent';
 import { NotificationScopeKey } from '../model/NotificationSettings';
 import {
-  PrivacyChoice,
   PrivacySettingItem,
   PrivacySettingKey,
-  privacyChoiceLabel
+  privacyRowLabel
 } from '../model/PrivacySettings';
 import { proxyRowSummary } from '../model/ProxySettings';
 import { AutoDownloadScopeSummary, autoDownloadRowSummary } from '../model/AutoDownloadRows';
 import { SettingsCardKey, sectionShowsCard, settingsSectionTitleKey } from '../model/SettingsSection';
 import { DevicesSubPage } from './DevicesSubPage';
 import { PrivacySubPage } from './PrivacySubPage';
+import { PrivacyKeySubPage } from './PrivacyKeySubPage';
 import { ProxySubPage } from './ProxySubPage';
 import { AutoDownloadSubPage } from './AutoDownloadSubPage';
 import { PasscodeSubPage } from './PasscodeSubPage';
@@ -172,15 +173,15 @@ export struct SettingsPage {
     return list;
   }
 
-  /** SELF-102：卡片副标题预览「最后上线时间」当前档位（未加载时为 unknown）。 */
-  private privacyChoiceOf(key: PrivacySettingKey): PrivacyChoice {
+  /** SELF-102：卡片副标题预览「最后上线时间」当前可见范围（未加载时为 Unknown）。 */
+  private privacyItemOf(key: PrivacySettingKey): PrivacySettingItem | null {
     const items: readonly PrivacySettingItem[] = this.uiState.privacyItems;
     for (let i = 0; i < items.length; i++) {
       if (items[i].key === key) {
-        return items[i].choice;
+        return items[i];
       }
     }
-    return 'unknown';
+    return null;
   }
 
   build() {
@@ -299,6 +300,18 @@ export struct SettingsPage {
           onDispatch: this.onDispatch,
           onBack: (): void => {
             this.onDispatch(new ClosePrivacyPage());
+          }
+        })
+      }
+
+      // PRIVACY-101：详情页压在列表页之上。关闭它即是一次写回（Android onBlur → saveChanges），
+      // 所以 onBack 只发 ClosePrivacyKeyPage，由 reducer 决定要不要发请求。
+      if (this.uiState.privacyDetail !== null) {
+        PrivacyKeySubPage({
+          uiState: this.uiState,
+          onDispatch: this.onDispatch,
+          onBack: (): void => {
+            this.onDispatch(new ClosePrivacyKeyPage());
           }
         })
       }
@@ -633,7 +646,7 @@ export struct SettingsPage {
           .fontColor(this.getTheme().colors.textPrimary)
 
         Text(this.uiState.privacyItems.length > 0
-          ? `${this.t('Last Seen')}: ${this.t(privacyChoiceLabel(this.privacyChoiceOf('show_last_seen')))}`
+          ? `${this.t('Last Seen')}: ${this.t(privacyRowLabel(this.privacyItemOf('show_last_seen')))}`
           : this.t('Tap a row to change who can see it.'))
           .fontSize(this.getTheme().typography.footnote.fontSize)
           .fontColor(this.getTheme().colors.textSecondary)

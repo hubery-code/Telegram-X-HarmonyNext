@@ -14,6 +14,7 @@ import { NotificationScopeKey } from '../model/NotificationSettings';
 import { ActiveSessionItem } from '../model/ActiveSessionItem';
 import { SettingsSectionKey } from '../model/SettingsSection';
 import { PrivacySettingItem, PrivacySettingKey } from '../model/PrivacySettings';
+import { PrivacyDetailState } from '../model/PrivacyDetail';
 import { ProxyItem, ProxyConnectionState } from '../model/ProxySettings';
 import { AutoDownloadPolicy, DataSaverSettings, DownloadLimitsByNetwork } from '@tgx/core-domain';
 import { AutoLockChoice, PasscodeFlowStage, AUTO_LOCK_DEFAULT } from '@tgx/core-domain';
@@ -113,6 +114,11 @@ export interface SettingsUiStateOptions {
    * 与 Android 同为**持久偏好**而不是输入框上的临时小眼睛；缺省 false（圆点）。
    */
   readonly passcodeVisible?: boolean;
+  /**
+   * PRIVACY-101：某个隐私项的详情页状态；null 表示没有打开任何一项。
+   * 「是否展示详情页」不再单独立一个标志位 —— 这个字段非空即打开，避免两处真相。
+   */
+  readonly privacyDetail?: PrivacyDetailState | null;
 }
 
 export class SettingsUiState implements UiState {
@@ -197,6 +203,8 @@ export class SettingsUiState implements UiState {
   readonly passcodeNotice: string | null;
   /** APPLOCK-102：输入时是否明文显示已按位数。 */
   readonly passcodeVisible: boolean;
+  /** PRIVACY-101：隐私项详情页状态；null 表示未打开。 */
+  readonly privacyDetail: PrivacyDetailState | null;
 
   constructor(
     userId: number,
@@ -249,7 +257,8 @@ export class SettingsUiState implements UiState {
     passcodeFlow: PasscodeFlowStage = 'idle',
     isUpdatingPasscode: boolean = false,
     passcodeNotice: string | null = null,
-    passcodeVisible: boolean = false
+    passcodeVisible: boolean = false,
+    privacyDetail: PrivacyDetailState | null = null
   ) {
     this.userId = userId;
     this.displayName = displayName;
@@ -302,6 +311,7 @@ export class SettingsUiState implements UiState {
     this.isUpdatingPasscode = isUpdatingPasscode;
     this.passcodeNotice = passcodeNotice;
     this.passcodeVisible = passcodeVisible;
+    this.privacyDetail = privacyDetail;
   }
 
   static initial(
@@ -407,7 +417,9 @@ export class SettingsUiState implements UiState {
       options.passcodeFlow !== undefined ? options.passcodeFlow : this.passcodeFlow,
       options.isUpdatingPasscode !== undefined ? options.isUpdatingPasscode : this.isUpdatingPasscode,
       options.passcodeNotice !== undefined ? options.passcodeNotice : this.passcodeNotice,
-      options.passcodeVisible !== undefined ? options.passcodeVisible : this.passcodeVisible
+      options.passcodeVisible !== undefined ? options.passcodeVisible : this.passcodeVisible,
+      // null 是「关掉详情页」的合法赋值，undefined 才表示「保持原值」。
+      options.privacyDetail !== undefined ? options.privacyDetail : this.privacyDetail
     );
   }
 }
