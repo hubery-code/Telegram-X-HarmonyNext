@@ -22,6 +22,7 @@ import chatAppLinkDispatchTest from './ChatAppLinkDispatch.test';
 import stickerSendVetoTest from './StickerSendVeto.test';
 import stickerBoardTest from './StickerBoard.test';
 import stickerBoardFetchTest from './StickerBoardFetch.test';
+import stickerMessageTest from './StickerMessage.test';
 
 export default function testsuite(): void {
   chatReducerTest();
@@ -48,5 +49,6 @@ export default function testsuite(): void {
   stickerSendVetoTest();
   stickerBoardTest();
   stickerBoardFetchTest();
+  stickerMessageTest();
 }
 

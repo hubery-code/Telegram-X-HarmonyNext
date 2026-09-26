@@ -821,7 +821,35 @@
 > 遗留：① 热门榜只取 regular 一类（mask / customEmoji 未露出，榜语义在 Android 是「与当前类型相关」）；
 > ② 无 TGS/Lottie 解码器 → 动效贴纸包在板卡与**消息气泡**里都只有 emoji/字母兜底；
 > ③ 最近使用仍吃 `DEFAULT_RECENT_STICKERS`（`getRecentStickers` 未接，101 遗留 ②）；
-> ④ 101 遗留 ③「贴纸气泡不出图」现在能**部分解释**（整图未下 + `.tgs` 不可解两个原因），仍未修。
+> ④ 101 遗留 ③「贴纸气泡不出图」（**2026-09-26 已由 STICKER-MSG-101 结案**，见下一条注）。
+
+> **2026-09-26（STICKER-MSG-101，FEAT-P2-004 贴纸消息气泡渲染档位，结掉 101 遗留 ③ / 102 遗留 ④）**：
+> 上一条注里那句「任何把 `.tgs` 喂给 `Image` 的界面都是同一块空白」不是推测 —— 气泡正是最刺眼的那一处，
+> 而且它比板卡更糟：板卡至少还知道退回字母，气泡是**整块什么都不画**。
+> **复现链条是干净的**：Saved Messages 发出 Uni 包一张贴纸，`send_sticker_ok fileId=92` 与
+> `media_download_completed fileId=92` 两条日志都在，屏上那个位置却只剩右下角那颗时间戳胶囊。
+> `ls -lt tdlib/db/stickers` 看到 `1052321353216032834.tgs` 正是那一秒落盘的档 —— **同一个 fileId，
+> 整档是 Lottie（画不开），缩略图是 `.webp`（画得开）**，而贴纸板里那格显示正常，就是因为板卡吃的是后者。
+> **病灶是一行判据写错了对象**：旧 `StickerBubble` 写的是「有 `localPath` 且 `isDownloaded` → `Image(localPath)`」，
+> 把**下载完成当成了可渲染**；`.tgs` 因此占住首选档，缩略图与 emoji 兜底两条分支永远轮不到，
+> 于是「图下好了」和「屏上什么都没有」同时成立。
+> **修法**：新增 Kit-free 纯函数 `model/StickerMessage.ets` → `stickerBubbleRender(media)`，
+> 返回 `video / image / thumbnail / emoji` 四档，只问「本端到底画不画得开」：视频容器（`.mp4/.webm` 视频贴纸）
+> 走 `Video`；位图（webp/png/jpg/gif）走整图；`.tgs/.json/.lottie` 或整档没下完 → 缩略图；两头都不行 → 贴纸自己的
+> emoji（无 emoji 再退 ⭐️）。**缩略图本身也要过一遍可画判定** —— `thumbnails` 目录里同样躺着 `.tgs`
+> （设备实测 `328260442013040644_1680977305.tgs`），拿它兜底等于再画一次空白。
+> 顺带清掉两处旧写法：容器判定从 `localPath.indexOf('.webm') >= 0`（`a.webm.log` 也算命中）改成复用
+> `motionContainerOf`（mime 优先、扩展名只认**结尾**）；兜底档原来画的是照片图标 `ic_photo`，换成贴纸语义。
+> **有意不做**：不引入 TGS/Lottie 解码器 —— 那是独立缺口（第三方解码依赖 + 板卡/预览页/气泡三处要一起管）。
+> 本包只保证「不再画空白，画不开就退到能画的」，代价是**动效贴纸在气泡里是静帧**（缩略图），不会逐帧动。
+> 测试：`feature_chat` **373/373**（新 `StickerMessage.test.ets` +8：`.tgs` 已下完退 webp 缩略图、`.tgs` 无缩略图退 emoji、
+> `.tgs` 缩略图不算兜底、位图与无扩展名走整图、视频容器且扩展名只看结尾、未下完优先缩略图、空 emoji 仍出兜底档），
+> 三守卫 0 违规。设备对照取证（127.0.0.1:5555，同一条消息、换 HAP 前后各一张）：修复后气泡画出独角兽，
+> `dumpLayout` 对应 `Image` 节点 `[570,496][1200,1126]`（180vp 见方）；随后长按删除该测试消息（回 `No messages yet`）、
+> 卸载 Uni 包（`sticker_board_loaded rows=0,total=0`），**账号回到取证前原状**，全程未向任何群/频道发送内容。
+> 遗留：① 动效贴纸无逐帧动画（等 TGS/Lottie 渲染器，届时气泡/板卡/预览页三处一起换）；
+> ② 贴纸包预览页的 `.tgs` 格子仍空白（`stickerPathIsRenderable` 已可复用，纯接线活）；
+> ③ 最近使用仍吃 `DEFAULT_RECENT_STICKERS`（`getRecentStickers` 未接）。
 
 
 | 功能 ID | 功能名 |

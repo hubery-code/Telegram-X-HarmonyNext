@@ -88,6 +88,7 @@ import {
   viewerRendersPlayer,
   viewerZoomable
 } from '../model/ViewerPlayback';
+import { stickerBubbleRender } from '../model/StickerMessage';
 import { LinkPreviewInfo } from '../model/LinkPreviewInfo';
 import {
   calculateMosaicLayout,
@@ -1809,31 +1810,35 @@ export struct ChatPage {
     return Math.max(60, Math.round(media.height * ratio));
   }
 
-  /** 贴纸渲染（STICKER-101）：对齐 Telegram X 标准，无气泡框透明渲染，右下角半透明胶囊时间戳。 */
+  /**
+   * 贴纸渲染（STICKER-101 / STICKER-MSG-101）：对齐 Telegram X 标准，无气泡框透明渲染，
+   * 右下角半透明胶囊时间戳。
+   *
+   * 画哪一档由 `stickerBubbleRender` 决定：动效贴纸的整档是 `.tgs`，本端没有 Lottie 解码器，
+   * `Image` 吃了只会画一片空白（设备实测：气泡里只剩时间戳胶囊），所以这一档退回缩略图。
+   */
   @Builder
   StickerBubble(media: MediaAttachment, item: MessageItem) {
     Stack({ alignContent: Alignment.BottomEnd }) {
-      if (media.localPath !== null && media.isDownloaded) {
-        if (media.localPath.endsWith('.webm') || media.localPath.indexOf('.webm') >= 0 || media.localPath.endsWith('.mp4')) {
-          Video({
-            src: toSandboxUri(media.localPath),
-            previewUri: toSandboxUri(media.thumbnailPath)
-          })
-            .autoPlay(true)
-            .loop(true)
-            .controls(false)
-            .muted(true)
-            .objectFit(ImageFit.Contain)
-            .hitTestBehavior(HitTestMode.Transparent)
-            .width('100%')
-            .height('100%')
-        } else {
-          Image(toSandboxUri(media.localPath))
-            .objectFit(ImageFit.Contain)
-            .width('100%')
-            .height('100%')
-        }
-      } else if (media.thumbnailPath !== null) {
+      if (stickerBubbleRender(media) === 'video' && media.localPath !== null) {
+        Video({
+          src: toSandboxUri(media.localPath),
+          previewUri: toSandboxUri(media.thumbnailPath)
+        })
+          .autoPlay(true)
+          .loop(true)
+          .controls(false)
+          .muted(true)
+          .objectFit(ImageFit.Contain)
+          .hitTestBehavior(HitTestMode.Transparent)
+          .width('100%')
+          .height('100%')
+      } else if (stickerBubbleRender(media) === 'image' && media.localPath !== null) {
+        Image(toSandboxUri(media.localPath))
+          .objectFit(ImageFit.Contain)
+          .width('100%')
+          .height('100%')
+      } else if (stickerBubbleRender(media) === 'thumbnail' && media.thumbnailPath !== null) {
         Image(toSandboxUri(media.thumbnailPath))
           .objectFit(ImageFit.Contain)
           .width('100%')
@@ -1859,10 +1864,9 @@ export struct ChatPage {
             Text(media.caption)
               .fontSize(72)
           } else {
-            Image($r('app.media.ic_photo'))
-              .width(36)
-              .height(36)
-              .fillColor(this.T.colors.textSecondary)
+            Text('⭐️')
+              .fontSize(56)
+              .opacity(0.6)
           }
         }
         .width('100%')
