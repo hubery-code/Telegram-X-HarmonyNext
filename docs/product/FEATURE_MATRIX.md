@@ -962,6 +962,37 @@
 > ④ gzip 分支无单测（zlib 在 Local Test 是空壳），只靠设备日志；⑤ 视频贴纸（`is_video`）与 `.webm` 仍走静帧；
 > ⑥ lottie 是 har 里的第三方包，Release 构建链与全量 CI 尚未跑过（本轮只验到 debug `assembleHap` + 安装）。
 
+> **2026-09-26（TGS-102，FEAT-P2-004 贴纸播放态按消息记账）**：结掉上一行遗留 ①「新发出去的那张贴纸只画一帧」。
+> **一、根因是列表重建，不是 lottie**：`messageRowKey` 必须带 `sendState` / `isRead` / 下载与上传进度（否则行不刷新），
+> 而这几样在「刚把贴纸发出去」那几百毫秒里连变几次，每次 `LazyForEach` 都把 `AnimatedSticker` 连着它的 `Canvas`
+> 一起换掉 —— 实例从零重建，观感就是永远停在开头。
+> **二、播放账本刻意不进 `UiState`**：播放头每帧都在动，进了 state 就会进行签名，自己触发重建，正好是要修的那个环。
+> 落点是 `feature/chat/model/StickerPlayback.ets` 的模块级单例 + 纯函数 `stickerPlayPlan(record, now, windowMs)`：
+> key 用消息 id 字符串，`RESUME_WINDOW_MS = 1500`（新鲜度从最后一次 `enterFrame` 起算），LRU 128 条带上限淘汰。
+> **三、三态**：`first` 交给 `autoplay` 起步；`resume` 走 `goToAndPlay(记录帧)`；`finished` 走 `goToAndStop(末帧)`
+> —— 后两种都要 `autoplay:false`，否则先闪一帧 0 号帧；`DOMLoaded` 里**先落位再撤缩略图**。
+> 帧号一律取账本记着的**实际推进值**，不猜 `totalFrames`（各档贴纸的 first/last 帧不保证是 0/N-1）。
+> **四、身份用 messageId 而不是 fileId**：同一张贴纸出现在两条消息里各记各的（代价是转发/编辑后会重播一次，本端接受）。
+> 测试：`feature_chat` **413/413**（新 `StickerPlayback.test.ets` 12 例：无记录→first、窗口边界含等号、`finished` 优先于帧号、
+> 按记录帧续播、`complete` 之后迟到的帧不回卷、`finished` 无进度仍报末帧、过期降级 first、空 key 不记账、
+> 同贴纸两条消息互不串、按最后推进淘汰、默认上限 128），四守卫 0 违规。
+> 设备取证（127.0.0.1:5555，`.hvigor/outputs/tgs-102/`，探针贴纸只发进 Saved Messages，本轮造的置顶**已 unpin 还原**）：
+> ① 新发贴纸**一次挂载播满** —— `tgs_mount key=106954752 plan=first` 连到 167 帧、`key=108003328` 连到 134 帧后 `complete`，
+> 上一轮那条「创建后 110 ms 即销毁」的曲线不再出现；② 重建后**落在账本记的位置** —— `plan=finished frame=179` 与
+> `DOMLoaded cur=179` 两次成对出现；③ 离开重进（>1500 ms）后 `plan=first` 重播，新鲜窗口按设计生效。
+> ④ **诚实标注：`resume` 档没抓到设备样本** —— 用来强制重建的「长按 → 菜单 → Pin」落地要 ≈3.5 s，而贴纸只播 3.2 s，
+> 重建总发生在播完之后，于是实测到的都是 `finished`；`resume` 与它共用同一条 账本→plan→seek 路径，且有单测兜住。
+> ⑤ 收尾把取证用的临时日志（`tgs_frame` 采样、`tgs_domloaded`、`tgs_complete`）裁掉、只留一次挂载一条的 `tgs_mount`，
+> 重装后的构建再验一次：`tgs-28/29/30/31 animation is playing → completed. playing 1 times`。
+> **顺带发现两条，都不在本包范围**：① 长按菜单的 Pin/Unpin 标签读 `projection.getMessageById(id).is_pinned`，
+> 而历史注入的消息对象不带这个字段 → 已置顶的行仍显示「Pin」（取证时靠这个标签找置顶行踩了空，
+> 最后用 hilog 的 `pinned_message_loaded id=` 对号）；② **进程刚起来时进会话可能只拿到 1 条历史** ——
+> 实测 `get_chat_history_ok count=1` + `MessageProjection received=1 added=0` → 页面显示 `No messages yet`，
+> 退出重进即恢复（`received=10 added=9`）；上一轮「贴纸一帧都没画」的误判正来自这个空窗。
+> 遗留：① `resume` 档缺设备样本（要么拉长播放，要么改用进度/已读这类高频签名触发）；② 转发或编辑后同一贴纸重播一次；
+> ③ 板卡格与预览页格仍静帧（有意范围）；④ 点贴纸开大图循环播放未做；⑤ 视频贴纸与 `.webm` 仍走静帧；
+> ⑥ lottie 的 Release 构建链与全量 CI 仍未跑过。
+
 
 > **追加（APPLOCK-101，FEAT-P2-008 Passcode 半边）**：四位本地 PIN + 自动锁定档位 + 后台回锁 + 连错冷却。
 > **对标 Android `Passcode.java` 的判定表，偏离三条且都写明理由**：

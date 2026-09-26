@@ -1,11 +1,11 @@
 /**
- * feature/chat — 动效贴纸（TGS/Lottie）的画布宿主（TGS-101）。
+ * feature/chat — 动效贴纸（TGS/Lottie）的画布宿主（TGS-101 / TGS-102）。
  *
  * 只做三件事：把 `.tgs` 交给注入的解码口换成 Lottie JSON 文本 → 在 `Canvas` 上挂一个
  * lottie 实例 → 组件销毁时把这个实例摘掉。「这条贴纸算不算动效」不在这里，
  * 是 `stickerAnimationTgsPath` 的判定。
  *
- * 四条不显然的约束：
+ * 五条不显然的约束：
  * 1. **加载只能在 `Canvas.onReady` 之后**（此时画布尺寸才确定，早挂会按 0×0 算视口）；
  * 2. **喂 `animationData` 而不是 `path`**：lottie 的沙盒分支要 `getContext().filesDir`
  *    （在它的异步装载里能不能拿到 context 我们赌不起），而 `animationData` 分支
@@ -14,15 +14,25 @@
  *    解码失败时必须退回它，而不是画一块空白（STICKER-MSG-101 的教训：气泡只剩时间戳）；
  * 4. **`autoSkip` 关**：lottie 默认会跳过它判定为不可见的画布，而会话里的贴纸在
  *    `LazyForEach` 里，可见性判定慢一步就是一片空白（官方 README 同样建议首帧空白时关掉）。
+ * 5. **挂载前先查播放账本**（TGS-102）：行重建会把实例连着画布一起换掉，
+ *    从头演就等于「发消息那几百毫秒里永远停在开头」。账本给三种走法：
+ *    首演 `autoplay: true`；续播 `autoplay: false` + `goToAndPlay(frame)`；
+ *    已演完 `autoplay: false` + `goToAndStop(frame)` —— 三种都不等播完才停，
+ *    帧号一律取账本里记着的实际推进值，不去猜 `totalFrames`（各档贴纸的 first/last 帧不保证是 0/N-1）。
  *
  * 一个组件一个 lottie 实例，实例名用进程内自增序号（`lottie.destroy(name)` 按名释放，
  * 重名会互相踢掉）；`aboutToDisappear` 里必须释放，否则 LazyForEach 回收气泡后
  * 动画还在后台逐帧画。
  */
 
-import lottie, { AnimationItem } from '@ohos/lottie';
+import lottie, { AnimationItem, BMEnterFrameEvent } from '@ohos/lottie';
+import { hilog } from '@kit.PerformanceAnalysisKit';
 import { AppError, Result } from '@tgx/core-common';
 import { TgsDecoderPort } from '@tgx/platform-ports';
+import { stickerPlaybackLedger, StickerPlayPlan } from '../model/StickerPlayback';
+
+const DOMAIN: number = 0x0000;
+const TAG: string = 'AnimatedSticker';
 
 /** 进程内自增的动画实例名序号。 */
 let animationSeq: number = 0;
@@ -30,13 +40,15 @@ let animationSeq: number = 0;
 @Component
 export struct AnimatedSticker {
   /**
-   * 非 @Prop：这三样在一条气泡的生命周期内不换（换了整块重建）；
+   * 非 @Prop：这几样在一条气泡的生命周期内不换（换了整块重建）；
    * 更重要的是解码口与动画数据都不是可观察状态，挂 @Prop 只会让 ArkUI 深拷贝判等白花力气。
    */
   tgsPath: string | null = null;
   decoder: TgsDecoderPort | null = null;
   /** 动画挂上之前垫在下面的静态缩略图（已是 `file://` 口径的 uri）。 */
   fallbackUri: string | null = null;
+  /** 播放账本的 key（消息 id 的字符串形式）；空则不记账、每次首演。 */
+  playbackKey: string | null = null;
   /** 动画是否已经挂上；决定缩略图还在不在屏幕上。 */
   @State private animated: boolean = false;
 
@@ -81,7 +93,9 @@ export struct AnimatedSticker {
     decoder.decode(path).then((res: Result<string, AppError>) => {
       if (res.ok) {
         this.load(res.value);
+        return;
       }
+      hilog.warn(DOMAIN, TAG, 'tgs_decode_fail name=%{public}s', this.instanceName);
     });
   }
 
@@ -97,6 +111,11 @@ export struct AnimatedSticker {
       // 这里不炸出去：缩略图还垫着，气泡回到 TGS 之前的画法。
       return;
     }
+    const plan: StickerPlayPlan = stickerPlaybackLedger.plan(this.playbackKey, Date.now());
+    // 一次挂载一条：设备取证就靠这行看「重建之后播放头有没有往前走」
+    // （连续几条 plan=resume 且 frame 递增 = 续上了；反复 plan=first = 从头鬼打墙）。
+    hilog.info(DOMAIN, TAG, 'tgs_mount key=%{public}s plan=%{public}s frame=%{public}s name=%{public}s',
+      this.playbackKey === null ? '-' : this.playbackKey, plan.mode, `${plan.frame}`, this.instanceName);
     // 抗锯齿：lottie 文档明确建议开，否则动图边缘锯齿明显。
     this.ctx.imageSmoothingEnabled = true;
     this.ctx.imageSmoothingQuality = 'medium';
@@ -104,17 +123,41 @@ export struct AnimatedSticker {
       container: this.ctx,
       renderer: 'canvas',
       loop: false,
-      autoplay: true,
+      // 只有首演交给 autoplay 起步：续播与已演完要先落位再决定走不走，
+      // 交给 autoplay 会先闪一帧 0 号帧。
+      autoplay: plan.mode === 'first',
       autoSkip: false,
       name: this.instanceName,
       contentMode: 'Contain',
       animationData: data
     });
     this.item.addEventListener('DOMLoaded', (): void => {
+      // 缩略图交班给画布：落位必须先于撤图，否则续播会闪一下 0 号帧。
+      this.seekToPlan(plan);
       this.animated = true;
+    });
+    this.item.addEventListener('enterFrame', (e: BMEnterFrameEvent): void => {
+      stickerPlaybackLedger.noteFrame(this.playbackKey, e.currentTime, Date.now());
     });
     // 播完停在末帧；失败与取消都不在这里管（缩略图已经撤了，回不去是故意的：
     // 半途切回静态图会闪，而 lottie 停在末帧仍是这张图的一帧）。
+    this.item.addEventListener('complete', (): void => {
+      const item: AnimationItem | null = this.item;
+      stickerPlaybackLedger.noteFinished(this.playbackKey, item === null ? 0 : item.currentFrame, Date.now());
+    });
+  }
+
+  /** 按账本给的位置落位；落不完也不影响动画本身（最差是从头演）。 */
+  private seekToPlan(plan: StickerPlayPlan): void {
+    const item: AnimationItem | null = this.item;
+    if (item === null || plan.mode === 'first') {
+      return;
+    }
+    if (plan.mode === 'finished') {
+      item.goToAndStop(plan.frame, true);
+      return;
+    }
+    item.goToAndPlay(plan.frame, true);
   }
 
   private release(): void {

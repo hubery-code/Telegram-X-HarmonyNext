@@ -1852,7 +1852,10 @@ export struct ChatPage {
         AnimatedSticker({
           tgsPath: stickerAnimationTgsPath(media),
           decoder: this.tgsDecoder,
-          fallbackUri: media.thumbnailPath === null ? null : toSandboxUri(media.thumbnailPath)
+          fallbackUri: media.thumbnailPath === null ? null : toSandboxUri(media.thumbnailPath),
+          // TGS-102：按消息 id 记播放头。行重建（sendState / isRead / 进度都要参与签名，
+          // 见 messageRowKey）会把实例连着画布一起换掉，不续上就永远停在开头。
+          playbackKey: `${item.messageId}`
         })
           .width('100%')
           .height('100%')
