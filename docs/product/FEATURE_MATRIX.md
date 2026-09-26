@@ -120,7 +120,7 @@
 | FEAT-SET-002 | 语言切换（中/英） | P1 | `ui/SettingsLanguageController.java`, `core/Lang.java`, `telegram/Tdlib.java:5912`（SetOption language_pack_id） | SetOption(language_pack_id) | 切换后 UI 立即生效且重启保持，TDLib 语言包同步 | — | Accepted | 迁移组 |
 | FEAT-SET-003 | 通知设置入口 | P1 | `ui/SettingsNotificationController.java`, `telegram/LocalScopeNotificationSettings.java` | SetScopeNotificationSettings, SetChatNotificationSettings | 全局/单会话通知开关生效并持久化 | 通知权限 | Accepted | SET-106 |
 | FEAT-SET-004 | 存储与缓存入口 | P1 | `ui/SettingsCacheController.java`, `telegram/TdlibSettingsManager.java` | GetStorageStatistics, OptimizeStorage | 展示缓存占用并支持一键清理，清理后媒体可重下 | 文件 | Accepted | 迁移组 |
-| FEAT-SET-005 | 隐私和安全入口（可见范围规则） | P1 | `ui/PrivacySettingsActivity` + `ui/SettingsPrivacyKeyController.java` + `TD_getPrivacySettingRules` | getUserPrivacySettingRules, setUserPrivacySettingRules | 8 项可见范围（最后上线/手机号/头像/简介/生日/通话/入群/被搜索）读真值；点一行进详情页：主档位单选 + Premium 勾 +「总是/从不允许」例外名单，名单支持**联系人与已加入群组的成员**（双分区多选器，频道不可选），另有 Android 的**附加开关卡**：Premium 放行只挂在「谁能把我加进群组」、隐藏已读时间只挂在「最后上线时间」且走独立 RPC 当场写回读收敛，**离开页面才写回规则并回读确认** | — | Accepted | SELF-102 → PRIVACY-101 → PRIVACY-102 → PRIVACY-103 |
+| FEAT-SET-005 | 隐私和安全入口（可见范围规则） | P1 | `ui/PrivacySettingsActivity` + `ui/SettingsPrivacyKeyController.java` + `TD_getPrivacySettingRules` | getUserPrivacySettingRules, setUserPrivacySettingRules | 8 项可见范围（最后上线/手机号/头像/简介/生日/通话/入群/被搜索）读真值；点一行进详情页：主档位单选 + Premium 勾 +「总是/从不允许」例外名单，名单支持**联系人与已加入群组的成员**（双分区多选器，频道不可选），另有 Android 的**附加开关卡**：Premium 放行只挂在「谁能把我加进群组」、隐藏已读时间只挂在「最后上线时间」且走独立 RPC 当场写回读收敛，**离开页面才写回规则并回读确认** | — | Accepted | SELF-102 → PRIVACY-101 → PRIVACY-102 → PRIVACY-103 → SET-BACK-101 |
 
 ### 外观与本地化
 
@@ -1114,8 +1114,26 @@
 > Premium 行出且 `checked=true`（改档自动置 on），档位行与列表行都读 `My Contacts & Premium` → 手动关 → `checked=false`
 > → 头部返回 → `write <- [allowPremiumUsers, allowContacts, restrictAll]`（顺序与 Android 一致，premium 先于主档位）→
 > 再进 → Everybody → 返回 → `write <- [allowAll]` → 列表行读回 `Everybody`，**两项隐私设置逐条还原**。
-> **新登记遗留**：详情页的**物理返回键**是路由 pop，不经过页面自己的 `onBack`，所以未保存的编辑会被静默丢弃
-> （`entry/Index.ets` 的 `onBackPress` 目前只处理应用锁）；这一处影响设置页全部覆盖层，单列一个包收口。
+> ~~**新登记遗留**：详情页的**物理返回键**是路由 pop，不经过页面自己的 `onBack`，所以未保存的编辑会被静默丢弃~~
+> **本条已由 SET-BACK-101 结案**（见下一段）。
+> **追加（SET-BACK-101，FEAT-SET-005 的返回语义半边；影响面是整个设置页）**：上一段那条遗留**不是少写一个 `if`，是层级有两句说法**。
+> 设置页的子页与弹层全是 `SettingsPage.build()` **同一层 Stack 上的覆盖层**（不是导航栈里的页），物理返回键压根不会自动关它们；
+> 而 `entry/Index.ets:378 onBackPress` 里那串手写的 `if (showX) dispatch(new CloseX())` 只认得 devices / privacy 列表 / passcode /
+> 账号切换 / 登出确认，**漏了代理、自动下载、隐私详情页**三层。隐私那层最贵：规则写回挂在 `closePrivacyKeyPage` 上
+> （Android `SettingsPrivacyKeyController.onBlur():929 → saveChanges():931`，离开 controller 必保存），旧链条只会派
+> `ClosePrivacyPage`，而它只把 `privacyDetail` 置 null（`SettingsReducer.ets:706-716`）—— **按一次返回 = 编辑丢掉 + 服务端零请求**。
+> 收口做法是把层级收进**一个 Kit-free 纯函数**：`model/SettingsOverlayBack.ets` 的 `settingsOverlayCloseIntent(state)`
+> 按 `SettingsPage` 的渲染顺序**反转**判定，返回**该派发的意图**而不是自己关层（passcode 流程 → passcode 页 → 自动下载 →
+> 代理 → 隐私多选器 → 隐私详情 → 隐私列表 → 设备 → 登出确认 → 账号切换），`entry` 只留「非 null 就派发并吞掉，null 才放行 pop」。
+> 顺带修掉旧链条里两处错序：`showAccountSwitcher` 曾排在 `showLogoutConfirm` 之前（确认弹窗画在切换面板之上），
+> passcode 曾排在 devices/privacy 之后。**多选器的返回语义与「点 Done 才提交」同源**：`ClosePrivacyPicker` 清空勾选、
+> 不产生任何写回。测试 `feature_settings` **335/335**（324 → 335，新增 11 例含「全开时连按返回的层级序列」）。
+> 设备取证（127.0.0.1:5555，`.hvigor/outputs/setback101/`）：详情页改档**零写回** → 物理返回 →
+> `privacy_rules_write allow_find_by_phone <- [AllowContacts,RestrictAll]` **且停在隐私列表** → 再返回 → 设置页 →
+> 再返回 → 会话列表（一次只关一层）；自动下载 / 代理 / 屏幕锁定三覆盖层各自只关自己、下层仍在；多选器返回只收弹层
+> （`privacy-picker-done` 节点消失）且写回计数不变；**账号状态逐条还原**（`allow_find_by_phone` 回读 `[allowAll]`，
+> `show_last_seen` 全程未动）。**新登记遗留**：收口目前只覆盖 `settings` / `settingsSection` 两条路由（`chat` 有 MSG-106
+> 自己的分支）；`onBackPress` 不看 `isLoading` / `isLoggingOut`，登出在途时返回键仍会放行 pop（Android 那边整页禁用交互）。
 
 
 | 功能 ID | 功能名 |

@@ -92,13 +92,8 @@ import {
   SettingsCoordinator,
   SwitchAccount,
   RequestAddAccount,
-  CloseDevicesPage,
-  ClosePrivacyPage,
-  ClosePasscodePage,
-  CancelPasscodeFlow,
-  SectionFocused,
-  CloseAccountSwitcher,
-  CancelLogout
+  settingsOverlayCloseIntent,
+  SectionFocused
 } from '@tgx/feature-settings';
 import {
   SearchPage,
@@ -395,29 +390,13 @@ struct Index {
       return this.navController.pop();
     }
     if (this.currentRoute.name === 'settings' || this.currentRoute.name === 'settingsSection') {
-      if (this.settingsUiState.showDevicesPage) {
-        this.settingsDispatch(new CloseDevicesPage());
-        return true;
-      }
-      if (this.settingsUiState.showPrivacyPage) {
-        this.settingsDispatch(new ClosePrivacyPage());
-        return true;
-      }
-      if (this.settingsUiState.showPasscodePage) {
-        // 键盘弹着时返回先收回键盘，再退子页 —— 和 Android 的 PasscodeActivity 一致。
-        if (this.settingsUiState.passcodeFlow !== 'idle') {
-          this.settingsDispatch(new CancelPasscodeFlow());
-          return true;
-        }
-        this.settingsDispatch(new ClosePasscodePage());
-        return true;
-      }
-      if (this.settingsUiState.showAccountSwitcher) {
-        this.settingsDispatch(new CloseAccountSwitcher());
-        return true;
-      }
-      if (this.settingsUiState.showLogoutConfirm) {
-        this.settingsDispatch(new CancelLogout());
+      // SET-BACK-101：设置页的子页与弹层全是同一层 Stack 上的覆盖层，导航栈管不到，
+      // 所以「先关最上层、关完才 pop」的层级只能由 feature/settings 自己定（那里才有
+      // 渲染顺序这唯一真相）。隐私详情页尤其要紧：它的写回挂在关闭意图上，
+      // 少了这一层判断，物理返回键会静默丢掉未提交的规则改动。
+      const overlayIntent: SettingsIntent | null = settingsOverlayCloseIntent(this.settingsUiState);
+      if (overlayIntent !== null) {
+        this.settingsDispatch(overlayIntent);
         return true;
       }
       return this.navController.pop();

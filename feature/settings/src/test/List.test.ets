@@ -5,6 +5,7 @@ import notificationSettingsTest from './NotificationSettings.test';
 import privacySettingsTest from './PrivacySettings.test';
 import devicesSubPageTest from './DevicesSubPage.test';
 import settingsSectionTest from './SettingsSection.test';
+import settingsOverlayBackTest from './SettingsOverlayBack.test';
 import proxySettingsTest from './ProxySettings.test';
 import autoDownloadRowsTest from './AutoDownloadRows.test';
 import dataSaverRowsTest from './DataSaverRows.test';
@@ -19,6 +20,7 @@ export default function testsuite(): void {
   privacySettingsTest();
   devicesSubPageTest();
   settingsSectionTest();
+  settingsOverlayBackTest();
   proxySettingsTest();
   autoDownloadRowsTest();
   dataSaverRowsTest();

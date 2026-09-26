@@ -138,6 +138,7 @@ export {
   privacyRulesEqual,
   privacyUserTitle
 } from './model/PrivacyDetail';
+export { settingsOverlayCloseIntent } from './model/SettingsOverlayBack';
 export {
   SettingsSectionKey,
   SettingsCardKey,
