@@ -138,6 +138,7 @@ export struct SelfProfilePage {
         .objectFit(ImageFit.Cover)
     } else {
       Text(this.uiState.avatarLetters.length > 0 ? this.uiState.avatarLetters : '?')
+        .accessibilityLevel('no')
         .width(AVATAR_SIZE)
         .height(AVATAR_SIZE)
         .borderRadius(this.T.radius.full)

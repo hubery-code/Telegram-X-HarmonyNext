@@ -391,6 +391,7 @@ export struct ContactsPage {
           .objectFit(ImageFit.Cover)
       } else {
         Text(item.avatarLetters.length > 0 ? item.avatarLetters : '?')
+          .accessibilityLevel('no')
           .width(ROW_AVATAR_SIZE)
           .height(ROW_AVATAR_SIZE)
           .borderRadius(this.T.radius.full)

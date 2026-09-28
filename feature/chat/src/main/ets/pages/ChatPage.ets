@@ -1110,6 +1110,8 @@ export struct ChatPage {
         })
 
         // MSG-109：标题 + 副标题（副标题非空时显示，subheadline 字号 textSecondary）。
+        // A11Y-102：标题与副标题合成一站，所以点击挂在容器上而不是标题 Text 上——
+        // 分组容器里留着可操作后代，读屏就再也走不到那个后代（守卫 R4 拦这种写法）。
         Column() {
           Text(this.uiState.chatTitle)
             .fontSize(this.T.typography.title.fontSize)
@@ -1117,10 +1119,6 @@ export struct ChatPage {
             .fontColor(this.T.colors.textPrimary)
             .maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
-            .onClick(() => {
-              // MSG-109：私聊/群/频道标题点击 → 打开会话资料页（纯导航意图）。
-              this.onDispatch(new OpenChatProfile(this.uiState.chatId));
-            })
 
           if (this.uiState.headerSubtitle.length > 0) {
             Text(this.uiState.headerSubtitle)
@@ -1132,6 +1130,11 @@ export struct ChatPage {
         }
         .layoutWeight(1)
         .alignItems(HorizontalAlign.Start)
+        .accessibilityGroup(true)
+        .onClick(() => {
+          // MSG-109：私聊/群/频道标题点击 → 打开会话资料页（纯导航意图）。
+          this.onDispatch(new OpenChatProfile(this.uiState.chatId));
+        })
 
         // MSG-109：私聊头部语音通话占位入口（📞，语义后续泳道实现）。
         if (this.uiState.chatKind === 'private') {
@@ -1377,6 +1380,8 @@ export struct ChatPage {
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)
       .justifyContent(FlexAlign.Center)
+      // A11Y-102：置顶栏的「发送者 + 摘要」合成一站；收起按钮是同级节点，不受分组影响。
+      .accessibilityGroup(true)
       .onClick(() => {
         this.onDispatch(new JumpToPinnedMessage());
       })
@@ -1501,6 +1506,7 @@ export struct ChatPage {
             .onClick(() => this.onSenderAvatarClick(item))
         } else {
           Text(avatarLettersForName(item.senderName))
+            .accessibilityLevel('no')
             .width(SENDER_AVATAR_SIZE)
             .height(SENDER_AVATAR_SIZE)
             .borderRadius(this.T.radius.full)
@@ -1634,6 +1640,9 @@ export struct ChatPage {
         }
       }
       .alignItems(HorizontalAlign.End)
+      // A11Y-102：**刻意不给气泡加分组**。气泡里带可操作后代（链接/spoiler 的 Span.onClick、
+      // 反应 chip、评论行），accessibilityGroup(true) 会让读屏再也走不到这些后代；
+      // 纯文本消息的正文本来就是一个 Text 节点，已经是一站。守卫 R4 按同一条规则拦全仓写法。
       .backgroundColor(item.isChannelPost ? Color.Transparent : (this.isStandaloneBubble(item) ? Color.Transparent : (item.isOutgoing ? this.T.colors.chatOutgoing : this.T.colors.chatIncoming)))
       .borderRadius(item.isChannelPost ? 0 : (this.isStandaloneBubble(item) ? 0 : this.T.radius.lg))
       .clip(this.isStandaloneBubble(item) ? false : true)
@@ -1740,6 +1749,8 @@ export struct ChatPage {
       }
     }
     .alignItems(VerticalAlign.Center)
+    // A11Y-102：时间戳与「edited」合成一站；对勾/时钟是纯图标（无文本），本来就不进合成文本。
+    .accessibilityGroup(true)
     .margin(isOverlay ? 0 : { top: this.T.spacing.hairline })
   }
 

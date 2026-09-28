@@ -340,6 +340,8 @@ export struct ChatListPage {
           .padding({ left: this.T.spacing.md, right: this.T.spacing.md })
           .backgroundColor(this.T.colors.surfaceVariant)
           .borderRadius(this.T.radius.md)
+          // A11Y-102：搜索栏的放大镜图标无文本，分组后整栏一站（只有 "Search" 被念）。
+          .accessibilityGroup(true)
           .margin({
             left: this.T.spacing.screenInset,
             right: this.T.spacing.screenInset,
@@ -446,6 +448,9 @@ export struct ChatListPage {
         right: this.T.spacing.screenInset,
         bottom: this.T.spacing.xxl
       })
+      // A11Y-102：A11Y-101 的漏网之鱼 —— 守卫当时解析不出「上一条属性带多行实参」的链，
+      // 这个只有图标的悬浮按钮因此一直是零标签。
+      .accessibilityText(a11y(A11y.NEW_CHAT))
       .onClick(() => {
         this.onCompose();
       })
@@ -661,7 +666,10 @@ export struct ChatListPage {
           .objectFit(ImageFit.Cover)
           .margin({ right: this.T.spacing.md })
       } else {
+        // A11Y-102：占位头像的首字母是装饰文本，读屏会把它念成独立的一站（「B」），
+        // accessibilityLevel('no') 同时把它从分组的合成文本里剔除（模拟器 dumpLayout 实测）。
         Text(item.avatarLetter)
+          .accessibilityLevel('no')
           .width(AVATAR_SIZE)
           .height(AVATAR_SIZE)
           .borderRadius(this.T.radius.full)
@@ -758,6 +766,10 @@ export struct ChatListPage {
       .alignItems(HorizontalAlign.Start)
     }
     .width('100%')
+    // A11Y-102：一行会话在读屏下原本 5~9 站（标题、时间、摘要、未读数各一站），
+    // 分组后合成一句按树序播报（实测 dumpLayout 的 text 变成 "标题, 时间, 摘要, 未读数"）。
+    // 行内的点击与长按挂在本容器上，不是后代，所以分组不会把它们吞掉。
+    .accessibilityGroup(true)
     .padding({
       left: this.T.spacing.screenInset,
       right: this.T.spacing.screenInset,
@@ -838,6 +850,8 @@ export struct ChatListPage {
             color: { bottom: this.uiState.selectedFolderId === folder.id ? this.T.colors.accent : Color.Transparent }
           })
           .alignItems(HorizontalAlign.Center)
+          // A11Y-102：页签的「名称 + 未读数」合成一站（"Groups, 2"），选中态由读屏的 selected 播报。
+          .accessibilityGroup(true)
           .onClick(() => {
             this.onDispatch(new SelectChatFolder(folder.id));
           })

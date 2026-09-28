@@ -108,6 +108,7 @@ export struct ChatProfilePage {
           .objectFit(ImageFit.Cover)
       } else {
         Text(this.uiState.avatarLetters.length > 0 ? this.uiState.avatarLetters : 'G')
+          .accessibilityLevel('no')
           .width(AVATAR_SIZE)
           .height(AVATAR_SIZE)
           .borderRadius(this.T.radius.full)
@@ -222,6 +223,7 @@ export struct ChatProfilePage {
           .objectFit(ImageFit.Cover)
       } else {
         Text(member.avatarLetters.length > 0 ? member.avatarLetters : '?')
+          .accessibilityLevel('no')
           .width(MEMBER_AVATAR_SIZE)
           .height(MEMBER_AVATAR_SIZE)
           .borderRadius(this.T.radius.full)

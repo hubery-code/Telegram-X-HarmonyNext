@@ -220,6 +220,7 @@ export struct ProfilePage {
       } else {
         Column() {
           Text(this.uiState.avatarLetters.length > 0 ? this.uiState.avatarLetters : '?')
+            .accessibilityLevel('no')
             .fontSize(COVER_LETTER_SIZE)
             .fontWeight(FontWeight.Medium)
             .fontColor(this.T.colors.textOnScrim)

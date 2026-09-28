@@ -95,6 +95,7 @@ export struct DrawerMenu {
               .objectFit(ImageFit.Cover)
           } else {
             Text(this.state.accountAvatarLetters)
+              .accessibilityLevel('no')
               .width(DRAWER_AVATAR_SIZE)
               .height(DRAWER_AVATAR_SIZE)
               .borderRadius(this.T.radius.full)

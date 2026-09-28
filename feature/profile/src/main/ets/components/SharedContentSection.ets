@@ -581,6 +581,7 @@ export struct SharedContentSection {
         ForEach(this.view.groups.slice(), (item: SharedGroupItem, index: number) => {
           Row() {
             Text(avatarLetterOf(item.title))
+              .accessibilityLevel('no')
               .width(40)
               .height(40)
               .borderRadius(this.T.radius.full)

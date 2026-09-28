@@ -238,6 +238,7 @@ export struct CommentsPage {
       if (!item.isOutgoing) {
         Stack({ alignContent: Alignment.Center }) {
           Text(item.senderAvatarLetter)
+            .accessibilityLevel('no')
             .fontSize(this.T.typography.caption.fontSize)
             .fontWeight(FontWeight.Bold)
             .fontColor(this.T.colors.textOnAccent)

@@ -38,6 +38,7 @@ export class A11y {
   static readonly SETTINGS: string = 'A11ySettings';
   static readonly SWITCH_ACCOUNT: string = 'A11ySwitchAccount';
   static readonly OPEN_PROFILE: string = 'A11yOpenProfile';
+  static readonly NEW_CHAT: string = 'A11yNewChat';
 
   // 输入栏与登录
   static readonly ATTACH: string = 'A11yAttach';
@@ -97,6 +98,7 @@ export const A11Y_SLOTS: string[] = [
   A11y.SETTINGS,
   A11y.SWITCH_ACCOUNT,
   A11y.OPEN_PROFILE,
+  A11y.NEW_CHAT,
   A11y.ATTACH,
   A11y.EMOJI,
   A11y.KEYBOARD,

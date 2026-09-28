@@ -456,6 +456,7 @@ export struct SearchPage {
     Row() {
       // 头像占位
       Text(getAvatarLetter(item.title))
+        .accessibilityLevel('no')
         .width(AVATAR_SIZE)
         .height(AVATAR_SIZE)
         .borderRadius(this.T.radius.full)
@@ -520,6 +521,7 @@ export struct SearchPage {
     Row() {
       // 会话图标或首字母
       Text(getAvatarLetter(item.chatTitle))
+        .accessibilityLevel('no')
         .width(AVATAR_SIZE)
         .height(AVATAR_SIZE)
         .borderRadius(this.T.radius.full)

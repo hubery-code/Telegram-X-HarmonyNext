@@ -190,6 +190,7 @@ export struct ForwardPickerPage {
                     .margin({ right: this.T.spacing.sm })
                 } else {
                   Text(target.avatarLetter)
+                    .accessibilityLevel('no')
                     .width(AVATAR_SIZE)
                     .height(AVATAR_SIZE)
                     .borderRadius(this.T.radius.full)

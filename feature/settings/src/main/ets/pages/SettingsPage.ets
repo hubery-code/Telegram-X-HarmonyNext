@@ -417,6 +417,7 @@ export struct SettingsPage {
           .margin({ right: this.getTheme().spacing.md })
       } else {
         Text(this.getAvatarLetter())
+          .accessibilityLevel('no')
           .width(AVATAR_SIZE)
           .height(AVATAR_SIZE)
           .borderRadius(this.getTheme().radius.full)

@@ -1082,6 +1082,8 @@
 > 本轮在同一份布局上做过对照：临时给一个控件挂 `accessibilityDescription('A11YDESC-PROBE')`，dump 里以 `description`
 > 字段如实出现；而同页 20+ 处 `accessibilityText(...)` **一个字段都没有**。也就是说这类改动
 > **不能靠 dumpLayout 做 A/B 自证**（打开屏幕朗读同样在 dump 里看不出差别），可强制的防线只剩**静态守卫 + 词典级单测**；
+> （**本句的适用范围由 A11Y-102 收窄**：只对 `accessibilityText` 成立，`accessibilityGroup` / `accessibilityLevel`
+> 在 dump 里是可观察的，见下一段那张口径表。）
 > 设备侧能自证的只有「没把页面点崩」（本轮收尾重跑了一次：会话列表 107 节点、文案与上一轮一致）。
 > 附带两条工具事实：dumpLayout 想稳定拿单一窗口要加 `-b <bundleName>`（否则系统窗口和 SR 的引导气泡会混进来）；
 > `-p /dev/stdout` 不支持，落盘到 `/data/local/tmp` 再 `file recv`；屏幕朗读关不掉时用
@@ -1099,7 +1101,8 @@
 > `feature_chat` 新增 6 条（优先级六分支）。**一条反直觉的坑**：EN 表以英文句子本身为 key，
 > 所以复用通用文案时（`A11y.CANCEL = 'Cancel'`）`getString('Cancel','en')` **合法地回显 key**，
 > 「回显即缺翻译」的启发式只对 `A11y*` 前缀的 key 和 ZH 表成立。
-> 遗留：① RTL（FEAT-P2-011 的另一半）与平板双栏未做；② `accessibilityLevel`/焦点顺序未管（读屏下的遍历次序还是布局次序）；
+> 遗留：① RTL（FEAT-P2-011 的另一半）与平板双栏未做（RTL 半边另立 **RTL-101**，见 A11Y-102 段末）；② `accessibilityLevel`/焦点顺序未管（读屏下的遍历次序还是布局次序）
+> —— **已由 A11Y-102 结案**；
 > ③ 系统 dumpLayout 看不到 `accessibilityText`，若将来要在设备上验证播报内容，只能靠真机 SR 听或 `hilog` 的 SR 文本，
 > 本轮 1.1MB `sr_hilog.txt` 里没找到可用的应用侧播报行。
 
@@ -1245,6 +1248,52 @@
 > （`privacy-picker-done` 节点消失）且写回计数不变；**账号状态逐条还原**（`allow_find_by_phone` 回读 `[allowAll]`，
 > `show_last_seen` 全程未动）。**新登记遗留**：收口目前只覆盖 `settings` / `settingsSection` 两条路由（`chat` 有 MSG-106
 > 自己的分支）；`onBackPress` 不看 `isLoading` / `isLoggingOut`，登出在途时返回键仍会放行 pop（Android 那边整页禁用交互）。
+
+> **追加（A11Y-102，FEAT-P2-011 无障碍半边的第二包：读屏播报站点收敛 + 装饰文本隐藏；RTL 拆出）**：
+> A11Y-101 那条遗留 ②「`accessibilityLevel`/焦点顺序未管」在本轮结案 —— 屏幕朗读下**一行会话要按 5~9 次**
+> （标题、时间、摘要、未读数各一站，占位头像的首字母还要多念一站「B」），标签全对但播报是碎的。
+> **本轮最值钱的一条是取证口径，它同时推翻了 A11Y-101 自己写下的「这类改动无法用 dumpLayout 自证」**：
+> 那句对 `accessibilityText` 依然成立，但**分组与隐藏是设备可观察的**（同一页四轮 dumpLayout 对照，
+> `.hvigor/outputs/a11y102/`，全部用 `-b org.telegram.x.harmony` 取单窗口）：
+>
+> | 属性 | dumpLayout 是否可观察 | 观察形状 |
+> |---|---|---|
+> | `.accessibilityGroup(true)` | ✅ | 容器节点的 `text` 变成后代**可见文本按树序的逗号拼接**（`be hu, Mon, [Voice message]`） |
+> | `.accessibilityLevel('no')` | ✅ | 该节点 `text` 被清空，且**同时从分组的拼接里消失**（同 bounds、改前 `'B'` / 改后 `''`） |
+> | `.accessibilityText(...)` | ❌ | 整份 dump 零命中，即使它作为分组的后代也一样不出场 |
+> | 两参 `.accessibilityGroup(true, { accessibilityPreferred: true })` | ❌ | 与单参的合成文本**逐字一致**，设备侧无法自证 |
+>
+> 分组**不改变节点总数**（会话列表两侧都是 110 个节点），它合并的只是播报站 —— 所以「A/B 看节点数」是假指标，
+> 要看容器 `text` 的形状。据此落地 6 处分组：会话列表搜索栏（放大镜无文本，整栏一站）、`ChatRow` 外层 Row、
+> `FolderTabBar` 页签（`All, 3` / `Groups, 2`，选中态交给读屏自己的 selected 播报）、聊天页头部标题+副标题 Column、
+> 置顶栏中间 Column（`Pinned Message, 😂 Sticker`）、消息状态徽章 Row（时间戳 + edited）。
+> **一条安全边界比任何口径都硬**：`accessibilityGroup(true)` 把后代并进容器这一个无障碍元素，
+> **后代里的 `.onClick` / `Toggle` / 链接 Span 会被读屏永久走不到**，所以只用于纯展示行；容器**自己**链上的
+> onClick 不受影响。因此两件事同时成立：① 聊天页头部的「点标题进资料页」的 onClick **从标题 Text 搬到 Column 容器**
+> （设备实证点该区域正常进页）；② **刻意不给气泡分组** —— 气泡里有链接/spoiler 的 `Span.onClick`、反应 chip、
+> 评论行，分组等于把功能读没了；纯文本消息的正文本来就是一个 Text 节点，已经是一站。
+> **规则写成守卫，不靠人记**（`check_accessibility_labels.py` 从三条扩到六条，新增 R4/R5/R6，且不受 `--basis` 影响）：
+> R4 分组容器内不得有可操作后代（`OPERABLE_MARKERS` = 五个可点属性 + `Toggle(`）、
+> R5 只允许单参分组形态（用一个设备侧无法验证的 `accessibilityPreferred` 开关没有意义）、
+> R6 `Text(...avatarLetter...)` 形态的占位首字母必须 `accessibilityLevel('no')`
+> （按标识符片段匹配而非列全名，`avatarLetterOf` / `getAvatarLetter` / `item.avatarLetters` 改名也跑不掉；全仓 14 处）。
+> **顺带修掉守卫自己的盲区**：`owner_of` 原先认不出「上一条属性带多行实参」的链（`.border({ ... })` 后的 `})` 与属性同级），
+> 修好后 R1 立刻抓出 A11Y-101 的漏网之鱼 —— 会话列表那个只有图标的悬浮按钮（`ic_compose`）一直零标签，
+> 于是清单加 `NEW_CHAT` 槽位（42 → 43），页面补 `accessibilityText(a11y(A11y.NEW_CHAT))`。
+> **RTL 拆包**：FEAT-P2-011 题面里的「RTL 镜像」名义上挂在同一条 Epic 下，实际与无障碍无关 ——
+> 全仓 `Direction.Rtl` / `textDirection` **零使用**（只有 TDLib 生成类型里没人读的 `is_rtl` 字段），
+> 且 `Lang` 只有 en/zh 两套词典、应用内根本切不到 RTL locale，即镜像既无入口也无取证环境。另立 **RTL-101**。
+> 测试：`core_common` 的 `A11ySlots` 用例是遍历 `A11Y_SLOTS` 的（无硬编码条数），新槽位自动被覆盖；
+> 本轮零 ArkTS 逻辑改动（全是 UI 属性 + 守卫），受影响 8 模块单测 **1022 条全绿**
+> （`core_common` 52 / `feature_chat` 415 / `feature_chat_list` 37 / `feature_profile` 106 /
+> `feature_contact` 43 / `feature_search` 27 / `feature_settings` 335 / `feature_self` 7）。
+> 设备取证（127.0.0.1:5555，只读页面、未发消息未动账号数据）：会话列表行 `Row` 由 5~9 站合成 1 站、
+> 页签 `['All, 3', 'Personal', 'Groups, 2', 'Channels, 1']`、装饰首字母节点从 dump 的 `text` 里消失；
+> 聊天页头部 `'Saved Messages, 最近在线'`、置顶栏 `'Pinned Message, 😂 Sticker'`；抽屉与设置页的头像占位
+> 节点同样只剩空 `text`；`hilog` 无 JSError/JsError，截图与改前逐像素一致（纯无障碍属性不改视觉）。
+> 遗留：① 播报**内容**（`accessibilityText` 的实际句子）仍然只能在真机屏幕朗读下听，本仓没有可观察口径；
+> ② 焦点顺序本身没有单独 API（ArkUI 按布局树序遍历），本轮是靠分组把站数压下来，不是重排；
+> ③ 分组只挑了「一行一句」的高频面，媒体查看器、表情板格子等仍是多站；④ RTL-101 未做。
 
 
 | 功能 ID | 功能名 |

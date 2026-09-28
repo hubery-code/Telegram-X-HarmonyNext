@@ -6,7 +6,7 @@
 播报「按钮」，用户点下去之前不知道它是返回还是删除。Android 侧 `TGActivity` 给每个图标都
 写了 `setContentDescription`，本端此前一处都没有。
 
-本脚本把「图标控件必须有可读标签」前移到 CI，规则三条：
+本脚本把「图标控件必须有可读标签」前移到 CI，规则六条：
 
   R1 覆盖：任意**可点击**（链上有 `.onClick(`）的组件块，若块内只有图标没有文本，
      且链上没有 `.accessibilityText(`，判违规。
@@ -14,11 +14,24 @@
      也不允许直接 `Lang.getInstance()` —— 标签口径只能有 `A11y.ets` 一处真相。
   R3 翻译：`A11y.<槽位> = '<key>'` 的每个 key 必须同时存在于 `Lang.ets` 的 EN 与 ZH
      词典里（`Lang` 缺译文时原样回吐 key，所以「查得到」本身就是断言）。
+  R4 分组安全：挂了 `.accessibilityGroup(true)` 的容器，块内**不得有可操作后代**
+     （`.onClick(` / `.onTouch(` / `.gesture(` / `.bindMenu(` / `.bindContextMenu(` / `Toggle(`）。
+     分组会把后代并进容器这一个无障碍元素，读屏再也单独走不到它们 —— 链接、反应、开关
+     被这样吞掉是这类改动唯一真正会伤到用户的写法。容器**自己**链上的 `.onClick(` 不算后代。
+  R5 分组形态：只允许单参 `.accessibilityGroup(true)`。两参形态的
+     `AccessibilityOptions.accessibilityPreferred` 在设备侧不可取证（模拟器实测：单参、
+     两参下 `dumpLayout` 的合成文本完全一致，且都不含任何 `accessibilityText`），
+     所以本仓不用一个无法验证的开关。
+  R6 装饰文本：占位头像的首字母（`Text(...avatarLetter...)`）必须挂
+     `.accessibilityLevel('no')`。它是纯装饰，读屏却会把它念成独立的一站（实测：会话行
+     播报成「B, 标题, 时间, 摘要」）；它同时会污染 R4 分组的合成文本。设备实测
+     `accessibilityLevel('no')` 的后代既从 dump 的 `text` 里消失，也从分组的拼接里消失。
 
 用法：python3 tools/ci/check_accessibility_labels.py [--quiet] [--basis]
 退出码：0 = 无违规；1 = 存在违规；2 = 脚本自身的前置条件坏了（找不到定义文件等）
 
-`--basis` 只打印 R2/R3 与解析自检，跳过 R1（R1 的存量清单在 A11Y-101 落地前不为零）。
+`--basis` 只打印 R2/R3 与解析自检，跳过 R1（R1 的存量清单在 A11Y-101 落地前不为零）；
+R4/R5/R6 与 `--basis` 无关，始终执行。
 """
 
 import argparse
@@ -44,8 +57,15 @@ TEXT_RE = re.compile(r'\b(Text|TextInput|TextArea|Button|Toggle|Chip|TextPicker)
 EMPTY_TEXT_RE = re.compile(r'\bText\s*\(\s*[\'"][\'"]\s*\)')
 ATTR_ACCESSIBILITY_TEXT = '.accessibilityText('
 ATTR_ACCESSIBILITY_LEVEL = '.accessibilityLevel('
+ATTR_ACCESSIBILITY_GROUP = '.accessibilityGroup('
 # 让一个组件变成「可按」的属性；`bindMenu` 也是（点下去出菜单，同样要先说清它是干什么的）。
 CLICK_ATTRS = ('.onClick(', '.onTouch(', '.gesture(', '.bindMenu(', '.bindContextMenu(')
+# R4：分组容器里「读屏单独走不到就会丢功能」的后代写法。
+OPERABLE_MARKERS = CLICK_ATTRS + ('Toggle(',)
+# R6：占位头像首字母的写法很多（`avatarLetterOf(x)`、`getAvatarLetter(x)`、`item.avatarLetters`、
+# `this.getAvatarLetter()`），但它们都含 `avatarLetter`，按标识符片段匹配比列全名更不会因为
+# 改名而漏检。
+DECORATIVE_LETTER_RE = re.compile(r'\bText\s*\([^\n]*avatarletter', re.I)
 
 # 返回 `A11y.*` 槽位 key 的纯函数白名单（R2 放行，函数体由对应模块的单测断言）。
 SLOT_SOURCE_HELPERS = ('mediaCircleA11ySlot',)
@@ -123,6 +143,9 @@ def owner_of(lines, click_idx):
             continue
         if stripped.startswith('.'):
             j -= 1  # 同一条链上的其它属性
+            continue
+        if ind == k and stripped in (')', '})', '),', '],'):
+            j -= 1  # 上一条带多行实参的属性的收尾（`.border({ ... })`），仍属同一条链
             continue
         if ind == k and stripped == '}':
             return match_block(lines, j, k)
@@ -231,6 +254,69 @@ def has_visible_text(body: str) -> bool:
     return False
 
 
+def scan_grouping(files):
+    """R4 + R5：`accessibilityGroup(true)` 的容器不得吞掉可操作后代，且只允许单参形态。
+
+    分组在设备侧是可取证的（A11Y-102 实测：容器节点的 `text` 变成后代可见文本按树序的
+    逗号拼接，`accessibilityLevel('no')` 的后代同时从该拼接里消失），但**拼出来的只有可见
+    文本** —— 图标子节点什么都贡献不了。所以分组只适合「纯展示行」；一旦块里有可操作后代，
+    分组就是把功能读没了，这条比任何标签口径都硬，直接拦。
+    """
+    problems = []
+    for path in files:
+        rel = path.relative_to(ROOT)
+        lines = path.read_text(encoding='utf-8').splitlines()
+        for idx, line in enumerate(lines):
+            stripped = line.strip()
+            if not stripped.startswith(ATTR_ACCESSIBILITY_GROUP) or is_comment(stripped):
+                continue
+            arg = stripped[len(ATTR_ACCESSIBILITY_GROUP):]
+            if ',' in arg.split(')')[0]:
+                problems.append(f'{rel}:{idx + 1}: accessibilityGroup 只允许单参 true'
+                                f'（两参的 accessibilityPreferred 设备侧不可取证）')
+            found = owner_of(lines, idx)
+            if found is None:
+                problems.append(f'{rel}:{idx + 1}: 解析不出 accessibilityGroup 所属组件块（链式写法变了？）')
+                continue
+            owner, block_end, k = found
+            for j in range(owner + 1, block_end + 1):
+                inner = lines[j].strip()
+                if is_comment(inner) or indent_of(lines[j]) <= k:
+                    continue  # 容器自己的收尾括号、以及它之后链上的属性都不算后代
+                if any(marker in inner for marker in OPERABLE_MARKERS):
+                    problems.append(f'{rel}:{j + 1}: 分组容器吞掉了可操作后代 -> {inner[:60]}')
+    return problems
+
+
+def scan_decorative_letters(files):
+    """R6：占位头像首字母必须对读屏隐藏。"""
+    problems = []
+    for path in files:
+        rel = path.relative_to(ROOT)
+        lines = path.read_text(encoding='utf-8').splitlines()
+        for idx, line in enumerate(lines):
+            if is_comment(line.strip()) or DECORATIVE_LETTER_RE.search(line) is None:
+                continue
+            k = indent_of(lines[idx])
+            j = idx + 1
+            hidden = False
+            while j < len(lines):
+                inner = lines[j].strip()
+                if inner == '' or is_comment(inner):
+                    j += 1
+                    continue
+                if not inner.startswith('.') and indent_of(lines[j]) <= k:
+                    break  # 链结束了
+                if inner.startswith('.'):
+                    if ATTR_ACCESSIBILITY_LEVEL in inner:
+                        hidden = True
+                        break
+                j += 1
+            if not hidden:
+                problems.append(f'{rel}:{idx + 1}: 占位头像首字母未 accessibilityLevel(no) -> {line.strip()[:60]}')
+    return problems
+
+
 def load_a11y_table():
     if not A11Y_FILE.is_file():
         print(f'[a11y] ERROR: 找不到标签表 {A11Y_FILE}', file=sys.stderr)
@@ -333,13 +419,20 @@ def main() -> int:
     routing_problems, used = scan_routing(files, slots)
 
     coverage_problems = [] if args.basis else scan_coverage(files)
+    grouping_problems = scan_grouping(files)
+    letter_problems = scan_decorative_letters(files)
 
-    failed = bool(translation_problems or routing_problems or coverage_problems)
+    failed = bool(translation_problems or routing_problems or coverage_problems
+                  or grouping_problems or letter_problems)
     if not args.quiet or failed:
         for msg in translation_problems:
             print(f'[a11y] TRANSLATION {msg}')
         for msg in routing_problems:
             print(f'[a11y] ROUTING {msg}')
+        for msg in grouping_problems:
+            print(f'[a11y] GROUPING {msg}')
+        for msg in letter_problems:
+            print(f'[a11y] DECORATIVE {msg}')
         for rel, line, snippet in coverage_problems:
             print(f'[a11y] UNLABELED {rel}:{line}: {snippet}')
         if not args.quiet:
@@ -347,6 +440,7 @@ def main() -> int:
                   f'扫描文件 {len(files)} 个，未标注图标控件 {len(coverage_problems)} 处')
     if failed:
         print(f'[a11y] FAILED: 翻译缺项 {len(translation_problems)} / 路由 {len(routing_problems)} / '
+              f'分组 {len(grouping_problems)} / 装饰首字母 {len(letter_problems)} / '
               f'未标注 {len(coverage_problems)}', file=sys.stderr)
         return 1
     print('[a11y] OK')

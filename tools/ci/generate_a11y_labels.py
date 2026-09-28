@@ -22,6 +22,8 @@ LABELS = [
     ('SETTINGS', 'A11ySettings', 'Settings', '设置'),
     ('SWITCH_ACCOUNT', 'A11ySwitchAccount', 'Switch account', '切换账号'),
     ('OPEN_PROFILE', 'A11yOpenProfile', 'Open {0} profile', '打开 {0} 的资料页'),
+    # A11Y-102：会话列表的悬浮「写消息」按钮（A11Y-101 漏掉的一处，守卫修好解析盲区后才现形）。
+    ('NEW_CHAT', 'A11yNewChat', 'New message', '新消息'),
 
     ('ATTACH', 'A11yAttach', 'Attach', '附件'),
     ('EMOJI', 'A11yEmoji', 'Emoji', '表情'),
@@ -63,7 +65,8 @@ LABELS = [
 ]
 
 GROUPS = [
-    ('导航与头部', ['BACK', 'CLOSE', 'MORE', 'SEARCH', 'CALL', 'MENU', 'SETTINGS', 'SWITCH_ACCOUNT', 'OPEN_PROFILE']),
+    ('导航与头部', ['BACK', 'CLOSE', 'MORE', 'SEARCH', 'CALL', 'MENU', 'SETTINGS', 'SWITCH_ACCOUNT', 'OPEN_PROFILE',
+               'NEW_CHAT']),
     ('输入栏与登录', ['ATTACH', 'EMOJI', 'KEYBOARD', 'SEND', 'RECORD_VOICE', 'CANCEL_RECORDING',
                  'SEND_RECORDING', 'DELETE_CHAR', 'SHOW_PASSWORD', 'HIDE_PASSWORD']),
     ('消息与媒体', ['FORWARD', 'PLAY', 'PAUSE', 'DOWNLOAD', 'CANCEL_DOWNLOAD', 'CANCEL_UPLOAD',
