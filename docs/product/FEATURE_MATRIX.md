@@ -1010,11 +1010,17 @@
 > 测试：`core_domain` **183/183**（+5：只含缓存消息的那一页要画成行、缓存过的消息再收到 `updateNewMessage` 只出一行、
 > 空首屏不改 `hasMoreOlder` 且允许重取、连续 3 页无新增才判到顶且到顶后首屏仍可重取、重叠翻页不重复出行）、
 > `feature_chat` **415/415**（+2），四守卫 0 违规。
-> **⚠️ 设备取证本轮未做**：为绕开签名包覆盖安装的 `code:9568332` 走了 `bm uninstall` + `install`，
-> 把模拟器上本仓的**登录态弄丢了**（违反「本仓不允许卸载重装清数据：TDLib 会话要主人短信码」这条硬规则），
-> 需主人重新登录后补测 —— 要验的是冷启动进会话 `added` 不再全 0、`hasMoreOlder` 被翻成 false 后 6 次补拉内首屏能自己出内容。
-> 遗留：① 上述设备取证；② `rowIds` 与 `orderedIds` 是必须同步的冗余结构，长期应合并成单一真相；
-> ③ 首屏只回 1 条是 TDLib 的 preload 行为，本包修的是客户端不自愈；④ `6 次 × 900 ms ≈ 5.4 s` 是本端自定，
+> **2026-09-28 补设备取证（同场景 A/B，落在 Saved Messages）**：前置条件 = 让首屏那一页恰好只含那条已被 `addCachedMessage` 缓存的置顶消息
+> （发一条探针文本再置顶它）。**旧判重口径实测复现题面**：`pinned_message_loaded id=109051904` → 4 ms 后 `received=1 added=0`
+> → 列表空着，只因为新的补拉分支存在才在下一页爬起来（**修复前 `messages.length === 0` 直接 return，这一页永远等不到第二次机会**）；
+> **修复后同一场景**：`pinned_message_loaded` 与 `received=1 added=1` 落在**同一毫秒** → `received=10 added=10`，列表全程没空过；
+> 裁掉取证探针后的 HEAD 构建再冷启动一次仍是 `received=1 added=1` → `received=9 added=9`，首屏直接满屏历史。
+> 顺带量到两条事实：`received=0` 连吃 3 页是**真的到底**（`MAX_EMPTY_PAGES=3` 与 TDLib 行为一致，不是误判）；补拉最多用到 `tries=4`，
+> `BACKFILL_MAX_TRIES=6` 是余量而非必需。产物 `.hvigor/outputs/chathist101/`（含 `clean-final.log` 与四张截图），探针消息已 `unpin_message_ok` + `delete_messages_ok` 还原。
+> ⚠️ 上一轮的代价如实保留：为绕开签名包覆盖安装的 `code:9568332` 走过 `bm uninstall` + `install`，把模拟器登录态弄丢
+> （违反「本仓不允许卸载重装清数据：TDLib 会话要主人短信码」这条硬规则），由主人 2026-09-28 重新登录补回；本轮装机全程 `bm install -p` 覆盖，登录态无损。
+> 遗留：① `rowIds` 与 `orderedIds` 是必须同步的冗余结构，长期应合并成单一真相；
+> ② 首屏只回 1 条是 TDLib 的 preload 行为，本包修的是客户端不自愈；③ `6 次 × 900 ms ≈ 5.4 s` 是本端自定，
 > Android 走的是 `chatLoadDate` + 滚动到底触发的另一套机制，未逐一对齐。
 
 
