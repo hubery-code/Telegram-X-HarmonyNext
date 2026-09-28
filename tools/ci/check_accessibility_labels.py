@@ -6,7 +6,7 @@
 播报「按钮」，用户点下去之前不知道它是返回还是删除。Android 侧 `TGActivity` 给每个图标都
 写了 `setContentDescription`，本端此前一处都没有。
 
-本脚本把「图标控件必须有可读标签」前移到 CI，规则六条：
+本脚本把「图标控件必须有可读标签」前移到 CI，规则七条：
 
   R1 覆盖：任意**可点击**（链上有 `.onClick(`）的组件块，若块内只有图标没有文本，
      且链上没有 `.accessibilityText(`，判违规。
@@ -26,6 +26,12 @@
      `.accessibilityLevel('no')`。它是纯装饰，读屏却会把它念成独立的一站（实测：会话行
      播报成「B, 标题, 时间, 摘要」）；它同时会污染 R4 分组的合成文本。设备实测
      `accessibilityLevel('no')` 的后代既从 dump 的 `text` 里消失，也从分组的拼接里消失。
+  R7 分组不吞标签：分组容器内**不得有自带 `.accessibilityText(` 的后代**。SDK 对
+     `accessibilityGroup` 的措辞是「the component and all its children are treated as a single
+     selectable unit, and the accessibility service will no longer focus on the individual child
+     components」—— 后代不再被单独聚焦，A11Y-101 给纯图标控件写的那句标签就没有播报方（设备侧
+     无法反证：`dumpLayout` 从来不含 `accessibilityText`，分组的合成文本里也只有可见文本）。
+     要分组就分到图标那一层**之外**，或者把标签写到容器自己链上。
 
 用法：python3 tools/ci/check_accessibility_labels.py [--quiet] [--basis]
 退出码：0 = 无违规；1 = 存在违规；2 = 脚本自身的前置条件坏了（找不到定义文件等）
@@ -255,7 +261,7 @@ def has_visible_text(body: str) -> bool:
 
 
 def scan_grouping(files):
-    """R4 + R5：`accessibilityGroup(true)` 的容器不得吞掉可操作后代，且只允许单参形态。
+    """R4 + R5 + R7：分组容器不吞可操作后代、不吞后代自带的标签，且只允许单参形态。
 
     分组在设备侧是可取证的（A11Y-102 实测：容器节点的 `text` 变成后代可见文本按树序的
     逗号拼接，`accessibilityLevel('no')` 的后代同时从该拼接里消失），但**拼出来的只有可见
@@ -285,6 +291,9 @@ def scan_grouping(files):
                     continue  # 容器自己的收尾括号、以及它之后链上的属性都不算后代
                 if any(marker in inner for marker in OPERABLE_MARKERS):
                     problems.append(f'{rel}:{j + 1}: 分组容器吞掉了可操作后代 -> {inner[:60]}')
+                if ATTR_ACCESSIBILITY_TEXT in inner:
+                    problems.append(f'{rel}:{j + 1}: 分组容器吞掉了后代自带的 accessibilityText 标签'
+                                    f'（读屏不再单独聚焦它）-> {inner[:60]}')
     return problems
 
 

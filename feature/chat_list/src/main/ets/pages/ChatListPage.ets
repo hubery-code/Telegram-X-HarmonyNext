@@ -890,6 +890,7 @@ export struct ChatListPage {
         .textAlign(TextAlign.Center)
         .padding({ left: this.T.spacing.xxl, right: this.T.spacing.xxl })
     }
+    .accessibilityGroup(true)
     .width('100%')
     .layoutWeight(1)
     .justifyContent(FlexAlign.Center)

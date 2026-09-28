@@ -490,6 +490,7 @@ export struct ProxySubPage {
                 .maxLines(1)
                 .textOverflow({ overflow: TextOverflow.Ellipsis })
             }
+            .accessibilityGroup(true)
             .alignItems(HorizontalAlign.Start)
             .layoutWeight(1)
 
@@ -874,6 +875,7 @@ export struct ProxySubPage {
           .fontColor(this.getTheme().colors.textSecondary)
           .margin({ top: this.getTheme().spacing.hairline })
       }
+      .accessibilityGroup(true)
       .alignItems(HorizontalAlign.Start)
       .layoutWeight(1)
 

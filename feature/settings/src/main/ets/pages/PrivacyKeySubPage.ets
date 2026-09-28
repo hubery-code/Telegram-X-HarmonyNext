@@ -529,6 +529,7 @@ export struct PrivacyKeySubPage {
                 .fontSize(this.getTheme().typography.subheadline.fontSize)
                 .fontColor(this.getTheme().colors.textSecondary)
             }
+            .accessibilityGroup(true)
             .width('100%')
             .height(52)
             .alignItems(VerticalAlign.Center)
@@ -555,6 +556,7 @@ export struct PrivacyKeySubPage {
                 .fontSize(this.getTheme().typography.subheadline.fontSize)
                 .fontColor(this.getTheme().colors.textSecondary)
             }
+            .accessibilityGroup(true)
             .width('100%')
             .height(52)
             .alignItems(VerticalAlign.Center)

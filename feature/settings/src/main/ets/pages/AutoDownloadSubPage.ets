@@ -352,6 +352,7 @@ export struct AutoDownloadSubPage {
               })
               .width('100%')
           }
+          .accessibilityGroup(true)
           .width('100%')
           .alignItems(HorizontalAlign.Start)
           .padding({
@@ -428,6 +429,7 @@ export struct AutoDownloadSubPage {
           .maxLines(2)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
       }
+      .accessibilityGroup(true)
       .alignItems(HorizontalAlign.Start)
       .layoutWeight(1)
 
@@ -468,6 +470,7 @@ export struct AutoDownloadSubPage {
               .fontColor(this.getTheme().colors.textSecondary)
               .margin({ top: this.getTheme().spacing.hairline })
           }
+          .accessibilityGroup(true)
           .alignItems(HorizontalAlign.Start)
           .layoutWeight(1)
 
@@ -564,6 +567,7 @@ export struct AutoDownloadSubPage {
           .fontColor(this.getTheme().colors.textSecondary)
           .margin({ top: this.getTheme().spacing.hairline })
       }
+      .accessibilityGroup(true)
       .alignItems(HorizontalAlign.Start)
       .layoutWeight(1)
 
@@ -667,6 +671,7 @@ export struct AutoDownloadSubPage {
           .maxLines(2)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
       }
+      .accessibilityGroup(true)
       .alignItems(HorizontalAlign.Start)
       .layoutWeight(1)
 
@@ -714,6 +719,7 @@ export struct AutoDownloadSubPage {
               .fontColor(this.getTheme().colors.textSecondary)
               .margin({ top: this.getTheme().spacing.hairline })
           }
+          .accessibilityGroup(true)
           .alignItems(HorizontalAlign.Start)
           .layoutWeight(1)
 

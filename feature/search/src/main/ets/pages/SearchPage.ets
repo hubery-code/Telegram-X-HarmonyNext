@@ -298,6 +298,7 @@ export struct SearchPage {
         .fontColor(this.T.colors.textSecondary)
         .margin({ top: this.T.spacing.xs })
     }
+    .accessibilityGroup(true)
     .width('100%')
     .layoutWeight(1)
     .justifyContent(FlexAlign.Center)
@@ -372,6 +373,7 @@ export struct SearchPage {
             .fontColor(this.T.colors.textTertiary)
             .margin({ top: this.T.spacing.xs })
         }
+        .accessibilityGroup(true)
         .width('100%')
         .layoutWeight(1)
         .justifyContent(FlexAlign.Center)
@@ -546,6 +548,7 @@ export struct SearchPage {
             .fontColor(this.T.colors.textSecondary)
             .margin({ left: this.T.spacing.xs })
         }
+        .accessibilityGroup(true)
         .width('100%')
 
         Row() {

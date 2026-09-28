@@ -75,6 +75,7 @@ export struct StickerSetPreviewSheet {
                 .fontColor(this.T.colors.textSecondary)
                 .margin({ top: 2 })
             }
+            .accessibilityGroup(true)
             .alignItems(HorizontalAlign.Start)
             .layoutWeight(1)
 

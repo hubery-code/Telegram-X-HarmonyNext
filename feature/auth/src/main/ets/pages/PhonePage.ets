@@ -63,6 +63,7 @@ export struct PhonePage {
           .fillColor(this.T.colors.textSecondary)
           .margin({ left: this.T.spacing.xs })
       }
+      .accessibilityGroup(true)
       .width('90%')
       .padding({ left: this.T.spacing.lg, right: this.T.spacing.lg, top: this.T.spacing.md, bottom: this.T.spacing.md })
       .backgroundColor(this.T.colors.backgroundSecondary)
@@ -84,6 +85,7 @@ export struct PhonePage {
                   .fontSize(this.T.typography.subheadline.fontSize)
                   .fontColor(this.T.colors.textSecondary)
               }
+              .accessibilityGroup(true)
               .width('100%')
               .padding({ top: this.T.spacing.sm + this.T.spacing.xs, bottom: this.T.spacing.sm + this.T.spacing.xs, left: this.T.spacing.lg, right: this.T.spacing.lg })
               .onClick(() => {

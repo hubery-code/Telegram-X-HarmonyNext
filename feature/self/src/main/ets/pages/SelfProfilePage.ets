@@ -169,6 +169,7 @@ export struct SelfProfilePage {
           .fontColor(this.T.colors.textPrimary)
           .margin({ top: this.T.spacing.hairline })
       }
+      .accessibilityGroup(true)
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)
     }

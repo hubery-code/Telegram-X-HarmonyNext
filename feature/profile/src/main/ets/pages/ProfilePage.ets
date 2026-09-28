@@ -286,6 +286,7 @@ export struct ProfilePage {
           .fontColor(this.T.colors.textPrimary)
           .margin({ top: this.T.spacing.hairline })
       }
+      .accessibilityGroup(true)
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)
     }
@@ -327,6 +328,7 @@ export struct ProfilePage {
         .fontSize(this.T.typography.subheadline.fontSize)
         .fontColor(this.T.colors.textSecondary)
     }
+    .accessibilityGroup(true)
     .width('100%')
     .alignItems(VerticalAlign.Center)
     .padding({

@@ -63,6 +63,7 @@ export struct CommentsPage {
             .textOverflow({ overflow: TextOverflow.Ellipsis })
             .margin({ top: 2 })
         }
+        .accessibilityGroup(true)
         .alignItems(HorizontalAlign.Start)
         .layoutWeight(1)
         .margin({ left: this.T.spacing.xs })

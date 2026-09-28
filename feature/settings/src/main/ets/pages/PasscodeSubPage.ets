@@ -250,6 +250,7 @@ export struct PasscodeSubPage {
         .fontColor(this.getTheme().colors.textSecondary)
         .id('passcode-toggle-state')
     }
+    .accessibilityGroup(true)
     .width('100%')
     .height(52)
     .alignItems(VerticalAlign.Center)
@@ -271,6 +272,7 @@ export struct PasscodeSubPage {
         .fontColor(this.getTheme().colors.textSecondary)
         .id('passcode-autolock-state')
     }
+    .accessibilityGroup(true)
     .width('100%')
     .height(52)
     .alignItems(VerticalAlign.Center)
@@ -293,6 +295,7 @@ export struct PasscodeSubPage {
         .fontColor(this.getTheme().colors.textSecondary)
         .id('passcode-visible-state')
     }
+    .accessibilityGroup(true)
     .width('100%')
     .height(52)
     .alignItems(VerticalAlign.Center)
@@ -343,6 +346,7 @@ export struct PasscodeSubPage {
         .margin({ top: this.getTheme().spacing.sm })
         .width('100%')
     }
+    .accessibilityGroup(true)
     .width('100%')
     .margin({
       top: this.getTheme().spacing.sm,

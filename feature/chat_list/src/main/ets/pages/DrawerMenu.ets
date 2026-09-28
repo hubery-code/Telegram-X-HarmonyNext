@@ -123,6 +123,7 @@ export struct DrawerMenu {
               .width('100%')
               .margin({ top: this.T.spacing.xs })
           }
+          .accessibilityGroup(true)
           .layoutWeight(1)
           .alignItems(HorizontalAlign.Start)
           .margin({ left: this.T.spacing.md })

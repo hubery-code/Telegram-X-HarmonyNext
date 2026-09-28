@@ -154,6 +154,7 @@ export struct ChatProfilePage {
             .fontColor(this.T.colors.textPrimary)
             .margin({ top: this.T.spacing.xs })
         }
+        .accessibilityGroup(true)
         .width('100%')
         .alignItems(HorizontalAlign.Start)
         .padding({
@@ -179,6 +180,7 @@ export struct ChatProfilePage {
               .maxLines(1)
               .textOverflow({ overflow: TextOverflow.Ellipsis })
           }
+          .accessibilityGroup(true)
           .layoutWeight(1)
           .alignItems(HorizontalAlign.Start)
 

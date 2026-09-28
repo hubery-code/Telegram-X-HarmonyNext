@@ -615,6 +615,7 @@ export struct SettingsPage {
           .fontColor(this.getTheme().colors.textSecondary)
           .margin({ top: this.getTheme().spacing.xs })
       }
+      .accessibilityGroup(true)
       .alignItems(HorizontalAlign.Start)
       .layoutWeight(1)
 
@@ -653,6 +654,7 @@ export struct SettingsPage {
           .fontColor(this.getTheme().colors.textSecondary)
           .margin({ top: this.getTheme().spacing.xs })
       }
+      .accessibilityGroup(true)
       .alignItems(HorizontalAlign.Start)
       .layoutWeight(1)
 
@@ -693,6 +695,7 @@ export struct SettingsPage {
           .fontColor(this.getTheme().colors.textSecondary)
           .margin({ top: this.getTheme().spacing.xs })
       }
+      .accessibilityGroup(true)
       .alignItems(HorizontalAlign.Start)
       .layoutWeight(1)
 
@@ -736,6 +739,7 @@ export struct SettingsPage {
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
       }
+      .accessibilityGroup(true)
       .alignItems(HorizontalAlign.Start)
       .layoutWeight(1)
 
@@ -788,6 +792,7 @@ export struct SettingsPage {
           .fontColor(this.getTheme().colors.textSecondary)
           .margin({ top: this.getTheme().spacing.xs })
       }
+      .accessibilityGroup(true)
       .alignItems(HorizontalAlign.Start)
       .layoutWeight(1)
 
@@ -837,6 +842,7 @@ export struct SettingsPage {
           .fontSize(this.getTheme().typography.footnote.fontSize)
           .fontColor(this.getTheme().colors.textSecondary)
       }
+      .accessibilityGroup(true)
       .width('100%')
       .alignItems(VerticalAlign.Center)
       .margin({ bottom: this.getTheme().spacing.sm })
@@ -923,6 +929,7 @@ export struct SettingsPage {
           .fontSize(this.getTheme().typography.footnote.fontSize)
           .fontColor(this.getTheme().colors.textSecondary)
       }
+      .accessibilityGroup(true)
       .width('100%')
       .alignItems(VerticalAlign.Center)
 
@@ -1012,6 +1019,7 @@ export struct SettingsPage {
           .fontSize(this.getTheme().typography.footnote.fontSize)
           .fontColor(this.getTheme().colors.textSecondary)
       }
+      .accessibilityGroup(true)
       .width('100%')
       .alignItems(VerticalAlign.Center)
       .margin({ bottom: this.getTheme().spacing.sm })
@@ -1079,6 +1087,7 @@ export struct SettingsPage {
         .fontSize(this.getTheme().typography.footnote.fontSize)
         .fontColor(this.getTheme().colors.textSecondary)
     }
+    .accessibilityGroup(true)
     .width('100%')
     .padding(this.getTheme().spacing.md)
     .backgroundColor(this.getTheme().colors.surface)

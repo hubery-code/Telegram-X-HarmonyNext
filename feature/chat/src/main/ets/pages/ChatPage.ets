@@ -2062,6 +2062,8 @@ export struct ChatPage {
           .fontColor(isFailed ? this.T.colors.destructive : this.T.colors.textSecondary)
           .margin({ top: this.T.spacing.xs })
       }
+      // A11Y-103：分组只收到这一列（文件名 + 大小），气泡整体仍不分组 —— 后代里有链接 Span 与反应 chip。
+      .accessibilityGroup(true)
       .alignItems(HorizontalAlign.Start)
       .layoutWeight(1)
       // 显式收窄文字列：长文件名（不可断行）理想宽度可达 200vp，
@@ -2295,6 +2297,7 @@ export struct ChatPage {
           .textOverflow({ overflow: TextOverflow.Ellipsis })
           .margin({ top: this.uiState.playingVoiceMessageId === messageId ? 0 : this.T.spacing.xs })
       }
+      .accessibilityGroup(true)
       .alignItems(HorizontalAlign.Start)
       .layoutWeight(1)
       // 显式收窄：否则曲目/歌手列先占满理想宽度，把 44vp 封面钮挤成椭圆（与文档气泡同因）。
@@ -2963,6 +2966,7 @@ export struct ChatPage {
           .textOverflow({ overflow: TextOverflow.Ellipsis })
           .margin({ top: 2 })
       }
+      .accessibilityGroup(true)
       .alignItems(HorizontalAlign.Start)
       .justifyContent(FlexAlign.Center)
       .margin(item.replyThumbnailPath !== null ? { left: 0 } : { left: 6 })
@@ -3107,6 +3111,8 @@ export struct ChatPage {
             .fontWeight(FontWeight.Medium)
             .fontColor(chip.isChosen ? this.T.colors.textOnAccent : this.T.colors.textSecondary)
         }
+        // A11Y-103：chip 自己就是可操作的那个节点（点击挂在它身上，不是后代），所以分组不吞功能。
+        .accessibilityGroup(true)
         .padding({
           left: this.T.spacing.sm,
           right: this.T.spacing.sm,
@@ -3185,6 +3191,7 @@ export struct ChatPage {
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
       }
+      .accessibilityGroup(true)
       .alignItems(HorizontalAlign.Start)
       .layoutWeight(1)
       .margin({ left: this.T.spacing.sm })
@@ -4471,6 +4478,8 @@ export struct ChatPage {
             .margin({ top: 2 })
         }
       }
+      // A11Y-103：查看器顶栏的「标题 (n / N) + 副标题」合成一站；返回键与下载键是它的兄弟节点，不在本容器内。
+      .accessibilityGroup(true)
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)
       .margin({ left: this.T.spacing.xs })
@@ -5138,6 +5147,7 @@ export struct ChatPage {
                     .fontSize(this.T.typography.footnote.fontSize)
                     .fontColor(this.T.colors.textSecondary)
                 }
+                .accessibilityGroup(true)
                 .width('100%')
                 .alignItems(VerticalAlign.Center)
 

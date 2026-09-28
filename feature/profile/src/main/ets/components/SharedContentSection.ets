@@ -254,6 +254,7 @@ export struct SharedContentSection {
         .textAlign(TextAlign.Center)
         .margin({ top: this.T.spacing.xs })
     }
+    .accessibilityGroup(true)
     .width('100%')
     .padding({ top: this.T.spacing.lg, bottom: this.T.spacing.lg, left: this.T.spacing.lg, right: this.T.spacing.lg })
     .alignItems(HorizontalAlign.Center)
@@ -273,6 +274,7 @@ export struct SharedContentSection {
         .textAlign(TextAlign.Center)
         .margin({ top: this.T.spacing.xs })
     }
+    .accessibilityGroup(true)
     .width('100%')
     .padding({ top: this.T.spacing.lg, bottom: this.T.spacing.lg, left: this.T.spacing.lg, right: this.T.spacing.lg })
     .alignItems(HorizontalAlign.Center)
@@ -353,6 +355,7 @@ export struct SharedContentSection {
           .fontColor(this.T.colors.textSecondary)
           .margin({ top: this.T.spacing.hairline })
       }
+      .accessibilityGroup(true)
       .margin({ left: this.T.spacing.sm })
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)
@@ -498,6 +501,7 @@ export struct SharedContentSection {
           .textOverflow({ overflow: TextOverflow.Ellipsis })
           .margin({ top: this.T.spacing.hairline })
       }
+      .accessibilityGroup(true)
       .margin({ left: this.T.spacing.sm })
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)

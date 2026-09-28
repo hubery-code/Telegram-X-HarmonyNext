@@ -341,6 +341,7 @@ export struct DevicesSubPage {
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
       }
+      .accessibilityGroup(true)
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)
     }
@@ -372,6 +373,7 @@ export struct DevicesSubPage {
             .fontColor(this.getTheme().colors.textSecondary)
             .margin({ top: this.getTheme().spacing.xs })
         }
+        .accessibilityGroup(true)
         .alignItems(HorizontalAlign.Start)
         .layoutWeight(1)
       }
@@ -453,6 +455,7 @@ export struct DevicesSubPage {
                   .maxLines(1)
                   .textOverflow({ overflow: TextOverflow.Ellipsis })
               }
+              .accessibilityGroup(true)
               .layoutWeight(1)
               .alignItems(HorizontalAlign.Start)
 

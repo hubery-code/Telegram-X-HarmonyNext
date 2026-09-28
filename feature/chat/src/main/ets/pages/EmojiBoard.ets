@@ -433,6 +433,7 @@ export struct EmojiBoard {
               .fontColor(this.T.colors.textSecondary)
               .margin({ top: this.T.spacing.xs })
           }
+          .accessibilityGroup(true)
           .width('100%')
           .height('100%')
           .justifyContent(FlexAlign.Center)
@@ -686,6 +687,7 @@ export struct EmojiBoard {
               .fontColor(this.T.colors.textSecondary)
               .margin({ top: 2 })
           }
+          .accessibilityGroup(true)
           .alignItems(HorizontalAlign.Start)
           .layoutWeight(1)
           .margin({ left: this.T.spacing.sm })
@@ -944,6 +946,7 @@ export struct EmojiBoard {
             .fontSize(this.T.typography.caption.fontSize)
             .fontColor(this.T.colors.textSecondary)
         }
+        .accessibilityGroup(true)
         .width('100%')
         .layoutWeight(1)
         .justifyContent(FlexAlign.Center)
@@ -964,6 +967,7 @@ export struct EmojiBoard {
                     .maxLines(1)
                     .textOverflow({ overflow: TextOverflow.Ellipsis })
                 }
+                .accessibilityGroup(true)
                 .width('100%')
                 .height('100%')
                 .justifyContent(FlexAlign.Center)

@@ -273,6 +273,7 @@ export struct PrivacySubPage {
         .fillColor(this.getTheme().colors.textTertiary)
         .margin({ left: this.getTheme().spacing.xs })
     }
+    .accessibilityGroup(true)
     .width('100%')
     .height(52)
     .alignItems(VerticalAlign.Center)
@@ -300,6 +301,7 @@ export struct PrivacySubPage {
             .fontSize(this.getTheme().typography.subheadline.fontSize)
             .fontColor(this.getTheme().colors.textSecondary)
         }
+        .accessibilityGroup(true)
         .width('100%')
         .height(52)
         .alignItems(VerticalAlign.Center)
