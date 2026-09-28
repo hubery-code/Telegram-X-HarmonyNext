@@ -986,7 +986,14 @@
 > 重装后的构建再验一次：`tgs-28/29/30/31 animation is playing → completed. playing 1 times`。
 > **顺带发现两条，都不在本包范围**：① 长按菜单的 Pin/Unpin 标签读 `projection.getMessageById(id).is_pinned`，
 > 而历史注入的消息对象不带这个字段 → 已置顶的行仍显示「Pin」（取证时靠这个标签找置顶行踩了空，
-> 最后用 hilog 的 `pinned_message_loaded id=` 对号）；② **进程刚起来时进会话可能只拿到 1 条历史** ——
+> 最后用 hilog 的 `pinned_message_loaded id=` 对号）。
+> **⚠️ 2026-09-28 更正：这条归因不成立，MSG-108 遗留已结案为「非缺陷」** —— 临时探针实测 TDLib 的 `getChatHistory`
+> **确实带** `is_pinned`（`ingest id=108003328 pinned=true`，与 `getChatPinnedMessage` 的 `pinned=true` 同一毫秒），
+> 生成侧 `decodeMessage` 也读得对；裁掉探针装回 HEAD 构建再跑 A/B，长按置顶行 `108003328` 菜单出 **`Unpin`**、
+> 长按非置顶行 `105906176` 出 **`Pin`**。当时踩空的真实原因是同轮登记的那条历史空窗：修复前 `ingestHistoryPage`
+> 以 `!messagesById.has(id)` 为闸门，被 `addCachedMessage` 预缓存过的置顶消息 `added=0`、**那一行压根没上屏**，
+> 长按必然按到别的消息。也就是说这两条「顺带发现」是同一根因的两个表象，CHAT-HIST-101 已把它们一并带走。
+> ② **进程刚起来时进会话可能只拿到 1 条历史** ——
 > 实测 `get_chat_history_ok count=1` + `MessageProjection received=1 added=0` → 页面显示 `No messages yet`，
 > 退出重进即恢复（`received=10 added=9`）；上一轮「贴纸一帧都没画」的误判正来自这个空窗。
 > 遗留：① `resume` 档缺设备样本（要么拉长播放，要么改用进度/已读这类高频签名触发）；② 转发或编辑后同一贴纸重播一次；
