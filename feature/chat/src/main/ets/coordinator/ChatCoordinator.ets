@@ -300,6 +300,7 @@ import {
   SetPollAnswerEffect
 } from '../contract/ChatEffect';
 import { StickerSetPreviewState, StickerSetItem, isUnicodeEmojiSticker } from '../model/StickerSetPreviewState';
+import { stickerSetFetchFailureLogKey } from '../model/StickerSetFetch';
 import {
   StickerBoardDeps,
   StickerBoardPack,
@@ -4270,58 +4271,37 @@ export class ChatCoordinator {
   }
 
   private handleFetchStickerSet(setId: string): void {
-    if (setId === '1' || setId === 'popular_hot_cherry') {
-      const mockItems: StickerSetItem[] = [
-        { id: 1001, fileId: 1001, emoji: '😎', width: 512, height: 512, localPath: null, thumbnailPath: null, isDownloaded: true, isDownloading: false },
-        { id: 1002, fileId: 1002, emoji: '🎉', width: 512, height: 512, localPath: null, thumbnailPath: null, isDownloaded: true, isDownloading: false },
-        { id: 1003, fileId: 1003, emoji: '🚀', width: 512, height: 512, localPath: null, thumbnailPath: null, isDownloaded: true, isDownloading: false },
-        { id: 1004, fileId: 1004, emoji: '🔥', width: 512, height: 512, localPath: null, thumbnailPath: null, isDownloaded: true, isDownloading: false },
-        { id: 1005, fileId: 1005, emoji: '👍', width: 512, height: 512, localPath: null, thumbnailPath: null, isDownloaded: true, isDownloading: false },
-        { id: 1006, fileId: 1006, emoji: '❤️', width: 512, height: 512, localPath: null, thumbnailPath: null, isDownloaded: true, isDownloading: false },
-        { id: 1007, fileId: 1007, emoji: '☕', width: 512, height: 512, localPath: null, thumbnailPath: null, isDownloaded: true, isDownloading: false },
-        { id: 1008, fileId: 1008, emoji: '⭐', width: 512, height: 512, localPath: null, thumbnailPath: null, isDownloaded: true, isDownloading: false },
-        { id: 1009, fileId: 1009, emoji: '👏', width: 512, height: 512, localPath: null, thumbnailPath: null, isDownloaded: true, isDownloading: false },
-        { id: 1010, fileId: 1010, emoji: '🥳', width: 512, height: 512, localPath: null, thumbnailPath: null, isDownloaded: true, isDownloading: false },
-        { id: 1011, fileId: 1011, emoji: '🌟', width: 512, height: 512, localPath: null, thumbnailPath: null, isDownloaded: true, isDownloading: false },
-        { id: 1012, fileId: 1012, emoji: '🎯', width: 512, height: 512, localPath: null, thumbnailPath: null, isDownloaded: true, isDownloading: false },
-        { id: 1013, fileId: 1013, emoji: '🏆', width: 512, height: 512, localPath: null, thumbnailPath: null, isDownloaded: true, isDownloading: false },
-        { id: 1014, fileId: 1014, emoji: '💡', width: 512, height: 512, localPath: null, thumbnailPath: null, isDownloaded: true, isDownloading: false },
-        { id: 1015, fileId: 1015, emoji: '✨', width: 512, height: 512, localPath: null, thumbnailPath: null, isDownloaded: true, isDownloading: false }
-      ];
-      const preview: StickerSetPreviewState = new StickerSetPreviewState(
-        setId,
-        'Hot Cherry',
-        'HotCherry',
-        false,
-        false,
-        true,
-        mockItems,
-        false,
-        false,
-        null
-      );
-      this.dispatch(new OnStickerSetLoaded(preview));
-      return;
-    }
-
-    // 整包预览要的是完整 StickerSet，TDLib 有两条路，各覆盖一半：
-    //  - `getStickerSet(set_id)`：已安装的包命中本地缓存，直接回；没装过的包它拿
-    //    `inputStickerSetID(id, access_hash)` 实发查询，而列表接口缓存的那一层 access_hash 不可用；
-    //  - `searchStickerSet(短名)`：与 Telegram X 的 `loadStickerSet(shortName)` 同一条路，
-    //    走的是一次 `messages.getStickerSet(inputStickerSetShortName)` 网络往返。
-    // 设备实测两条路都可能单独回 406 STICKERSET_INVALID（取证见 PROGRESS），所以按 id → 短名
-    // 依次兜底；只有本地见过这一包（板卡 / 热门榜缓存了短名）才有第二次机会。
+    // 整包预览要的是完整 StickerSet，TDLib 两条路的覆盖面不一样（读 vendored 源码定案）：
+    //  - `searchStickerSet(短名, ignore_cache=false)`：短名在本地映射里命中时
+    //    `StickersManager.cpp:5005-5018` 可以**一个网络请求都不发**就把本地那一包回给你 ——
+    //    `update_sticker_set_cache` 对已安装、以及已过期但本地加载过的包都是 fire-and-forget 重读，
+    //    promise 当场成功（只有从未加载过的包才真的要等网络）；
+    //  - `getStickerSet(set_id)`：命中本地时同样零网络（`:4943-4955`），但从没见过这一包时它拿
+    //    `inputStickerSetID(id, access_hash)` 实发查询，而列表接口缓存的那一层 access_hash 未必可用。
+    // 所以顺序是**缓存友好的一条先走**：本地见过短名（板卡 / 热门榜缓存过）先问名字，失败再按 id 兜底；
+    // 本地只见过 id 时直接按 id。
+    //
+    // 上一轮把这里定案成「服务端否决，ArkTS 修不了」，但当时传的是 `ignore_cache=true`：
+    // `Requests.cpp:1533` 的 `ignore_cache_ && get_tries() >= 3` 在首次尝试（`tries_left_` 是剩余次数，
+    // 构造时 `set_tries(3)`）就让 true **真的生效**，等于主动放弃上面那个零网络分支；
+    // Android 传的始终是 false（`TdlibUi.java:1683`）。本轮改回 false，并把失败原因分类进日志 ——
+    // 数字码 406 有两个来源（服务端 STICKERSET_INVALID / TDLib 本地把 420 FROZEN_METHOD_INVALID
+    // 重映射成 406），分不开就会把配置问题当服务端问题，见 `model/StickerSetFetch.ets`。
     const setName: string = stickerSetShortNameOf([this.stickerBoardSets, this.trendingSets], setId);
-    this.requestStickerSetById(setId, setName);
+    if (setName.length > 0) {
+      this.requestStickerSetByName(setId, setName);
+    } else {
+      this.requestStickerSetById(setId);
+    }
   }
 
-  private requestStickerSetById(setId: string, setName: string): void {
+  private requestStickerSetById(setId: string): void {
     const req: GetStickerSet = new GetStickerSet();
     req.set_id = setId;
     const result: Result<TdPendingRequest, AppError> =
       this.scope.request('getStickerSet', encodeGetStickerSet(req) as TdWireObject);
     if (result.err) {
-      this.logger.logError(TAG, result.error);
+      this.logStickerSetFailure('id', setId, result.error);
       this.dispatch(new OnStickerSetLoadFailed(setId, result.error.message));
     }
     if (result.ok) {
@@ -4330,10 +4310,8 @@ export class ChatCoordinator {
           this.onStickerSetPreviewResponse(setId, res.value);
         }
         if (res.err) {
-          this.logger.logError(TAG, res.error);
-          if (setName.length > 0) {
-            this.requestStickerSetByName(setId, setName);
-          } else if (!this.destroyed) {
+          this.logStickerSetFailure('id', setId, res.error);
+          if (!this.destroyed) {
             this.dispatch(new OnStickerSetLoadFailed(setId, res.error.message));
           }
         }
@@ -4348,11 +4326,11 @@ export class ChatCoordinator {
     }
     const search: SearchStickerSet = new SearchStickerSet();
     search.name = setName;
-    search.ignore_cache = true;
+    search.ignore_cache = false;
     const result: Result<TdPendingRequest, AppError> =
       this.scope.request('searchStickerSet', encodeSearchStickerSet(search) as TdWireObject);
     if (result.err) {
-      this.logger.logError(TAG, result.error);
+      this.logStickerSetFailure('name', setId, result.error);
       this.dispatch(new OnStickerSetLoadFailed(setId, result.error.message));
     }
     if (result.ok) {
@@ -4361,14 +4339,20 @@ export class ChatCoordinator {
           this.onStickerSetPreviewResponse(setId, res.value);
         }
         if (res.err) {
-          this.logger.logError(TAG, res.error);
-          if (!this.destroyed) {
-            this.dispatch(new OnStickerSetLoadFailed(setId, res.error.message));
-          }
+          this.logStickerSetFailure('name', setId, res.error);
+          // 名字这条走不通就换 id；id 那条自己会收尾，不会再递归回名字。
+          this.requestStickerSetById(setId);
         }
       }).catch(() => {
       });
     }
+  }
+
+  /** 原文只进 `AppError.cause`，日志落的是数字码 + 稳定分类（406 的两个来源分得开）。 */
+  private logStickerSetFailure(path: string, setId: string, error: AppError): void {
+    this.logger.logError(TAG, error);
+    this.logger.info(TAG, 'sticker_set_fetch_failed',
+      `path=${path},setId=${setId},${stickerSetFetchFailureLogKey(error)}`);
   }
 
   private onStickerSetPreviewResponse(setId: string, value: TdWireObject): void {
@@ -4426,11 +4410,6 @@ export class ChatCoordinator {
   }
 
   private handleChangeStickerSet(setId: string, isInstalled: boolean): void {
-    if (setId === '1' || setId === 'popular_hot_cherry') {
-      this.dispatch(new OnStickerSetChanged(setId, isInstalled));
-      return;
-    }
-
     const req: ChangeStickerSet = new ChangeStickerSet();
     req.set_id = setId;
     req.is_installed = isInstalled;

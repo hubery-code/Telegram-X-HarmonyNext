@@ -343,21 +343,22 @@ export function stickerBoardPackKey(pack: StickerBoardPack): string {
 /**
  * 按 setId 在几组 `StickerSetInfo` 里找包名（TDLib 的短名 `name`）；找不到返回 ''。
  *
- * 为什么预览弹层需要短名：`getStickerSet(set_id)` 在 TDLib 里不是本地查表，它会拿
- * `inputStickerSetID(id, access_hash)` 实发一次 `messages.getStickerSet`，而列表接口
- * （已装盘 / 热门榜）给到的那一层缓存并不带可用的 access_hash —— 设备实测：对真实包
- * （含已安装的）恒返回 `406 STICKERSET_INVALID`，也就是预览从来没出过图。
- * `searchStickerSet(name)` 走的是 `inputStickerSetShortName`，与 Telegram X 的
- * `MessagesController.loadStickerSet(shortName)` 同一条路，回的同样是完整 `StickerSet`。
+ * 为什么预览弹层需要短名：`getStickerSet(set_id)` 命中本地时是零网络查表，但**从未加载过**
+ * 这一包时它会拿 `inputStickerSetID(id, access_hash)` 实发一次 `messages.getStickerSet`
+ * （`StickersManager.cpp:4961-4979` → `:5392-5423`），而列表接口给到的那一层缓存并不保证带
+ * 可用的 access_hash。`searchStickerSet(name)` 走 `inputStickerSetShortName`，与 Telegram X 的
+ * `TdlibUi.showStickerSet(name)`（`:1683`）同一条路，回的同样是完整 `StickerSet`；而它在
+ * **短名已在本地映射里**时可以一个网络请求都不发就返回本地那一包 —— 这是整包预览唯一一条
+ * 不依赖服务端点头的路。
  *
  * 只在**本地已经见过**这一包时才拿得到短名（板卡 / 榜单的 DTO 缓存），所以调用方仍要
  * 保留按 id 的兜底：消息气泡那种只有 `stickerSetId` 的入口没有名字可用。
  *
- * 另记一条设备实测（2026-09-26，PROGRESS 第十五轮）：短名那条路在本机同样回
- * `406 STICKERSET_INVALID` —— 已安装、t.me 公开可访问的包（`ConcernedFroge`）也一样，
- * 而同一个 id + access_hash 走 `changeStickerSet` 装包是成功的。也就是这两条查询在本
- * build 的 TDLib/服务端组合下都拿不到整包，不是短名算错。取值链按 id → 短名依次兜底，
- * 两个都失败才报错；预览要真出图得先解决这一层（native 侧）。
+ * 更正一条前轮结论（2026-09-26 第十五轮曾据此判「服务端否决，ArkTS 修不了」）：当时测的是
+ * `ignore_cache=true` 那一条，而 `Requests.cpp:1533` 的 `ignore_cache_ && get_tries() >= 3`
+ * 在首次尝试就让 true 真的生效 —— 也就是说那一次实测**恰好绕开了**上面那条零网络分支，
+ * 并没有量到 Android 一直在用的配置。STICKER-FETCH-102 改回 `false` 并把顺序反过来，
+ * 剩下的那一次网络否决才真正是 native/服务端层的事实（406 的来源分类见 `StickerSetFetch.ets`）。
  */
 export function stickerSetShortNameOf(
   groups: readonly (readonly StickerSetInfo[])[],

@@ -20,6 +20,14 @@
  * - 「清空」要把服务端那半边写回去（`clearRecentStickers`），写失败必须重读，
  *   否则屏上留下一个「看着清空了、下次打开又全在」的假象；
  * - `updateRecentStickers` 到货后这一行要自己活过来，但**没开过贴纸页签时不许后台重读**。
+ *
+ * STICKER-FETCH-102 守整包取数那条链（此前零覆盖，也正是第十五轮把配置问题误判成服务端问题的地方）：
+ * - 本地已经见过这一包（盘/榜的 DTO 里有短名）时**第一条**请求是 `searchStickerSet`，
+ *   且 `ignore_cache=false` —— true 会让 TDLib 跳过 `StickersManager.cpp:5005-5018` 那条
+ *   零网络的缓存分支，量到的就不是 Android 一直在用的配置；
+ * - 没见过短名的 id 才直接 `getStickerSet`，不先发一次注定失败的短名查询；
+ * - 短名那条失败要按 id 兜底重发，两条**都**失败只记一次失败态（不能盖成两条错误）；
+ * - 短名那条成功就出整包，此时 `getStickerSet` 一条都不许发。
  */
 
 import { describe, it, expect } from '@ohos/hypium';
@@ -41,9 +49,9 @@ import {
 import { Result, AppError } from '@tgx/core-common';
 import { ChatCoordinator } from '../main/ets/coordinator/ChatCoordinator';
 import { ChatUiState } from '../main/ets/contract/ChatUiState';
-import { ClearRecentStickers, InstallStickerSet, OpenStickerBoard } from '../main/ets/contract/ChatIntent';
+import { ClearRecentStickers, InstallStickerSet, OpenStickerBoard, OpenStickerSet } from '../main/ets/contract/ChatIntent';
 import { StickerBoardPack, StickerTrendingPack } from '../main/ets/model/StickerBoard';
-import { StickerSetItem } from '../main/ets/model/StickerSetPreviewState';
+import { StickerSetItem, StickerSetPreviewState } from '../main/ets/model/StickerSetPreviewState';
 
 interface SentBridgeRequest {
   readonly clientId: number;
@@ -147,6 +155,37 @@ function errorFields(message: string): Record<string, TdWireValue> {
 function okFields(): Record<string, TdWireValue> {
   const fields: Record<string, TdWireValue> = {};
   fields['@type'] = 'ok';
+  return fields;
+}
+
+/**
+ * 带数字码的错误包：整包取数的 406 分两个来源（服务端 `STICKERSET_INVALID` /
+ * TDLib 本地重写的 `FROZEN_METHOD_INVALID`），只有 `code` 也能进用例才测得动分类链。
+ */
+function errorFieldsWith(code: number, message: string): Record<string, TdWireValue> {
+  const error: Record<string, TdWireValue> = {};
+  error['@type'] = 'error';
+  error['code'] = code;
+  error['message'] = message;
+  return error;
+}
+
+/** `getStickerSet` / `searchStickerSet` 的成功回包是完整 `stickerSet`（不是 `stickerSetInfo`）。 */
+function stickerSetFields(stickers: Record<string, TdWireValue>[]): Record<string, TdWireValue> {
+  const fields: Record<string, TdWireValue> = {};
+  fields['@type'] = 'stickerSet';
+  fields['id'] = '21';
+  fields['title'] = 'Pandamonium';
+  fields['name'] = 'pandamonium_by_tgx';
+  fields['thumbnail'] = thumbnailFields(900);
+  fields['is_owned'] = false;
+  fields['is_installed'] = true;
+  fields['is_archived'] = false;
+  fields['is_official'] = false;
+  fields['sticker_type'] = stickerTypeRegularFields();
+  fields['needs_repainting'] = false;
+  fields['is_viewed'] = true;
+  fields['stickers'] = stickers;
   return fields;
 }
 
@@ -344,6 +383,19 @@ function recentUpdateFields(isAttached: boolean, stickerIds: number[]): Record<s
   fields['is_attached'] = isAttached;
   fields['sticker_ids'] = stickerIds;
   return fields;
+}
+
+/**
+ * 把贴纸页签开到「已装盘读回来」的状态：只有走过这一步，协调器的 DTO 缓存里才有
+ * setId 21 → `pandamonium_by_tgx` 这条短名，`openStickerSet` 才会走短名那条路。
+ */
+async function loadBoardWithKnownSet(bridge: TestNativeBridge, coordinator: ChatCoordinator): Promise<void> {
+  coordinator.dispatch(new OpenStickerBoard());
+  await settle();
+  bridge.respondTo(lastRequestIdOfType(bridge, 'getInstalledStickerSets'), stickerSetsFields([
+    coverFields(1001, 3001, '🐼')
+  ]));
+  await settle();
 }
 
 export default function stickerBoardFetchTest(): void {
@@ -766,6 +818,137 @@ export default function stickerBoardFetchTest(): void {
       ]));
       await settle();
       expect(recorder.last().recentStickers.length).assertEqual(1);
+
+      unsubscribe();
+      coordinator.destroy();
+    });
+
+    it('knownShortName_fetchesBySearchStickerSetWithCacheAllowed', 0, async (): Promise<void> => {
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const scope: AccountScope = createScope(bridge);
+      const coordinator: ChatCoordinator = new ChatCoordinator(scope, 42, 'Test Chat');
+
+      const recorder: StateRecorder = new StateRecorder();
+      const unsubscribe: () => void = coordinator.subscribe((state: ChatUiState): void => {
+        recorder.seen.push(state);
+      });
+
+      await loadBoardWithKnownSet(bridge, coordinator);
+
+      coordinator.dispatch(new OpenStickerSet('21'));
+      await settle();
+
+      // 本地见过这一包的短名：第一条请求必须是 `searchStickerSet`，且不再补一条按 id 的查询。
+      expect(countRequestsOfType(bridge, 'searchStickerSet')).assertEqual(1);
+      expect(countRequestsOfType(bridge, 'getStickerSet')).assertEqual(0);
+      const req: Record<string, TdWireValue> = requestsOfType(bridge, 'searchStickerSet')[0];
+      expect(String(req['name'])).assertEqual('pandamonium_by_tgx');
+      // ignore_cache=true 会让 TDLib 跳过 `StickersManager.cpp:5005-5018` 那条零网络的缓存分支 ——
+      // 上一轮就是拿 true 实测，才把配置问题定案成了服务端否决。
+      expect(req['ignore_cache'] as boolean).assertFalse();
+
+      expect(recorder.last().stickerSetPreview?.isLoading).assertTrue();
+
+      unsubscribe();
+      coordinator.destroy();
+    });
+
+    it('unknownSetId_fetchesByIdOnly', 0, async (): Promise<void> => {
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const scope: AccountScope = createScope(bridge);
+      const coordinator: ChatCoordinator = new ChatCoordinator(scope, 42, 'Test Chat');
+
+      const recorder: StateRecorder = new StateRecorder();
+      const unsubscribe: () => void = coordinator.subscribe((state: ChatUiState): void => {
+        recorder.seen.push(state);
+      });
+
+      await loadBoardWithKnownSet(bridge, coordinator);
+
+      // 消息气泡那种入口只有 set_id、本地没有短名：不能先发一条注定查不到名字的请求。
+      coordinator.dispatch(new OpenStickerSet('99'));
+      await settle();
+
+      expect(countRequestsOfType(bridge, 'getStickerSet')).assertEqual(1);
+      expect(countRequestsOfType(bridge, 'searchStickerSet')).assertEqual(0);
+      expect(String(requestsOfType(bridge, 'getStickerSet')[0]['set_id'])).assertEqual('99');
+
+      unsubscribe();
+      coordinator.destroy();
+    });
+
+    it('shortNameFailure_fallsBackToIdAndFailsOnce', 0, async (): Promise<void> => {
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const scope: AccountScope = createScope(bridge);
+      const coordinator: ChatCoordinator = new ChatCoordinator(scope, 42, 'Test Chat');
+
+      const recorder: StateRecorder = new StateRecorder();
+      const unsubscribe: () => void = coordinator.subscribe((state: ChatUiState): void => {
+        recorder.seen.push(state);
+      });
+
+      await loadBoardWithKnownSet(bridge, coordinator);
+
+      coordinator.dispatch(new OpenStickerSet('21'));
+      await settle();
+      // 短名这条失败（406 的真实服务端来源）：换 id 再问一次，此时还不算整包读失败。
+      bridge.respondTo(lastRequestIdOfType(bridge, 'searchStickerSet'),
+        errorFieldsWith(406, 'STICKERSET_INVALID'));
+      await settle();
+      expect(countRequestsOfType(bridge, 'getStickerSet')).assertEqual(1);
+      expect(recorder.last().stickerSetPreview?.errorMessage).assertNull();
+
+      bridge.respondTo(lastRequestIdOfType(bridge, 'getStickerSet'),
+        errorFieldsWith(406, 'STICKERSET_INVALID'));
+      await settle();
+
+      // 两条都失败：请求各一条（不递归回短名），失败态只落一次。
+      expect(countRequestsOfType(bridge, 'searchStickerSet')).assertEqual(1);
+      expect(countRequestsOfType(bridge, 'getStickerSet')).assertEqual(1);
+      let failedFrames: number = 0;
+      for (let i = 0; i < recorder.seen.length; i++) {
+        const preview: StickerSetPreviewState | null = recorder.seen[i].stickerSetPreview;
+        if (preview !== null && preview.errorMessage !== null) {
+          failedFrames += 1;
+        }
+      }
+      expect(failedFrames).assertEqual(1);
+      expect(recorder.last().stickerSetPreview?.isLoading).assertFalse();
+
+      unsubscribe();
+      coordinator.destroy();
+    });
+
+    it('shortNameSuccess_populatesPreviewWithoutById', 0, async (): Promise<void> => {
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const scope: AccountScope = createScope(bridge);
+      const coordinator: ChatCoordinator = new ChatCoordinator(scope, 42, 'Test Chat');
+
+      const recorder: StateRecorder = new StateRecorder();
+      const unsubscribe: () => void = coordinator.subscribe((state: ChatUiState): void => {
+        recorder.seen.push(state);
+      });
+
+      await loadBoardWithKnownSet(bridge, coordinator);
+
+      coordinator.dispatch(new OpenStickerSet('21'));
+      await settle();
+      bridge.respondTo(lastRequestIdOfType(bridge, 'searchStickerSet'), stickerSetFields([
+        coverFields(1001, 3001, '🐼'),
+        coverFields(1002, 3002, '🎋')
+      ]));
+      await settle();
+
+      const preview: StickerSetPreviewState | null = recorder.last().stickerSetPreview;
+      expect(preview !== null).assertTrue();
+      expect(preview?.setId).assertEqual('21');
+      expect(preview?.title).assertEqual('Pandamonium');
+      expect(preview?.isInstalled).assertTrue();
+      expect(preview?.stickers.length).assertEqual(2);
+      expect(preview?.isLoading).assertFalse();
+      expect(preview?.errorMessage).assertNull();
+      // 短名那条成功就出整包：兜底的 id 查询一条都不许发。
+      expect(countRequestsOfType(bridge, 'getStickerSet')).assertEqual(0);
 
       unsubscribe();
       coordinator.destroy();

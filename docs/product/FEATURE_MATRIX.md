@@ -861,11 +861,11 @@
 > 与 Telegram X `loadStickerSet(shortName)` 同一条路）**同一个包仍回 406**。
 > 三条反证排除了「包不存在/短名算错」：`ConcernedFroge` 在 t.me 公开页可访问；它的 `id + access_hash`
 > 走 `changeStickerSet` **装包成功**（榜上翻「已添加」、`rows=1,total=1`）；装完本地已有这一包，再开预览两条路各回一次 406。
-> 读 vendored TDLib 对上机制：`get_sticker_set` 与 `search_sticker_set` **都不是本地查表**，最终都落到
+> 读 vendored TDLib 对上机制：`get_sticker_set` 与 `search_sticker_set` **都不是本地查表**（**【第三十一轮更正：这一句不成立，两条都有本地命中分支 `:4943-4955` / `:5005-5018`；但只在列表里见过的包 `!is_loaded_ && !was_loaded_` 仍会落到 `load_sticker_sets`，所以对本端那两个入口的观测结果不变】**），最终都落到
 > `GetStickerSetQuery → messages.getStickerSet`（`StickersManager.cpp:719-769`、`:5002-5019`、`:5540-5575`），
 > 而 `STICKERSET_INVALID` 全仓库只被 `update_load_requests` 当作「包大概已被删」用于清短名映射
 > （`:3968-3972`），**没有本地合成这条错误的地方** → 服务端否决，ArkTS 侧修不了，
-> 要 native 继续查 TL 层 / `hash` 语义 / DC 路由（本端 `.so` 是预构建 + 补丁，重编 TDLib 不在本包预算内）。
+> 要 native 继续查 TL 层 / `hash` 语义 / DC 路由（本端 `.so` 是预构建 + 补丁，重编 TDLib 不在本包预算内）**【第三十一轮更正：TDLib 在本仓是源码构建，见 `native/tdcore/BUILD-EVIDENCE.md` 与 `tools/native/build-tdlib.sh`】**。
 > **因此取数交付的形状是「按 id → 短名依次兜底」**：`stickerSetShortNameOf(groups, setId)`（Kit-free）从板卡与
 > 热门榜两组 DTO 缓存里取短名，按 id 失败且有短名就再问一次；本地没见过这一包（消息气泡那个入口只有
 > `stickerSetId`）就只剩按 id 的一次机会。另修一处话术：弹层直接把 TDLib 的英文兜底串 `TDLib request failed`
@@ -879,6 +879,43 @@
 > 遗留：① **整包预览需 native 侧解掉 `messages.getStickerSet` 的 406**（不解决则预览页与整包页签恒空）；
 > ② 取数失败时弹层的 `isInstalled` 恒 false（真实态在 `stickerSetInfo.is_installed`，本可先行显示），
 > 装/卸按钮因此可能对已装包重复写；③ `tg://addstickers` 与 `internalLinkTypeStickerSet` 仍未接（DEEPLINK 收尾）。
+
+> **2026-09-28（STICKER-FETCH-102，FEAT-P2-004 整包取数 406 的第一次「有读数」定案）**：上一行把 406 定案成「服务端否决，ArkTS 修不了」，
+> 但当时**手上一个读数都没有** —— `AppError.toLogString` 会把消息洗掉、原文只进 `cause`，屏幕上那句 `TDLib request failed` 里
+> 连 `STICKERSET_INVALID` 这个词从未出现过，它是推断出来的。本轮先把「能不能测」解决，再测。
+> **一、406 有两个来源，分不开就会把配置问题当服务端问题**：真·服务端 `STICKERSET_INVALID`；以及 TDLib 本地把
+> `420 FROZEN_METHOD_INVALID` 重映射成 `Status::Error(406, message)`（`td/telegram/net/NetQueryDispatcher.cpp:101-102`）——
+> 后者是 api_id/会话配置问题，修法是换凭据而不是查 TL。新增 `feature/chat/model/StickerSetFetch.ets`：
+> `classifyStickerSetFetchFailure` 按「数字码前缀 + 原文关键字」分成 `stickerSetInvalid` / `frozenMethod` / `setNotFound` / `other` 四类，
+> `stickerSetFetchFailureLogKey` 只落 `code=<n> reason=<class>`，**原文一个字都不进日志**。
+> **二、上一轮的取数链自己就在制造失败**：`searchStickerSet` 传的是 `ignore_cache=true`，而 `Requests.cpp:1532-1533` 的条件是
+> `ignore_cache_ && get_tries() >= 3`，`get_tries()` 是**剩余**重试次数（构造时 `set_tries(3)`）→ 首次尝试 true 就真的生效，
+> 等于主动放弃 `StickersManager.cpp:5005-5018` 那条「短名已在本地映射里时一个网络请求都不发」的分支。Android 一直传 false
+> （`TdlibUi.java:1683`）。本轮改回 false，并把顺序反转成**缓存友好的一条先走**：本地见过短名（板卡 / 热门榜缓存过）先问名字、
+> 失败再按 id 兜底；只见过 id 才直接按 id。名字那条**不 dispatch 失败**，收尾交给 id 那条，所以一次打开只出一次失败帧。
+> **三、顺带更正上一行的一句读码结论**：「`get_sticker_set` 与 `search_sticker_set` 都不是本地查表」不成立 —— 两条都有本地命中分支
+> （`:4943-4955`、`:5005-5018`）。只是对**只在列表里见过**的包，`update_sticker_set_cache` 走 `!is_loaded_ && !was_loaded_` 那条
+> `load_sticker_sets`，仍然要发一次 `messages.getStickerSet` —— 所以「热门榜的包走名字会零网络命中」这个预期本身是错的，
+> 零网络那一支要求这一包**曾被完整加载过**。
+> 设备取证（127.0.0.1:5555，`.hvigor/outputs/fetch102/`，只读页面、未发消息、账号数据零变更）：两类入口各测到一次，
+> `sticker_set_fetch_failed` 的 key 第一次落到日志 ——
+> ① 会话气泡（本地只见过 id）→ `path=id,setId=1052321353216032770,code=406 reason=stickerSetInvalid`；
+> ② 表情板热门行（本地见过短名，走新的「名字优先 + `ignore_cache=false`」链）→
+> `path=name,setId=891885078961979397,code=406 reason=stickerSetInvalid`，490 ms 后兜底
+> `path=id,setId=891885078961979397,code=406 reason=stickerSetInvalid`。
+> 两次都是 `reason=stickerSetInvalid`、**一次 `frozenMethod` 都没有** → 上一行的「服务端否决」定性这一轮是有读数的；
+> 且 `ignore_cache` 的 true（上一轮实测）与 false（本轮实测）两条都 406，所以缓存开关不是成因。
+> **native 侧下一步的落点（本轮读码给出，未动手）**：`messages.getStickerSet#c8a0ec74 stickerset:InputStickerSet hash:int`
+> （`td/generate/scheme/telegram_api.tl:2552`）比 `changeStickerSet` 多一个 `hash:int`，TDLib 对列表缓存的包传的是 `hash_ = 0`；
+> 而上一轮已实证**同一个** `inputStickerSetID(id, access_hash)` 装包能成、取包被拒 —— 两条请求的入参差异只剩这个 `hash`。
+> 另确认 TDLib 全仓只有两处**比较** `STICKERSET_INVALID`（`StickersManager.cpp:3970`、`:4377`），从不合成这条错误 → 406 出自服务器。
+> 并且 TDLib 在本仓是**源码构建**（`tools/native/build-tdlib.sh`，见 `native/tdcore/BUILD-EVIDENCE.md` 的 1.8.67 / d1085f9c 锁定），
+> 不是预构建黑盒，所以这一步查得动。
+> 测试：`feature_chat` **425/425**（新增 `StickerSetFetch.test.ets` 6 条分类与脱敏用例；`StickerBoardFetch.test.ets` 13 → 17 条，
+> 取数链此前**零覆盖**）；`check_architecture` / `check_codegen` / `check_design_tokens` / `check_accessibility_labels` 0 违规。
+> 遗留：① **整包预览仍空，需 native 侧按上面那条 `hash` 差异验证**（ArkTS 侧已无可动变量）；② 取数失败时弹层 `isInstalled` 恒 false
+> （上一行已记，未变）；③ 本端账号**已安装贴纸包数为 0**（`sticker_board_loaded rows=0,total=0`），所以「装过的包走名字零网络」
+> 这一支只有单测覆盖，设备上取不到样本 —— 要取得样本必须先装一包，而那会改账号数据，本轮不做。
 
 > **2026-09-26（STICKER-RECENT-101，FEAT-P2-004 表情板「最近使用」接真实数据，结掉 101 遗留 ② / 102 遗留 ③ / MSG-101 遗留 ③）**：
 > 这一行从 101 起就是**假的** —— `DEFAULT_RECENT_STICKERS` 四包预设贴纸常驻，屏上永远看不出「这个账号刚才用过什么」，
