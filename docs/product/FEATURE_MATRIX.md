@@ -1083,6 +1083,10 @@
 > **五、`autoSkip: false` 是必需项而不是优化项**：lottie 默认跳过它判定为不可见的画布，会话里的贴纸住在 `LazyForEach`，
 > 可见性判定慢一步就是**一片空白**（设备日志实锤：`canvas(845) has no area` / `is moved out`）。
 > `loop: false` 对齐 Telegram 气泡「播一次、停在末帧」的语义，实测 `setSegment: 0 ~ 180` @60 fps ≈ 3.0 s。
+> **⚠️ 2026-09-29 更正（TGS-103）：这句对标是错的。** Android 的 `TGMessageSticker.java:121-130` 写的是
+> `setPlayOnce(forcePlayOnce || specialType != SPECIAL_TYPE_NONE || SETTING_FLAG_NO_ANIMATED_STICKERS_LOOP)` ——
+> 「不循环」是**用户可开的设置项且默认关**，本端又没有骰子 / 动效 emoji 这类 `specialType`，所以 Android 的默认口径是
+> **不播一次 = 一直循环**；当时那句「对齐」只是把本端的选择当成了对方的规范。
 > **六、动画挂上之前底下一直垫着静态缩略图**（`DOMLoaded` 才撤）—— 解码失败/JSON 语法坏掉（TDLib 回收了一半的文件）时
 > 气泡回到 TGS 之前的画法，不会退回成空白。
 > **七、范围取舍：板卡格与预览页格继续吃静态 WEBP，本包不动**。动它们要求把每一格的整档 `.tgs` 全下载
@@ -1104,7 +1108,8 @@
 > ③ **像素级运动证据**（前两条只证明「在跑」，不证明「画面上在动」）：进会话瞬间设备侧连拍 16 帧，
 > 三个气泡框内每对相邻帧变化 **5.2 万–16.2 万像素**（框面积 33–37 万），而**同一批帧**里日期条框与输入栏框变化 **0 像素**
 > → 变化只可能来自贴纸自身；`burst3/motion-sheet.png` 把同一气泡的连续 7 帧拼在一起，肉眼可读：眯眼、`HA HA` 飞出、
-> 泪滴、身体前后摇，最后回到睁眼静帧。④ 播放一次即停：第 8 帧起全部相邻帧差为 0，与 `loop:false` 一致。
+> 泪滴、身体前后摇，最后回到睁眼静帧。④ 播放一次即停：第 8 帧起全部相邻帧差为 0，与 `loop:false` 一致（**2026-09-29：这一条描述的是当时那个构建的行为，本身没错；
+> 但「停在末帧」不是要对齐的语义，TGS-103 已改成循环播**）。
 > 遗留：① **新发出去的那张贴纸常常只画一帧** —— 消息插入会让列表重建，实测 `tgs-4` 创建后 **110 ms** 即被
 > `aboutToDisappear` 销毁（`completed explicitly. playing 0 times`），要「按消息 id 记已播/在播」才能保住这一次播放；
 > ② 板卡格与预览页格仍静帧（本包有意范围）；③ 点贴纸开大图循环播放未做（Android 有）；
@@ -1145,9 +1150,47 @@
 > ② **进程刚起来时进会话可能只拿到 1 条历史** ——
 > 实测 `get_chat_history_ok count=1` + `MessageProjection received=1 added=0` → 页面显示 `No messages yet`，
 > 退出重进即恢复（`received=10 added=9`）；上一轮「贴纸一帧都没画」的误判正来自这个空窗。
-> 遗留：① `resume` 档缺设备样本（要么拉长播放，要么改用进度/已读这类高频签名触发）；② 转发或编辑后同一贴纸重播一次；
-> ③ 板卡格与预览页格仍静帧（有意范围）；④ 点贴纸开大图循环播放未做；⑤ 视频贴纸与 `.webm` 仍走静帧；
+> 遗留：① `resume` 档缺设备样本（要么拉长播放，要么改用进度/已读这类高频签名触发）—— **⚠️ 2026-09-29 由 TGS-103 补上**：改成循环播之后动画不再先结束，重建必然落在新鲜窗口内，实测 `tgs_mount … plan=resume frame=23.76` → `tgs_lap frame=172.32`；② 转发或编辑后同一贴纸重播一次；
+> ③ 板卡格与预览页格仍静帧（有意范围）；④ 点贴纸开大图循环播放未做 —— **⚠️ 2026-09-29 更正：「开大图」这一半的题面是假的**（Android 点贴纸进的是贴纸包弹层，`MediaViewController` 不接收贴纸），
+> 真的那一半「循环播放」由 TGS-103 落地，见下一行；⑤ 视频贴纸与 `.webm` 仍走静帧；
 > ⑥ lottie 的 Release 构建链与全量 CI 仍未跑过。
+
+> **2026-09-29（TGS-103，FEAT-P2-004 贴纸气泡改成循环播）**：拆的是候选清单里挂了六轮的那条「贴纸点按开大图并循环播放」，
+> **但先把它的题面拆开验了一遍，前半截是假的**。
+> **一、Android 没有「点贴纸开大图」这个 UI**：`TGMessageSticker.java:864-876` 的 `openOrLoopSticker()` 只有在
+> 「用户设了不循环」或动效 emoji 包时才原地重播，否则走 `openStickerSet()` → `StickerSetWrap` **贴纸包弹层**；
+> `MediaViewController` 从来不接收贴纸。本端的「点按开弹层」早已实现，恰好就是 Android 的行为 ——
+> 所以「开大图」不是遗留，是一个**不存在的功能**（候选 ⑤ 的前半截作废）。
+> **二、真缺陷在同一个文件的 `:121-130`**：`setPlayOnce(forcePlayOnce || specialType != SPECIAL_TYPE_NONE ||
+> SETTING_FLAG_NO_ANIMATED_STICKERS_LOOP)` —— 设置项默认关、本端又没有骰子 / 动效 emoji 这类 `specialType`，
+> 所以 Android 的默认口径是**不播一次 = 一直循环**；而本端 `AnimatedSticker` 写死 `loop: false`，
+> TGS-101 那轮还把这条当成「对齐 Telegram 播一次停末帧」写进了注释与矩阵（**已就地更正两处**）。
+> 观感差的具体形状：贴纸演约 2.4 s 就停在末帧不动，而真机上的 Telegram X 一直在动。
+> **三、循环一开就有一整档变成死代码**：`complete` 不再触发 → 没有「末帧」可记 →
+> TGS-102 的 `finished` 模式、`goToAndStop` 分支与 `noteFinished` 永远走不到。
+> **刻意不留**：它代表的那个观感（停在末帧）恰好是与 Android 相反的一侧，留着不是保守而是埋一条永不执行的分支。
+> 于是 `StickerPlayMode` 收成 `'first' | 'resume'`、`StickerPlayRecord` 少一个字段、`seekToPlan` 少一个分支，
+> 挂载决策从三态变两态。**循环的外部可观察证据只有一条**：lottie 的 `loopComplete` —— 每挂载只落一条
+> `tgs_lap`（每圈都落会刷屏，而这正是「改后还在走」唯一能进日志的形状）。
+> **四、本轮把 TGS-102 自己标注「抓不到样本」的那格补上了**：上一轮写的是「`resume` 档缺设备样本 —— Pin 落地要
+> ≈3.5 s 而贴纸只播 3.2 s，重建总发生在播完之后」；改成循环后动画不结束，重建必然落在 `RESUME_WINDOW_MS` 里 →
+> `16:54:34.996 pin_message_ok` → `16:54:35.173 tgs_mount key=105906176 plan=resume frame=23.76` →
+> `16:54:37.811 tgs_lap key=105906176 frame=172.32`：**续播与循环同框**，账本→plan→seek 这条路径从此有设备样本。
+> **五、设备 A/B**（127.0.0.1:5555，同一台、同一账号、只重装 HAP 不清数据，`.hvigor/outputs/tgs-103/`）：
+> 改前 `16:51:35.121 animation is playing` → `16:51:37.502 animation completed. playing 1 times`
+> （三格全部 `playing 1 times`，零 `tgs_lap`；`raw-before-play.txt`）；
+> 改后 **`animation completed` 零条**、`tgs_lap` 逐轮累加（`raw-after-loop.txt` / `raw-after-scroll.txt`）。
+> **像素级证据**（日志只证「在跑」，不证「画面上在动」）：t=+8 s 与 +11 s 两帧截图（第一圈 2.4 s 早就走完）
+> 三个气泡框内分别变化 **94,548 / 117,185 / 123,877** 像素（框面积各 396,900），
+> 而**同一对截图**里头部（80,064 像素）与置顶栏（120,950 像素）变化 **0** → 动的只有贴纸自身，不是列表在滚。
+> **账号状态已还原**：取证造出来的那条置顶 `16:55:14.866 unpin_message_ok`，置顶栏实测回到只剩「😂 Sticker」；
+> 全程未向任何群 / 频道发送任何东西。
+> 测试：`feature_chat` **436 条全绿**（`StickerPlayback.test.ets` 随之重写：`finished` 相关两条删除，
+> 新增「绕完一圈的帧号照样续播」「每帧都在推进播放头」），`check_architecture` / `check_codegen` 0 违规。
+> 遗留：① **Android 那条「动效贴纸不循环」开关（`SETTING_FLAG_NO_ANIMATED_STICKERS_LOOP`）本端没有** ——
+> 它需要一个「贴纸与表情」设置分区当落点，不是这一行能顺手带的，已登记为新候选；
+> ② 板卡格与预览页格仍静帧（TGS-101 的有意范围）；③ 视频贴纸与 `.webm` 仍走静帧；
+> ④ lottie 的 Release 构建链与全量 CI 仍未跑过。
 
 
 > **2026-09-26（CHAT-HIST-101，上一行遗留 ②「冷启动首屏历史空窗」）**：结掉 TGS-102 顺带发现的那条 —— 进程刚起来时进会话可能一行消息都没有，且**永远不自愈**。

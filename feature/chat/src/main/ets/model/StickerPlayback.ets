@@ -1,5 +1,5 @@
 /**
- * feature/chat — 动效贴纸的播放态记账（TGS-102）。纯逻辑，不碰 Kit。
+ * feature/chat — 动效贴纸的播放态记账（TGS-102 / TGS-103）。纯逻辑，不碰 Kit。
  *
  * 要解决的问题：会话里的一条贴纸**发出去那张不动**。根因不是解码，是行重建 ——
  * `messageRowKey` 里带了 `sendState` / `isRead` / 媒体进度（MSG-104 的教训：不带就不重绘），
@@ -10,16 +10,22 @@
  * 观感就是「这张贴纸是静止的」。
  *
  * 所以这里记的是**播放头**而不是实例：每次重建按消息 id 查回上一次播到哪一帧，
- * 从那一帧继续。不试图让行不重建（那是把 MSG-104 修回去），也不指望 lottie 换容器
+ * 从那一帧继续。不试图阻止行重建（那是把 MSG-104 修回去），也不指望 lottie 换容器
  * （它的 `loadAnimation` 只有「新建」，没有 re-target）。
+ *
+ * TGS-103 把气泡改成**循环播**（Android 的默认口径：`TGMessageSticker.java:121-130` 里
+ * `setPlayOnce(forcePlayOnce || specialType != SPECIAL_TYPE_NONE || SETTING_FLAG_NO_ANIMATED_STICKERS_LOOP)`
+ * —— 设置项默认关，本端又没有骰子 / 动效 emoji 这类特殊档，所以恒为「不播一次」）。
+ * 循环一开就没有「演完」这回事：`complete` 不再触发，也就没有末帧可记，于是原来的
+ * `finished` 模式与 `noteFinished` 一并删掉。留着它是一条永远走不到的分支，
+ * 而它代表的「停在末帧」恰好是与 Android 相反的那个观感。
  *
  * 三条刻意的取舍：
  * 1. **记账不进 `UiState`**：播放头每帧都在变，进了状态就会参与行签名 → 自己触发重建 →
  *    无限循环。它是视图事实，不是应用事实。
  * 2. **新鲜度窗口**：一条记录只在「最后一次推进后的 `RESUME_WINDOW_MS` 内」被采信。
  *    发消息的重建全都挤在几百毫秒里，窗口内必然命中；而滑走再滑回来已经过了窗口，
- *    于是**重新播一遍** —— 与 Android「贴纸重新入镜会再演一次」一致。
- *    没有这一层，一条播完的贴纸会永远停在末帧。
+ *    于是从第 0 帧再演 —— 与 Android「贴纸重新入镜会再演一次」一致。
  * 3. **身份用 `messageId` 而不是 fileId**：动效贴纸的整档在 TDLib 里是**贴纸包共享**的
  *    同一个 File，同一个包同一张贴纸的多条消息 fileId 相同，按它记账会变成「第二条起都不播」。
  *    代价是发消息时临时 id 换真实 id 会重头演 —— 那正是窗口内为数不多的一次全新挂载，
@@ -27,7 +33,7 @@
  */
 
 /** 一次挂载该怎么演。 */
-export type StickerPlayMode = 'first' | 'resume' | 'finished';
+export type StickerPlayMode = 'first' | 'resume';
 
 /** 超过这个时长没有新推进，记录就不再采信（重新入镜按首演处理）。 */
 export const RESUME_WINDOW_MS: number = 1500;
@@ -39,14 +45,11 @@ export const PLAYBACK_LEDGER_LIMIT: number = 128;
 export class StickerPlayRecord {
   /** 最后一次推进到的帧号（lottie `enterFrame` 的 `currentTime`，浮点）。 */
   frame: number;
-  /** 是否已经演完一遍（`loop: false` 下的 `complete`）。 */
-  finished: boolean;
   /** 最后一次推进的时刻，用于新鲜度判定。 */
   lastTouchAt: number;
 
-  constructor(frame: number, finished: boolean, lastTouchAt: number) {
+  constructor(frame: number, lastTouchAt: number) {
     this.frame = frame;
-    this.finished = finished;
     this.lastTouchAt = lastTouchAt;
   }
 }
@@ -63,7 +66,7 @@ export class StickerPlayPlan {
 }
 
 /**
- * 纯决策：有记录且在窗口内才谈得上续播/停末帧，否则首演。
+ * 纯决策：有记录且在窗口内才谈得上续播，否则首演。
  * 拆成函数是为了让「窗口」这条规则可测 —— 时钟由调用方给，不读 `Date.now`。
  */
 export function stickerPlayPlan(
@@ -73,9 +76,6 @@ export function stickerPlayPlan(
 ): StickerPlayPlan {
   if (record === null || now - record.lastTouchAt > windowMs) {
     return new StickerPlayPlan('first');
-  }
-  if (record.finished) {
-    return new StickerPlayPlan('finished', record.frame);
   }
   return new StickerPlayPlan('resume', record.frame);
 }
@@ -108,7 +108,7 @@ export class StickerPlaybackLedger {
     return stickerPlayPlan(this.get(key), now);
   }
 
-  /** 记录推进到的帧；已演完的记录只刷新时刻，不被帧回调往回拽。 */
+  /** 记录推进到的帧；循环播之下没有「演完」，每帧都只是刷新播放头。 */
   noteFrame(key: string | null, frame: number, now: number): void {
     if (key === null || key.length === 0) {
       return;
@@ -116,30 +116,10 @@ export class StickerPlaybackLedger {
     const previous: StickerPlayRecord | undefined = this.records.get(key);
     if (previous === undefined) {
       this.evictIfNeeded();
-      this.records.set(key, new StickerPlayRecord(frame, false, now));
+      this.records.set(key, new StickerPlayRecord(frame, now));
       this.order.push(key);
       return;
     }
-    if (!previous.finished) {
-      previous.frame = frame;
-    }
-    previous.lastTouchAt = now;
-    this.touchTail(key);
-  }
-
-  noteFinished(key: string | null, frame: number, now: number): void {
-    if (key === null || key.length === 0) {
-      return;
-    }
-    const previous: StickerPlayRecord | undefined = this.records.get(key);
-    if (previous === undefined) {
-      this.evictIfNeeded();
-      this.records.set(key, new StickerPlayRecord(frame, true, now));
-      this.order.push(key);
-      return;
-    }
-    previous.finished = true;
-    // `complete` 时读到的 currentFrame 才是真正停下的位置，比最后一次 enterFrame 更准
     previous.frame = frame;
     previous.lastTouchAt = now;
     this.touchTail(key);

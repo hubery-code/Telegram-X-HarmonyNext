@@ -1,5 +1,5 @@
 /**
- * feature/chat — 动效贴纸（TGS/Lottie）的画布宿主（TGS-101 / TGS-102）。
+ * feature/chat — 动效贴纸（TGS/Lottie）的画布宿主（TGS-101 / TGS-102 / TGS-103）。
  *
  * 只做三件事：把 `.tgs` 交给注入的解码口换成 Lottie JSON 文本 → 在 `Canvas` 上挂一个
  * lottie 实例 → 组件销毁时把这个实例摘掉。「这条贴纸算不算动效」不在这里，
@@ -15,10 +15,11 @@
  * 4. **`autoSkip` 关**：lottie 默认会跳过它判定为不可见的画布，而会话里的贴纸在
  *    `LazyForEach` 里，可见性判定慢一步就是一片空白（官方 README 同样建议首帧空白时关掉）。
  * 5. **挂载前先查播放账本**（TGS-102）：行重建会把实例连着画布一起换掉，
- *    从头演就等于「发消息那几百毫秒里永远停在开头」。账本给三种走法：
- *    首演 `autoplay: true`；续播 `autoplay: false` + `goToAndPlay(frame)`；
- *    已演完 `autoplay: false` + `goToAndStop(frame)` —— 三种都不等播完才停，
+ *    从头演就等于「发消息那几百毫秒里永远停在开头」。账本给两种走法：
+ *    首演 `autoplay: true`；续播 `autoplay: false` + `goToAndPlay(frame)`。
  *    帧号一律取账本里记着的实际推进值，不去猜 `totalFrames`（各档贴纸的 first/last 帧不保证是 0/N-1）。
+ * 6. **循环播**（TGS-103）：对齐 Android 默认口径，贴纸不是一次性动画。于是也就没有
+ *    「演完停在末帧」这一档 —— 账本里那条 `finished` 随之删除，`complete` 不再监听。
  *
  * 一个组件一个 lottie 实例，实例名用进程内自增序号（`lottie.destroy(name)` 按名释放，
  * 重名会互相踢掉）；`aboutToDisappear` 里必须释放，否则 LazyForEach 回收气泡后
@@ -51,6 +52,8 @@ export struct AnimatedSticker {
   playbackKey: string | null = null;
   /** 动画是否已经挂上；决定缩略图还在不在屏幕上。 */
   @State private animated: boolean = false;
+  /** 第一圈的取证日志只落一次。 */
+  private lapLogged: boolean = false;
 
   private settings: RenderingContextSettings = new RenderingContextSettings(true);
   private ctx: CanvasRenderingContext2D = new CanvasRenderingContext2D(this.settings);
@@ -122,9 +125,11 @@ export struct AnimatedSticker {
     this.item = lottie.loadAnimation({
       container: this.ctx,
       renderer: 'canvas',
-      loop: false,
-      // 只有首演交给 autoplay 起步：续播与已演完要先落位再决定走不走，
-      // 交给 autoplay 会先闪一帧 0 号帧。
+      // TGS-103：循环播。这是 Android 的默认口径（`TGMessageSticker.java:121-130` 的
+      // `setPlayOnce(...)` 在「不循环」设置项关闭且不是骰子/动效 emoji 时恒为 false）。
+      // 之前这里写死 `false`，观感差在**贴纸演一遍就停在末帧不动**，而真机上的 Telegram X 一直在动。
+      loop: true,
+      // 首演交给 autoplay 起步；续播要先落位再走，交给 autoplay 会先闪一帧 0 号帧。
       autoplay: plan.mode === 'first',
       autoSkip: false,
       name: this.instanceName,
@@ -139,11 +144,17 @@ export struct AnimatedSticker {
     this.item.addEventListener('enterFrame', (e: BMEnterFrameEvent): void => {
       stickerPlaybackLedger.noteFrame(this.playbackKey, e.currentTime, Date.now());
     });
-    // 播完停在末帧；失败与取消都不在这里管（缩略图已经撤了，回不去是故意的：
-    // 半途切回静态图会闪，而 lottie 停在末帧仍是这张图的一帧）。
-    this.item.addEventListener('complete', (): void => {
+    // 取证用：只在**第一圈**落一条。循环播的唯一外部可观察证据就是「走完了第一圈还在走第二圈」
+    // —— 改前这里是 `complete`（一次就没了），而每圈都落会变成刷屏日志。
+    this.item.addEventListener('loopComplete', (): void => {
+      if (this.lapLogged) {
+        return;
+      }
+      this.lapLogged = true;
       const item: AnimationItem | null = this.item;
-      stickerPlaybackLedger.noteFinished(this.playbackKey, item === null ? 0 : item.currentFrame, Date.now());
+      hilog.info(DOMAIN, TAG, 'tgs_lap key=%{public}s name=%{public}s frame=%{public}s',
+        this.playbackKey === null ? '-' : this.playbackKey, this.instanceName,
+        item === null ? '-' : `${item.currentFrame}`);
     });
   }
 
@@ -151,10 +162,6 @@ export struct AnimatedSticker {
   private seekToPlan(plan: StickerPlayPlan): void {
     const item: AnimationItem | null = this.item;
     if (item === null || plan.mode === 'first') {
-      return;
-    }
-    if (plan.mode === 'finished') {
-      item.goToAndStop(plan.frame, true);
       return;
     }
     item.goToAndPlay(plan.frame, true);
