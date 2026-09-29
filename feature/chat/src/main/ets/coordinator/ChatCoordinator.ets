@@ -141,6 +141,7 @@ import {
   ClearRecentStickers as TdClearRecentStickers,
   encodeClearRecentStickers,
   UpdateRecentStickers,
+  UpdateInstalledStickerSets,
   StickerSetInfo,
   StickerTypeRegular,
   ChangeStickerSet,
@@ -666,6 +667,8 @@ export class ChatCoordinator {
   private readonly recentStickerFiles: Set<number> = new Set();
   /** STICKER-RECENT-101：`updateRecentStickers` 订阅（发出去一颗贴纸后这一行要自己活过来）。 */
   private recentStickersSubscription: TdUpdateSubscription | null = null;
+  /** STICKER-BOARD-103：`updateInstalledStickerSets` 订阅（已装盘读到空也要能自己活过来）。 */
+  private installedStickerSetsSubscription: TdUpdateSubscription | null = null;
   /**
    * MEDIA-105：待发送视频的**本地缩略图**缓存，key = 送进 TDLib 的视频沙箱物理路径。
    *
@@ -812,6 +815,8 @@ export class ChatCoordinator {
     this.subscribeChatPermissions();
     // STICKER-RECENT-101：最近使用实时同步（发出/收到一颗贴纸后 updateRecentStickers 会推）。
     this.subscribeRecentStickers();
+    // STICKER-BOARD-103：已装盘实时同步（冷启动读到空盘、其它端装/卸包都会推 updateInstalledStickerSets）。
+    this.subscribeInstalledStickerSets();
     // MSG-109：先按已知信息补一次副标题（chatKind 未回前为 no-op），
     // getChat 回包 / 用户状态订阅 / 在线人数订阅到达后各自重算。
     this.buildHeaderSubtitle();
@@ -1118,6 +1123,11 @@ export class ChatCoordinator {
     if (this.recentStickersSubscription !== null) {
       this.recentStickersSubscription.unsubscribe();
       this.recentStickersSubscription = null;
+    }
+    // STICKER-BOARD-103：退订已装贴纸盘推送。
+    if (this.installedStickerSetsSubscription !== null) {
+      this.installedStickerSetsSubscription.unsubscribe();
+      this.installedStickerSetsSubscription = null;
     }
     if (this.recordTimerId !== -1) {
       clearInterval(this.recordTimerId);
@@ -4266,6 +4276,52 @@ export class ChatCoordinator {
           return;
         }
         this.handleFetchRecentStickers();
+      }
+    );
+  }
+
+  /**
+   * STICKER-BOARD-103：订阅 `updateInstalledStickerSets`，让已装贴纸盘能自己活过来。
+   *
+   * 成因（读 vendored 源码 + 模拟器实测定案）：`getInstalledStickerSets` 在 TDLib 里是
+   * 「读内存缓存 + 顺手触发一次后台重读」，不是「等到有答案再回你」——
+   * `StickersManager.cpp:4921-4930` 在缓存还没建好（`are_installed_sticker_sets_loaded_` 为假）时
+   * 直接返回空 vector，装好后由 `on_load_installed_sticker_sets_finished`（`:5337-5340`）
+   * 置位并 `send_update_installed_sticker_sets()` 推一条 update。
+   * 我们这边 reducer 把「回过一次」记成 `isLoaded=true`（`ChatReducer.ets:1351-1363`），
+   * 此后再开贴纸页签就不重读 —— 没有这一路订阅时，冷启动那一帧空盘就是本次会话的最终答案：
+   * 模拟器实测同一账号 3.4 秒内两次读分别是 `rows=0,total=0` 与 `rows=1,total=1`。
+   *
+   * 空盘的代价不止「看不到包」：`stickerBoardSets` 同时是整包预览取数链的短名来源
+   * （`stickerSetShortNameOf`），它空了，预览就只能走 id 那条路。
+   *
+   * 门控与最近使用同理：盘没装过（这一会话没开过贴纸页签）就不重读，别为没人看的一行白打网络。
+   * 只认 `stickerTypeRegular` —— mask 与 custom emoji 各有各的列表，跟我们这一区无关。
+   */
+  private subscribeInstalledStickerSets(): void {
+    if (this.destroyed || this.installedStickerSetsSubscription !== null) {
+      return;
+    }
+    const filter: TdUpdateFilter = {
+      clientId: this.scope.clientId,
+      types: ['updateInstalledStickerSets']
+    };
+    this.installedStickerSetsSubscription = this.scope.gatewayInstance.subscribeUpdates(
+      filter,
+      (event: TdRoutedEvent): void => {
+        const update: TdUpdate | null = decodeTdUpdate(event.payload as TdJsonRaw);
+        if (update === null || update.type !== 'updateInstalledStickerSets') {
+          return;
+        }
+        const installedUpdate: UpdateInstalledStickerSets = update as UpdateInstalledStickerSets;
+        if (installedUpdate.sticker_type === null || installedUpdate.sticker_type.type !== 'stickerTypeRegular') {
+          return;
+        }
+        this.logger.info(TAG, 'sticker_installed_update', `rows=${installedUpdate.sticker_set_ids.length}`);
+        if (!this.currentState.stickerBoard.isLoaded) {
+          return;
+        }
+        this.handleFetchStickerBoard();
       }
     );
   }

@@ -28,6 +28,11 @@
  * - 没见过短名的 id 才直接 `getStickerSet`，不先发一次注定失败的短名查询；
  * - 短名那条失败要按 id 兜底重发，两条**都**失败只记一次失败态（不能盖成两条错误）；
  * - 短名那条成功就出整包，此时 `getStickerSet` 一条都不许发。
+ *
+ * STICKER-BOARD-103 守已装盘的自愈那半边：
+ * - 冷启动读到 0 行后，`updateInstalledStickerSets` 到货要重读并把真列表装上盘
+ *   （此前这一路订阅不存在，空盘会一直空到本次会话结束）；
+ * - 没开过贴纸页签不后台重读；`stickerTypeMask`/`stickerTypeCustomEmoji` 的推送不参与这一区。
  */
 
 import { describe, it, expect } from '@ohos/hypium';
@@ -382,6 +387,29 @@ function recentUpdateFields(isAttached: boolean, stickerIds: number[]): Record<s
   fields['@type'] = 'updateRecentStickers';
   fields['is_attached'] = isAttached;
   fields['sticker_ids'] = stickerIds;
+  return fields;
+}
+
+/**
+ * STICKER-BOARD-103：`updateInstalledStickerSets` 的推送体。
+ * `sticker_set_ids` 只给 id，包名/封面还得回 `getInstalledStickerSets` 读 —— 所以这一路是「重读」而不是「直接用」。
+ */
+function installedUpdateFields(kind: string, stickerSetIds: string[]): Record<string, TdWireValue> {
+  const type: Record<string, TdWireValue> = {};
+  type['@type'] = kind;
+  const fields: Record<string, TdWireValue> = {};
+  fields['@type'] = 'updateInstalledStickerSets';
+  fields['sticker_type'] = type;
+  fields['sticker_set_ids'] = stickerSetIds;
+  return fields;
+}
+
+/** 冷启动第一帧：TDLib 的缓存还没建好时 `getInstalledStickerSets` 合法的 0 行回包。 */
+function emptyStickerSetsFields(): Record<string, TdWireValue> {
+  const fields: Record<string, TdWireValue> = {};
+  fields['@type'] = 'stickerSets';
+  fields['total_count'] = 0;
+  fields['sets'] = [];
   return fields;
 }
 
@@ -746,6 +774,73 @@ export default function stickerBoardFetchTest(): void {
       bridge.pushUpdate(recentUpdateFields(true, [7003]));
       await settle();
       expect(countRequestsOfType(bridge, 'getRecentStickers')).assertEqual(2);
+
+      unsubscribe();
+      coordinator.destroy();
+    });
+
+    it('updateInstalledStickerSets_healsAnEmptyColdStartBoardRead', 0, async (): Promise<void> => {
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const scope: AccountScope = createScope(bridge);
+      const coordinator: ChatCoordinator = new ChatCoordinator(scope, 42, 'Test Chat');
+      coordinator.start();
+
+      const recorder: StateRecorder = new StateRecorder();
+      const unsubscribe: () => void = coordinator.subscribe((state: ChatUiState): void => {
+        recorder.seen.push(state);
+      });
+
+      // 冷启动第一帧：TDLib 读的是还没建好的缓存，回包是合法的 0 行
+      coordinator.dispatch(new OpenStickerBoard());
+      await settle();
+      bridge.respondTo(lastRequestIdOfType(bridge, 'getInstalledStickerSets'), emptyStickerSetsFields());
+      await settle();
+      expect(recorder.last().stickerBoard.packs.length).assertEqual(0);
+
+      // 缓存建好后 TDLib 推一条 updateInstalledStickerSets：空盘必须是「还能活」的中间帧，
+      // 不能是本次会话的最终答案（模拟器实测同账号 3.4 秒内 rows=0 → rows=1）。
+      bridge.pushUpdate(installedUpdateFields('stickerTypeRegular', ['21']));
+      await settle();
+      expect(countRequestsOfType(bridge, 'getInstalledStickerSets')).assertEqual(2);
+
+      bridge.respondTo(lastRequestIdOfType(bridge, 'getInstalledStickerSets'),
+        stickerSetsFields([coverFields(1001, 3001, '🐼')]));
+      await settle();
+      expect(recorder.last().stickerBoard.packs.length).assertEqual(1);
+
+      unsubscribe();
+      coordinator.destroy();
+    });
+
+    it('updateInstalledStickerSets_ignoresUnreadBoardAndOtherTypes', 0, async (): Promise<void> => {
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const scope: AccountScope = createScope(bridge);
+      const coordinator: ChatCoordinator = new ChatCoordinator(scope, 42, 'Test Chat');
+      coordinator.start();
+
+      const unsubscribe: () => void = coordinator.subscribe((_state: ChatUiState): void => {});
+
+      // 没开过贴纸页签：没人在看这一区，后台重读只是白打一次网络
+      bridge.pushUpdate(installedUpdateFields('stickerTypeRegular', ['21']));
+      await settle();
+      expect(countRequestsOfType(bridge, 'getInstalledStickerSets')).assertEqual(0);
+
+      coordinator.dispatch(new OpenStickerBoard());
+      await settle();
+      bridge.respondTo(lastRequestIdOfType(bridge, 'getInstalledStickerSets'),
+        stickerSetsFields([coverFields(1001, 3001, '🐼')]));
+      await settle();
+      expect(countRequestsOfType(bridge, 'getInstalledStickerSets')).assertEqual(1);
+
+      // mask / custom emoji 各有各的列表，跟我们这一区无关
+      bridge.pushUpdate(installedUpdateFields('stickerTypeMask', ['22']));
+      bridge.pushUpdate(installedUpdateFields('stickerTypeCustomEmoji', ['23']));
+      await settle();
+      expect(countRequestsOfType(bridge, 'getInstalledStickerSets')).assertEqual(1);
+
+      bridge.pushUpdate(installedUpdateFields('stickerTypeRegular', ['21', '24']));
+      await settle();
+      expect(countRequestsOfType(bridge, 'getInstalledStickerSets')).assertEqual(2);
 
       unsubscribe();
       coordinator.destroy();

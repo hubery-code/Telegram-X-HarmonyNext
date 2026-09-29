@@ -916,6 +916,39 @@
 > 遗留：① **整包预览仍空，需 native 侧按上面那条 `hash` 差异验证**（ArkTS 侧已无可动变量）；② 取数失败时弹层 `isInstalled` 恒 false
 > （上一行已记，未变）；③ 本端账号**已安装贴纸包数为 0**（`sticker_board_loaded rows=0,total=0`），所以「装过的包走名字零网络」
 > 这一支只有单测覆盖，设备上取不到样本 —— 要取得样本必须先装一包，而那会改账号数据，本轮不做。
+> **【第三十二轮更正：这一条读数是假的】** 那个 `rows=0,total=0` 是 TDLib 缓存未加载完的中间帧，不是账号事实 ——
+> 见下一行 STICKER-BOARD-103 的实测：同一账号冷启动 276 ms 后同一请求回的是 `rows=1,total=1`。
+
+> **2026-09-29（STICKER-BOARD-103，FEAT-P2-004 已装贴纸盘的自愈）**：上一行的「本端账号装了 0 包」和昨天下午
+> `sticker_board_loaded rows=0 → rows=1` 这两条读数，本轮合并成**一个 bug**：`getInstalledStickerSets` 在 TDLib 里是
+> 「读内存缓存 + 顺手触发一次后台重读」，不是「等到有答案再回你」—— `StickersManager.cpp:4921-4930` 在
+> `are_installed_sticker_sets_loaded_[type]` 为假时**直接返回空 vector**，装好后由
+> `on_load_installed_sticker_sets_finished`（`:5337-5340`）置位并 `send_update_installed_sticker_sets()` 推一条
+> `updateInstalledStickerSets`。而我端 reducer 把「回过一次」记成 `isLoaded=true`（`ChatReducer.ets:1351-1363`），
+> `openStickerBoard` 的 `needBoard = !isLoading && !isLoaded` 就此永久关闭重读 —— **`updateInstalledStickerSets` 在生成代码里
+> 有类、有解码器，全仓零订阅**，所以那一帧空盘就是本次会话的最终答案。
+> **代价不止看不到包**：`stickerBoardSets` 同时是整包预览取数链的短名来源（`stickerSetShortNameOf`），
+> 它空着，预览就只能走 `path=id` 那条注定 406 的路 —— 也就是说这一条会**放大上一行的 406**，
+> 「已装包走短名可零网络命中」这一支在设备上永远取不到样本，一部分原因就在这里。
+> **修法**：`ChatCoordinator.subscribeInstalledStickerSets()` 与 `subscribeRecentStickers()` 同形
+> （`start()` 注册、`destroy()` 退订），只认 `stickerTypeRegular`（mask / custom emoji 各有各的列表），
+> 且**只在盘已经读过之后**才重读 —— 没开过贴纸页签就没人在看这一区，后台重读是白打网络。
+> 推送只带 id 列表（`sticker_set_ids`），包名/封面仍要回 `getInstalledStickerSets` 读，所以这一路是「重读」不是「直接用」。
+> 设备取证（127.0.0.1:5555，`.hvigor/outputs/f103/`，新构建冷启动，未发消息）：
+> `15:00:38.065 sticker_board_loaded rows=0,total=0` → `15:00:38.336 sticker_installed_update rows=1` →
+> `15:00:38.341 sticker_board_loaded rows=1,total=1` —— **276 ms 自愈**，且截图上那一格的青蛙封面确实上屏了。
+> 卸载方向同帧实证：`15:02:31.929 sticker_installed_update rows=0` → `.931/.932` 两条 `rows=0` 重读
+> （一条来自本订阅、一条来自既有的 `OnStickerSetChanged` 刷新，**同一次卸载会读两次**，都是缓存级 RPC，暂不去重）。
+> 取证后账号已还原（`Concerned Froge` 移除，盘回到 0 包）。
+> 遗留：① 装/卸一包时两条重读（要收口得给盘加在途标志）；② 弹层 `isInstalled` 仍恒从 `openStickerSet` 种子 false
+> 起（上一行 ② 未变，设备再证：已装包的弹层写着「未安装 / 添加贴纸包」，点一次才翻成「移除贴纸包」）；
+> ③ `hash:int` 那条 native 落点**本轮读码后降级** —— `do_reload_sticker_set` 的六个调用点里
+> `:5489`、`:5520`、`:5535`、`:5009`、`:5419`、`:5457` 全部传字面量 `0`，只有 `:4948`/`:4952`（bot 分支）与 `:6377`
+> 传 `sticker_set->hash_`，所以「入参差异只剩 hash」这一说不成立：普通用户读已装包时 TDLib 发的就是 `hash=0`，
+> 而 `hash=0` 在服务端是「要全量回包」的常规取值，拒不了 `changeStickerSet` 却放得过 `getStickerSet` 的差异不在这里。
+> 测试：`feature_chat` **427/427**（`StickerBoardFetch.test.ets` 17 → 19 条：空盘自愈 + 两道门控）；
+> `check_architecture` / `check_codegen` / `check_design_tokens` / `check_accessibility_labels` 0 违规。
+
 
 > **2026-09-26（STICKER-RECENT-101，FEAT-P2-004 表情板「最近使用」接真实数据，结掉 101 遗留 ② / 102 遗留 ③ / MSG-101 遗留 ③）**：
 > 这一行从 101 起就是**假的** —— `DEFAULT_RECENT_STICKERS` 四包预设贴纸常驻，屏上永远看不出「这个账号刚才用过什么」，
