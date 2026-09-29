@@ -969,9 +969,9 @@
 > 四条断言覆盖盘命中 / 热门行 true / 热门行 false / 哪儿都没见过）；四守卫 0 违规。
 > 遗留：① 弹层标题仍是占位的「贴纸包详情」—— 短名在本地已知里其实拿得到（`stickerSetShortNameOf`），但 title 属于
 > 回包字段，本轮没有顺手用本地值填它（种子只管布尔位，避免把「本地知道」扩大成「本地编造标题」）；
-> ② 装/卸一包盘被读两次（同上一行 ①）；③ 整包 406 未解（同上一行 ①，native 侧）—— ② 已在下一行 STICKER-BOARD-104 结掉。
+> ② 装/卸一包盘被读两次（同上一行 ①）；③ 整包 406 未解（同上一行 ①，native 侧）—— ② 由其后的 STICKER-BOARD-104 / 105 两行结掉（104 只压住并发，读数降到一条是 105 才做到的）。
 
-> **2026-09-29（STICKER-BOARD-104，FEAT-P2-004 装/卸一包时盘不再被读两次，结掉上一行遗留 ②）**：
+> **2026-09-29（STICKER-BOARD-104，FEAT-P2-004 装/卸一包时盘不再并发读两次，**注：本行只压住并发，「每动作一条」由下一行 105 结掉**）**：
 > 上一条连续两轮记下「同一次装/卸，盘读两次」。本轮读码定案：**两条失效都是对的** ——
 > `changeStickerSet` 结算时 reducer 发一条 `FetchStickerBoard`（`ChatReducer.ets:1510`），
 > 而 BOARD-103 为自愈加的 `updateInstalledStickerSets` 订阅又发一条。关键在于 TDLib 的顺序：
@@ -986,15 +986,47 @@
 > 代价是失败也算结算 —— 一条坏请求不会把门永久焊死。
 > 本轮**没有**给盘加 `isLoading` 之类的 reducer 状态：失效的排空属于「同刻的重复」，落在协调器比落在 UI 状态里更贴近成因，
 > 也不会污染 `StickerBoardState` 的语义。
-> 设备取证（127.0.0.1:5555，装一包→观察→卸载还原，`.hvigor/outputs/board104/`）：
-> 改后 `15:42:49.610 update rows=1` → `.615` **一条** `sticker_board_loaded`；
-> `15:43:08.922 update rows=0` → `.927` **一条**（同刻的 `.988` 是热门榜，不是重读盘）；账号已还原（热门行全部 `添加`，盘 `rows=0,total=0`）。
+> 设备取证本行写下的是「改后每次失效**一条**」，**第三十五轮复核后推翻**（127.0.0.1:5555，`.hvigor/outputs/board104/`）：
+> 同一份 `trail-B-uninstall.txt` 里卸载方向是 `.927` 与 `.988` **两条** `sticker_board_loaded`，热门榜其实在 `.987` ——
+> 当时把 `.988` 误记成热门榜；装包段只截到一条是捕获窗口提前收口。在 104 构建上重打两轮
+> （`.hvigor/outputs/board104-check/raw-C-install.txt`、`raw-C-uninstall.txt`）实测**每个动作仍是两条**，间隔 77 ms / 166 ms。
+> 这不是门写错了，而是**它管的问题与设备上的问题不同形**：门压的是并发双发（`trail-A-before.txt` 那种 2 ms 双发，改后确实不再并发），
+> 而真机上推送那条先结算、reducer 兜底那条挤进在途窗口只换来一次补读 —— 排布变了，**数量没变**。
+> 把每次动作收到一条是下一行 STICKER-BOARD-105 做的事；本行的门是它的前置（没有「在途不并发」，编号水位会两次读盘互相覆盖）。
 > 测试：`feature_chat` **431/431**（门的三条纯用例：并发失效塌成一次补读、无并发时绝不多次读盘；
 > 协调器级 `boardInvalidation_whileReadInFlight_collapsesIntoOneTrailingRead` 钉住「一条在途 + 一条补读 + 第三次不许出现」并验证补读真的画上屏）。
 > **顺带纠正上一行的一处取证口径**：既有用例 `installFromTrendingRow…` 此前依赖「开板那条读盘从未被应答」，
 > 在门下会塌成一次 —— 已改为先结算再装包，它验的仍是「装完立刻重读」，合并交给新用例专门验。
-> 遗留：① **热门榜同形**（`getTrendingStickerSets` 那条链在装/卸后同样被读两次，本轮只收了盘）；
-> ② 整包 406 未解（native 侧，同上一行）；③ 弹层标题占位（有意不做，同上一行）。
+> 遗留：① **每次动作两条读盘并未被本行消掉**（下一行 STICKER-BOARD-105 结掉）；
+> ~~热门榜同形~~ —— **第三十五轮更正：这条前提不存在**，全仓没有 `updateTrendingStickerSets` 订阅，
+> 四条 trail 里每次动作恰好一条 `sticker_trending_loaded`；② 整包 406 未解（native 侧，同上一行）；③ 弹层标题占位（有意不做，同上一行）。
+
+> **2026-09-29（STICKER-BOARD-105，FEAT-P2-004 权威推送读到过之后不再兜底重读盘，结掉上一行遗留 ①）**：
+> 上一行的门在单元测试里成立、在设备上零收益，本轮先把这个差值查清（取证更正见上一行），再对着真机的时序修。
+> **关键判断：不要加定时器，要把「谁说了才算」变成可数的**。装/卸一包有两条失效，地位并不对等 ——
+> `updateInstalledStickerSets` 推送是**权威**（TDLib 自己改了状态并且告诉我们），reducer 那条 `FetchStickerBoard` 是**兜底**
+> （订阅收不到时唯一的路，见 BOARD-103）。于是给权威编号：`StickerBoardFetchGate` 新增
+> `markAuthoritativeChange()`（订阅收到推送、读盘**之前** +1）与 `coveredByAuthoritativeRead()`，
+> `fetchStickerBoard` 效果落地前先问一句「这次变更读到了吗」，读过就跳过并落 `sticker_board_read_skipped reason=covered_by_installed_update`。
+> **三条性质决定这套东西能不能上线**：① 编号**只由推送推进**，所以网关能力缺失、订阅建立晚于变更时它恒为 false，兜底一条不会少
+> —— 自愈优先于省一次读盘，这条是本包存在的原意，不能为了去重把它反过来；
+> ② `settle(fulfilled)` 在失败时把水位打回 `-1`：「发过请求」不等于「读到过」，读挂了兜底照样补
+> （`gate_failedReadDoesNotCountAsCovered`、`boardInvalidation_failedAuthoritativeRead_stillRunsTheFallback`）；
+> ③ 覆盖判断取**在途那条的发出时刻**编号，发在变更之前的读不许算覆盖（`gate_readDispatchedBeforeTheUpdateIsNotCovered`），
+> 否则一次读盘会把下一次变更也一并「代表」了。
+> **跳过点放在协调器而不是 reducer**：`isLoaded` 是 UI 语义（屏上有过列表），「这一次变更我已经看见了」是取数语义，
+> 塞进 `StickerBoardState` 会让两者互相污染，也与上一行「排空落在协调器更贴近成因」一致。
+> 测试：`feature_chat` **437 条全绿**（门 4 条新纯用例，含「无推送则必读」这条负向对照；协调器 2 条：
+> `boardInvalidation_afterAuthoritativeRead_skipsTheChangeFallback` 钉住盘总读数停在 2、热门榜停在 2、`installingSetId` 清空、
+> 热门行 `isInstalled` 翻回 true；`boardInvalidation_failedAuthoritativeRead_stillRunsTheFallback` 用 `REQUEST_TIMEOUT` 让权威读失败，
+> 要求兜底仍发出第 3 条并最终把两封面包画上屏 —— 注意这里 `errorMessage` 置起而 `isLoaded` 保持，是 `onStickerBoardFailed`
+> 「失败不清空上一版列表」的既有语义，本轮沿用未改）。
+> 设备 A/B（127.0.0.1:5555，同一台模拟器、同一账号、只重装 HAP 不清数据；装一包→观察→卸载还原）：
+> 改前 `raw-C-*` 每动作**两条** `sticker_board_loaded`；改后 `raw-D-install.txt`
+> `16:12:59.040 update rows=1` → `.041` **skip** → `.105` **一条** loaded → `.121` 一条 trending，
+> `raw-D-uninstall.txt` 同形（`.574` → `.591` skip → `.619` → `.646`）。账号已还原（热门行全部 `添加`，盘 `rows=0,total=0`）。
+> 遗留：① 整包 406 未解（native 侧，同上一行）；② 弹层标题占位（有意不做，同上一行）；
+> ③ 若将来出现「盘之外还要跟着推送重算的东西」（如热门行的安装态单独一条链），编号该挂在**这条链上**而不是复用门的计数。
 
 
 > **2026-09-26（STICKER-RECENT-101，FEAT-P2-004 表情板「最近使用」接真实数据，结掉 101 遗留 ② / 102 遗留 ③ / MSG-101 遗留 ③）**：

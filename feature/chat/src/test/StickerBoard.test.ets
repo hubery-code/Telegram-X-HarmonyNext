@@ -667,7 +667,7 @@ export default function stickerBoardTest(): void {
     });
   });
 
-  // --- STICKER-BOARD-104：装/卸一包时的两条问价怎么排空 ---
+  // --- STICKER-BOARD-104 / 105：装/卸一包时的两条问价怎么排空 ---
 
   describe('stickerBoardFetchGate', () => {
     it('gate_concurrentInvalidations_collapseIntoOneRerun', 0, () => {
@@ -677,20 +677,65 @@ export default function stickerBoardTest(): void {
       expect(gate.request()).assertFalse();
       expect(gate.request()).assertFalse();
       // 结算时必须补读一次 —— 在途那一条可能读到的正是变更前的缓存
-      expect(gate.settle()).assertTrue();
+      expect(gate.settle(true)).assertTrue();
       expect(gate.request()).assertTrue();
       // 三次失效只换来「一条在途 + 一条补读」
-      expect(gate.settle()).assertFalse();
+      expect(gate.settle(true)).assertFalse();
     });
 
     it('gate_settleWithoutSecondRequest_neverReruns', 0, () => {
       // 正常路径（只开一次页签）不能被门改成两次读盘
       const gate: StickerBoardFetchGate = new StickerBoardFetchGate();
       expect(gate.request()).assertTrue();
-      expect(gate.settle()).assertFalse();
-      expect(gate.settle()).assertFalse();
+      expect(gate.settle(true)).assertFalse();
+      expect(gate.settle(true)).assertFalse();
       // 结算后重新开放：下一次失效要能立刻发出去
       expect(gate.request()).assertTrue();
+    });
+
+    it('gate_authoritativeUpdateMakesTheReducerFallbackSkipped', 0, () => {
+      // STICKER-BOARD-105：设备实测顺序 —— 推送先到、读盘先结算，`changeStickerSet`
+      // 的 promise 隔 77~166 ms 才回来。到那一刻，屏上已经是新列表。
+      const gate: StickerBoardFetchGate = new StickerBoardFetchGate();
+      expect(gate.request()).assertTrue();      // 开板首读
+      expect(gate.settle(true)).assertFalse();
+      gate.markAuthoritativeChange();           // updateInstalledStickerSets
+      expect(gate.request()).assertTrue();      // 权威那一条
+      expect(gate.coveredByAuthoritativeRead()).assertTrue();   // 在途且发在推送之后
+      expect(gate.settle(true)).assertFalse();
+      expect(gate.coveredByAuthoritativeRead()).assertTrue();   // 兜底该省
+    });
+
+    it('gate_withoutAuthoritativeUpdate_alwaysReads', 0, () => {
+      // 负向对照：订阅收不到（网关能力缺失、订阅建立晚于变更）时编号永不推进，兜底必须恒为「该读」
+      const gate: StickerBoardFetchGate = new StickerBoardFetchGate();
+      expect(gate.coveredByAuthoritativeRead()).assertFalse();
+      expect(gate.request()).assertTrue();
+      expect(gate.settle(true)).assertFalse();
+      expect(gate.coveredByAuthoritativeRead()).assertFalse();
+    });
+
+    it('gate_failedReadDoesNotCountAsCovered', 0, () => {
+      const gate: StickerBoardFetchGate = new StickerBoardFetchGate();
+      gate.markAuthoritativeChange();
+      expect(gate.request()).assertTrue();
+      expect(gate.settle(false)).assertFalse();   // 这次读失败了
+      expect(gate.coveredByAuthoritativeRead()).assertFalse();
+      expect(gate.request()).assertTrue();        // 重读成功之后才算覆盖
+      expect(gate.settle(true)).assertFalse();
+      expect(gate.coveredByAuthoritativeRead()).assertTrue();
+    });
+
+    it('gate_readDispatchedBeforeTheUpdateIsNotCovered', 0, () => {
+      const gate: StickerBoardFetchGate = new StickerBoardFetchGate();
+      expect(gate.request()).assertTrue();        // 变更前发出的那条还在途
+      gate.markAuthoritativeChange();
+      expect(gate.coveredByAuthoritativeRead()).assertFalse();
+      // 订阅那一路照样问一次：不并发，只登记补读
+      expect(gate.request()).assertFalse();
+      expect(gate.settle(true)).assertTrue();     // …所以必须补读
+      expect(gate.request()).assertTrue();        // 补读发在推送之后
+      expect(gate.coveredByAuthoritativeRead()).assertTrue();
     });
   });
 }

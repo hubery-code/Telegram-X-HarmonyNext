@@ -652,7 +652,10 @@ export class ChatCoordinator {
   private stickerBoardSets: StickerSetInfo[] = [];
   /** 本次装盘为贴纸板登记过下载的文件 id；哪个到货就要重装一次盘。 */
   private readonly stickerBoardFiles: Set<number> = new Set();
-  /** STICKER-BOARD-104：装/卸一包时的两条问价在此合并成「在途一条 + 结算后补读一条」。 */
+  /**
+   * STICKER-BOARD-104 / 105：装/卸一包时的两条问价在此排空 —— 在途不并发、结算后补读，
+   * 以及「权威推送已经读到过 → reducer 的兜底省掉」。
+   */
   private readonly stickerBoardFetchGate: StickerBoardFetchGate = new StickerBoardFetchGate();
   /**
    * STICKER-BOARD-102：`getTrendingStickerSets` 的原始回包，与已装盘同样为了「图到货后重装」。
@@ -3743,7 +3746,7 @@ export class ChatCoordinator {
       }
 
       case 'fetchStickerBoard': {
-        this.handleFetchStickerBoard();
+        this.handleFetchStickerBoardEffect();
         break;
       }
 
@@ -4036,9 +4039,27 @@ export class ChatCoordinator {
   }
 
   /**
+   * STICKER-BOARD-105：reducer 发来的 `FetchStickerBoard`（`changeStickerSet` 成功后的兜底
+   * 问价，或开板时的首次问价）。
+   *
+   * TDLib 先推 `updateInstalledStickerSets` 再结算 promise（`StickersManager.cpp:5337-5340`），
+   * 所以设备实测这条兜底读到的是**同一份**列表（推送后 53~12 ms 已经结算过一次，又隔 77~166 ms
+   * 才轮到它）。权威推送响过、且其后发出的读盘已经落地 → 这一条省掉。
+   * 订阅没接上时编号永不推进，这里恒为「该读」，兜底原样保留；
+   * 开板那一路要求 `!isLoaded && !isLoading`，与「已落地/在途」互斥，所以对它恒不命中。
+   */
+  private handleFetchStickerBoardEffect(): void {
+    if (this.stickerBoardFetchGate.coveredByAuthoritativeRead()) {
+      this.logger.info(TAG, 'sticker_board_read_skipped', 'reason=covered_by_installed_update');
+      return;
+    }
+    this.handleFetchStickerBoard();
+  }
+
+  /**
    * 实际发一条 `getInstalledStickerSets`。
    *
-   * 三条结算路径（请求建立即失败 / 回包 / 回包解析失败与 promise 抛错）都必须走
+   * 四条结算路径（请求建立即失败 / 回包报错 / 回包解析失败 / 成功）都必须走
    * `finishStickerBoardFetch`，否则门会永远卡在「在途」，之后每一次失效都被吞掉。
    */
   private sendFetchStickerBoard(): void {
@@ -4049,7 +4070,7 @@ export class ChatCoordinator {
     if (result.err) {
       this.logger.logError(TAG, result.error);
       this.dispatch(new OnStickerBoardFailed(result.error.message));
-      this.finishStickerBoardFetch();
+      this.finishStickerBoardFetch(false);
       return;
     }
     if (result.ok) {
@@ -4060,27 +4081,33 @@ export class ChatCoordinator {
         if (res.err) {
           this.logger.logError(TAG, res.error);
           this.dispatch(new OnStickerBoardFailed(res.error.message));
+          this.finishStickerBoardFetch(false);
+          return;
         }
         if (res.ok) {
           const sets: StickerSets | null = decodeStickerSets(res.value as TdJsonRaw);
           if (sets === null) {
             this.dispatch(new OnStickerBoardFailed('Failed to decode sticker sets'));
-          } else {
-            this.stickerBoardSets = sets.sets;
-            this.logger.info(TAG, 'sticker_board_loaded', `rows=${sets.sets.length},total=${sets.total_count}`);
-            this.dispatch(new OnStickerBoardLoaded(this.mapStickerBoard()));
+            this.finishStickerBoardFetch(false);
+            return;
           }
+          this.stickerBoardSets = sets.sets;
+          this.logger.info(TAG, 'sticker_board_loaded', `rows=${sets.sets.length},total=${sets.total_count}`);
+          this.dispatch(new OnStickerBoardLoaded(this.mapStickerBoard()));
+          this.finishStickerBoardFetch(true);
         }
-        this.finishStickerBoardFetch();
       }).catch(() => {
-        this.finishStickerBoardFetch();
+        this.finishStickerBoardFetch(false);
       });
     }
   }
 
-  /** 一条在途读完了：若期间又被失效过就补读一次（`destroyed` 后只清门，不再发请求）。 */
-  private finishStickerBoardFetch(): void {
-    const rerun: boolean = this.stickerBoardFetchGate.settle();
+  /**
+   * 一条在途读完了：若期间又被失效过就补读一次（`destroyed` 后只清门，不再发请求）。
+   * `fulfilled` 决定这条读盘能不能算「覆盖到了本次变更」—— 失败不算。
+   */
+  private finishStickerBoardFetch(fulfilled: boolean): void {
+    const rerun: boolean = this.stickerBoardFetchGate.settle(fulfilled);
     if (rerun && !this.destroyed) {
       this.handleFetchStickerBoard();
     }
@@ -4349,6 +4376,9 @@ export class ChatCoordinator {
         if (!this.currentState.stickerBoard.isLoaded) {
           return;
         }
+        // STICKER-BOARD-105：这条是权威信号，先给它编号再读 —— reducer 那一路的兜底
+        // 据此判断「本次变更已经读到过了」（订阅收不到时编号不推进，兜底照旧）。
+        this.stickerBoardFetchGate.markAuthoritativeChange();
         this.handleFetchStickerBoard();
       }
     );

@@ -36,6 +36,11 @@
  *
  * STICKER-BOARD-104 守那条订阅带来的副作用：装/卸一包同时有两条失效（reducer 那条 + TDLib
  * 推送那条），两条都要留、但不许并发读盘 —— 在途期间只登记「结算后补读一次」。
+ *
+ * STICKER-BOARD-105 守剩下那半边：设备实测两条失效并不总是同刻（推送先到、读盘先结算，
+ * `changeStickerSet` 的 promise 隔 77~166 ms 才回），所以门塌不掉第二次读盘。这里钉住
+ * 「权威那条已经读到 → 兜底省掉」，以及两条负向对照：订阅从未响过、权威那条读失败时，
+ * 兜底都必须照旧发出。
  */
 
 import { describe, it, expect } from '@ohos/hypium';
@@ -713,6 +718,95 @@ export default function stickerBoardFetchTest(): void {
       // 三次在途失效只换来「一条在途 + 一条补读」，没有第四次
       await settle();
       expect(countRequestsOfType(bridge, 'getInstalledStickerSets')).assertEqual(3);
+
+      unsubscribe();
+      coordinator.destroy();
+    });
+
+    it('boardInvalidation_afterAuthoritativeRead_skipsTheChangeFallback', 0, async (): Promise<void> => {
+      // STICKER-BOARD-105：设备实测的顺序（`.hvigor/outputs/board104-check/`）—— 推送先到、
+      // 权威那条读盘先结算，`changeStickerSet` 的 promise 隔 77~166 ms 才回来。到那一刻屏上
+      // 已经是新列表，兜底那条读到的是同一份 —— 省掉；热门榜照旧读一次。
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const scope: AccountScope = createScope(bridge);
+      const coordinator: ChatCoordinator = new ChatCoordinator(scope, 42, 'Test Chat');
+      coordinator.start();
+
+      const recorder: StateRecorder = new StateRecorder();
+      const unsubscribe: () => void = coordinator.subscribe((state: ChatUiState): void => {
+        recorder.seen.push(state);
+      });
+
+      coordinator.dispatch(new OpenStickerBoard());
+      await settle();
+      bridge.respondTo(lastRequestIdOfType(bridge, 'getInstalledStickerSets'),
+        stickerSetsFields([coverFields(1001, 3001, '🐼')]));
+      bridge.respondTo(lastRequestIdOfType(bridge, 'getTrendingStickerSets'), trendingSetsFields());
+      await settle();
+      expect(countRequestsOfType(bridge, 'getInstalledStickerSets')).assertEqual(1);
+
+      coordinator.dispatch(new InstallStickerSet('51'));
+      await settle();
+
+      // 推送先响：权威那一条读盘发出并结算
+      bridge.pushUpdate(installedUpdateFields('stickerTypeRegular', ['51']));
+      await settle();
+      expect(countRequestsOfType(bridge, 'getInstalledStickerSets')).assertEqual(2);
+      bridge.respondTo(lastRequestIdOfType(bridge, 'getInstalledStickerSets'),
+        stickerSetsFields([coverFields(1001, 3001, '🐼')]));
+      await settle();
+
+      // promise 随后才结算：兜底那条被省，榜仍要读
+      bridge.respondTo(lastRequestIdOfType(bridge, 'changeStickerSet'), okFields());
+      await settle();
+      expect(countRequestsOfType(bridge, 'getInstalledStickerSets')).assertEqual(2);
+      expect(countRequestsOfType(bridge, 'getTrendingStickerSets')).assertEqual(2);
+      expect(recorder.last().stickerBoard.installingSetId).assertNull();
+      expect(recorder.last().stickerBoard.trending[0].isInstalled).assertTrue();
+      expect(recorder.last().stickerBoard.packs.length).assertEqual(1);
+
+      unsubscribe();
+      coordinator.destroy();
+    });
+
+    it('boardInvalidation_failedAuthoritativeRead_stillRunsTheFallback', 0, async (): Promise<void> => {
+      // 负向对照：权威那条**读失败**时不能让兜底一起被省掉，否则屏上停在坏结果。
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const scope: AccountScope = createScope(bridge);
+      const coordinator: ChatCoordinator = new ChatCoordinator(scope, 42, 'Test Chat');
+      coordinator.start();
+
+      const recorder: StateRecorder = new StateRecorder();
+      const unsubscribe: () => void = coordinator.subscribe((state: ChatUiState): void => {
+        recorder.seen.push(state);
+      });
+
+      coordinator.dispatch(new OpenStickerBoard());
+      await settle();
+      bridge.respondTo(lastRequestIdOfType(bridge, 'getInstalledStickerSets'),
+        stickerSetsFields([coverFields(1001, 3001, '🐼')]));
+      await settle();
+
+      coordinator.dispatch(new InstallStickerSet('51'));
+      await settle();
+      bridge.pushUpdate(installedUpdateFields('stickerTypeRegular', ['51']));
+      await settle();
+      expect(countRequestsOfType(bridge, 'getInstalledStickerSets')).assertEqual(2);
+      bridge.respondError(lastRequestIdOfType(bridge, 'getInstalledStickerSets'), 'REQUEST_TIMEOUT');
+      await settle();
+      // 失败不清包（上一次的内容比空白有用），但必须留下「这次没读到」的错误态
+      expect(recorder.last().stickerBoard.errorMessage !== null).assertTrue();
+      expect(recorder.last().stickerBoard.packs.length).assertEqual(1);
+
+      bridge.respondTo(lastRequestIdOfType(bridge, 'changeStickerSet'), okFields());
+      await settle();
+      // 坏结算不算「覆盖」：兜底必须补上这一条
+      expect(countRequestsOfType(bridge, 'getInstalledStickerSets')).assertEqual(3);
+      bridge.respondTo(lastRequestIdOfType(bridge, 'getInstalledStickerSets'),
+        stickerSetsFields([coverFields(1001, 3001, '🐼'), coverFields(2001, 4001, '🦊')]));
+      await settle();
+      expect(recorder.last().stickerBoard.errorMessage).assertNull();
+      expect(recorder.last().stickerBoard.packs[0].covers.length).assertEqual(2);
 
       unsubscribe();
       coordinator.destroy();

@@ -532,10 +532,31 @@ function stickerThumbnailFile(sticker: Sticker): File | null {
  * 缺失、订阅建立晚于变更）。所以这里**合并而不是删**：在途时不并发第二条，把这次失效
  * 记下来，等当前这条结算完补读一次。补读不能省 —— 在途那一条可能读到的正是 TDLib
  * 应用变更之前的缓存，这是它唯一存在的理由。
+ *
+ * 但只塌得掉「同刻」的那一对。设备实测（127.0.0.1:5555，`.hvigor/outputs/board104-check/`）
+ * 装/卸各一次：推送先到、读盘先结算（53 ms / 12 ms），`changeStickerSet` 的 promise 随后
+ * 才回来（又 77 ms / 166 ms）—— 兜底那一条此时已经不在门上排队，于是仍会发出第二条读盘，
+ * 读到的是**同一份**列表。STICKER-BOARD-105 收的就是这一步：给权威信号编号，
+ * 让 reducer 那一路问得出「本次变更的推送已经读到过了」。
+ *
+ * 编号只由推送推进，因此订阅从未响过时 `coveredByAuthoritativeRead()` 恒为 false，
+ * 兜底照旧生效；读盘**失败**也会把水位擦掉，免得一次坏结算把之后的兜底全跳过。
+ * 就算 TDLib 哪天改成先结算再推送，最坏也只是这一条被推迟 —— 紧随其后的推送自己会读。
  */
 export class StickerBoardFetchGate {
   private inFlight: boolean = false;
   private rerunRequested: boolean = false;
+  /** 权威推送响过几次（只在收到推送时推进）。 */
+  private changeCount: number = 0;
+  /** 在途那条是在第几次推送之后发出的。 */
+  private dispatchChangeCount: number = 0;
+  /** 最近一次**成功**结算覆盖到第几次推送；失败即回落到 -1（等于「什么都不保证」）。 */
+  private settledChangeCount: number = -1;
+
+  /** 订阅那一路：TDLib 说「盘变了」，本次变更从此有个编号。 */
+  markAuthoritativeChange(): void {
+    this.changeCount += 1;
+  }
 
   /** 现在该不该发这一条；false = 已有在途，本次只登记成「结算后补读」。 */
   request(): boolean {
@@ -544,15 +565,34 @@ export class StickerBoardFetchGate {
       return false;
     }
     this.inFlight = true;
+    this.dispatchChangeCount = this.changeCount;
     return true;
   }
 
-  /** 当前这条结算完（成功、失败都算）；返回是否需要补读。 */
-  settle(): boolean {
+  /**
+   * 当前这条结算完。`fulfilled` 只在这条读盘真的读到了新列表时为 true
+   * （建请求失败、回包报错、解析不出都算 false）；返回值表示是否需要补读。
+   */
+  settle(fulfilled: boolean): boolean {
     this.inFlight = false;
+    this.settledChangeCount = fulfilled ? this.dispatchChangeCount : -1;
     const rerun: boolean = this.rerunRequested;
     this.rerunRequested = false;
     return rerun;
+  }
+
+  /**
+   * reducer 那一路的兜底问价：本次变更的推送已经响过，并且有一条**在那次推送之后发出**的
+   * 读盘已经落地（或正在途）→ 屏上已经是新列表，这条读盘可以省。
+   */
+  coveredByAuthoritativeRead(): boolean {
+    if (this.changeCount === 0) {
+      return false;
+    }
+    if (this.inFlight) {
+      return this.dispatchChangeCount === this.changeCount;
+    }
+    return this.settledChangeCount === this.changeCount;
   }
 }
 
