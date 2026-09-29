@@ -33,6 +33,9 @@
  * - 冷启动读到 0 行后，`updateInstalledStickerSets` 到货要重读并把真列表装上盘
  *   （此前这一路订阅不存在，空盘会一直空到本次会话结束）；
  * - 没开过贴纸页签不后台重读；`stickerTypeMask`/`stickerTypeCustomEmoji` 的推送不参与这一区。
+ *
+ * STICKER-BOARD-104 守那条订阅带来的副作用：装/卸一包同时有两条失效（reducer 那条 + TDLib
+ * 推送那条），两条都要留、但不许并发读盘 —— 在途期间只登记「结算后补读一次」。
  */
 
 import { describe, it, expect } from '@ohos/hypium';
@@ -631,6 +634,10 @@ export default function stickerBoardFetchTest(): void {
       coordinator.dispatch(new OpenStickerBoard());
       await settle();
       bridge.respondTo(lastRequestIdOfType(bridge, 'getTrendingStickerSets'), trendingSetsFields());
+      // 开板那一条读盘先结算掉：STICKER-BOARD-104 之后，在途期间的失效不再并发第二条，
+      // 这里要验的是「装完确实立刻重读」，不是门的合并（合并另有那一条用例）。
+      bridge.respondTo(lastRequestIdOfType(bridge, 'getInstalledStickerSets'),
+        stickerSetsFields([coverFields(1001, 3001, '🐼')]));
       await settle();
       expect(recorder.last().stickerBoard.trending[0].isInstalled).assertFalse();
 
@@ -654,6 +661,58 @@ export default function stickerBoardFetchTest(): void {
       // 装成功后立刻重读盘与榜 —— 新装的包不用等用户切走再切回来
       expect(countRequestsOfType(bridge, 'getInstalledStickerSets')).assertEqual(before + 1);
       expect(countRequestsOfType(bridge, 'getTrendingStickerSets')).assertEqual(2);
+
+      unsubscribe();
+      coordinator.destroy();
+    });
+
+    it('boardInvalidation_whileReadInFlight_collapsesIntoOneTrailingRead', 0, async (): Promise<void> => {
+      // STICKER-BOARD-104：装/卸一包同时到两条失效 —— reducer 在 `changeStickerSet` 成功
+      // 那一路发一条，TDLib 紧接着推 `updateInstalledStickerSets`（它先于 promise 结算）。
+      // 两条都要保留（订阅可能因网关能力缺失收不到，reducer 那条是兜底），但不许并发。
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const scope: AccountScope = createScope(bridge);
+      const coordinator: ChatCoordinator = new ChatCoordinator(scope, 42, 'Test Chat');
+      coordinator.start();
+
+      const recorder: StateRecorder = new StateRecorder();
+      const unsubscribe: () => void = coordinator.subscribe((state: ChatUiState): void => {
+        recorder.seen.push(state);
+      });
+
+      coordinator.dispatch(new OpenStickerBoard());
+      await settle();
+      bridge.respondTo(lastRequestIdOfType(bridge, 'getInstalledStickerSets'),
+        stickerSetsFields([coverFields(1001, 3001, '🐼')]));
+      await settle();
+      expect(countRequestsOfType(bridge, 'getInstalledStickerSets')).assertEqual(1);
+
+      // 第一条推送让盘重读，并且**故意不回答**：此刻一条读盘正在途
+      bridge.pushUpdate(installedUpdateFields('stickerTypeRegular', ['21']));
+      await settle();
+      const inFlight: string = lastRequestIdOfType(bridge, 'getInstalledStickerSets');
+      expect(countRequestsOfType(bridge, 'getInstalledStickerSets')).assertEqual(2);
+
+      // 再来两次失效：不许并发，只登记成「结算后补读一次」
+      bridge.pushUpdate(installedUpdateFields('stickerTypeRegular', ['21', '24']));
+      bridge.pushUpdate(installedUpdateFields('stickerTypeRegular', ['21', '24', '25']));
+      await settle();
+      expect(countRequestsOfType(bridge, 'getInstalledStickerSets')).assertEqual(2);
+
+      // 在途那条结算 —— 补读必须跟上，否则屏上停在它读到的那份新列表（TDLib 的推送先于 promise）
+      bridge.respondTo(inFlight, emptyStickerSetsFields());
+      await settle();
+      expect(countRequestsOfType(bridge, 'getInstalledStickerSets')).assertEqual(3);
+      expect(recorder.last().stickerBoard.packs.length).assertEqual(0);
+
+      bridge.respondTo(lastRequestIdOfType(bridge, 'getInstalledStickerSets'),
+        stickerSetsFields([coverFields(2001, 4001, '🦊')]));
+      await settle();
+      expect(recorder.last().stickerBoard.packs.length).assertEqual(1);
+      expect(recorder.last().stickerBoard.packs[0].covers[0].emoji).assertEqual('🦊');
+      // 三次在途失效只换来「一条在途 + 一条补读」，没有第四次
+      await settle();
+      expect(countRequestsOfType(bridge, 'getInstalledStickerSets')).assertEqual(3);
 
       unsubscribe();
       coordinator.destroy();

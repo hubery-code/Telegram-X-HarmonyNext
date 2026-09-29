@@ -38,6 +38,7 @@ import {
   STICKER_BOARD_RECENT_SET_ID,
   STICKER_TRENDING_MAX_PACKS,
   StickerBoardDeps,
+  StickerBoardFetchGate,
   StickerBoardPack,
   StickerTrendingPack,
   recentStickersFromStickers,
@@ -663,6 +664,33 @@ export default function stickerBoardTest(): void {
       const nothing = new RecordingDeps();
       nothing.havePath(900, '/data/sets/900.tgs');
       expect(stickerBoardThumbnailPath(makeSetInfo('4', 'A', 1, covers, 900), nothing.deps())).assertNull();
+    });
+  });
+
+  // --- STICKER-BOARD-104：装/卸一包时的两条问价怎么排空 ---
+
+  describe('stickerBoardFetchGate', () => {
+    it('gate_concurrentInvalidations_collapseIntoOneRerun', 0, () => {
+      const gate: StickerBoardFetchGate = new StickerBoardFetchGate();
+      expect(gate.request()).assertTrue();
+      // reducer 那条与 TDLib 推送那条同时到：第二条不许并发
+      expect(gate.request()).assertFalse();
+      expect(gate.request()).assertFalse();
+      // 结算时必须补读一次 —— 在途那一条可能读到的正是变更前的缓存
+      expect(gate.settle()).assertTrue();
+      expect(gate.request()).assertTrue();
+      // 三次失效只换来「一条在途 + 一条补读」
+      expect(gate.settle()).assertFalse();
+    });
+
+    it('gate_settleWithoutSecondRequest_neverReruns', 0, () => {
+      // 正常路径（只开一次页签）不能被门改成两次读盘
+      const gate: StickerBoardFetchGate = new StickerBoardFetchGate();
+      expect(gate.request()).assertTrue();
+      expect(gate.settle()).assertFalse();
+      expect(gate.settle()).assertFalse();
+      // 结算后重新开放：下一次失效要能立刻发出去
+      expect(gate.request()).assertTrue();
     });
   });
 }

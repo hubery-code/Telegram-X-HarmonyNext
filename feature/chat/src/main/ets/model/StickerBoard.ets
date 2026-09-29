@@ -519,6 +519,43 @@ function stickerThumbnailFile(sticker: Sticker): File | null {
   return thumbnailFileOf(sticker.thumbnail);
 }
 
+/**
+ * 已装盘的一次「问价」怎么排空（STICKER-BOARD-104）。
+ *
+ * 为什么需要它：装/卸一包会同时触发两条 `getInstalledStickerSets` —— reducer 在
+ * `changeStickerSet` 成功那一路发一条，TDLib 紧接着推 `updateInstalledStickerSets`
+ * （`StickersManager.cpp:5337-5340`，它先于我们的 promise 结算），订阅那一路又问一次。
+ * 设备实测两条 `sticker_board_loaded` 只差 2 ms，等于每条都把整盘 DTO 重映射一遍、
+ * 把预算内的缩略图再登记一遍。
+ *
+ * 两个来源都不该裁：订阅那条是权威信号，reducer 那条是订阅没接上时的兜底（网关能力
+ * 缺失、订阅建立晚于变更）。所以这里**合并而不是删**：在途时不并发第二条，把这次失效
+ * 记下来，等当前这条结算完补读一次。补读不能省 —— 在途那一条可能读到的正是 TDLib
+ * 应用变更之前的缓存，这是它唯一存在的理由。
+ */
+export class StickerBoardFetchGate {
+  private inFlight: boolean = false;
+  private rerunRequested: boolean = false;
+
+  /** 现在该不该发这一条；false = 已有在途，本次只登记成「结算后补读」。 */
+  request(): boolean {
+    if (this.inFlight) {
+      this.rerunRequested = true;
+      return false;
+    }
+    this.inFlight = true;
+    return true;
+  }
+
+  /** 当前这条结算完（成功、失败都算）；返回是否需要补读。 */
+  settle(): boolean {
+    this.inFlight = false;
+    const rerun: boolean = this.rerunRequested;
+    this.rerunRequested = false;
+    return rerun;
+  }
+}
+
 /** 一次装盘的进度表达：`isLoaded` 与 `isLoading` 分开，才有「装过但这次失败」这种状态。 */
 export interface StickerBoardOptions {
   readonly packs?: StickerBoardPack[];

@@ -306,6 +306,7 @@ import {
   StickerBoardDeps,
   StickerBoardPack,
   StickerTrendingPack,
+  StickerBoardFetchGate,
   stickerBoardPacksFromSetInfos,
   recentStickersFromStickers,
   stickerSetShortNameOf,
@@ -651,6 +652,8 @@ export class ChatCoordinator {
   private stickerBoardSets: StickerSetInfo[] = [];
   /** 本次装盘为贴纸板登记过下载的文件 id；哪个到货就要重装一次盘。 */
   private readonly stickerBoardFiles: Set<number> = new Set();
+  /** STICKER-BOARD-104：装/卸一包时的两条问价在此合并成「在途一条 + 结算后补读一条」。 */
+  private readonly stickerBoardFetchGate: StickerBoardFetchGate = new StickerBoardFetchGate();
   /**
    * STICKER-BOARD-102：`getTrendingStickerSets` 的原始回包，与已装盘同样为了「图到货后重装」。
    *
@@ -4026,6 +4029,19 @@ export class ChatCoordinator {
    * `EmojiMediaListController`（贴纸页铺 installed sets，点包名才开整包页）。
    */
   private handleFetchStickerBoard(): void {
+    if (!this.stickerBoardFetchGate.request()) {
+      return;
+    }
+    this.sendFetchStickerBoard();
+  }
+
+  /**
+   * 实际发一条 `getInstalledStickerSets`。
+   *
+   * 三条结算路径（请求建立即失败 / 回包 / 回包解析失败与 promise 抛错）都必须走
+   * `finishStickerBoardFetch`，否则门会永远卡在「在途」，之后每一次失效都被吞掉。
+   */
+  private sendFetchStickerBoard(): void {
     const req: GetInstalledStickerSets = new GetInstalledStickerSets();
     req.sticker_type = new StickerTypeRegular();
     const result: Result<TdPendingRequest, AppError> =
@@ -4033,6 +4049,7 @@ export class ChatCoordinator {
     if (result.err) {
       this.logger.logError(TAG, result.error);
       this.dispatch(new OnStickerBoardFailed(result.error.message));
+      this.finishStickerBoardFetch();
       return;
     }
     if (result.ok) {
@@ -4048,13 +4065,24 @@ export class ChatCoordinator {
           const sets: StickerSets | null = decodeStickerSets(res.value as TdJsonRaw);
           if (sets === null) {
             this.dispatch(new OnStickerBoardFailed('Failed to decode sticker sets'));
-            return;
+          } else {
+            this.stickerBoardSets = sets.sets;
+            this.logger.info(TAG, 'sticker_board_loaded', `rows=${sets.sets.length},total=${sets.total_count}`);
+            this.dispatch(new OnStickerBoardLoaded(this.mapStickerBoard()));
           }
-          this.stickerBoardSets = sets.sets;
-          this.logger.info(TAG, 'sticker_board_loaded', `rows=${sets.sets.length},total=${sets.total_count}`);
-          this.dispatch(new OnStickerBoardLoaded(this.mapStickerBoard()));
         }
-      }).catch(() => {});
+        this.finishStickerBoardFetch();
+      }).catch(() => {
+        this.finishStickerBoardFetch();
+      });
+    }
+  }
+
+  /** 一条在途读完了：若期间又被失效过就补读一次（`destroyed` 后只清门，不再发请求）。 */
+  private finishStickerBoardFetch(): void {
+    const rerun: boolean = this.stickerBoardFetchGate.settle();
+    if (rerun && !this.destroyed) {
+      this.handleFetchStickerBoard();
     }
   }
 

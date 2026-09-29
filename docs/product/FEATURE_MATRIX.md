@@ -969,7 +969,32 @@
 > 四条断言覆盖盘命中 / 热门行 true / 热门行 false / 哪儿都没见过）；四守卫 0 违规。
 > 遗留：① 弹层标题仍是占位的「贴纸包详情」—— 短名在本地已知里其实拿得到（`stickerSetShortNameOf`），但 title 属于
 > 回包字段，本轮没有顺手用本地值填它（种子只管布尔位，避免把「本地知道」扩大成「本地编造标题」）；
-> ② 装/卸一包盘被读两次（同上一行 ①）；③ 整包 406 未解（同上一行 ①，native 侧）。
+> ② 装/卸一包盘被读两次（同上一行 ①）；③ 整包 406 未解（同上一行 ①，native 侧）—— ② 已在下一行 STICKER-BOARD-104 结掉。
+
+> **2026-09-29（STICKER-BOARD-104，FEAT-P2-004 装/卸一包时盘不再被读两次，结掉上一行遗留 ②）**：
+> 上一条连续两轮记下「同一次装/卸，盘读两次」。本轮读码定案：**两条失效都是对的** ——
+> `changeStickerSet` 结算时 reducer 发一条 `FetchStickerBoard`（`ChatReducer.ets:1510`），
+> 而 BOARD-103 为自愈加的 `updateInstalledStickerSets` 订阅又发一条。关键在于 TDLib 的顺序：
+> `StickersManager.cpp:5337-5340` 是**先推送 update、再结算在途 promise**，所以两条几乎同刻到达
+> （改前设备截面：`15:40:40.437 sticker_installed_update rows=1` → `.449` 与 `.451` 两条 `sticker_board_loaded`，差 2 ms）。
+> **取舍是合并，不是裁掉任何一个来源**：订阅那条是权威信号（服务端知道而我们没做的事它也能叫醒我们），
+> reducer 那条是兜底（网关能力缺失、订阅建立晚于变更时只剩它）；删任一边都是把「装完看不到包」这种更坏的失败换回来。
+> 落地为 `model/StickerBoard.ets` 的纯 `StickerBoardFetchGate`：`request()` 决定这一条发不发（已在途则只登记「结算后补读」），
+> `settle()` 决定结算后补不补。协调器把 `handleFetchStickerBoard` 拆成「过门 → `sendFetchStickerBoard` → `finishStickerBoardFetch`」，
+> **三条结算路径（建请求即失败 / 回包 / 解析失败与 promise 抛错）全部要过 `settle`**，否则门永远卡在途、之后每次失效都被吞掉。
+> **补读那一步不能省**：在途那一条读到的可能正是 TDLib 应用变更之前的缓存，这是补读存在的唯一理由；
+> 代价是失败也算结算 —— 一条坏请求不会把门永久焊死。
+> 本轮**没有**给盘加 `isLoading` 之类的 reducer 状态：失效的排空属于「同刻的重复」，落在协调器比落在 UI 状态里更贴近成因，
+> 也不会污染 `StickerBoardState` 的语义。
+> 设备取证（127.0.0.1:5555，装一包→观察→卸载还原，`.hvigor/outputs/board104/`）：
+> 改后 `15:42:49.610 update rows=1` → `.615` **一条** `sticker_board_loaded`；
+> `15:43:08.922 update rows=0` → `.927` **一条**（同刻的 `.988` 是热门榜，不是重读盘）；账号已还原（热门行全部 `添加`，盘 `rows=0,total=0`）。
+> 测试：`feature_chat` **431/431**（门的三条纯用例：并发失效塌成一次补读、无并发时绝不多次读盘；
+> 协调器级 `boardInvalidation_whileReadInFlight_collapsesIntoOneTrailingRead` 钉住「一条在途 + 一条补读 + 第三次不许出现」并验证补读真的画上屏）。
+> **顺带纠正上一行的一处取证口径**：既有用例 `installFromTrendingRow…` 此前依赖「开板那条读盘从未被应答」，
+> 在门下会塌成一次 —— 已改为先结算再装包，它验的仍是「装完立刻重读」，合并交给新用例专门验。
+> 遗留：① **热门榜同形**（`getTrendingStickerSets` 那条链在装/卸后同样被读两次，本轮只收了盘）；
+> ② 整包 406 未解（native 侧，同上一行）；③ 弹层标题占位（有意不做，同上一行）。
 
 
 > **2026-09-26（STICKER-RECENT-101，FEAT-P2-004 表情板「最近使用」接真实数据，结掉 101 遗留 ② / 102 遗留 ③ / MSG-101 遗留 ③）**：
