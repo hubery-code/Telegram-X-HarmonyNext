@@ -181,7 +181,7 @@ import {
   SetPollAnswerEffect
 } from '../contract/ChatEffect';
 import { StickerSetPreviewState, StickerSetItem } from '../model/StickerSetPreviewState';
-import { StickerBoardState, stickerTrendingWithInstalled } from '../model/StickerBoard';
+import { StickerBoardState, stickerSetInstalledLocally, stickerTrendingWithInstalled } from '../model/StickerBoard';
 import { GifItem } from '../model/GifItem';
 import {
   PollComposerState,
@@ -1378,11 +1378,13 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
 
     case 'openStickerSet': {
       const openIntent: OpenStickerSet = intent as OpenStickerSet;
+      // STICKER-SHEET-104：种子按本地已知起 —— 整包详情正卡在 406 上，恒 false 等于
+      // 「盘里有的包，弹层说没装」。回包到达时（onStickerSetLoaded）仍会以 TDLib 为准覆盖。
       const initialPreview: StickerSetPreviewState = new StickerSetPreviewState(
         openIntent.setId,
         '',
         '',
-        false,
+        stickerSetInstalledLocally(state.stickerBoard, openIntent.setId),
         false,
         false,
         [],

@@ -1995,6 +1995,38 @@ export default function chatReducerTest() {
       expect(fetch.setId).assertEqual('12345');
     });
 
+    it('openStickerSet_seedsIsInstalledFromWhatTheClientAlreadyKnows', 0, () => {
+      // 弹层的安装态种子取自本地已知（盘 / 热门行的 is_installed）—— 整包详情正卡在 406，
+      // 恒 false 会画出「盘里有的包，弹层说没装」这句自相矛盾的话。
+      const loaded: ChatUiState = makeState('').copyWith({
+        stickerBoard: new StickerBoardState(
+          [makeBoardPack('21')],
+          false,
+          true,
+          null,
+          [makeTrendingRow('99', true), makeTrendingRow('77', false)],
+          true,
+          null,
+          false
+        )
+      });
+
+      // ① 已装盘命中 → 已装
+      const fromBoard: ChatUiState = chatReducer(loaded, new OpenStickerSet('21'), makeEnv()).state;
+      expect(fromBoard.stickerSetPreview?.isInstalled).assertTrue();
+      // ② 盘里没有、热门行说已装 → 已装（TDLib 在这个 DTO 上直接给的事实）
+      const fromTrending: ChatUiState = chatReducer(loaded, new OpenStickerSet('99'), makeEnv()).state;
+      expect(fromTrending.stickerSetPreview?.isInstalled).assertTrue();
+      // ③ 热门行说没装 → 没装（不是「本地查不到就当已装」那种反向猜测）
+      const notInstalled: ChatUiState = chatReducer(loaded, new OpenStickerSet('77'), makeEnv()).state;
+      expect(notInstalled.stickerSetPreview?.isInstalled).assertFalse();
+      // ④ 哪儿都没见过 → 只能是没装，但这是**种子**不是结论：
+      //    包数上限 8、无封面的包会被板卡跳过，所以真实态要等 onStickerSetLoaded 覆盖。
+      const unknownRes: ReducerResult<ChatUiState, ChatEffect> = chatReducer(loaded, new OpenStickerSet('12345'), makeEnv());
+      expect(unknownRes.state.stickerSetPreview?.isInstalled).assertFalse();
+      expect(unknownRes.effects[0].kind).assertEqual('fetchStickerSet');
+    });
+
 
     // --- STICKER-BOARD-101：贴纸页签装盘的四处语义 ---
 

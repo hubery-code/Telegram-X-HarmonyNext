@@ -484,6 +484,33 @@ export function stickerTrendingKey(row: StickerTrendingPack): string {
   return `${row.setId}_${row.coverPath === null ? '' : row.coverPath}_${row.isInstalled ? 1 : 0}`;
 }
 
+/**
+ * 这一包在**本地已有的知识**里是不是已装（STICKER-SHEET-104）。
+ *
+ * 为什么需要它：整包预览的 `isInstalled` 原先恒 false，而唯一的纠正机会是
+ * `getStickerSet` 的回包 —— 那一条正卡在 406 上（STICKER-FETCH-102），于是**已装的包**
+ * 弹层也写着「未安装 / 添加贴纸包」。盘里明明有这一包，界面却说没装，这是自相矛盾。
+ *
+ * 两个来源按可靠性排：已装盘（`getInstalledStickerSets`）命中即为已装；热门行的
+ * `is_installed` 是 TDLib 在这一个 DTO 上直接给的事实。都没有才算未装。
+ *
+ *  false 不是结论，只是种子：包数上限 8、且没有封面的包会被板卡跳过，所以「盘里没找到」
+ * 不等于「没装」。真正的答案仍要等 `onStickerSetLoaded` 覆盖（那条路径没动）。
+ */
+export function stickerSetInstalledLocally(board: StickerBoardState, setId: string): boolean {
+  for (let i = 0; i < board.packs.length; i++) {
+    if (board.packs[i].setId === setId) {
+      return true;
+    }
+  }
+  for (let i = 0; i < board.trending.length; i++) {
+    if (board.trending[i].setId === setId) {
+      return board.trending[i].isInstalled;
+    }
+  }
+  return false;
+}
+
 function thumbnailFileOf(thumbnail: Thumbnail | null): File | null {
   return thumbnail === null ? null : thumbnail.file;
 }

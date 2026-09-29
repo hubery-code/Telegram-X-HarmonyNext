@@ -949,6 +949,28 @@
 > 测试：`feature_chat` **427/427**（`StickerBoardFetch.test.ets` 17 → 19 条：空盘自愈 + 两道门控）；
 > `check_architecture` / `check_codegen` / `check_design_tokens` / `check_accessibility_labels` 0 违规。
 
+> **2026-09-29（STICKER-SHEET-104，FEAT-P2-004 贴纸包弹层的安装态种子，结掉上一行遗留 ②）**：
+> 上一行记下「已装包的弹层写着『未安装 / 添加贴纸包』，点一次才翻」，本轮读码定案它**不是晚到的回包问题，是种子问题**：
+> `openStickerSet`（`ChatReducer.ets:1379-1401`）建弹层时把 `isInstalled` 写死 `false`，唯一能纠正它的是
+> `onStickerSetLoaded` —— 而整包详情正卡在上一行的 406 上（`sticker_set_fetch_failed … reason=stickerSetInvalid`），
+> 于是**本地明知这一包已装、弹层却说没装**，按钮还写着「添加贴纸包」，点下去是一条幂等的 `changeStickerSet`。
+> **修法取「本地已知」而不是「再问一次」**：新增 `stickerSetInstalledLocally(board, setId)`，先查已装盘
+> （`getInstalledStickerSets` 的那些包），未命中再查热门行的 `is_installed`（TDLib 在这个 DTO 上直接给的事实），
+> 两边都没有才算未装。这条真值是有边界的并已写进注释：**false 只是种子不是结论** —— 板卡有 8 包上限、
+> 没有封面的包会被跳过，所以「盘里没找到」不等于「没装」；真正的答案仍等 `onStickerSetLoaded` 覆盖，
+> 那条路径一个字没动（`onStickerSetLoadFailed` 传的也是 `undefined`，406 之后种子不会被擦掉）。
+> 设备取证（127.0.0.1:5555，`.hvigor/outputs/sheet104/`，装一包→看弹层→立刻卸载，账号已还原）：
+> 装完 `Concerned Froge` 后盘 `15:17:02.477 sticker_installed_update rows=1` → `.481 rows=1,total=1`（上一行的自愈在装包方向同样成立），
+> 点热门行开弹层 → 同一弹层里**同时**显示 `已安装` 副标题、`移除贴纸包` 按钮，以及 `贴纸包加载失败，请稍后重试`
+> （`15:17:14 / 15:17:15` 两条 `sticker_set_fetch_failed`：`path=name` 与兜底 `path=id` 都 406）——
+> **取数失败不再把安装态一起拖错**，这是上一行 406 与本行种子两条的正交截面；改前的同一面是「未安装 / 添加贴纸包」。
+> 卸载方向 `15:17:26.829 sticker_installed_update rows=0` → `.851/.852` 两条 `rows=0` 重读（同一次装/卸仍读两次，遗留 ① 未变）。
+> 测试：`feature_chat` **428/428**（`ChatReducer.test.ets` 新增 `openStickerSet_seedsIsInstalledFromWhatTheClientAlreadyKnows`，
+> 四条断言覆盖盘命中 / 热门行 true / 热门行 false / 哪儿都没见过）；四守卫 0 违规。
+> 遗留：① 弹层标题仍是占位的「贴纸包详情」—— 短名在本地已知里其实拿得到（`stickerSetShortNameOf`），但 title 属于
+> 回包字段，本轮没有顺手用本地值填它（种子只管布尔位，避免把「本地知道」扩大成「本地编造标题」）；
+> ② 装/卸一包盘被读两次（同上一行 ①）；③ 整包 406 未解（同上一行 ①，native 侧）。
+
 
 > **2026-09-26（STICKER-RECENT-101，FEAT-P2-004 表情板「最近使用」接真实数据，结掉 101 遗留 ② / 102 遗留 ③ / MSG-101 遗留 ③）**：
 > 这一行从 101 起就是**假的** —— `DEFAULT_RECENT_STICKERS` 四包预设贴纸常驻，屏上永远看不出「这个账号刚才用过什么」，
