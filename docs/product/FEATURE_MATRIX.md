@@ -1228,10 +1228,8 @@
 > `List.test.ets` 我只补了 import、漏了在 `testsuite()` 里调用那一句，**整个新套件静默零执行**，
 > 而 `./hvigorw test` 照样 BUILD SUCCESSFUL。这是「BUILD SUCCESSFUL 不是证据，必须读
 > `coverage_data/test_result.txt`」这条口径的又一个实例，且这次是我自己踩的。
-> **遗留：① 设备 A/B 未拿到（本轮唯一缺口，如实记）** —— 模拟器 hdc 端口已死
-> （`127.0.0.1:5555 TCP Offline`、`lsof -iTCP:5555` 空、`hdc kill/start/tconn` 全 `[Fail]Connect failed`，
-> Emulator 进程仍在但日志循环「hdc is not connected」）；没有重启用户的模拟器（登录态在应用沙盒里，
-> 本仓禁止卸载/清数据），`entry-default-unsigned.hap` 已就绪。可核对清单：拨 off → 发一张 TGS，
+> **遗留：① 设备 A/B —— ⚠️ 2026-09-29 第三十八轮补拍已拿到**（上一行写「未拿到」时 hdc 端口确实死了；按主人授权重启 HVD 后取证，见下）。
+> 可核对清单：拨 off → 发一张 TGS，
 > 期望 `animation completed. playing 1 times` 且**零** `tgs_lap`；拨 on → 期望 `tgs_lap` 逐轮累加、
 > 零 `animation completed`（grep 不带 `-T` 的原始 `hilog -x`，否则 `AnimatedSticker` 那两条线会被过滤掉），
 > 收尾把开关拨回 on；
@@ -1239,6 +1237,24 @@
 > ③ Android 同一分区里的「不自动播放动效贴纸以外的项」（大号表情、动态表情包排序等）本端没有对应位，
 > 那几位留在掩码低位空着；④ 贴纸气泡至今没有 `.accessibilityText`（A11Y-101 漏项）；
 > ⑤ lottie 的 Release 构建链与全量 CI 仍未跑过。
+
+> **2026-09-29（第三十八轮，补上一行遗留 ① 的设备和 TGS-104 的 A/B）**：同一台（127.0.0.1:5555）、同一账号、只重装 HAP 不清数据，
+> 产物在 `.hvigor/outputs/tgs-104/`。**两档都取「force-stop 后重新挂载」的新态**，因为这一位按 Android 的语义是
+> `TGMessageSticker.java:121-130` 的**构造时读位** —— 正在演的那张贴纸不会因为勾动而改变，拿旧实例对拍只会得到两档一样的日志。
+> **开（默认档，`p5-loopon-raw.txt`）**：`7 条 tgs_mount` + `7 条 tgs_lap` + lottie 侧 `27 条 loopComplete`，**`animation completed` 零条**。
+> **关（`p3-loopoff-raw.txt`）**：`11 条 tgs_mount`、`14 条 animation completed. playing 1 times`，**`loopComplete` 与 `tgs_lap` 双零**。
+> 于是「勾上=一直演、取消=演一遍停末帧」这一整句在设备上第一次同框，`AnimatedSticker.loop` 由设置驱动这条注入路径也就此有了外部可观察证据。
+> **顺带证到持久化**：拨 off 后 `aa force-stop` 再启动，副标题与播放行为都仍是「播一次」—— 整数键跨进程读盘确实生效。
+> **UI 面**：设置主页能看到 `STICKERS AND EMOJI` 分组与 `Loop Animated Stickers` 一行（`Toggle` bounds `[1026,562][1152,632]`），
+> 副标题随勾动在 `Animated stickers keep playing.` / `Animated stickers play once and stop.` 之间翻面
+> （`p2-row-on.png` / `p2-row-off.png` / `p4-row-on.png`）。
+> **用户设置与账号状态已还原**：收尾拨回 on（`p4-restored-on.json`），全程未向任何群 / 频道发送任何东西。
+> **两条环境事实值得记**：① 上一轮那台僵住的 HVD 重启后能连但约 5 分钟必崩客机 —— `kernel.log` 是
+> `Kernel panic - not syncing: sysrq triggered crash`（uptime 291 s），`crash_server.log` 走完 `FreezeCrash → WriteMinidump →
+> KillEmulator`，产物 `crash_report-2026-09-29T180322.zip`；应用触发不了 sysrq，这归为宿主 / HVD 不稳定，不是本包缺陷。
+> ② `uitest uiInput click` 在这台 HVD 上会**静默失效**：屏幕熄灭或华为屏幕朗读（`com.huawei.hmos.screenreader`）在跑时，
+> 命令一律回 `No Error` 而 layout 一字不变 —— 先 `power-shell wakeup` + `aa force-stop com.huawei.hmos.screenreader`，
+> 且只能靠重打 `dumpLayout` 比对判断点没点动，不能信 uiInput 的返回值。
 
 
 > **2026-09-26（CHAT-HIST-101，上一行遗留 ②「冷启动首屏历史空窗」）**：结掉 TGS-102 顺带发现的那条 —— 进程刚起来时进会话可能一行消息都没有，且**永远不自愈**。
