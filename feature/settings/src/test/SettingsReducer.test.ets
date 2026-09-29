@@ -79,6 +79,9 @@ import {
   DownloadLimitsLoaded,
   SetDownloadLimitSize,
   SetDownloadLimitExclusion,
+  LoadStickerSettings,
+  StickerSettingsLoaded,
+  SetStickerLoopEnabled,
   UserProfileData
 } from '../main/ets/contract/SettingsIntent';
 import {
@@ -108,7 +111,9 @@ import {
   LoadDataSaverSettingsEffect,
   PersistDataSaverSettingsEffect,
   LoadDownloadLimitsEffect,
-  PersistDownloadLimitsEffect
+  PersistDownloadLimitsEffect,
+  LoadStickerSettingsEffect,
+  PersistStickerSettingsEffect
 } from '../main/ets/contract/SettingsEffect';
 import {
   AutoDownloadFlags,
@@ -121,7 +126,9 @@ import {
   DOWNLOAD_LIMIT_50MB,
   DOWNLOAD_LIMIT_NONE,
   DownloadLimitsByNetwork,
-  NetworkDownloadLimits
+  NetworkDownloadLimits,
+  StickerSettings,
+  stickerLoopEnabled
 } from '@tgx/core-domain';
 import { ActiveSessionItem } from '../main/ets/model/ActiveSessionItem';
 import { PrivacySettingItem, PrivacySettingKey, privacyRowLabel } from '../main/ets/model/PrivacySettings';
@@ -364,6 +371,13 @@ function downloadLimitsState(limits: DownloadLimitsByNetwork | null): SettingsUi
   return SettingsUiState.initial().copyWith({
     showAutoDownloadPage: true,
     downloadLimits: limits
+  });
+}
+
+/** TGS-104：已经读到盘上贴纸设置的起始态（卡片直接挂在设置主页，不占子页）。 */
+function stickerSettingsState(settings: StickerSettings | null): SettingsUiState {
+  return SettingsUiState.initial().copyWith({
+    stickerSettings: settings
   });
 }
 
@@ -2284,6 +2298,77 @@ export default function settingsReducerTest(): void {
 
       expect(result.state.showAutoDownloadPage).assertFalse();
       expect(result.state.downloadLimits !== null).assertTrue();
+    });
+
+    // ---- TGS-104 「贴纸与表情」：循环播放动态贴纸 ----
+
+    it('initialState_hasNoStickerSettingsLoaded', 0, () => {
+      // null = 「还没读盘」；页面按 Android 默认档显「开」，但状态里不能塞一份猜的。
+      expect(SettingsUiState.initial().stickerSettings === null).assertTrue();
+    });
+
+    it('loadStickerSettings_emitsEffectWithoutTouchingState', 0, () => {
+      const state = stickerSettingsState(null);
+      const result = settingsReducer(state, new LoadStickerSettings(), makeEnv());
+
+      expect(result.state === state).assertTrue();
+      expect(result.effects.length).assertEqual(1);
+      expect((result.effects[0] as LoadStickerSettingsEffect).kind).assertEqual('loadStickerSettings');
+    });
+
+    it('stickerSettingsLoaded_storesSettingsAndClearsError', 0, () => {
+      const state = SettingsUiState.initial().copyWith({ errorMessage: 'boom' });
+      const settings: StickerSettings = StickerSettings.fromMask(8);
+      const result = settingsReducer(state, new StickerSettingsLoaded(settings), makeEnv());
+
+      expect(result.state.stickerSettings === settings).assertTrue();
+      expect(result.state.errorMessage).assertNull();
+      expect(result.effects.length).assertEqual(0);
+    });
+
+    it('setStickerLoopEnabled_persistsWithTheNegativeBit', 0, () => {
+      // 关掉循环 = 落盘掩码里那位**亮着**（Android 存的是「不循环」）。
+      const state = stickerSettingsState(StickerSettings.defaultSettings());
+      const result = settingsReducer(state, new SetStickerLoopEnabled(false), makeEnv());
+
+      expect(result.effects.length).assertEqual(1);
+      const persisted: StickerSettings = (result.effects[0] as PersistStickerSettingsEffect).settings;
+      expect(persisted.loopAnimatedStickers).assertFalse();
+      expect(persisted.toMask()).assertEqual(8);
+      expect(stickerLoopEnabled(result.state.stickerSettings)).assertFalse();
+    });
+
+    it('setStickerLoopEnabled_withoutLoadedSettings_doesNotWrite', 0, () => {
+      // 还没读盘就写会用默认档盖掉盘上用户已有的偏好（同 setDataSaverFlag）。
+      const state = stickerSettingsState(null);
+      const result = settingsReducer(state, new SetStickerLoopEnabled(false), makeEnv());
+
+      expect(result.effects.length).assertEqual(0);
+      expect(result.state === state).assertTrue();
+    });
+
+    it('setStickerLoopEnabled_sameValue_isNoop', 0, () => {
+      // Toggle 挂载时会回调一次初值；同值不该产生一次落盘。
+      const loaded: StickerSettings = StickerSettings.fromMask(8);
+      const state = stickerSettingsState(loaded);
+      const result = settingsReducer(state, new SetStickerLoopEnabled(false), makeEnv());
+
+      expect(result.effects.length).assertEqual(0);
+      expect(result.state.stickerSettings === loaded).assertTrue();
+    });
+
+    it('stickerSettings_doesNotClobberOtherLocalSettings', 0, () => {
+      const state = SettingsUiState.initial().copyWith({
+        autoDownloadPolicy: AutoDownloadPolicy.defaultPolicy(),
+        dataSaverSettings: DataSaverSettings.defaultSettings(),
+        downloadLimits: DownloadLimitsByNetwork.defaultLimits(),
+        stickerSettings: StickerSettings.defaultSettings()
+      });
+      const result = settingsReducer(state, new SetStickerLoopEnabled(false), makeEnv());
+
+      expect(result.state.autoDownloadPolicy === state.autoDownloadPolicy).assertTrue();
+      expect(result.state.dataSaverSettings === state.dataSaverSettings).assertTrue();
+      expect(result.state.downloadLimits === state.downloadLimits).assertTrue();
     });
   });
 }

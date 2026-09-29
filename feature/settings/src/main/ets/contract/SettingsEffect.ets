@@ -12,7 +12,13 @@ import { NotificationScopeKey } from '../model/NotificationSettings';
 import { PrivacySettingKey } from '../model/PrivacySettings';
 import { TdUserPrivacySettingRule } from '@tgx/core-td-api-generated';
 import { ProxyForm } from '../model/ProxySettings';
-import { AutoDownloadPolicy, AutoLockChoice, DataSaverSettings, DownloadLimitsByNetwork } from '@tgx/core-domain';
+import {
+  AutoDownloadPolicy,
+  AutoLockChoice,
+  DataSaverSettings,
+  DownloadLimitsByNetwork,
+  StickerSettings
+} from '@tgx/core-domain';
 
 export class LoadProfileEffect implements Effect {
   readonly kind: 'loadProfile' = 'loadProfile';
@@ -254,6 +260,24 @@ export class PersistDownloadLimitsEffect implements Effect {
 }
 
 /**
+ * TGS-104：读/写「贴纸与表情」设置（本地偏好，同步返回）。
+ * 第四份独立设置：与自动下载策略、省流量、网络档限制各自一个偏好键、各自读盘、各自回滚。
+ */
+export class LoadStickerSettingsEffect implements Effect {
+  readonly kind: 'loadStickerSettings' = 'loadStickerSettings';
+}
+
+/** TGS-104：写回贴纸设置（勾一次即落盘）。 */
+export class PersistStickerSettingsEffect implements Effect {
+  readonly kind: 'persistStickerSettings' = 'persistStickerSettings';
+  readonly settings: StickerSettings;
+
+  constructor(settings: StickerSettings) {
+    this.settings = settings;
+  }
+}
+
+/**
  * APPLOCK-101 — 应用锁副作用。
  *
  * 三条带 `pin` 的 effect 与 `PasscodeSubmitted` 同理：PIN 只在「reducer → coordinator →
@@ -357,6 +381,8 @@ export type SettingsEffect =
   | PersistDataSaverSettingsEffect
   | LoadDownloadLimitsEffect
   | PersistDownloadLimitsEffect
+  | LoadStickerSettingsEffect
+  | PersistStickerSettingsEffect
   | LoadPasscodeStateEffect
   | StorePasscodeDraftEffect
   | CommitPasscodeEffect

@@ -438,6 +438,16 @@ export struct ChatPage {
    */
   tgsDecoder: TgsDecoderPort | null = null;
 
+  /**
+   * TGS-104：「循环播放动态贴纸」的读取口，由 entry 装配层注入（同一份偏好数据源）。
+   *
+   * 这里只给一个「建这一档时问一次」的函数，不给 @Prop 状态：Android 的
+   * `TGMessageSticker` 也是在构造时读 `SETTING_FLAG_NO_ANIMATED_STICKERS_LOOP`，
+   * 所以设置页刚勾完不会让屏幕上正在演的那张立刻停下，下一张贴纸才按新值走。
+   * 默认恒为 `true`（没接装配层 = 按 Android 默认档循环播）。
+   */
+  stickerLoopProvider: () => boolean = (): boolean => true;
+
   private dataSource: MessageListDataSource = new MessageListDataSource();
   private scroller: Scroller = new Scroller();
   private shownMessages: readonly MessageItem[] = [];
@@ -1849,6 +1859,14 @@ export struct ChatPage {
   }
 
   /**
+   * TGS-104：这一档贴纸该不该循环。走装配层注入的读取口（读缓存，零 IO），
+   * 建气泡时现算 —— 与 Android 一致，改设置只影响之后挂上来的贴纸。
+   */
+  private stickerLoopOn(): boolean {
+    return this.stickerLoopProvider();
+  }
+
+  /**
    * 贴纸渲染（STICKER-101 / STICKER-MSG-101 / TGS-101）：对齐 Telegram X 标准，无气泡框透明渲染，
    * 右下角半透明胶囊时间戳。
    *
@@ -1866,7 +1884,8 @@ export struct ChatPage {
           fallbackUri: media.thumbnailPath === null ? null : toSandboxUri(media.thumbnailPath),
           // TGS-102：按消息 id 记播放头。行重建（sendState / isRead / 进度都要参与签名，
           // 见 messageRowKey）会把实例连着画布一起换掉，不续上就永远停在开头。
-          playbackKey: `${item.messageId}`
+          playbackKey: `${item.messageId}`,
+          loop: this.stickerLoopOn()
         })
           .width('100%')
           .height('100%')
@@ -1876,7 +1895,7 @@ export struct ChatPage {
           previewUri: toSandboxUri(media.thumbnailPath)
         })
           .autoPlay(true)
-          .loop(true)
+          .loop(this.stickerLoopOn())
           .controls(false)
           .muted(true)
           .objectFit(ImageFit.Contain)

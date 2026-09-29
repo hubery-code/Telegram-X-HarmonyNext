@@ -1,5 +1,5 @@
 /**
- * feature/chat — 动效贴纸（TGS/Lottie）的画布宿主（TGS-101 / TGS-102 / TGS-103）。
+ * feature/chat — 动效贴纸（TGS/Lottie）的画布宿主（TGS-101 / TGS-102 / TGS-103 / TGS-104）。
  *
  * 只做三件事：把 `.tgs` 交给注入的解码口换成 Lottie JSON 文本 → 在 `Canvas` 上挂一个
  * lottie 实例 → 组件销毁时把这个实例摘掉。「这条贴纸算不算动效」不在这里，
@@ -18,8 +18,9 @@
  *    从头演就等于「发消息那几百毫秒里永远停在开头」。账本给两种走法：
  *    首演 `autoplay: true`；续播 `autoplay: false` + `goToAndPlay(frame)`。
  *    帧号一律取账本里记着的实际推进值，不去猜 `totalFrames`（各档贴纸的 first/last 帧不保证是 0/N-1）。
- * 6. **循环播**（TGS-103）：对齐 Android 默认口径，贴纸不是一次性动画。于是也就没有
- *    「演完停在末帧」这一档 —— 账本里那条 `finished` 随之删除，`complete` 不再监听。
+ * 6. **循环与否由 `loop` 入参决定**（TGS-103 定默认档、TGS-104 把它做成设置项）：默认循环，
+ *    对齐 Android；关掉时贴纸演一遍停在末帧。于是也就没有「演完记一笔」这一档 ——
+ *    账本里那条 `finished` 随之删除，`complete` 不再监听。
  *
  * 一个组件一个 lottie 实例，实例名用进程内自增序号（`lottie.destroy(name)` 按名释放，
  * 重名会互相踢掉）；`aboutToDisappear` 里必须释放，否则 LazyForEach 回收气泡后
@@ -50,6 +51,12 @@ export struct AnimatedSticker {
   fallbackUri: string | null = null;
   /** 播放账本的 key（消息 id 的字符串形式）；空则不记账、每次首演。 */
   playbackKey: string | null = null;
+  /**
+   * 是否循环播（TGS-104）。由气泡在建这一档时从设置里取一次，**不是可观察状态**：
+   * 与 Android 同口径 —— `TGMessageSticker` 也是在构造时读 `SETTING_FLAG_NO_ANIMATED_STICKERS_LOOP`，
+   * 设置页刚勾完不会让屏幕上正在演的那张立刻改速或停下，下一张挂上来的才按新值走。
+   */
+  loop: boolean = true;
   /** 动画是否已经挂上；决定缩略图还在不在屏幕上。 */
   @State private animated: boolean = false;
   /** 第一圈的取证日志只落一次。 */
@@ -125,10 +132,10 @@ export struct AnimatedSticker {
     this.item = lottie.loadAnimation({
       container: this.ctx,
       renderer: 'canvas',
-      // TGS-103：循环播。这是 Android 的默认口径（`TGMessageSticker.java:121-130` 的
-      // `setPlayOnce(...)` 在「不循环」设置项关闭且不是骰子/动效 emoji 时恒为 false）。
-      // 之前这里写死 `false`，观感差在**贴纸演一遍就停在末帧不动**，而真机上的 Telegram X 一直在动。
-      loop: true,
+      // TGS-103 / TGS-104：是否循环由「设置 → 贴纸与表情 → 循环播放动态贴纸」决定。
+      // 默认档对齐 Android（`TGMessageSticker.java:121-130`：`setPlayOnce(...)` 在
+      // 「不循环」位关闭且不是骰子/动效 emoji 时恒为 false）。
+      loop: this.loop,
       // 首演交给 autoplay 起步；续播要先落位再走，交给 autoplay 会先闪一帧 0 号帧。
       autoplay: plan.mode === 'first',
       autoSkip: false,

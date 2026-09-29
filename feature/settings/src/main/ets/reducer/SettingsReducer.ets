@@ -118,7 +118,9 @@ import {
   SetDataSaverFlag,
   DownloadLimitsLoaded,
   SetDownloadLimitSize,
-  SetDownloadLimitExclusion
+  SetDownloadLimitExclusion,
+  StickerSettingsLoaded,
+  SetStickerLoopEnabled
 } from '../contract/SettingsIntent';
 import {
   ClearCacheEffect,
@@ -150,7 +152,9 @@ import {
   LoadDataSaverSettingsEffect,
   PersistDataSaverSettingsEffect,
   LoadDownloadLimitsEffect,
-  PersistDownloadLimitsEffect
+  PersistDownloadLimitsEffect,
+  LoadStickerSettingsEffect,
+  PersistStickerSettingsEffect
 } from '../contract/SettingsEffect';
 import { TdUserPrivacySettingRule } from '@tgx/core-td-api-generated';
 import { NotificationScopeKey } from '../model/NotificationSettings';
@@ -188,7 +192,8 @@ import {
   AutoDownloadPolicy,
   DataSaverSettings,
   DownloadLimitsByNetwork,
-  NetworkDownloadLimits
+  NetworkDownloadLimits,
+  StickerSettings
 } from '@tgx/core-domain';
 
 function notificationScopeEnabled(state: SettingsUiState, scope: NotificationScopeKey): boolean {
@@ -1289,6 +1294,43 @@ export const settingsReducer: Reducer<SettingsUiState, SettingsIntent, SettingsE
         errorMessage: null
       };
       return reduced(state.copyWith(options), [new PersistDownloadLimitsEffect(next)]);
+    }
+
+    // ---- TGS-104 「贴纸与表情」----
+    // 第四份本地设置：同一套「读盘 → 改即写回 → 以存储返回值回灌」。
+    // 与省流量那一份的差别只在这一位在 Android 是**否定位**（存的是「不循环」），
+    // 反转收在 `StickerSettings.toMask()` 一处，reducer 与页面只见肯定语义。
+
+    case 'loadStickerSettings': {
+      return reduced(state, [new LoadStickerSettingsEffect()]);
+    }
+
+    case 'stickerSettingsLoaded': {
+      const loadedIntent: StickerSettingsLoaded = intent as StickerSettingsLoaded;
+      const options: SettingsUiStateOptions = {
+        stickerSettings: loadedIntent.settings,
+        errorMessage: null
+      };
+      return reduced(state.copyWith(options));
+    }
+
+    case 'setStickerLoopEnabled': {
+      const loopIntent: SetStickerLoopEnabled = intent as SetStickerLoopEnabled;
+      const settings: StickerSettings | null = state.stickerSettings;
+      // 没读到盘就不写：否则会用默认值盖掉用户已有的偏好（同 setDataSaverFlag）。
+      if (settings === null) {
+        return reduced(state);
+      }
+      if (settings.loopAnimatedStickers === loopIntent.enabled) {
+        // Toggle 挂载时会回调一次初值，同值不算变更、不该落盘。
+        return reduced(state);
+      }
+      const next: StickerSettings = settings.withLoopEnabled(loopIntent.enabled);
+      const options: SettingsUiStateOptions = {
+        stickerSettings: next,
+        errorMessage: null
+      };
+      return reduced(state.copyWith(options), [new PersistStickerSettingsEffect(next)]);
     }
 
 

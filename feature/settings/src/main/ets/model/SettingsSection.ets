@@ -16,11 +16,11 @@ export type SettingsSectionKey = 'all' | 'notifications' | 'data_and_storage';
 /** 分区页内渲染的卡片块。 */
 export type SettingsCardKey =
   | 'profile' | 'notifications' | 'devices' | 'privacy' | 'storage' | 'auto_download' | 'proxy'
-  | 'appearance' | 'language' | 'about' | 'logout';
+  | 'appearance' | 'language' | 'about' | 'logout' | 'stickers';
 
 const ALL_CARDS: SettingsCardKey[] = [
   'profile', 'notifications', 'devices', 'privacy', 'storage', 'auto_download', 'proxy',
-  'appearance', 'language', 'about', 'logout'
+  'stickers', 'appearance', 'language', 'about', 'logout'
 ];
 
 const NOTIFICATIONS_CARDS: SettingsCardKey[] = ['notifications'];

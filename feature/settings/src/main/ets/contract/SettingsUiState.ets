@@ -16,7 +16,7 @@ import { SettingsSectionKey } from '../model/SettingsSection';
 import { PrivacySettingItem, PrivacySettingKey } from '../model/PrivacySettings';
 import { PrivacyDetailState } from '../model/PrivacyDetail';
 import { ProxyItem, ProxyConnectionState } from '../model/ProxySettings';
-import { AutoDownloadPolicy, DataSaverSettings, DownloadLimitsByNetwork } from '@tgx/core-domain';
+import { AutoDownloadPolicy, DataSaverSettings, DownloadLimitsByNetwork, StickerSettings } from '@tgx/core-domain';
 import { AutoLockChoice, PasscodeFlowStage, AUTO_LOCK_DEFAULT } from '@tgx/core-domain';
 
 export type SettingsThemeMode = ThemePreference;
@@ -119,6 +119,10 @@ export interface SettingsUiStateOptions {
    * 「是否展示详情页」不再单独立一个标志位 —— 这个字段非空即打开，避免两处真相。
    */
   readonly privacyDetail?: PrivacyDetailState | null;
+  /**
+   * TGS-104：贴纸与表情设置；null 表示还没读盘（此时开关按 Android 默认档显示 = 循环）。
+   */
+  readonly stickerSettings?: StickerSettings | null;
 }
 
 export class SettingsUiState implements UiState {
@@ -205,6 +209,8 @@ export class SettingsUiState implements UiState {
   readonly passcodeVisible: boolean;
   /** PRIVACY-101：隐私项详情页状态；null 表示未打开。 */
   readonly privacyDetail: PrivacyDetailState | null;
+  /** TGS-104：贴纸与表情设置；null 表示尚未读盘。 */
+  readonly stickerSettings: StickerSettings | null;
 
   constructor(
     userId: number,
@@ -258,7 +264,8 @@ export class SettingsUiState implements UiState {
     isUpdatingPasscode: boolean = false,
     passcodeNotice: string | null = null,
     passcodeVisible: boolean = false,
-    privacyDetail: PrivacyDetailState | null = null
+    privacyDetail: PrivacyDetailState | null = null,
+    stickerSettings: StickerSettings | null = null
   ) {
     this.userId = userId;
     this.displayName = displayName;
@@ -312,6 +319,7 @@ export class SettingsUiState implements UiState {
     this.passcodeNotice = passcodeNotice;
     this.passcodeVisible = passcodeVisible;
     this.privacyDetail = privacyDetail;
+    this.stickerSettings = stickerSettings;
   }
 
   static initial(
@@ -419,7 +427,8 @@ export class SettingsUiState implements UiState {
       options.passcodeNotice !== undefined ? options.passcodeNotice : this.passcodeNotice,
       options.passcodeVisible !== undefined ? options.passcodeVisible : this.passcodeVisible,
       // null 是「关掉详情页」的合法赋值，undefined 才表示「保持原值」。
-      options.privacyDetail !== undefined ? options.privacyDetail : this.privacyDetail
+      options.privacyDetail !== undefined ? options.privacyDetail : this.privacyDetail,
+      options.stickerSettings !== undefined ? options.stickerSettings : this.stickerSettings
     );
   }
 }

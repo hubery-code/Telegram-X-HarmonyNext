@@ -1188,9 +1188,57 @@
 > 测试：`feature_chat` **436 条全绿**（`StickerPlayback.test.ets` 随之重写：`finished` 相关两条删除，
 > 新增「绕完一圈的帧号照样续播」「每帧都在推进播放头」），`check_architecture` / `check_codegen` 0 违规。
 > 遗留：① **Android 那条「动效贴纸不循环」开关（`SETTING_FLAG_NO_ANIMATED_STICKERS_LOOP`）本端没有** ——
-> 它需要一个「贴纸与表情」设置分区当落点，不是这一行能顺手带的，已登记为新候选；
+> 它需要一个「贴纸与表情」设置分区当落点，不是这一行能顺手带的，已登记为新候选；**⚠️ 2026-09-29 由 TGS-104 落地，见下一行**；
 > ② 板卡格与预览页格仍静帧（TGS-101 的有意范围）；③ 视频贴纸与 `.webm` 仍走静帧；
 > ④ lottie 的 Release 构建链与全量 CI 仍未跑过。
+
+> **2026-09-29（TGS-104，FEAT-P2-004 「贴纸与表情」分区与循环播放开关）**：拆的是上一行遗留 ①，
+> 也就是第三十六轮候选 ⑭。**一半工作量不在那个勾选上**：Android 把它放在
+> `SettingsStickersAndEmojiController.java:200`（`R.string.LoopAnimatedStickers` + `setBoolValue(true)` ⇒ 勾选 = 循环），
+> 父入口行 `SettingsController.java:642` 排在 Privacy 与 Theme 之间，而本端**连这个分区都不存在** ——
+> 所以先建分区（`SettingsSection` 的 `SettingsCardKey` 加 `'stickers'`、`ALL_CARDS` 11 → 12，排在代理之后、外观之前），
+> 再挂那一行。**位的语义照抄 Android，不做「更合理」的重排**：`unsorted/Settings.java:411` 那位是**否定位**
+> （`SETTING_FLAG_NO_ANIMATED_STICKERS_LOOP = 1 << 3`，亮着 = **不**循环，默认不勾 ⇒ 默认循环）。
+> 本端字段存肯定语义 `loopAnimatedStickers`，**取反只发生在 `toMask()/fromMask()` 这一条边界**，
+> 于是 reducer、UI、聊天侧三层都只见「循不循环」，永远看不到那个反转。
+> 位值沿用 `1 << 3`，低三位（本端没有的设置）**刻意留空不回填** —— 空位比自造位更容易和上游对齐，
+> 将来并「大号表情」之类不必重新解释已落盘的整数。
+> **一、`stickerLoopEnabled(null) === true` 是这一包最要紧的一行**：读盘失败 / 还没读到时必须回落
+> **Android 的默认档**（循环），而不是「位为 0 ⇒ 那位没勾 ⇒ 不循环」这种看起来等价的反面。
+> 反面的后果是「设置页说开着、屏幕上贴纸却停在末帧」——一个用户无法自证、日志也无法归因的错。
+> 同样按这条口径写了用例（`treats_missing_settings_as_android_default`）。
+> **二、消费侧刻意不用 `@Prop`，用 `() => boolean`**：Android 的读点在 **view 构造时**
+> （`TGMessageSticker.java:121-130` 把 `Settings.instance().getNewSetting(...)` 塞进 `setPlayOnce(...)`），
+> 所以「刚勾完就把正在演的那张停下」不是 Android 的行为。本端 `ChatPage.stickerLoopProvider`
+> 是 entry 注入的普通函数，`AnimatedSticker.loop` 是普通入参、不进状态观察，
+> 于是新值只作用于**下一张挂上的贴纸**，与 Android 逐字一致。
+> 读取走 `PreferencesStickerSettingsStore.current()` 的按账号缓存（只回缓存、账号切换才重读一次盘），
+> 因为会话里每张贴纸挂动画前都要问一次 —— 这里不能有 IO。
+> **三、范围按读码收在贴纸气泡的两档**（`tgs` Lottie + 视频贴纸）：同一个位的另一个读点是
+> `GifFile.java:246` 的无参 `setPlayOnce()`，它的全部调用者是 `MediaPreviewSimple.java:101,181,226` 与
+> `TGStickerObj.java:251` —— **普通 GIF 消息气泡不经过它**，媒体查看器也不在 `TGMessageSticker` 那条链上。
+> 所以 GIF 气泡、查看器、`Swiper` 的 `.loop(...)` 一律不动，查看器依旧是文档里的非目标。
+> **四、无障碍守卫决定这张卡的形状**：卡里放着 `Toggle`，所以**没有** `.accessibilityGroup(true)` ——
+> 分组会把后代并进一个无障碍元素，`Toggle` 从此走不到（R4）。测试收口在 `feature_settings` 的分区用例：
+> 贴纸与表情是 Android 的独立分区，**不并入数据与存储**。
+> 测试：`core_domain` **191/191**（新增 8 条，见 `StickerSettings.test.ets`）、
+> `feature_settings` **342/342**（reducer 7 条新用例 + 分区 12 张卡）、`feature_chat` **436/436**，合计 **969 条全绿**；
+> `check_architecture` / `check_codegen` / `check_accessibility_labels` 全绿。
+> **一条近失值得记**：首轮 `core_domain` 报 183 条、日志里没有 `class=StickerSettings` ——
+> `List.test.ets` 我只补了 import、漏了在 `testsuite()` 里调用那一句，**整个新套件静默零执行**，
+> 而 `./hvigorw test` 照样 BUILD SUCCESSFUL。这是「BUILD SUCCESSFUL 不是证据，必须读
+> `coverage_data/test_result.txt`」这条口径的又一个实例，且这次是我自己踩的。
+> **遗留：① 设备 A/B 未拿到（本轮唯一缺口，如实记）** —— 模拟器 hdc 端口已死
+> （`127.0.0.1:5555 TCP Offline`、`lsof -iTCP:5555` 空、`hdc kill/start/tconn` 全 `[Fail]Connect failed`，
+> Emulator 进程仍在但日志循环「hdc is not connected」）；没有重启用户的模拟器（登录态在应用沙盒里，
+> 本仓禁止卸载/清数据），`entry-default-unsigned.hap` 已就绪。可核对清单：拨 off → 发一张 TGS，
+> 期望 `animation completed. playing 1 times` 且**零** `tgs_lap`；拨 on → 期望 `tgs_lap` 逐轮累加、
+> 零 `animation completed`（grep 不带 `-T` 的原始 `hilog -x`，否则 `AnimatedSticker` 那两条线会被过滤掉），
+> 收尾把开关拨回 on；
+> ② 弹层/大图（`MediaPreviewSimple` 那三个读点）不在本包范围，本端查看器对贴纸的语义本就与 Android 不同；
+> ③ Android 同一分区里的「不自动播放动效贴纸以外的项」（大号表情、动态表情包排序等）本端没有对应位，
+> 那几位留在掩码低位空着；④ 贴纸气泡至今没有 `.accessibilityText`（A11Y-101 漏项）；
+> ⑤ lottie 的 Release 构建链与全量 CI 仍未跑过。
 
 
 > **2026-09-26（CHAT-HIST-101，上一行遗留 ②「冷启动首屏历史空窗」）**：结掉 TGS-102 顺带发现的那条 —— 进程刚起来时进会话可能一行消息都没有，且**永远不自愈**。

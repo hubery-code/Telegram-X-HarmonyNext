@@ -23,7 +23,8 @@ import {
   AutoLockChoice,
   DataSaverNetworkType,
   DataSaverSettings,
-  DownloadLimitsByNetwork
+  DownloadLimitsByNetwork,
+  StickerSettings
 } from '@tgx/core-domain';
 
 export interface UserProfileData {
@@ -721,6 +722,44 @@ export class SetDownloadLimitExclusion implements Intent {
 }
 
 /**
+ * TGS-104 — 「贴纸与表情」设置。
+ *
+ * 落点是 TGX 主设置页里那条「Stickers and Emoji」（`SettingsController.java:642`），
+ * 页内目前只有真能生效的一行：动效贴纸是否循环播
+ * （Android `SettingsStickersAndEmojiController.java:200` 的 `LoopAnimatedStickers`）。
+ * 读盘与省流量、自动下载策略各自独立：三份设置在三个偏好键里，各自失败各自回滚。
+ */
+
+/** 读贴纸设置。卡片就挂在设置主页上，进页即读，首帧不能显一个猜出来的档位。 */
+export class LoadStickerSettings implements Intent {
+  readonly kind: 'loadStickerSettings' = 'loadStickerSettings';
+}
+
+/** 贴纸设置读取完成；写回后同样以该意图回灌，界面恒以存储返回值为准。 */
+export class StickerSettingsLoaded implements Intent {
+  readonly kind: 'stickerSettingsLoaded' = 'stickerSettingsLoaded';
+  readonly settings: StickerSettings;
+
+  constructor(settings: StickerSettings) {
+    this.settings = settings;
+  }
+}
+
+/**
+ * 改「循环播放动效贴纸」。
+ * 带的是肯定语义（勾上=循环），否定位只在 `StickerSettings.toMask()` 里出现一次，
+ * 免得页面也跟着记一遍这个反转。
+ */
+export class SetStickerLoopEnabled implements Intent {
+  readonly kind: 'setStickerLoopEnabled' = 'setStickerLoopEnabled';
+  readonly enabled: boolean;
+
+  constructor(enabled: boolean) {
+    this.enabled = enabled;
+  }
+}
+
+/**
  * APPLOCK-101 — 应用锁（Passcode）意图。
  *
  * `PasscodeSubmitted` 是这里唯一带用户输入的一条：PIN 只作为**一次事件**的载荷穿过
@@ -941,6 +980,9 @@ export type SettingsIntent =
   | DownloadLimitsLoaded
   | SetDownloadLimitSize
   | SetDownloadLimitExclusion
+  | LoadStickerSettings
+  | StickerSettingsLoaded
+  | SetStickerLoopEnabled
   | OpenPasscodePage
   | ClosePasscodePage
   | LoadPasscodeState

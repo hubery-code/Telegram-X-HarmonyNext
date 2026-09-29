@@ -59,12 +59,16 @@ export default function settingsSectionTest(): void {
     });
 
     it('cards_allSectionShowsEveryBlock', 0, () => {
-      expect(settingsCardsForSection('all').length).assertEqual(11);
+      expect(settingsCardsForSection('all').length).assertEqual(12);
       expect(sectionShowsCard('all', 'logout')).assertTrue();
       // SELF-102：隐私行只在完整设置页出现，不单独成区（落点是整屏子页）。
       expect(sectionShowsCard('all', 'privacy')).assertTrue();
       expect(sectionShowsCard('notifications', 'privacy')).assertFalse();
       expect(sectionShowsCard('data_and_storage', 'privacy')).assertFalse();
+      // TGS-104：贴纸与表情同理 —— 它是 Android 的一个独立分区，不并入数据与存储。
+      expect(sectionShowsCard('all', 'stickers')).assertTrue();
+      expect(sectionShowsCard('notifications', 'stickers')).assertFalse();
+      expect(sectionShowsCard('data_and_storage', 'stickers')).assertFalse();
     });
   });
 }

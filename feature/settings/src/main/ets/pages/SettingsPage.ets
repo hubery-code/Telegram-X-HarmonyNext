@@ -21,7 +21,7 @@ import {
   chatTextSizeOf
 } from '@tgx/core-design-system';
 import { A11y, a11y, Lang, LanguagePreference, SupportedLanguage } from '@tgx/core-common';
-import { AutoDownloadPolicy } from '@tgx/core-domain';
+import { AutoDownloadPolicy, StickerSettings, stickerLoopEnabled } from '@tgx/core-domain';
 import { SettingsThemeMode, SettingsUiState } from '../contract/SettingsUiState';
 import {
   CancelLogout,
@@ -49,6 +49,7 @@ import {
   OpenProxyPage,
   CloseAutoDownloadPage,
   OpenAutoDownloadPage,
+  SetStickerLoopEnabled,
   ClosePasscodePage,
   OpenPasscodePage
 } from '../contract/SettingsIntent';
@@ -239,6 +240,13 @@ export struct SettingsPage {
                 }
                 .margin({ top: this.getTheme().spacing.md })
               }
+            }
+
+            if (this.showsCard('stickers')) {
+              if (this.showsSectionTitle()) {
+                this.SectionTitle(this.t('STICKERS AND EMOJI'))
+              }
+              this.StickersCardView()
             }
 
             if (this.showsCard('appearance')) {
@@ -771,6 +779,65 @@ export struct SettingsPage {
       labels.push(this.t(kindKey));
     }
     return labels.join(' · ');
+  }
+
+  /**
+   * TGS-104：TGX 的「贴纸与表情」分区（`SettingsController.java:642` 那条入口）。
+   *
+   * Android 那一页有八行，本端只落**现在真能生效**的一行：动效贴纸是否循环播
+   * （`SettingsStickersAndEmojiController.java:200` 的 `LoopAnimatedStickers`）。
+   * 其余七行要么要 emoji 渲染管线（大号表情 / 动效 emoji），要么要 TDLib 侧还没有的
+   * 能力（表情包动态排序、贴纸建议），空着比给一个不动的开关诚实。
+   *
+   * 副标题跟着开关走，因为这一位的语义反直觉：勾上=一直演，取消=演一遍停在末帧。
+   */
+  @Builder
+  StickersCardView() {
+    Column() {
+      Row() {
+        Image($r('app.media.ic_sticker'))
+          .width(22)
+          .height(22)
+          .fillColor(this.getTheme().colors.accent)
+          .margin({ right: this.getTheme().spacing.sm })
+
+        Text(this.t('Loop Animated Stickers'))
+          .fontSize(this.getTheme().typography.body.fontSize)
+          .fontWeight(this.getTheme().typography.headline.fontWeight)
+          .fontColor(this.getTheme().colors.textPrimary)
+          .layoutWeight(1)
+
+        Toggle({ type: ToggleType.Switch, isOn: this.stickerLoopOn() })
+          .onChange((isOn: boolean): void => {
+            if (isOn !== this.stickerLoopOn()) {
+              this.onDispatch(new SetStickerLoopEnabled(isOn));
+            }
+          })
+      }
+      .width('100%')
+      .alignItems(VerticalAlign.Center)
+
+      Text(this.t(this.stickerLoopOn()
+        ? 'Animated stickers keep playing.'
+        : 'Animated stickers play once and stop.'))
+        .fontSize(this.getTheme().typography.footnote.fontSize)
+        .fontColor(this.getTheme().colors.textSecondary)
+        .width('100%')
+        .margin({ top: this.getTheme().spacing.xs })
+    }
+    .width('100%')
+    .padding(this.getTheme().spacing.md)
+    .backgroundColor(this.getTheme().colors.surface)
+    .borderRadius(this.getTheme().radius.md)
+  }
+
+  /**
+   * 是否循环播。读盘前（null）按 Android 的默认档 = 循环。
+   * 必须在 builder 内部经这个方法取值而不是把值当 @Builder 形参传进去：
+   * 按值入参不参与状态观察，勾完副标题不会跟着变（同 SET-106 那次）。
+   */
+  private stickerLoopOn(): boolean {
+    return stickerLoopEnabled(this.uiState.stickerSettings);
   }
 
   @Builder

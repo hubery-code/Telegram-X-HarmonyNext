@@ -10,6 +10,7 @@ import groupRegistryTest from './group/GroupRegistry.test';
 import autoDownloadPolicyTest from './media/AutoDownloadPolicy.test';
 import dataSaverTest from './media/DataSaver.test';
 import mediaDownloadLimitsTest from './media/MediaDownloadLimits.test';
+import stickerSettingsTest from './media/StickerSettings.test';
 import appLockTest from './applock/AppLock.test';
 import passcodeFlowTest from './applock/PasscodeFlow.test';
 
@@ -26,6 +27,7 @@ export default function testsuite() {
   autoDownloadPolicyTest();
   dataSaverTest();
   mediaDownloadLimitsTest();
+  stickerSettingsTest();
   appLockTest();
   passcodeFlowTest();
 }

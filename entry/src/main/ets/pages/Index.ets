@@ -33,6 +33,7 @@ import { appLockGate, appLockStore } from '../applock/AppLockWiring';
 import { AppLockOverlay } from '../applock/AppLockOverlay';
 import { PreferencesDataSaverStore } from '../store/DataSaverStore';
 import { PreferencesDownloadLimitsStore } from '../store/DownloadLimitsStore';
+import { PreferencesStickerSettingsStore } from '../store/StickerSettingsStore';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { common } from '@kit.AbilityKit';
 import { AccountDescriptor, AccountScope } from '@tgx/core-account';
@@ -131,7 +132,8 @@ import {
   dataSaverNetworkOfSnapshot,
   DataSaverNetworkType,
   DownloadLimitsByNetwork,
-  isDataSaverActive
+  isDataSaverActive,
+  stickerLoopEnabled
 } from '@tgx/core-domain';
 import { NetworkSnapshot, TgsDecoderPort } from '@tgx/platform-ports';
 import { BootstrapResult } from '../Bootstrap';
@@ -207,6 +209,8 @@ struct Index {
   private dataSaverStore: PreferencesDataSaverStore | null = null;
   /** AUTODL-103：按网络档的自动下载限制（第三套设置，同样按账号隔离）。 */
   private downloadLimitsStore: PreferencesDownloadLimitsStore | null = null;
+  /** TGS-104：贴纸偏好（第四套账号级设置）—— 设置页写、聊天页读同一份。 */
+  private stickerSettingsStore: PreferencesStickerSettingsStore | null = null;
   private searchCoordinator: SearchCoordinator | null = null;
   private unsubscribeSearchFn: (() => void) | null = null;
   // PROFILE-101：用户资料页（群聊点头像进入）。
@@ -1322,6 +1326,19 @@ struct Index {
   }
 
   /**
+   * TGS-104：贴纸偏好存储，与省流量 / 限制同一份账号键。
+   *
+   * 聊天页读的是它的**缓存**（`current()` 每个账号每进程最多读一次盘），
+   * 所以每条贴纸气泡上问一次「该不该循环」是常数开销。
+   */
+  private getStickerSettingsStore(): PreferencesStickerSettingsStore {
+    if (this.stickerSettingsStore === null) {
+      this.stickerSettingsStore = new PreferencesStickerSettingsStore((): string => this.currentAccountKey);
+    }
+    return this.stickerSettingsStore;
+  }
+
+  /**
    * AUTODL-102：此刻省流量是否生效 —— 聊天页下载门的第一句。
    *
    * 两个来源都读缓存，所以每条附件调用它都是常数开销：设置走 `DataSaverStore.current()`，
@@ -1358,6 +1375,7 @@ struct Index {
     coordinator.setAutoDownloadStore(this.getAutoDownloadStore());
     coordinator.setDataSaverStore(this.getDataSaverStore());
     coordinator.setDownloadLimitsStore(this.getDownloadLimitsStore());
+    coordinator.setStickerSettingsStore(this.getStickerSettingsStore());
     // APPLOCK-101：PIN 存储来自 entry 装配的模块单例；没装上就传 null，
     // 协调器会如实回「写盘失败」而不是把界面点亮。必须在 start() 之前注入 ——
     // start() 会立刻发 loadPasscodeState 读盘。
@@ -1524,6 +1542,7 @@ struct Index {
             ChatPage({
               uiState: this.chatUiState,
               tgsDecoder: this.tgsDecoder,
+              stickerLoopProvider: (): boolean => stickerLoopEnabled(this.getStickerSettingsStore().current()),
               onDispatch: (intent: Object) => {
                 this.chatDispatch(intent as ChatIntent);
               }

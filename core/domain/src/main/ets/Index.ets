@@ -6,6 +6,7 @@ export * from './chat/ChatSendRights';
 export * from './media/AutoDownloadPolicy';
 export * from './media/DataSaver';
 export * from './media/MediaDownloadLimits';
+export * from './media/StickerSettings';
 export * from './applock/AppLock';
 export * from './applock/PasscodeFlow';
 export * from './file/Index';

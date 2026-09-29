@@ -37,6 +37,8 @@ import {
   DataSaverStore,
   DownloadLimitsByNetwork,
   DownloadLimitsStore,
+  StickerSettings,
+  StickerSettingsStore,
   GroupRegistry,
   UserRegistry
 } from '@tgx/core-domain';
@@ -213,6 +215,8 @@ import {
   AutoDownloadPolicyLoaded,
   DataSaverSettingsLoaded,
   DownloadLimitsLoaded,
+  LoadStickerSettings,
+  StickerSettingsLoaded,
   AutoLockChoiceRejected,
   TogglePasscodeVisible,
   PasscodeVisibleRejected,
@@ -254,6 +258,8 @@ import {
   PersistDataSaverSettingsEffect,
   LoadDownloadLimitsEffect,
   PersistDownloadLimitsEffect,
+  LoadStickerSettingsEffect,
+  PersistStickerSettingsEffect,
   ClearPasscodeDraftEffect,
   CommitPasscodeEffect,
   LoadPasscodeStateEffect,
@@ -331,6 +337,11 @@ export class SettingsCoordinator {
    */
   private downloadLimitsStore: DownloadLimitsStore | null = null;
   /**
+   * TGS-104：贴纸与表情设置的落盘端口。同样 setter 注入、同样可选 ——
+   * 没注入时开关显 Android 默认档（循环播），与 TGMessageSticker 的默认口径一致。
+   */
+  private stickerSettingsStore: StickerSettingsStore | null = null;
+  /**
    * PROXY-102：探测轮次令牌。TDLib 不会取消已经发出去的 `pingProxy`，所以晚到的
    * 旧轮回包只能靠世代号丢 —— 不丢就会出现「代理已删除，那一行又亮起来」。
    */
@@ -362,6 +373,11 @@ export class SettingsCoordinator {
   /** 注入按网络档的限制存储；必须在 start() 之前调用。 */
   setDownloadLimitsStore(store: DownloadLimitsStore | null): void {
     this.downloadLimitsStore = store;
+  }
+
+  /** 注入贴纸与表情设置存储；必须在 start() 之前调用。 */
+  setStickerSettingsStore(store: StickerSettingsStore | null): void {
+    this.stickerSettingsStore = store;
   }
 
   constructor(
@@ -460,6 +476,9 @@ export class SettingsCoordinator {
     this.dispatch(new LoadStorageStats());
     // AUTODL-101：策略行在「数据与存储」卡片里，进页就要有真实副标题。
     this.dispatch(new LoadAutoDownloadPolicy());
+    // TGS-104：贴纸卡也直接挂在设置主页上，进页就得读到真实档位 ——
+    // 开关的初值不能靠默认值猜，否则首帧显示的和盘上的可能相反。
+    this.dispatch(new LoadStickerSettings());
   }
 
   destroy(): void {
@@ -672,6 +691,16 @@ export class SettingsCoordinator {
       case 'persistDownloadLimits': {
         const persistEffect: PersistDownloadLimitsEffect = effect as PersistDownloadLimitsEffect;
         this.handlePersistDownloadLimits(persistEffect.limits);
+        break;
+      }
+
+      case 'loadStickerSettings':
+        this.handleLoadStickerSettings();
+        break;
+
+      case 'persistStickerSettings': {
+        const persistEffect: PersistStickerSettingsEffect = effect as PersistStickerSettingsEffect;
+        this.handlePersistStickerSettings(persistEffect.settings);
         break;
       }
 
@@ -2505,6 +2534,36 @@ export class SettingsCoordinator {
       restored !== null ? restored : DownloadLimitsByNetwork.defaultLimits()
     ));
     this.dispatch(new SetErrorMessage('Unable to save download limits.'));
+  }
+
+  // ---- TGS-104 贴纸与表情 ----
+
+  /** 读贴纸设置；端口没注入或盘上没值都回落 Android 默认档（循环播）。 */
+  private handleLoadStickerSettings(): void {
+    const store: StickerSettingsStore | null = this.stickerSettingsStore;
+    const loaded: StickerSettings | null = store !== null ? store.load() : null;
+    this.dispatch(new StickerSettingsLoaded(
+      loaded !== null ? loaded : StickerSettings.defaultSettings()
+    ));
+  }
+
+  /**
+   * 写贴纸设置。回滚与省流量那一份同理：开关看着已关、盘上却没存住，
+   * 用户下次进会话仍会看到贴纸一直转，且无从知道设置没生效。
+   */
+  private handlePersistStickerSettings(settings: StickerSettings): void {
+    const store: StickerSettingsStore | null = this.stickerSettingsStore;
+    if (store === null) {
+      return;
+    }
+    if (store.save(settings)) {
+      return;
+    }
+    const restored: StickerSettings | null = store.load();
+    this.dispatch(new StickerSettingsLoaded(
+      restored !== null ? restored : StickerSettings.defaultSettings()
+    ));
+    this.dispatch(new SetErrorMessage('Unable to save sticker settings.'));
   }
 
   // ---- APPLOCK-101 应用锁（Passcode）----

@@ -99,6 +99,7 @@ const EN_DICTIONARY: Record<string, string> = {
   'NOTIFICATIONS': 'NOTIFICATIONS',
   'DEVICES': 'DEVICES',
   'DATA AND STORAGE': 'DATA AND STORAGE',
+  'STICKERS AND EMOJI': 'STICKERS AND EMOJI',
   'APPEARANCE': 'APPEARANCE',
   'LANGUAGE': 'LANGUAGE',
   'ABOUT': 'ABOUT',
@@ -263,6 +264,11 @@ const EN_DICTIONARY: Record<string, string> = {
   'No limit': 'No limit',
   'Off': 'Off',
 
+  // Stickers and emoji (TGS-104)
+  'Loop Animated Stickers': 'Loop Animated Stickers',
+  'Animated stickers keep playing.': 'Animated stickers keep playing.',
+  'Animated stickers play once and stop.': 'Animated stickers play once and stop.',
+
   // Internal links (DEEPLINK-101)
   'This link type is not supported yet': 'This link type is not supported yet',
   'Failed to open link': 'Failed to open link',
@@ -394,6 +400,7 @@ const ZH_DICTIONARY: Record<string, string> = {
   'NOTIFICATIONS': '通知',
   'DEVICES': '设备',
   'DATA AND STORAGE': '数据与存储',
+  'STICKERS AND EMOJI': '贴纸与表情',
   'APPEARANCE': '外观',
   'LANGUAGE': '语言',
   'ABOUT': '关于',
@@ -554,6 +561,11 @@ const ZH_DICTIONARY: Record<string, string> = {
   'No restrictions': '无限制',
   'No limit': '无上限',
   'Off': '关闭',
+
+  // 贴纸与表情（TGS-104）
+  'Loop Animated Stickers': '循环播放动态贴纸',
+  'Animated stickers keep playing.': '动态贴纸会一直循环播放。',
+  'Animated stickers play once and stop.': '动态贴纸只播放一遍，停在最后一帧。',
 
   // Internal links (DEEPLINK-101)
   'This link type is not supported yet': '暂不支持这种链接',
