@@ -102,6 +102,8 @@ import {
   OnStickerBoardFailed,
   OnRecentStickersLoaded,
   OnRecentStickersFailed,
+  OnFavoriteStickersLoaded,
+  OnFavoriteStickersFailed,
   OnTrendingLoaded,
   OnTrendingFailed,
   OnStickerSetLoaded,
@@ -168,6 +170,7 @@ import {
   FetchStickerBoard,
   FetchTrendingStickerSets,
   FetchRecentStickers,
+  FetchFavoriteStickers,
   ClearRecentStickersInTdlib,
   ChangeStickerSetEffect,
   SendStickerMessage,
@@ -1285,12 +1288,14 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
     case 'openStickerBoard': {
       // 语义是「要看」不是「刷新」：同一次会话内反复切页签不重复打 TDLib。
       // 失败过的盘保持 isLoaded=false，下一次进来会再试一次（Android 也是进入即拉、
-      // 之后靠监听器增量更新，不做轮询）。热门榜与最近使用各算一次问价，问过了就不再问。
+      // 之后靠监听器增量更新，不做轮询）。热门榜、最近使用与收藏各算一次问价，问过了就不再问
+      // ——Android 也是同一条加载链里一次读三样（`EmojiMediaListController.java:1395-1400`）。
       const board: StickerBoardState = state.stickerBoard;
       const needBoard: boolean = !board.isLoading && !board.isLoaded;
       const needTrending: boolean = !board.trendingRequested;
       const needRecent: boolean = !board.recentRequested;
-      if (!needBoard && !needTrending && !needRecent) {
+      const needFavorite: boolean = !board.favoriteRequested;
+      if (!needBoard && !needTrending && !needRecent && !needFavorite) {
         return reduced(state);
       }
       const effects: ChatEffect[] = [];
@@ -1303,13 +1308,17 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
       if (needRecent) {
         effects.push(new FetchRecentStickers());
       }
+      if (needFavorite) {
+        effects.push(new FetchFavoriteStickers());
+      }
       return reduced(
         state.copyWith({
           stickerBoard: board.copyWith({
             isLoading: needBoard || board.isLoading,
             errorMessage: needBoard ? null : board.errorMessage,
             trendingRequested: true,
-            recentRequested: true
+            recentRequested: true,
+            favoriteRequested: true
           })
         }),
         effects
@@ -1323,6 +1332,16 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
 
     case 'onRecentStickersFailed': {
       // 没有最近使用就是没有：这一行不显示，也不占 `errorMessage`（那个槽说的是自己的包读不到）。
+      return reduced(state);
+    }
+
+    case 'onFavoriteStickersLoaded': {
+      const loadedFavorites: OnFavoriteStickersLoaded = intent as OnFavoriteStickersLoaded;
+      return reduced(state.copyWith({ favoriteStickers: loadedFavorites.items }));
+    }
+
+    case 'onFavoriteStickersFailed': {
+      // 同最近使用：读不到就不显示那一行，不去染红整个贴纸页。
       return reduced(state);
     }
 

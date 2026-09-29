@@ -1063,7 +1063,7 @@
 > `dumpLayout` 对照记录同一格从 `Text '😂'` 变成 `Image [25,2277][221,2473]` / `[278,2277][474,2473]`，
 > 截图里画出独角兽与那只绿青蛙。**没有点「清空」** —— 那一下会把 `clearRecentStickers` 写到真实账号上且**不可还原**
 > （这两条是账号原有数据，不是本次探针留下的），清空那两条分支只有单测覆盖。
-> 遗留：① 单条移除（Android 长按删一条，TDLib `removeRecentSticker`）未接；② `getFavoriteStickers`（收藏贴纸）未接；
+> 遗留：① 单条移除（Android 长按删一条，TDLib `removeRecentSticker`）未接；② ~~`getFavoriteStickers`（收藏贴纸）未接~~（**2026-09-29 已由 STICKER-FAV-101 结案**，见后面那条注）；
 > ③ TDLib 无 `limit` 参数（列表上限 200 在 `StickersManager.h:1115`），20 只是本端显示口径；
 > ④ 发出贴纸后本地乐观前插（cap 32）与权威回灌（cap 20）并存，观感是「先看到自己那张、随后被服务端列表整段替换」；
 > ⑤ 动效贴纸无逐帧动画（等 TGS/Lottie 渲染器，届时这一行与板卡/预览页/气泡一起换）。
@@ -1255,6 +1255,39 @@
 > ② `uitest uiInput click` 在这台 HVD 上会**静默失效**：屏幕熄灭或华为屏幕朗读（`com.huawei.hmos.screenreader`）在跑时，
 > 命令一律回 `No Error` 而 layout 一字不变 —— 先 `power-shell wakeup` + `aa force-stop com.huawei.hmos.screenreader`，
 > 且只能靠重打 `dumpLayout` 比对判断点没点动，不能信 uiInput 的返回值。
+
+
+> **2026-09-29（STICKER-FAV-101，FEAT-P2-004 表情板「收藏」那一行接 `getFavoriteStickers`，结掉 STICKER-RECENT-101 遗留 ②）**：
+> **读码先把三件事定死再动手**：① 收藏不是独立一次请求 —— Android 的 `ui/EmojiMediaListController.java:1395-1400` 的
+> `loadStickers()` 是一条链（GetFavoriteStickers → GetRecentStickers(false) → 已装包），所以本端把
+> `FetchFavoriteStickers` 挂在同一个 `openStickerBoard` 上、由 `favoriteRequested` 闩管「问过没有」，
+> 与 `trendingRequested` / `recentRequested` 各自独立（三个来源去重各走各的，重复点页签不打风暴）；
+> ② **收藏那一块没有整宽标题行** —— `MediaStickersAdapter.java:800` 的 `headerItemCount = stickerSet.isFavorite() ? 0 : 1`、
+> `:1313-1322` 直接把贴纸铺上屏，所以 `EmojiBoard` 的包条头部整行被 `if (pack.setId !== STICKER_BOARD_FAVORITE_SET_ID)` 包住，
+> 「清空」按钮仍只对最近使用那一个伪包出现；
+> ③ **客户端不再裁一次** —— TDLib 自己按服务端的 `favorite_stickers_limit` 裁（vendored `StickersManager.cpp:9375-9383`，默认 5，超了直接 `resize`），
+> 所以 `favoriteStickersFromStickers()` 走 `stickerCellsFromStickers(stickers, 0, deps)`（`max <= 0` = 不截断），
+> 与最近使用那个自设的 `STICKER_BOARD_RECENT_MAX = 20` 是**两种不同口径**，不是漏写。
+> 顺序照 Android：收藏在最前、其次最近使用、最后真实包（`EmojiMediaListController.java:1310-1341`），
+> 两个伪包都不对应任何 setId，所以 `stickerBoardPackHasNoWholeSet()` 让它们点不开整包页。
+> **失败静默**：`onFavoriteStickersFailed` 不占 `errorMessage`、不染红整个贴纸页（与最近使用同判据 —— 没有就是没有）。
+> **本轮刻意不做写路径**：TDLib 有 `addFavoriteSticker` / `removeFavoriteStickers`，但 Android 的入口是贴纸**长按菜单**，
+> 本端还没有那个菜单，也不该在只做读链时顺手发一次账号写入。登记为遗留。
+> 测试：`feature_chat` **436 → 445 全绿**（模型 +2：收藏排在最近之前且两个伪包点不开 / 九张贴纸全上屏并只登记九次缩略图下载；
+> reducer +3：只欠收藏时只发那一条 Effect、`onFavoriteStickersLoaded` 整段替换且**不动最近那一行**、失败保列表保闩；
+> coordinator +4：一次开板只问一次、回包保序且只下缩略图、失败静默不在下次开板重试、`updateFavoriteStickers` 只在问过之后重读）。
+> 设备取证（127.0.0.1:5555 同一台同一账号、只重装 HAP 不清数据，`.hvigor/outputs/sticker-fav-101/`）：
+> `18:51:12.941 sticker_board_loaded rows=0,total=0` → `.942 sticker_trending_loaded rows=6` → `.949 sticker_recent_loaded rows=0` →
+> **`18:51:13.115 sticker_favorite_loaded rows=0`** —— 这条只可能在成功分支打（`result.err` 先 return），所以
+> `getFavoriteStickers` 的往返与解码在真 TDLib 上是通的；**同一毫秒 `sticker_favorite_update pushed`** 紧跟第二条 loaded，
+> 即 `updateFavoriteStickers` 订阅在设备上确实收到推送并按「问过之后才重读」的口径补了一次。
+> **另一面刻意去验的是「没改坏真实包」**：这个账号 `total=0`，板卡本来一行都不铺，所以先从热门区装了一包，
+> 滚到底实测头部仍是 `Text 'Concerned Froge'` + `Text '查看其余 24 张'`（`a10-scrolled.json` / `a10-board-with-pack.png`），
+> 且**没有**多出收藏行 / 最近使用行（两份列表都空 —— 与 `stickerBoardBlocks()` 空列表不铺块的约定一致）；
+> 取证完当场点「已添加 → 添加」把包卸掉还原（`sticker_board_loaded rows=1,total=1` → `rows=0,total=0`），全程未向任何群 / 频道发送。
+> **没有拿到的那一格如实记**：「收藏行真的上屏、且排在最近使用之前、且不带标题行」在设备上**无法取证** ——
+> 该账号 `getFavoriteStickers` 回 0 条，而本端还没有把贴纸加入收藏的入口。这一格目前只有单测覆盖，
+> 解法在写路径那一包（贴纸长按菜单 + `addFavoriteSticker`），届时可以造出真实收藏再补正向 A/B。
 
 
 > **2026-09-26（CHAT-HIST-101，上一行遗留 ②「冷启动首屏历史空窗」）**：结掉 TGS-102 顺带发现的那条 —— 进程刚起来时进会话可能一行消息都没有，且**永远不自愈**。

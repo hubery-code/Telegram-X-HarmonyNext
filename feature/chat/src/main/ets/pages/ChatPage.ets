@@ -947,6 +947,8 @@ export struct ChatPage {
           EmojiBoard({
             recentEmojis: this.uiState.recentEmojis.slice(),
             recentStickers: this.uiState.recentStickers.slice(),
+            // STICKER-FAV-101：收藏那一颗伪包（getFavoriteStickers）
+            favoriteStickers: this.uiState.favoriteStickers.slice(),
             recentGifs: this.uiState.recentGifs.slice(),
             // STICKER-BOARD-101：真实贴纸包（getInstalledStickerSets 装盘结果）
             stickerPacks: this.uiState.stickerBoard.packs.slice(),

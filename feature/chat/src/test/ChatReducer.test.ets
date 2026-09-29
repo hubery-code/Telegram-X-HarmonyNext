@@ -80,6 +80,8 @@ import {
   OnTrendingFailed,
   OnRecentStickersLoaded,
   OnRecentStickersFailed,
+  OnFavoriteStickersLoaded,
+  OnFavoriteStickersFailed,
   OnStickerSetLoaded,
   OnStickerSetLoadFailed,
   CloseStickerSetPreview,
@@ -2042,20 +2044,22 @@ export default function chatReducerTest() {
       );
 
       expect(result.state.stickerBoard.isLoading).assertTrue();
-      // 盘、榜、最近使用是三次独立的问价：同一次开板一起发出，之后各自按自己的标志位去重
-      expect(result.effects.length).assertEqual(3);
+      // 盘、榜、最近使用、收藏是四次独立的问价：同一次开板一起发出，之后各自按自己的标志位去重
+      expect(result.effects.length).assertEqual(4);
       expect(result.effects[0].kind).assertEqual('fetchStickerBoard');
       expect(result.effects[1].kind).assertEqual('fetchTrendingStickerSets');
       expect(result.effects[2].kind).assertEqual('fetchRecentStickers');
+      expect(result.effects[3].kind).assertEqual('fetchFavoriteStickers');
       expect(result.state.stickerBoard.trendingRequested).assertTrue();
       expect(result.state.stickerBoard.recentRequested).assertTrue();
+      expect(result.state.stickerBoard.favoriteRequested).assertTrue();
     });
 
     it('openStickerBoard_onlyRecentUnasked_emitsOnlyRecentFetch', 0, () => {
-      // 「最近使用」和榜一样要能被去重：切页签不是重读列表的理由。
-      // 这里盘已装好、榜已问过，只有最近使用没读过 —— 必须只发那一条。
+      // 「最近使用」和榜、收藏一样要能被去重：切页签不是重读列表的理由。
+      // 这里盘已装好、榜已问过、收藏已问过，只有最近使用没读过 —— 必须只发那一条。
       const unasked: ChatUiState = makeState('').copyWith({
-        stickerBoard: new StickerBoardState([makeBoardPack('21')], false, true, null, [], true, null, false)
+        stickerBoard: new StickerBoardState([makeBoardPack('21')], false, true, null, [], true, null, false, true)
       });
       const res: ReducerResult<ChatUiState, ChatEffect> = chatReducer(unasked, new OpenStickerBoard(), makeEnv());
       expect(res.effects.length).assertEqual(1);
@@ -2065,9 +2069,20 @@ export default function chatReducerTest() {
       expect(res.state.stickerBoard.recentRequested).assertTrue();
     });
 
+    it('openStickerBoard_onlyFavoriteUnasked_emitsOnlyFavoriteFetch', 0, () => {
+      const unasked: ChatUiState = makeState('').copyWith({
+        stickerBoard: new StickerBoardState([makeBoardPack('21')], false, true, null, [], true, null, true, false)
+      });
+      const res: ReducerResult<ChatUiState, ChatEffect> = chatReducer(unasked, new OpenStickerBoard(), makeEnv());
+      // 同一条口径：收藏自己占一位 latch，不能被「最近使用问过了」顺带顶掉
+      expect(res.effects.length).assertEqual(1);
+      expect(res.effects[0].kind).assertEqual('fetchFavoriteStickers');
+      expect(res.state.stickerBoard.favoriteRequested).assertTrue();
+    });
+
     it('openStickerBoard_whileLoadingOrLoaded_doesNotRefetch', 0, () => {
       const loading: ChatUiState = makeState('').copyWith({
-        stickerBoard: new StickerBoardState([], true, false, null, [], true, null, true)
+        stickerBoard: new StickerBoardState([], true, false, null, [], true, null, true, true)
       });
       const loadingRes: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
         loading, new OpenStickerBoard(), makeEnv()
@@ -2076,7 +2091,7 @@ export default function chatReducerTest() {
       expect(loadingRes.effects.length).assertEqual(0);
 
       const loaded: ChatUiState = makeState('').copyWith({
-        stickerBoard: new StickerBoardState([makeBoardPack('21')], false, true, null, [], true, null, true)
+        stickerBoard: new StickerBoardState([makeBoardPack('21')], false, true, null, [], true, null, true, true)
       });
       const loadedRes: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
         loaded, new OpenStickerBoard(), makeEnv()
@@ -2084,9 +2099,9 @@ export default function chatReducerTest() {
       expect(loadedRes.effects.length).assertEqual(0);
       expect(loadedRes.state.stickerBoard.packs.length).assertEqual(1);
 
-      // 三个来源的去重各自独立：盘已装好、最近已问过，但榜还没问过 —— 这一次只补榜
+      // 四个来源的去重各自独立：盘已装好、最近与收藏已问过，但榜还没问过 —— 这一次只补榜
       const boardOnly: ChatUiState = makeState('').copyWith({
-        stickerBoard: new StickerBoardState([makeBoardPack('21')], false, true, null, [], false, null, true)
+        stickerBoard: new StickerBoardState([makeBoardPack('21')], false, true, null, [], false, null, true, true)
       });
       const boardOnlyRes: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
         boardOnly, new OpenStickerBoard(), makeEnv()
@@ -2327,6 +2342,67 @@ export default function chatReducerTest() {
       expect(result.state.recentStickers[0].id).assertEqual(3);
       // 同样算「问过了」：一次开板只问一次
       expect(result.state.stickerBoard.recentRequested).assertTrue();
+    });
+
+    it('onFavoriteStickersLoaded_replacesTheList', 0, () => {
+      const old: StickerSetItem = {
+        id: 1,
+        fileId: 1,
+        emoji: '🔥',
+        width: 512,
+        height: 512,
+        localPath: null,
+        thumbnailPath: null,
+        isDownloaded: true,
+        isDownloading: false
+      };
+      const fresh: StickerSetItem = {
+        id: 2,
+        fileId: 2,
+        emoji: '🐼',
+        width: 512,
+        height: 512,
+        localPath: null,
+        thumbnailPath: null,
+        isDownloaded: false,
+        isDownloading: false
+      };
+      const initial: ChatUiState = makeState('').copyWith({ favoriteStickers: [old] });
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        initial, new OnFavoriteStickersLoaded([fresh]), makeEnv()
+      );
+
+      // 权威列表整体替换；收藏与最近使用是两行，互不覆盖
+      expect(result.state.favoriteStickers.length).assertEqual(1);
+      expect(result.state.favoriteStickers[0].id).assertEqual(2);
+      expect(result.state.recentStickers.length).assertEqual(0);
+      expect(result.effects.length).assertEqual(0);
+    });
+
+    it('onFavoriteStickersFailed_keepsListAndStaysSilent', 0, () => {
+      const kept: StickerSetItem = {
+        id: 3,
+        fileId: 3,
+        emoji: '🎉',
+        width: 512,
+        height: 512,
+        localPath: null,
+        thumbnailPath: null,
+        isDownloaded: true,
+        isDownloading: false
+      };
+      const initial: ChatUiState = makeState('').copyWith({
+        favoriteStickers: [kept],
+        stickerBoard: new StickerBoardState([makeBoardPack('21')], false, true, '盘读失败', [], true, null, true, true)
+      });
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        initial, new OnFavoriteStickersFailed('getFavoriteStickers failed'), makeEnv()
+      );
+
+      // 读不到收藏就是没有那一行，不该把「自己的包读失败」那句话顶掉
+      expect(result.state.stickerBoard.errorMessage).assertEqual('盘读失败');
+      expect(result.state.favoriteStickers.length).assertEqual(1);
+      expect(result.effects.length).assertEqual(0);
     });
     it('onStickerSetLoaded_updatesPreviewState', 0, () => {
       const initial: ChatUiState = makeState('');

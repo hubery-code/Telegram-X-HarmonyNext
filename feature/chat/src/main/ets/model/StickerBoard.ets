@@ -1,7 +1,8 @@
 /**
  * feature/chat — 表情板贴纸页签的真实数据模型（STICKER-BOARD-101，FEAT-P2-004）。
  *
- * 数据源与版式对齐 Telegram X：贴纸页 = 最近使用（伪包）+ `getInstalledStickerSets(regular)`
+ * 数据源与版式对齐 Telegram X：贴纸页 = 收藏（伪包）+ 最近使用（伪包）+
+ * `getInstalledStickerSets(regular)`
  * 的每一包（`ui/EmojiMediaListController.java:1291-1391`），每包一行整宽标题 + 包内封面贴纸内联
  * （`MediaStickersAdapter.java:682-698`、`ui/EmojiMediaListController.java:1357-1372`），
  * 点标题行开整包页（`MediaStickersAdapter.java:268-270`）—— 本端即既有的贴纸包预览弹层。
@@ -44,6 +45,9 @@ export const STICKER_BOARD_RECENT_SET_ID: string = 'recent';
  * 又不会把 Grid 铺爆的数（TDLib 服务端给的列表上限是 200，全铺等于把首帧交给两百个 Image）。
  */
 export const STICKER_BOARD_RECENT_MAX: number = 20;
+
+/** 收藏那一颗伪包的 setId；同样不对应任何真实 setId。 */
+export const STICKER_BOARD_FAVORITE_SET_ID: string = 'favorite';
 
 /**
  * ArkUI `Image` 解不了的格式。TDLib 把动效贴纸（Lottie）当普通文件落盘，扩展名 `.tgs`
@@ -263,18 +267,19 @@ export function stickerBoardRecentPack(items: readonly StickerSetItem[]): Sticke
 }
 
 /**
- * `getRecentStickers(is_attached=false)` 的回包 → 最近使用那一行的格子。
+ * 一串 `Sticker` → 板卡格子。最近使用与收藏两行共用这一段，只有上限不同。
  *
- * 顺序完全照 TDLib（它已经按「最近」排好，客户端不再二次排序），丢掉落不了地的 null 项，
- * 超过 `STICKER_BOARD_RECENT_MAX` 的部分**连下载都不登记** —— 上限外的格子根本不上屏。
+ * 顺序完全照 TDLib（它已经按各自规则排好，客户端不再二次排序），丢掉落不了地的 null 项，
+ * 超上限的部分**连下载都不登记** —— 上限外的格子根本不上屏。`max <= 0` 表示不截断。
  * 只登记缩略图：与真实包的格子同口径（板卡显示的是 512 以内的小图，原图等真发送时 TDLib 自己取）。
  */
-export function recentStickersFromStickers(
+export function stickerCellsFromStickers(
   stickers: readonly Sticker[],
+  max: number,
   deps: StickerBoardDeps
 ): StickerSetItem[] {
   const items: StickerSetItem[] = [];
-  for (let i = 0; i < stickers.length && items.length < STICKER_BOARD_RECENT_MAX; i++) {
+  for (let i = 0; i < stickers.length && (max <= 0 || items.length < max); i++) {
     const sticker: Sticker = stickers[i];
     const item: StickerSetItem | null = stickerItemFromSticker(sticker, deps);
     if (item === null) {
@@ -290,11 +295,71 @@ export function recentStickersFromStickers(
 }
 
 /**
- * 板卡实际渲染的块：最近使用（非空时）在最前，其后是真实包 —— Android 是同一张列表里的
- * 伪包在前（`ui/EmojiMediaListController.java:1313-1372`）。
+ * `getRecentStickers(is_attached=false)` 的回包 → 最近使用那一行的格子。
+ * 截到 `STICKER_BOARD_RECENT_MAX`（理由见那个常量）。
  */
-export function stickerBoardBlocks(packs: readonly StickerBoardPack[], recent: readonly StickerSetItem[]): StickerBoardPack[] {
+export function recentStickersFromStickers(
+  stickers: readonly Sticker[],
+  deps: StickerBoardDeps
+): StickerSetItem[] {
+  return stickerCellsFromStickers(stickers, STICKER_BOARD_RECENT_MAX, deps);
+}
+
+/**
+ * `getFavoriteStickers()` 的回包 → 收藏那一行的格子。
+ *
+ * **不截断**，照 Android（`ui/EmojiMediaListController.java:1313-1322` 把整段收藏逐个铺上屏）。
+ * 这里不需要最近使用那种自设上限：TDLib 自己就把收藏限在服务端给的 `favorite_stickers_limit`
+ * 上（`StickersManager.cpp:9375-9383`，默认 5，超了直接 `resize`），所以这一行最多五格，
+ * ArkUI 的 Grid 铺得下。
+ */
+export function favoriteStickersFromStickers(
+  stickers: readonly Sticker[],
+  deps: StickerBoardDeps
+): StickerSetItem[] {
+  return stickerCellsFromStickers(stickers, 0, deps);
+}
+
+/**
+ * 收藏那一颗伪包。`title` 只为顶部包条的那一格与无障碍标签存在 ——
+ * Android 的收藏块**没有整宽标题行**（`EmojiMediaListController.java:800` 的
+ * `headerItemCount = stickerSet.isFavorite() ? 0 : 1`、`:1313-1322` 直接铺贴纸），
+ * 所以列表里这一块的标题行由 UI 侧跳过，不是这里给空串（包条上会剩一个空白格）。
+ */
+export function stickerBoardFavoritePack(items: readonly StickerSetItem[]): StickerBoardPack {
+  const covers: StickerSetItem[] = items.slice(0);
+  return new StickerBoardPack(
+    STICKER_BOARD_FAVORITE_SET_ID,
+    '收藏',
+    covers.length > 0 ? firstRenderablePath(covers[0]) : null,
+    covers,
+    items.length,
+    false
+  );
+}
+
+/**
+ * 这一颗伪包能不能点开成整包页。两张都不行：它们不对应任何 setId，
+ * `getStickerSet` 无参可传（最近使用 / 收藏在 TDLib 里是贴纸 id 列表，不是包）。
+ */
+export function stickerBoardPackHasNoWholeSet(setId: string): boolean {
+  return setId === STICKER_BOARD_RECENT_SET_ID || setId === STICKER_BOARD_FAVORITE_SET_ID;
+}
+
+/**
+ * 板卡实际渲染的块：收藏在最前，其次最近使用，最后是真实包 —— 顺序照 Android
+ * （`ui/EmojiMediaListController.java:1310-1341`：`startIndex = 1` 之后先铺 favorite，再铺 recent，
+ * 然后才是装好的包；`findFavoriteStickerSet()` 也只在前若干项里找，因为它恒在第一位）。
+ */
+export function stickerBoardBlocks(
+  packs: readonly StickerBoardPack[],
+  favorites: readonly StickerSetItem[],
+  recent: readonly StickerSetItem[]
+): StickerBoardPack[] {
   const blocks: StickerBoardPack[] = [];
+  if (favorites.length > 0) {
+    blocks.push(stickerBoardFavoritePack(favorites));
+  }
   if (recent.length > 0) {
     blocks.push(stickerBoardRecentPack(recent));
   }
@@ -606,6 +671,7 @@ export interface StickerBoardOptions {
   readonly trendingRequested?: boolean;
   readonly installingSetId?: string | null;
   readonly recentRequested?: boolean;
+  readonly favoriteRequested?: boolean;
 }
 
 export class StickerBoardState {
@@ -628,6 +694,8 @@ export class StickerBoardState {
    * 「一次会话内只问一次 TDLib」这条口径要和榜单、已装盘一致，否则反复切页签就是反复打网络。
    */
   readonly recentRequested: boolean;
+  /** 收藏**问过了**（同上面两位）：Android 的收藏和最近、已装盘一起在同一条加载链里读一次。 */
+  readonly favoriteRequested: boolean;
 
   constructor(
     packs: StickerBoardPack[] = [],
@@ -637,7 +705,8 @@ export class StickerBoardState {
     trending: StickerTrendingPack[] = [],
     trendingRequested: boolean = false,
     installingSetId: string | null = null,
-    recentRequested: boolean = false
+    recentRequested: boolean = false,
+    favoriteRequested: boolean = false
   ) {
     this.packs = packs;
     this.isLoading = isLoading;
@@ -647,10 +716,11 @@ export class StickerBoardState {
     this.trendingRequested = trendingRequested;
     this.installingSetId = installingSetId;
     this.recentRequested = recentRequested;
+    this.favoriteRequested = favoriteRequested;
   }
 
   static initial(): StickerBoardState {
-    return new StickerBoardState([], false, false, null, [], false, null, false);
+    return new StickerBoardState([], false, false, null, [], false, null, false, false);
   }
 
   copyWith(options: StickerBoardOptions): StickerBoardState {
@@ -662,7 +732,8 @@ export class StickerBoardState {
       options.trending !== undefined ? options.trending : this.trending,
       options.trendingRequested !== undefined ? options.trendingRequested : this.trendingRequested,
       options.installingSetId !== undefined ? options.installingSetId : this.installingSetId,
-      options.recentRequested !== undefined ? options.recentRequested : this.recentRequested
+      options.recentRequested !== undefined ? options.recentRequested : this.recentRequested,
+      options.favoriteRequested !== undefined ? options.favoriteRequested : this.favoriteRequested
     );
   }
 

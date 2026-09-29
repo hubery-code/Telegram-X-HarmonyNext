@@ -136,6 +136,8 @@ import {
   TrendingStickerSets,
   GetRecentStickers,
   encodeGetRecentStickers,
+  GetFavoriteStickers,
+  encodeGetFavoriteStickers,
   decodeStickers,
   Stickers,
   ClearRecentStickers as TdClearRecentStickers,
@@ -251,6 +253,8 @@ import {
   OnTrendingFailed,
   OnRecentStickersLoaded,
   OnRecentStickersFailed,
+  OnFavoriteStickersLoaded,
+  OnFavoriteStickersFailed,
   StartVoiceRecord,
   StopAndSendVoiceRecord,
   CancelVoiceRecord,
@@ -288,6 +292,7 @@ import {
   FetchStickerBoard,
   FetchTrendingStickerSets,
   FetchRecentStickers,
+  FetchFavoriteStickers,
   ClearRecentStickersInTdlib,
   ChangeStickerSetEffect,
   SendStickerMessage,
@@ -309,6 +314,7 @@ import {
   StickerBoardFetchGate,
   stickerBoardPacksFromSetInfos,
   recentStickersFromStickers,
+  favoriteStickersFromStickers,
   stickerSetShortNameOf,
   stickerTrendingPacksFromSetInfos,
   STICKER_TRENDING_MAX_PACKS
@@ -673,6 +679,15 @@ export class ChatCoordinator {
   private readonly recentStickerFiles: Set<number> = new Set();
   /** STICKER-RECENT-101：`updateRecentStickers` 订阅（发出去一颗贴纸后这一行要自己活过来）。 */
   private recentStickersSubscription: TdUpdateSubscription | null = null;
+  /**
+   * STICKER-FAV-101：`getFavoriteStickers` 的原始回包 + 本次登记的缩略图（同最近使用那两行）。
+   * 收藏在 Android 里是贴纸页 index 0 的那一颗伪包，没有标题行，也不做客户端截断
+   * （条数上限由 TDLib 的 `favorite_stickers_limit` 管，`StickersManager.cpp:9375-9387`）。
+   */
+  private favoriteStickerDtos: Sticker[] = [];
+  private readonly favoriteStickerFiles: Set<number> = new Set();
+  /** STICKER-FAV-101：`updateFavoriteStickers` 订阅（在别处加/删一颗收藏后这一行要活过来）。 */
+  private favoriteStickersSubscription: TdUpdateSubscription | null = null;
   /** STICKER-BOARD-103：`updateInstalledStickerSets` 订阅（已装盘读到空也要能自己活过来）。 */
   private installedStickerSetsSubscription: TdUpdateSubscription | null = null;
   /**
@@ -821,6 +836,8 @@ export class ChatCoordinator {
     this.subscribeChatPermissions();
     // STICKER-RECENT-101：最近使用实时同步（发出/收到一颗贴纸后 updateRecentStickers 会推）。
     this.subscribeRecentStickers();
+    // STICKER-FAV-101：收藏实时同步（在其它端加/删一颗收藏会推 updateFavoriteStickers）。
+    this.subscribeFavoriteStickers();
     // STICKER-BOARD-103：已装盘实时同步（冷启动读到空盘、其它端装/卸包都会推 updateInstalledStickerSets）。
     this.subscribeInstalledStickerSets();
     // MSG-109：先按已知信息补一次副标题（chatKind 未回前为 no-op），
@@ -1129,6 +1146,11 @@ export class ChatCoordinator {
     if (this.recentStickersSubscription !== null) {
       this.recentStickersSubscription.unsubscribe();
       this.recentStickersSubscription = null;
+    }
+    // STICKER-FAV-101：退订收藏贴纸推送。
+    if (this.favoriteStickersSubscription !== null) {
+      this.favoriteStickersSubscription.unsubscribe();
+      this.favoriteStickersSubscription = null;
     }
     // STICKER-BOARD-103：退订已装贴纸盘推送。
     if (this.installedStickerSetsSubscription !== null) {
@@ -1596,6 +1618,7 @@ export class ChatCoordinator {
               this.refreshStickerBoardOnArrival(fileId);
               this.refreshTrendingOnArrival(fileId);
               this.refreshRecentStickersOnArrival(fileId);
+              this.refreshFavoriteStickersOnArrival(fileId);
             }
           } else {
             // SET-104：TDLib 停止下载（清理缓存把文件重置 / 下载失败）时释放去重闩，
@@ -3760,6 +3783,11 @@ export class ChatCoordinator {
         break;
       }
 
+      case 'fetchFavoriteStickers': {
+        this.handleFetchFavoriteStickers();
+        break;
+      }
+
       case 'clearRecentStickersInTdlib': {
         this.handleClearRecentStickers();
         break;
@@ -4270,6 +4298,70 @@ export class ChatCoordinator {
   }
 
   /**
+   * STICKER-FAV-101：拉「收藏的贴纸」（`getFavoriteStickers`，无参）。
+   *
+   * Android 是在同一条加载链里连着读收藏 → 最近 → 已装包（`ui/EmojiMediaListController.java:1395-1400`），
+   * 所以这里也发一条**独立**请求，而不是把收藏塞进 `getRecentStickers` 的回包。
+   * 条数上限不在客户端裁：TDLib 已按 `favorite_stickers_limit`（默认 5，
+   * `StickersManager.cpp:9375-9387`）截好了，客户端再截一次只会比另一端的显示更短。
+   *
+   * 失败**不占** `errorMessage`（同最近使用）：没有收藏就是没有 index 0 那一行。
+   */
+  private handleFetchFavoriteStickers(): void {
+    const req: GetFavoriteStickers = new GetFavoriteStickers();
+    const result: Result<TdPendingRequest, AppError> =
+      this.scope.request('getFavoriteStickers', encodeGetFavoriteStickers(req) as TdWireObject);
+    if (result.err) {
+      this.logger.logError(TAG, result.error);
+      this.dispatch(new OnFavoriteStickersFailed(result.error.message));
+      return;
+    }
+    if (result.ok) {
+      result.value.promise.then((res: Result<TdWireObject, AppError>) => {
+        if (this.destroyed) {
+          return;
+        }
+        if (res.err) {
+          this.logger.logError(TAG, res.error);
+          this.dispatch(new OnFavoriteStickersFailed(res.error.message));
+        }
+        if (res.ok) {
+          const stickers: Stickers | null = decodeStickers(res.value as TdJsonRaw);
+          if (stickers === null) {
+            this.dispatch(new OnFavoriteStickersFailed('Failed decode'));
+            return;
+          }
+          this.favoriteStickerDtos = stickers.stickers;
+          this.logger.info(TAG, 'sticker_favorite_loaded', `rows=${stickers.stickers.length}`);
+          this.dispatch(new OnFavoriteStickersLoaded(this.mapFavoriteStickers()));
+        }
+      }).catch(() => {});
+    }
+  }
+
+  /** 收藏 DTO → 格子；同最近使用，登记缩略图以便到货回灌。 */
+  private mapFavoriteStickers(): StickerSetItem[] {
+    const deps: StickerBoardDeps = {
+      localPathOf: (fileId: number): string | null => this.fileRegistry.getLocalPath(fileId),
+      download: (fileId: number): void => {
+        if (!this.fileRegistry.isDownloaded(fileId)) {
+          this.favoriteStickerFiles.add(fileId);
+          this.requestMediaDownload(fileId, 2);
+        }
+      }
+    };
+    return favoriteStickersFromStickers(this.favoriteStickerDtos, deps);
+  }
+
+  /** 收藏某格到货：从 DTO 缓存重算这一行。 */
+  private refreshFavoriteStickersOnArrival(fileId: number): void {
+    if (!this.favoriteStickerFiles.delete(fileId) || this.favoriteStickerDtos.length === 0) {
+      return;
+    }
+    this.dispatch(new OnFavoriteStickersLoaded(this.mapFavoriteStickers()));
+  }
+
+  /**
    * STICKER-RECENT-101：把「清空最近使用」写回 TDLib。
    *
    * 本地列表已由 reducer 立刻撤掉（Android 同序），这里只负责服务端那半边；
@@ -4331,6 +4423,38 @@ export class ChatCoordinator {
           return;
         }
         this.handleFetchRecentStickers();
+      }
+    );
+  }
+
+  /**
+   * STICKER-FAV-101：订阅 `updateFavoriteStickers`（Android 的 `onFavoriteStickersUpdated`，
+   * `ui/EmojiMediaListController.java:1262-1276`）。在其它端加/删一颗收藏后，index 0 那一行要自己活过来。
+   *
+   * 同最近使用的口径：只在**这个会话已经问过收藏**之后才重读 —— 没开过贴纸页签就没人在看这一行，
+   * 后台重读只是白打一次网络。Android 那个守卫是 `!loadingStickers && !loadingFavoriteStickers`
+   * （`:1055-1060`，「别再发一条重叠的请求」），本端靠 `recentRequested` 这一位表达同一件事。
+   */
+  private subscribeFavoriteStickers(): void {
+    if (this.destroyed || this.favoriteStickersSubscription !== null) {
+      return;
+    }
+    const filter: TdUpdateFilter = {
+      clientId: this.scope.clientId,
+      types: ['updateFavoriteStickers']
+    };
+    this.favoriteStickersSubscription = this.scope.gatewayInstance.subscribeUpdates(
+      filter,
+      (event: TdRoutedEvent): void => {
+        const update: TdUpdate | null = decodeTdUpdate(event.payload as TdJsonRaw);
+        if (update === null || update.type !== 'updateFavoriteStickers') {
+          return;
+        }
+        this.logger.info(TAG, 'sticker_favorite_update', 'pushed');
+        if (!this.currentState.stickerBoard.favoriteRequested) {
+          return;
+        }
+        this.handleFetchFavoriteStickers();
       }
     );
   }

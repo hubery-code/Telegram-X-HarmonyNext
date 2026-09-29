@@ -398,6 +398,13 @@ function recentUpdateFields(isAttached: boolean, stickerIds: number[]): Record<s
   return fields;
 }
 
+/** `updateFavoriteStickers` 一个字段都不带：TDLib 只说「收藏变了」，列表得自己重读。 */
+function favoriteUpdateFields(): Record<string, TdWireValue> {
+  const fields: Record<string, TdWireValue> = {};
+  fields['@type'] = 'updateFavoriteStickers';
+  return fields;
+}
+
 /**
  * STICKER-BOARD-103：`updateInstalledStickerSets` 的推送体。
  * `sticker_set_ids` 只给 id，包名/封面还得回 `getInstalledStickerSets` 读 —— 所以这一路是「重读」而不是「直接用」。
@@ -927,6 +934,121 @@ export default function stickerBoardFetchTest(): void {
       bridge.pushUpdate(recentUpdateFields(true, [7003]));
       await settle();
       expect(countRequestsOfType(bridge, 'getRecentStickers')).assertEqual(2);
+
+      unsubscribe();
+      coordinator.destroy();
+    });
+
+    // ---------- STICKER-FAV-101：收藏接 getFavoriteStickers ----------
+
+    it('openStickerBoard_requestsFavoriteStickersOnce', 0, async (): Promise<void> => {
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const scope: AccountScope = createScope(bridge);
+      const coordinator: ChatCoordinator = new ChatCoordinator(scope, 42, 'Test Chat');
+
+      coordinator.dispatch(new OpenStickerBoard());
+      coordinator.dispatch(new OpenStickerBoard());
+      await settle();
+
+      // `getFavoriteStickers` 无参（TDLib 的收藏只有一串，不像最近使用还分 attached）
+      expect(countRequestsOfType(bridge, 'getFavoriteStickers')).assertEqual(1);
+      // 且它不与最近使用共用那一条请求：两行各自的数据源
+      expect(countRequestsOfType(bridge, 'getRecentStickers')).assertEqual(1);
+
+      coordinator.destroy();
+    });
+
+    it('favoriteStickersResponse_populatesRow_andDownloadsThumbnailsOnly', 0, async (): Promise<void> => {
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const scope: AccountScope = createScope(bridge);
+      const coordinator: ChatCoordinator = new ChatCoordinator(scope, 42, 'Test Chat');
+
+      const recorder: StateRecorder = new StateRecorder();
+      const unsubscribe: () => void = coordinator.subscribe((state: ChatUiState): void => {
+        recorder.seen.push(state);
+      });
+
+      coordinator.dispatch(new OpenStickerBoard());
+      await settle();
+      const requestId: string = lastRequestIdOfType(bridge, 'getFavoriteStickers');
+      expect(requestId.length > 0).assertTrue();
+      bridge.respondTo(requestId, recentStickersFields([
+        recentStickerFields(9001, 9101, '🐼'),
+        recentStickerFields(9002, 9102, '🎋')
+      ]));
+      await settle();
+
+      const items: readonly StickerSetItem[] = recorder.last().favoriteStickers;
+      expect(items.length).assertEqual(2);
+      expect(items[0].fileId).assertEqual(9001);
+      // 收藏到货不动最近使用那一行（两行各自记账，混灌就是把用户刚发的贴纸换掉）
+      expect(recorder.last().recentStickers.length).assertEqual(0);
+
+      const downloads: Record<string, TdWireValue>[] = requestsOfType(bridge, 'downloadFile');
+      const ids: number[] = [];
+      for (let i = 0; i < downloads.length; i++) {
+        ids.push(Number(downloads[i]['file_id']));
+      }
+      // 只登记缩略图：原图等真发送时 TDLib 自己取
+      expect(ids.indexOf(9001)).assertEqual(-1);
+      expect(ids.indexOf(9101) >= 0).assertTrue();
+      expect(ids.indexOf(9102) >= 0).assertTrue();
+
+      unsubscribe();
+      coordinator.destroy();
+    });
+
+    it('favoriteStickersFailure_isSilentAndNotRetriedOnNextOpen', 0, async (): Promise<void> => {
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const scope: AccountScope = createScope(bridge);
+      const coordinator: ChatCoordinator = new ChatCoordinator(scope, 42, 'Test Chat');
+
+      const recorder: StateRecorder = new StateRecorder();
+      const unsubscribe: () => void = coordinator.subscribe((state: ChatUiState): void => {
+        recorder.seen.push(state);
+      });
+
+      coordinator.dispatch(new OpenStickerBoard());
+      await settle();
+      bridge.respondError(lastRequestIdOfType(bridge, 'getFavoriteStickers'), 'REQUEST_TIMEOUT');
+      await settle();
+
+      const state: ChatUiState = recorder.last();
+      // 没有收藏就是没有：不显示那一行，也不占板卡的错误槽
+      expect(state.favoriteStickers.length).assertEqual(0);
+      expect(state.stickerBoard.errorMessage).assertNull();
+      coordinator.dispatch(new OpenStickerBoard());
+      await settle();
+      expect(countRequestsOfType(bridge, 'getFavoriteStickers')).assertEqual(1);
+
+      unsubscribe();
+      coordinator.destroy();
+    });
+
+    it('updateFavoriteStickers_refetchesOnlyOnceTheBoardHasAsked', 0, async (): Promise<void> => {
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const scope: AccountScope = createScope(bridge);
+      const coordinator: ChatCoordinator = new ChatCoordinator(scope, 42, 'Test Chat');
+      // 订阅在 `start()` 里注册（和真机一样）：不 start 就没有 `updateFavoriteStickers` 这一路。
+      coordinator.start();
+
+      const unsubscribe: () => void = coordinator.subscribe((_state: ChatUiState): void => {});
+
+      // 没开过贴纸页签：没人在看这一行，后台重读只是白打一次网络
+      bridge.pushUpdate(favoriteUpdateFields());
+      await settle();
+      expect(countRequestsOfType(bridge, 'getFavoriteStickers')).assertEqual(0);
+
+      coordinator.dispatch(new OpenStickerBoard());
+      await settle();
+      expect(countRequestsOfType(bridge, 'getFavoriteStickers')).assertEqual(1);
+
+      bridge.pushUpdate(favoriteUpdateFields());
+      await settle();
+      // 一次推送一条重读（Android 的 onFavoriteStickersUpdated 同理）
+      expect(countRequestsOfType(bridge, 'getFavoriteStickers')).assertEqual(2);
+      // 收藏的重读不该带动最近使用那条链
+      expect(countRequestsOfType(bridge, 'getRecentStickers')).assertEqual(1);
 
       unsubscribe();
       coordinator.destroy();

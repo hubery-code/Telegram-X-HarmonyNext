@@ -21,6 +21,8 @@ import {
   StickerBoardPack,
   StickerTrendingPack,
   STICKER_BOARD_RECENT_SET_ID,
+  STICKER_BOARD_FAVORITE_SET_ID,
+  stickerBoardPackHasNoWholeSet,
   stickerBoardBlocks,
   stickerBoardPackKey,
   stickerCellImagePath,
@@ -204,6 +206,8 @@ export struct EmojiBoard {
   @Prop recentEmojis: string[] = [];
   /** STICKER-101：由父层回灌的最近使用贴纸列表 */
   @Prop recentStickers: StickerSetItem[] = [];
+  /** STICKER-FAV-101：由父层回灌的收藏贴纸（`getFavoriteStickers`；空 = 没有 index 0 那一行）。 */
+  @Prop favoriteStickers: StickerSetItem[] = [];
   /** GIF-101：由父层回灌的最近使用动图列表 */
   @Prop recentGifs: GifItem[] = [];
 
@@ -541,52 +545,56 @@ export struct EmojiBoard {
           ForEach(this.stickerBlocks(), (pack: StickerBoardPack) => {
             ListItem() {
               Column() {
-                // 整宽标题行：真实包可点开整包（TDLib covers 只给前 5 张，整包内容在弹层里）
-                Row() {
-                  Text(pack.title)
-                    .fontSize(this.T.typography.caption.fontSize)
-                    .fontWeight(FontWeight.Medium)
-                    .fontColor(this.T.colors.textSecondary)
-                    .maxLines(1)
-                    .textOverflow({ overflow: TextOverflow.Ellipsis })
-                    .layoutWeight(1)
+                // 整宽标题行：真实包可点开整包（TDLib covers 只给前 5 张，整包内容在弹层里）。
+                // 收藏那一颗伪包**没有标题行** —— Android 同序：
+                // `MediaStickersAdapter.java:800` 的 `headerItemCount = stickerSet.isFavorite() ? 0 : 1`。
+                if (pack.setId !== STICKER_BOARD_FAVORITE_SET_ID) {
+                  Row() {
+                    Text(pack.title)
+                      .fontSize(this.T.typography.caption.fontSize)
+                      .fontWeight(FontWeight.Medium)
+                      .fontColor(this.T.colors.textSecondary)
+                      .maxLines(1)
+                      .textOverflow({ overflow: TextOverflow.Ellipsis })
+                      .layoutWeight(1)
 
-                  if (pack.setId === STICKER_BOARD_RECENT_SET_ID) {
-                    if (this.onClearRecentStickers) {
-                      Text('清空')
+                    if (pack.setId === STICKER_BOARD_RECENT_SET_ID) {
+                      if (this.onClearRecentStickers) {
+                        Text('清空')
+                          .fontSize(this.T.typography.caption.fontSize)
+                          .fontWeight(FontWeight.Medium)
+                          .fontColor(this.T.colors.accent)
+                          .padding({ left: this.T.spacing.sm, right: this.T.spacing.sm, top: 2, bottom: 2 })
+                          .onClick(() => {
+                            if (this.onClearRecentStickers) {
+                              this.onClearRecentStickers();
+                            }
+                          })
+                      }
+                    } else {
+                      Text(pack.hasMore ? `查看其余 ${pack.totalSize - pack.covers.length} 张` : '查看贴纸包')
                         .fontSize(this.T.typography.caption.fontSize)
                         .fontWeight(FontWeight.Medium)
                         .fontColor(this.T.colors.accent)
                         .padding({ left: this.T.spacing.sm, right: this.T.spacing.sm, top: 2, bottom: 2 })
                         .onClick(() => {
-                          if (this.onClearRecentStickers) {
-                            this.onClearRecentStickers();
-                          }
+                          this.onOpenStickerSet(pack.setId);
                         })
                     }
-                  } else {
-                    Text(pack.hasMore ? `查看其余 ${pack.totalSize - pack.covers.length} 张` : '查看贴纸包')
-                      .fontSize(this.T.typography.caption.fontSize)
-                      .fontWeight(FontWeight.Medium)
-                      .fontColor(this.T.colors.accent)
-                      .padding({ left: this.T.spacing.sm, right: this.T.spacing.sm, top: 2, bottom: 2 })
-                      .onClick(() => {
-                        this.onOpenStickerSet(pack.setId);
-                      })
                   }
+                  .width('100%')
+                  .padding({
+                    left: this.T.spacing.md,
+                    right: this.T.spacing.md,
+                    top: this.T.spacing.xs,
+                    bottom: 2
+                  })
+                  .onClick(() => {
+                    if (!stickerBoardPackHasNoWholeSet(pack.setId)) {
+                      this.onOpenStickerSet(pack.setId);
+                    }
+                  })
                 }
-                .width('100%')
-                .padding({
-                  left: this.T.spacing.md,
-                  right: this.T.spacing.md,
-                  top: this.T.spacing.xs,
-                  bottom: 2
-                })
-                .onClick(() => {
-                  if (pack.setId !== STICKER_BOARD_RECENT_SET_ID) {
-                    this.onOpenStickerSet(pack.setId);
-                  }
-                })
 
                 // 封面贴纸：一包一行，取不到本地图的格子退回该贴纸自己的 emoji
                 Grid() {
@@ -799,9 +807,9 @@ export struct EmojiBoard {
     .alignItems(HorizontalAlign.Center)
   }
 
-  /** 板卡实际渲染的块：最近使用（非空时）在最前，其后是真实包。 */
+  /** 板卡实际渲染的块：收藏（非空时）在最前，其次最近使用，其后是真实包。 */
   private stickerBlocks(): StickerBoardPack[] {
-    return stickerBoardBlocks(this.stickerPacks, this.recentStickers);
+    return stickerBoardBlocks(this.stickerPacks, this.favoriteStickers, this.recentStickers);
   }
 
   private getActiveGifs(): GifItem[] {

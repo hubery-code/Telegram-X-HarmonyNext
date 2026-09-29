@@ -298,6 +298,11 @@ export class FetchRecentStickers implements Effect {
   readonly kind: 'fetchRecentStickers' = 'fetchRecentStickers';
 }
 
+/** STICKER-FAV-101：向 TDLib 取收藏的贴纸（getFavoriteStickers，无参）。 */
+export class FetchFavoriteStickers implements Effect {
+  readonly kind: 'fetchFavoriteStickers' = 'fetchFavoriteStickers';
+}
+
 /**
  * STICKER-RECENT-101：把「清空最近使用」写回 TDLib（clearRecentStickers, is_attached=false）。
  * 本地列表由 reducer 立刻清空（Android 也是先撤 UI 再发请求），这一条只负责服务端那半边。
@@ -478,6 +483,7 @@ export type ChatEffect =
   | FetchStickerBoard
   | FetchTrendingStickerSets
   | FetchRecentStickers
+  | FetchFavoriteStickers
   | ClearRecentStickersInTdlib
   | FetchStickerSet
   | ChangeStickerSetEffect

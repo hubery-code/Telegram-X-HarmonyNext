@@ -190,6 +190,8 @@ export interface ChatUiStateOptions {
   readonly recentEmojis?: readonly string[];
   /** STICKER-101：最近使用的贴纸列表（最新在先）。 */
   readonly recentStickers?: readonly StickerSetItem[];
+  /** STICKER-FAV-101：收藏的贴纸列表（顺序照 TDLib）。 */
+  readonly favoriteStickers?: readonly StickerSetItem[];
   /** GIF-101：最近使用的动图列表（最新在先）。 */
   readonly recentGifs?: readonly GifItem[];
   /** GIF-101：动图搜索关键词。 */
@@ -283,6 +285,13 @@ export class ChatUiState implements UiState {
   readonly pollComposer: PollComposerState | null;
   /** SET-106：本会话是否已静音（驱动 ⋮ 菜单与频道静音条的「静音/取消静音」）。 */
   readonly isMuted: boolean;
+  /**
+   * STICKER-FAV-101：收藏的贴纸格子（板卡收藏那一行）。
+   *
+   * 刻意排在参数表**末尾**而不是紧跟 `recentStickers`：这个构造函数是位置参数，
+   * 中间插一位会把后面所有字段的默认值错位（既有调用点只传前若干个）。
+   */
+  readonly favoriteStickers: readonly StickerSetItem[];
 
   constructor(
     chatId: number,
@@ -329,7 +338,8 @@ export class ChatUiState implements UiState {
     showMenuConfirmDialog: boolean = false,
     pendingMenuAction: string = '',
     pollComposer: PollComposerState | null = null,
-    isMuted: boolean = false
+    isMuted: boolean = false,
+    favoriteStickers: readonly StickerSetItem[] = []
   ) {
     this.chatId = chatId;
     this.chatTitle = chatTitle;
@@ -374,6 +384,7 @@ export class ChatUiState implements UiState {
     this.pendingMenuAction = pendingMenuAction;
     this.pollComposer = pollComposer;
     this.isMuted = isMuted;
+    this.favoriteStickers = favoriteStickers;
   }
 
   static initial(): ChatUiState {
@@ -424,7 +435,8 @@ export class ChatUiState implements UiState {
       options.showMenuConfirmDialog !== undefined ? options.showMenuConfirmDialog : this.showMenuConfirmDialog,
       options.pendingMenuAction !== undefined ? options.pendingMenuAction : this.pendingMenuAction,
       options.pollComposer !== undefined ? options.pollComposer : this.pollComposer,
-      options.isMuted !== undefined ? options.isMuted : this.isMuted
+      options.isMuted !== undefined ? options.isMuted : this.isMuted,
+      options.favoriteStickers !== undefined ? options.favoriteStickers : this.favoriteStickers
     );
   }
 }

@@ -769,6 +769,8 @@ export type ChatIntent =
   | OnStickerBoardFailed
   | OnRecentStickersLoaded
   | OnRecentStickersFailed
+  | OnFavoriteStickersLoaded
+  | OnFavoriteStickersFailed
   | OnTrendingLoaded
   | OnTrendingFailed
   | StartVoiceRecord
@@ -946,6 +948,34 @@ export class OnRecentStickersLoaded implements Intent {
  */
 export class OnRecentStickersFailed implements Intent {
   readonly kind: 'onRecentStickersFailed' = 'onRecentStickersFailed';
+  readonly error: string;
+
+  constructor(error: string) {
+    this.error = error;
+  }
+}
+
+/**
+ * STICKER-FAV-101：收藏贴纸回灌（TDLib `getFavoriteStickers` 的整串 sticker）。
+ * 与最近使用同一口径：整串替换，顺序照 TDLib 给的（它按收藏时间倒序，客户端不再排）。
+ */
+export class OnFavoriteStickersLoaded implements Intent {
+  readonly kind: 'onFavoriteStickersLoaded' = 'onFavoriteStickersLoaded';
+  readonly items: StickerSetItem[];
+
+  constructor(items: StickerSetItem[]) {
+    this.items = items;
+  }
+}
+
+/**
+ * STICKER-FAV-101：收藏读取失败。
+ *
+ * 与最近使用、热门榜同一口径：不写 `errorMessage`，没有收藏就是没有，这一行空着不构成错误；
+ * 它只把「问过了」这个事实落进状态，避免反复切页签反复打网络。
+ */
+export class OnFavoriteStickersFailed implements Intent {
+  readonly kind: 'onFavoriteStickersFailed' = 'onFavoriteStickersFailed';
   readonly error: string;
 
   constructor(error: string) {

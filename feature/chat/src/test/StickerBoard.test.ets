@@ -21,6 +21,10 @@
  * 顺序**完全照 TDLib**（它自己按最近排，客户端二次排序就是把用户刚发的那颗挪走）、上限
  * `STICKER_BOARD_RECENT_MAX` 之外的格子连下载都不登记（上了屏才有资格占预算），以及沿用
  * 101 那条「没有可发送文件句柄就不上板」。伪包标题是中文界面文案，不是 `'Recent Stickers'`。
+ *
+ * STICKER-FAV-101 接上「收藏」（`getFavoriteStickers`）后守的是：收藏那颗伪包排在最近使用**之前**
+ * （Android 的列表顺序），以及它**不套** `STICKER_BOARD_RECENT_MAX` —— 收藏的条数上限是 TDLib 服务端
+ * 的 `favorite_stickers_limit`，客户端再截一次就是比另一端的 Telegram 少几颗。
  */
 
 import { describe, it, expect } from '@ohos/hypium';
@@ -36,14 +40,18 @@ import {
   STICKER_BOARD_MAX_PACKS,
   STICKER_BOARD_RECENT_MAX,
   STICKER_BOARD_RECENT_SET_ID,
+  STICKER_BOARD_FAVORITE_SET_ID,
   STICKER_TRENDING_MAX_PACKS,
   StickerBoardDeps,
   StickerBoardFetchGate,
   StickerBoardPack,
   StickerTrendingPack,
+  favoriteStickersFromStickers,
   recentStickersFromStickers,
   requestStickerBoardDownloads,
   stickerBoardBlocks,
+  stickerBoardFavoritePack,
+  stickerBoardPackHasNoWholeSet,
   stickerBoardPackKey,
   stickerBoardPacksFromSetInfos,
   stickerBoardRecentPack,
@@ -101,6 +109,21 @@ function makeSetInfo(
   info.covers = covers;
   info.thumbnail = packThumbId > 0 ? makeThumbnail(packThumbId) : null;
   return info;
+}
+
+/** 造一个格子项：伪包的输入已经是格子（不是 DTO），只需要 id 与 emoji 有区分度。 */
+function makeItem(fileId: number, emoji: string): StickerSetItem {
+  return {
+    id: fileId,
+    fileId: fileId,
+    emoji: emoji,
+    width: 512,
+    height: 512,
+    localPath: null,
+    thumbnailPath: null,
+    isDownloaded: false,
+    isDownloading: false
+  };
 }
 
 /** 记录被登记过下载的 fileId，用来断言下载预算与「只下缩略图、不下原图」。 */
@@ -285,7 +308,7 @@ export default function stickerBoardTest(): void {
         isDownloading: false
       }];
 
-      const blocks: StickerBoardPack[] = stickerBoardBlocks(packs, recent);
+      const blocks: StickerBoardPack[] = stickerBoardBlocks(packs, [], recent);
       expect(blocks.length).assertEqual(2);
       expect(blocks[0].setId).assertEqual(STICKER_BOARD_RECENT_SET_ID);
       // 伪包不对应任何 setId：点开整包会去请求一个不存在的包
@@ -293,8 +316,53 @@ export default function stickerBoardTest(): void {
       expect(blocks[1].setId).assertEqual('21');
 
       // 最近使用为空时不留空行
-      const noRecent: StickerBoardPack[] = stickerBoardBlocks(packs, []);
+      const noRecent: StickerBoardPack[] = stickerBoardBlocks(packs, [], []);
       expect(noRecent.length).assertEqual(1);
+    });
+
+    it('blocks_putFavoriteAheadOfRecentAndBothPseudoPacksAreUnopenable', 0, () => {
+      const rec = new RecordingDeps();
+      const packs: StickerBoardPack[] = stickerBoardPacksFromSetInfos(
+        [makeSetInfo('21', 'Real', 2, [cover('21', 1), cover('21', 2)], 0)],
+        rec.deps()
+      );
+      // 顺序照 Android 的贴纸列表：favorite 在 recent 之前（`EmojiMediaListController.java:1310-1341`）
+      const favorites: StickerSetItem[] = [makeItem(7001, '🐼')];
+      const recent: StickerSetItem[] = [makeItem(8001, '🔥')];
+
+      const blocks: StickerBoardPack[] = stickerBoardBlocks(packs, favorites, recent);
+      expect(blocks.length).assertEqual(3);
+      expect(blocks[0].setId).assertEqual(STICKER_BOARD_FAVORITE_SET_ID);
+      expect(blocks[1].setId).assertEqual(STICKER_BOARD_RECENT_SET_ID);
+      expect(blocks[2].setId).assertEqual('21');
+
+      // 两张伪包都点不开整包页（TDLib 里它们是贴纸 id 列表，不是包）；真实包能
+      expect(stickerBoardPackHasNoWholeSet(STICKER_BOARD_FAVORITE_SET_ID)).assertTrue();
+      expect(stickerBoardPackHasNoWholeSet(STICKER_BOARD_RECENT_SET_ID)).assertTrue();
+      expect(stickerBoardPackHasNoWholeSet('21')).assertFalse();
+
+      // 收藏为空时不留空行（同最近使用那一条口径）
+      expect(stickerBoardBlocks(packs, [], recent).length).assertEqual(2);
+    });
+
+    it('favoritePack_keepsEveryStickerBecauseTdlibAlreadyCapsTheList', 0, () => {
+      const rec = new RecordingDeps();
+      // TDLib 的 `favorite_stickers_limit`（默认 5）在服务端侧就截好了（`StickersManager.cpp:9375-9383`），
+      // 客户端那份 `STICKER_BOARD_RECENT_MAX` 是最近使用**自己**的显示上限，不能套到收藏上：
+      // 套了就会出现「TGX 比手机上的 Telegram 少几颗收藏」。
+      const stickers: Sticker[] = [];
+      for (let i = 1; i <= 9; i++) {
+        stickers.push(makeSticker('3', 100 + i, 500 + i, '🙂'));
+      }
+      const items: StickerSetItem[] = favoriteStickersFromStickers(stickers, rec.deps());
+      expect(items.length).assertEqual(9);
+      expect(rec.downloaded.length).assertEqual(9);
+
+      const pack: StickerBoardPack = stickerBoardFavoritePack(items);
+      expect(pack.title).assertEqual('收藏');
+      expect(pack.setId).assertEqual(STICKER_BOARD_FAVORITE_SET_ID);
+      expect(pack.covers.length).assertEqual(9);
+      expect(pack.hasMore).assertFalse();
     });
 
     it('recentPack_showsTheWholeRecentList', 0, () => {
