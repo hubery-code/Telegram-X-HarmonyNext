@@ -760,6 +760,9 @@ export type ChatIntent =
   | SendStickerFromPreview
   | SendSticker
   | ClearRecentStickers
+  | AddFavoriteSticker
+  | RemoveFavoriteSticker
+  | RemoveRecentSticker
   | SendGif
   | ClearRecentGifs
   | SearchGifs
@@ -1006,6 +1009,36 @@ export class SendSticker implements Intent {
 /** STICKER-101：清空最近使用的贴纸列表。 */
 export class ClearRecentStickers implements Intent {
   readonly kind: 'clearRecentStickers' = 'clearRecentStickers';
+}
+
+/** STICKER-WRITE-101：添加某张贴纸到收藏列表（addFavoriteSticker）。 */
+export class AddFavoriteSticker implements Intent {
+  readonly kind: 'addFavoriteSticker' = 'addFavoriteSticker';
+  readonly stickerFileId: number;
+
+  constructor(stickerFileId: number) {
+    this.stickerFileId = stickerFileId;
+  }
+}
+
+/** STICKER-WRITE-101：从收藏列表中移除某张贴纸（removeFavoriteSticker）。 */
+export class RemoveFavoriteSticker implements Intent {
+  readonly kind: 'removeFavoriteSticker' = 'removeFavoriteSticker';
+  readonly stickerFileId: number;
+
+  constructor(stickerFileId: number) {
+    this.stickerFileId = stickerFileId;
+  }
+}
+
+/** STICKER-WRITE-101：从最近使用列表中移除某张贴纸（removeRecentSticker）。 */
+export class RemoveRecentSticker implements Intent {
+  readonly kind: 'removeRecentSticker' = 'removeRecentSticker';
+  readonly stickerFileId: number;
+
+  constructor(stickerFileId: number) {
+    this.stickerFileId = stickerFileId;
+  }
 }
 
 /** GIF-101：从动图面板中点选发送动图。 */

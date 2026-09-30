@@ -311,6 +311,36 @@ export class ClearRecentStickersInTdlib implements Effect {
   readonly kind: 'clearRecentStickersInTdlib' = 'clearRecentStickersInTdlib';
 }
 
+/** STICKER-WRITE-101：把「添加收藏贴纸」写回 TDLib（addFavoriteSticker）。 */
+export class AddFavoriteStickerInTdlib implements Effect {
+  readonly kind: 'addFavoriteStickerInTdlib' = 'addFavoriteStickerInTdlib';
+  readonly fileId: number;
+
+  constructor(fileId: number) {
+    this.fileId = fileId;
+  }
+}
+
+/** STICKER-WRITE-101：把「移出收藏贴纸」写回 TDLib（removeFavoriteSticker）。 */
+export class RemoveFavoriteStickerInTdlib implements Effect {
+  readonly kind: 'removeFavoriteStickerInTdlib' = 'removeFavoriteStickerInTdlib';
+  readonly fileId: number;
+
+  constructor(fileId: number) {
+    this.fileId = fileId;
+  }
+}
+
+/** STICKER-WRITE-101：把「移除最近使用贴纸」写回 TDLib（removeRecentSticker, is_attached=false）。 */
+export class RemoveRecentStickerInTdlib implements Effect {
+  readonly kind: 'removeRecentStickerInTdlib' = 'removeRecentStickerInTdlib';
+  readonly fileId: number;
+
+  constructor(fileId: number) {
+    this.fileId = fileId;
+  }
+}
+
 export class FetchStickerSet implements Effect {
   readonly kind: 'fetchStickerSet' = 'fetchStickerSet';
   readonly setId: string;
@@ -485,6 +515,9 @@ export type ChatEffect =
   | FetchRecentStickers
   | FetchFavoriteStickers
   | ClearRecentStickersInTdlib
+  | AddFavoriteStickerInTdlib
+  | RemoveFavoriteStickerInTdlib
+  | RemoveRecentStickerInTdlib
   | FetchStickerSet
   | ChangeStickerSetEffect
   | SendStickerMessage

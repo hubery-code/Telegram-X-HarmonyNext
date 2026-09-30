@@ -173,6 +173,9 @@ import {
   SendStickerFromPreview,
   SendSticker,
   ClearRecentStickers,
+  AddFavoriteSticker,
+  RemoveFavoriteSticker,
+  RemoveRecentSticker,
   SendGif,
   ClearRecentGifs,
   StartVoiceRecord,
@@ -985,6 +988,16 @@ export struct ChatPage {
             },
             onClearRecentStickers: () => {
               this.onDispatch(new ClearRecentStickers());
+            },
+            onToggleFavoriteSticker: (fileId: number, isFavorite: boolean) => {
+              if (isFavorite) {
+                this.onDispatch(new AddFavoriteSticker(fileId));
+              } else {
+                this.onDispatch(new RemoveFavoriteSticker(fileId));
+              }
+            },
+            onRemoveRecentSticker: (fileId: number) => {
+              this.onDispatch(new RemoveRecentSticker(fileId));
             },
             onSendGif: (item: GifItem) => {
               this.sendContentWithVeto(CONTENT_GIF, item.fileId, (): void => {
@@ -1957,6 +1970,7 @@ export struct ChatPage {
     }
     .width(this.stickerWidth(media))
     .height(this.stickerHeight(media))
+    .accessibilityText(a11y(A11y.BOARD_CELL, item.text))
     .onClick(() => {
       if (this.uiState.selectionMode) {
         return;
@@ -3475,6 +3489,64 @@ export struct ChatPage {
             } else {
               this.onDispatch(new PinMessage());
             }
+          })
+        }
+
+        // STICKER-WRITE-101：查看贴纸包
+        if (menu.showViewStickerSet && menu.stickerSetId.length > 0) {
+          Row() {
+            Image($r('app.media.ic_sticker'))
+              .width(22)
+              .height(22)
+              .fillColor(this.T.colors.textPrimary)
+              .margin({ right: this.T.spacing.md })
+            Text('View Sticker Set')
+              .fontSize(this.T.typography.body.fontSize)
+              .fontColor(this.T.colors.textPrimary)
+              .layoutWeight(1)
+          }
+          .width('100%')
+          .alignItems(VerticalAlign.Center)
+          .padding({
+            left: this.T.spacing.screenInset,
+            right: this.T.spacing.screenInset,
+            top: this.T.spacing.md,
+            bottom: this.T.spacing.md
+          })
+          .onClick(() => {
+            this.onDispatch(new OpenStickerSet(menu.stickerSetId));
+            this.onDispatch(new DismissMessageActionMenu());
+          })
+        }
+
+        // STICKER-WRITE-101：添加/移出收藏
+        if (menu.showFavoriteSticker && menu.stickerFileId > 0) {
+          Row() {
+            Image($r('app.media.ic_bookmark'))
+              .width(22)
+              .height(22)
+              .fillColor(this.T.colors.textPrimary)
+              .margin({ right: this.T.spacing.md })
+            Text(menu.isFavoriteSticker ? 'Remove from Favorites' : 'Add to Favorites')
+              .fontSize(this.T.typography.body.fontSize)
+              .fontColor(this.T.colors.textPrimary)
+              .layoutWeight(1)
+          }
+          .width('100%')
+          .alignItems(VerticalAlign.Center)
+          .padding({
+            left: this.T.spacing.screenInset,
+            right: this.T.spacing.screenInset,
+            top: this.T.spacing.md,
+            bottom: this.T.spacing.md
+          })
+          .onClick(() => {
+            if (menu.isFavoriteSticker) {
+              this.onDispatch(new RemoveFavoriteSticker(menu.stickerFileId));
+            } else {
+              this.onDispatch(new AddFavoriteSticker(menu.stickerFileId));
+            }
+            this.onDispatch(new DismissMessageActionMenu());
           })
         }
 

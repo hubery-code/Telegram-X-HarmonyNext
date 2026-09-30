@@ -116,6 +116,9 @@ import {
   SendStickerFromPreview,
   SendSticker,
   ClearRecentStickers,
+  AddFavoriteSticker,
+  RemoveFavoriteSticker,
+  RemoveRecentSticker,
   SendGif,
   ClearRecentGifs,
   SearchGifs,
@@ -172,6 +175,9 @@ import {
   FetchRecentStickers,
   FetchFavoriteStickers,
   ClearRecentStickersInTdlib,
+  AddFavoriteStickerInTdlib,
+  RemoveFavoriteStickerInTdlib,
+  RemoveRecentStickerInTdlib,
   ChangeStickerSetEffect,
   SendStickerMessage,
   SendAnimationMessage,
@@ -673,6 +679,21 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
         .filter((chip: ReactionChip): boolean => chip.isChosen)
         .map((chip: ReactionChip): string => chip.emoji);
       const availableReactions: string[] = ['👍', '❤️', '🔥', '🎉', '👏', '😂'];
+
+      let showFavoriteSticker: boolean = false;
+      let isFavoriteSticker: boolean = false;
+      let stickerFileId: number = 0;
+      let showViewStickerSet: boolean = false;
+      let stickerSetId: string = '';
+
+      if (item.media !== null && item.media.kind === 'sticker') {
+        stickerFileId = item.media.fileId;
+        showFavoriteSticker = stickerFileId > 0;
+        isFavoriteSticker = state.favoriteStickers.some((s: StickerSetItem): boolean => s.fileId === stickerFileId);
+        stickerSetId = item.media.stickerSetId !== null ? item.media.stickerSetId : '';
+        showViewStickerSet = stickerSetId.length > 0 && stickerSetId !== '0';
+      }
+
       const menu: MessageActionMenuState = new MessageActionMenuState(
         loaded.messageId,
         showReply,
@@ -687,7 +708,12 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
         showPin,
         isPinned,
         availableReactions,
-        chosenReactions
+        chosenReactions,
+        showFavoriteSticker,
+        isFavoriteSticker,
+        stickerFileId,
+        showViewStickerSet,
+        stickerSetId
       );
       const nextState: ChatUiState = state.copyWith({ actionMenu: menu });
       return reduced(nextState);
@@ -1600,6 +1626,36 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
       return reduced(
         state.copyWith({ recentStickers: [] }),
         [new ClearRecentStickersInTdlib()]
+      );
+    }
+
+    case 'addFavoriteSticker': {
+      const addFav: AddFavoriteSticker = intent as AddFavoriteSticker;
+      return reduced(
+        state,
+        [new AddFavoriteStickerInTdlib(addFav.stickerFileId)]
+      );
+    }
+
+    case 'removeFavoriteSticker': {
+      const remFav: RemoveFavoriteSticker = intent as RemoveFavoriteSticker;
+      const nextFavorites: StickerSetItem[] = state.favoriteStickers.filter(
+        (s: StickerSetItem): boolean => s.fileId !== remFav.stickerFileId
+      );
+      return reduced(
+        state.copyWith({ favoriteStickers: nextFavorites }),
+        [new RemoveFavoriteStickerInTdlib(remFav.stickerFileId)]
+      );
+    }
+
+    case 'removeRecentSticker': {
+      const remRecent: RemoveRecentSticker = intent as RemoveRecentSticker;
+      const nextRecent: StickerSetItem[] = state.recentStickers.filter(
+        (s: StickerSetItem): boolean => s.fileId !== remRecent.stickerFileId
+      );
+      return reduced(
+        state.copyWith({ recentStickers: nextRecent }),
+        [new RemoveRecentStickerInTdlib(remRecent.stickerFileId)]
       );
     }
 

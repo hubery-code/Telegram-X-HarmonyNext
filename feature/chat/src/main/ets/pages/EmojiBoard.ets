@@ -192,6 +192,10 @@ export struct EmojiBoard {
   onInstallStickerSet?: (setId: string) => void;
   onUninstallStickerSet?: (setId: string) => void;
   onClearRecent?: () => void;
+  /** STICKER-WRITE-101：添加或移出收藏贴纸。 */
+  onToggleFavoriteSticker?: (fileId: number, isFavorite: boolean) => void;
+  /** STICKER-WRITE-101：从最近使用中移除单张贴纸。 */
+  onRemoveRecentSticker?: (fileId: number) => void;
 
   /** STICKER-BOARD-101：`getInstalledStickerSets` 装出来的真实贴纸包（空 = 账号没装任何包）。 */
   @Prop stickerPacks: StickerBoardPack[] = [];
@@ -211,6 +215,10 @@ export struct EmojiBoard {
   /** GIF-101：由父层回灌的最近使用动图列表 */
   @Prop recentGifs: GifItem[] = [];
 
+  /** STICKER-WRITE-101：长按呼出的贴纸操作菜单对象（null=菜单关闭）。 */
+  @State activeStickerMenu: StickerSetItem | null = null;
+  @State activeStickerMenuPackSetId: string = '';
+
   @State currentMainTab: string = 'emoji';
   @State currentEmojiCategory: number = 0;
   @State currentStickerPackIndex: number = 0;
@@ -220,102 +228,248 @@ export struct EmojiBoard {
   @State gifSearchQuery: string = '';
 
   build() {
-    Column() {
-      // 顶部内容区（根据当前 Tab 切换显示表情网格、贴纸或 GIF）
+    Stack() {
       Column() {
-        if (this.currentMainTab === 'emoji') {
-          this.EmojiView()
-        } else if (this.currentMainTab === 'sticker') {
-          this.StickerView()
-        } else {
-          this.GifView()
-        }
-      }
-      .layoutWeight(1)
-      .width('100%')
-
-      // 底部切换导航栏（对齐 Telegram X：表情、贴纸、GIF 切换，右侧退格键）
-      Row() {
-        // 左侧主要分页切换按钮
-        Row() {
-          // 表情 Tab
-          Row() {
-            Image($r('app.media.ic_emoji'))
-              .width(22)
-              .height(22)
-              .fillColor(this.currentMainTab === 'emoji' ? this.T.colors.accent : this.T.colors.textSecondary)
+        // 顶部内容区（根据当前 Tab 切换显示表情网格、贴纸或 GIF）
+        Column() {
+          if (this.currentMainTab === 'emoji') {
+            this.EmojiView()
+          } else if (this.currentMainTab === 'sticker') {
+            this.StickerView()
+          } else {
+            this.GifView()
           }
-          .height('100%')
-          .padding({ left: this.T.spacing.md, right: this.T.spacing.md })
-          .justifyContent(FlexAlign.Center)
-          .alignItems(VerticalAlign.Center)
-          .accessibilityText(a11y(A11y.BOARD_TAB_EMOJI))
-          .onClick(() => {
-            this.currentMainTab = 'emoji';
-          })
-
-          // 贴纸 Tab
-          Row() {
-            Image($r('app.media.ic_sticker'))
-              .width(22)
-              .height(22)
-              .fillColor(this.currentMainTab === 'sticker' ? this.T.colors.accent : this.T.colors.textSecondary)
-          }
-          .height('100%')
-          .padding({ left: this.T.spacing.md, right: this.T.spacing.md })
-          .justifyContent(FlexAlign.Center)
-          .alignItems(VerticalAlign.Center)
-          .accessibilityText(a11y(A11y.BOARD_TAB_STICKERS))
-          .onClick(() => {
-            this.currentMainTab = 'sticker';
-            this.onStickerBoardVisible();
-          })
-
-          // GIF Tab
-          Row() {
-            Image($r('app.media.ic_gif'))
-              .width(22)
-              .height(22)
-              .fillColor(this.currentMainTab === 'gif' ? this.T.colors.accent : this.T.colors.textSecondary)
-          }
-          .height('100%')
-          .padding({ left: this.T.spacing.md, right: this.T.spacing.md })
-          .justifyContent(FlexAlign.Center)
-          .alignItems(VerticalAlign.Center)
-          .accessibilityText(a11y(A11y.BOARD_TAB_GIF))
-          .onClick(() => {
-            this.currentMainTab = 'gif';
-          })
         }
         .layoutWeight(1)
-        .height('100%')
-        .alignItems(VerticalAlign.Center)
+        .width('100%')
 
-        // 右侧退格删除键
+        // 底部切换导航栏（对齐 Telegram X：表情、贴纸、GIF 切换，右侧退格键）
         Row() {
-          Image($r('app.media.ic_backspace'))
-            .width(22)
-            .height(22)
-            .fillColor(this.T.colors.textSecondary)
+          // 左侧主要分页切换按钮
+          Row() {
+            // 表情 Tab
+            Row() {
+              Image($r('app.media.ic_emoji'))
+                .width(22)
+                .height(22)
+                .fillColor(this.currentMainTab === 'emoji' ? this.T.colors.accent : this.T.colors.textSecondary)
+            }
+            .height('100%')
+            .padding({ left: this.T.spacing.md, right: this.T.spacing.md })
+            .justifyContent(FlexAlign.Center)
+            .alignItems(VerticalAlign.Center)
+            .accessibilityText(a11y(A11y.BOARD_TAB_EMOJI))
+            .onClick(() => {
+              this.currentMainTab = 'emoji';
+            })
+
+            // 贴纸 Tab
+            Row() {
+              Image($r('app.media.ic_sticker'))
+                .width(22)
+                .height(22)
+                .fillColor(this.currentMainTab === 'sticker' ? this.T.colors.accent : this.T.colors.textSecondary)
+            }
+            .height('100%')
+            .padding({ left: this.T.spacing.md, right: this.T.spacing.md })
+            .justifyContent(FlexAlign.Center)
+            .alignItems(VerticalAlign.Center)
+            .accessibilityText(a11y(A11y.BOARD_TAB_STICKERS))
+            .onClick(() => {
+              this.currentMainTab = 'sticker';
+              this.onStickerBoardVisible();
+            })
+
+            // GIF Tab
+            Row() {
+              Image($r('app.media.ic_gif'))
+                .width(22)
+                .height(22)
+                .fillColor(this.currentMainTab === 'gif' ? this.T.colors.accent : this.T.colors.textSecondary)
+            }
+            .height('100%')
+            .padding({ left: this.T.spacing.md, right: this.T.spacing.md })
+            .justifyContent(FlexAlign.Center)
+            .alignItems(VerticalAlign.Center)
+            .accessibilityText(a11y(A11y.BOARD_TAB_GIF))
+            .onClick(() => {
+              this.currentMainTab = 'gif';
+            })
+          }
+          .layoutWeight(1)
+          .height('100%')
+          .alignItems(VerticalAlign.Center)
+
+          // 右侧退格删除键
+          Row() {
+            Image($r('app.media.ic_backspace'))
+              .width(22)
+              .height(22)
+              .fillColor(this.T.colors.textSecondary)
+          }
+          .width(48)
+          .height('100%')
+          .justifyContent(FlexAlign.Center)
+          .alignItems(VerticalAlign.Center)
+          .accessibilityText(a11y(A11y.DELETE_CHAR))
+          .onClick(() => {
+            this.onDeleteChar();
+          })
         }
-        .width(48)
-        .height('100%')
-        .justifyContent(FlexAlign.Center)
-        .alignItems(VerticalAlign.Center)
-        .accessibilityText(a11y(A11y.DELETE_CHAR))
-        .onClick(() => {
-          this.onDeleteChar();
-        })
+        .width('100%')
+        .height(44)
+        .borderWidth({ top: 1 })
+        .borderColor(this.T.colors.divider)
+        .backgroundColor(this.T.colors.surface)
       }
       .width('100%')
-      .height(44)
-      .borderWidth({ top: 1 })
-      .borderColor(this.T.colors.divider)
+      .height(280)
       .backgroundColor(this.T.colors.surface)
+
+      // STICKER-WRITE-101：贴纸长按快捷操作菜单
+      if (this.activeStickerMenu !== null) {
+        this.StickerContextMenu(this.activeStickerMenu)
+      }
     }
     .width('100%')
     .height(280)
-    .backgroundColor(this.T.colors.surface)
+  }
+
+  /**
+   * STICKER-WRITE-101：长按贴纸浮出的快捷操作菜单（对齐 Android StickerPreviewView 动作集）。
+   */
+  @Builder
+  StickerContextMenu(item: StickerSetItem) {
+    Stack() {
+      // 遮罩：点击关闭
+      Column()
+        .width('100%')
+        .height('100%')
+        .backgroundColor(this.T.colors.scrim)
+        .onClick(() => {
+          this.activeStickerMenu = null;
+        })
+
+      // 菜单卡片
+      Column() {
+        // 贴纸预览
+        Row() {
+          if (stickerCellImagePath(item) !== null) {
+            Image(toSandboxUri(stickerCellImagePath(item)))
+              .width(72)
+              .height(72)
+              .objectFit(ImageFit.Contain)
+          } else {
+            Text(item.emoji.length > 0 ? item.emoji : '⭐️')
+              .fontSize(48)
+          }
+        }
+        .width('100%')
+        .height(80)
+        .justifyContent(FlexAlign.Center)
+        .alignItems(VerticalAlign.Center)
+
+        Divider()
+          .color(this.T.colors.divider)
+          .strokeWidth(0.5)
+
+        // 发送
+        Row() {
+          Text('发送贴纸')
+            .fontSize(this.T.typography.body.fontSize)
+            .fontColor(this.T.colors.accent)
+            .fontWeight(FontWeight.Medium)
+            .layoutWeight(1)
+            .textAlign(TextAlign.Center)
+        }
+        .width('100%')
+        .height(44)
+        .onClick(() => {
+          this.activeStickerMenu = null;
+          if (this.onSendSticker) {
+            this.onSendSticker(item);
+          }
+        })
+
+        Divider()
+          .color(this.T.colors.divider)
+          .strokeWidth(0.5)
+
+        // 添加/移出收藏
+        Row() {
+          Text(this.favoriteStickers.some((s: StickerSetItem): boolean => s.fileId === item.fileId)
+            ? '移出收藏'
+            : '添加至收藏')
+            .fontSize(this.T.typography.body.fontSize)
+            .fontColor(this.T.colors.textPrimary)
+            .layoutWeight(1)
+            .textAlign(TextAlign.Center)
+        }
+        .width('100%')
+        .height(44)
+        .onClick(() => {
+          const isFav: boolean = this.favoriteStickers.some((s: StickerSetItem): boolean => s.fileId === item.fileId);
+          this.activeStickerMenu = null;
+          if (this.onToggleFavoriteSticker) {
+            this.onToggleFavoriteSticker(item.fileId, !isFav);
+          }
+        })
+
+        // 从最近使用移除（若存在）
+        if (this.recentStickers.some((s: StickerSetItem): boolean => s.fileId === item.fileId)) {
+          Divider()
+            .color(this.T.colors.divider)
+            .strokeWidth(0.5)
+
+          Row() {
+            Text('从最近使用中移除')
+              .fontSize(this.T.typography.body.fontSize)
+              .fontColor(this.T.colors.destructive)
+              .layoutWeight(1)
+              .textAlign(TextAlign.Center)
+          }
+          .width('100%')
+          .height(44)
+          .onClick(() => {
+            this.activeStickerMenu = null;
+            if (this.onRemoveRecentSticker) {
+              this.onRemoveRecentSticker(item.fileId);
+            }
+          })
+        }
+
+        // 查看贴纸包（若为真实包）
+        if (!stickerBoardPackHasNoWholeSet(this.activeStickerMenuPackSetId) &&
+          this.activeStickerMenuPackSetId.length > 0 &&
+          this.activeStickerMenuPackSetId !== '0') {
+          Divider()
+            .color(this.T.colors.divider)
+            .strokeWidth(0.5)
+
+          Row() {
+            Text('查看贴纸包')
+              .fontSize(this.T.typography.body.fontSize)
+              .fontColor(this.T.colors.textPrimary)
+              .layoutWeight(1)
+              .textAlign(TextAlign.Center)
+          }
+          .width('100%')
+          .height(44)
+          .onClick(() => {
+            const setId: string = this.activeStickerMenuPackSetId;
+            this.activeStickerMenu = null;
+            this.onOpenStickerSet(setId);
+          })
+        }
+      }
+      .width(240)
+      .backgroundColor(this.T.colors.surface)
+      .borderRadius(this.T.radius.md)
+      .shadow({ radius: 8, color: '#40000000', offsetY: 4 })
+      .padding({ top: this.T.spacing.sm, bottom: this.T.spacing.xs })
+    }
+    .width('100%')
+    .height('100%')
   }
 
   /** 表情视图：分类横向滚动条 + 8列 Emoji 网格 / 最近表情空态 */
@@ -622,6 +776,13 @@ export struct EmojiBoard {
                           this.onSendSticker(item);
                         }
                       })
+                      .gesture(
+                        LongPressGesture({ duration: 350 })
+                          .onAction(() => {
+                            this.activeStickerMenu = item;
+                            this.activeStickerMenuPackSetId = pack.setId;
+                          })
+                      )
                     }
                   }, (item: StickerSetItem) => stickerCellKey(item))
                 }

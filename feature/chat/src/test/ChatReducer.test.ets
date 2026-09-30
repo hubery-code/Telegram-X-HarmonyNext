@@ -92,6 +92,9 @@ import {
   SendStickerFromPreview,
   SendSticker,
   ClearRecentStickers,
+  AddFavoriteSticker,
+  RemoveFavoriteSticker,
+  RemoveRecentSticker,
   SendGif,
   ClearRecentGifs,
   SearchGifs,
@@ -124,6 +127,7 @@ import { ReactionChip } from '../main/ets/model/ReactionChip';
 import { StickerSetPreviewState, StickerSetItem } from '../main/ets/model/StickerSetPreviewState';
 import { StickerBoardPack, StickerBoardState, StickerTrendingPack } from '../main/ets/model/StickerBoard';
 import { GifItem } from '../main/ets/model/GifItem';
+import { MediaAttachment } from '../main/ets/model/MediaAttachment';
 import {
   ChatEffect,
   SendTextMessage,
@@ -147,6 +151,9 @@ import {
   ToggleReactionEffect,
   FetchStickerSet,
   FetchStickerBoard,
+  AddFavoriteStickerInTdlib,
+  RemoveFavoriteStickerInTdlib,
+  RemoveRecentStickerInTdlib,
   ChangeStickerSetEffect,
   SendStickerMessage,
   SendAnimationMessage,
@@ -195,6 +202,20 @@ function makeBoardPack(setId: string): StickerBoardPack {
   return new StickerBoardPack(setId, 'Pandamonium ' + setId, null, [item], 20, true);
 }
 
+function makeStickerItem(fileId: number, emoji: string = '😂'): StickerSetItem {
+  return {
+    id: fileId,
+    fileId: fileId,
+    emoji: emoji,
+    width: 512,
+    height: 512,
+    localPath: null,
+    thumbnailPath: null,
+    isDownloaded: false,
+    isDownloading: false
+  };
+}
+
 /** 热门区的一行：reducer 同样只看标志位与数组长度。 */
 function makeTrendingRow(setId: string, isInstalled: boolean): StickerTrendingPack {
   return new StickerTrendingPack(setId, 'Trending ' + setId, null, 24, isInstalled);
@@ -211,6 +232,54 @@ function makeStateWith(
 
 function makeTextMessage(messageId: number, isOutgoing: boolean, text: string = 'hello'): MessageItem {
   return new MessageItem(messageId, text, 1000, isOutgoing, '', 'none', true, false, null, '');
+}
+
+function makeStickerMessage(
+  messageId: number,
+  stickerFileId: number,
+  stickerSetId: string = '12345'
+): MessageItem {
+  const media: MediaAttachment = new MediaAttachment(
+    'sticker',
+    stickerFileId,
+    null,
+    null,
+    100,
+    100,
+    0,
+    false,
+    true,
+    1,
+    '',
+    [],
+    false,
+    false,
+    0,
+    '',
+    0,
+    '',
+    [],
+    '',
+    '',
+    false,
+    stickerSetId
+  );
+  return new MessageItem(
+    messageId,
+    '😂',
+    1000,
+    false,
+    'Sender',
+    'none',
+    false,
+    false,
+    null,
+    '',
+    [],
+    -1,
+    false,
+    media
+  );
 }
 
 function makeChannelPost(
@@ -3215,6 +3284,85 @@ export default function chatReducerTest() {
       );
       expect(res.state.messages[0] === textMsg).assertTrue();
       expect(pollOfMessage(res.state.messages[1]).options[0].isChosen).assertTrue();
+    });
+
+    it('addFavoriteSticker_emitsAddFavoriteStickerInTdlibEffect', 0, () => {
+      const state: ChatUiState = makeStateWith([]);
+      const res: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        state, new AddFavoriteSticker(501), makeEnv()
+      );
+      expect(res.effects.length).assertEqual(1);
+      const effect: AddFavoriteStickerInTdlib = res.effects[0] as AddFavoriteStickerInTdlib;
+      expect(effect.kind).assertEqual('addFavoriteStickerInTdlib');
+      expect(effect.fileId).assertEqual(501);
+    });
+
+    it('removeFavoriteSticker_filtersFavoriteList_andEmitsEffect', 0, () => {
+      const item1: StickerSetItem = makeStickerItem(501, '😂');
+      const item2: StickerSetItem = makeStickerItem(502, '❤️');
+      const state: ChatUiState = makeStateWith([]).copyWith({
+        favoriteStickers: [item1, item2]
+      });
+      const res: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        state, new RemoveFavoriteSticker(501), makeEnv()
+      );
+      expect(res.state.favoriteStickers.length).assertEqual(1);
+      expect(res.state.favoriteStickers[0].fileId).assertEqual(502);
+      expect(res.effects.length).assertEqual(1);
+      const effect: RemoveFavoriteStickerInTdlib = res.effects[0] as RemoveFavoriteStickerInTdlib;
+      expect(effect.kind).assertEqual('removeFavoriteStickerInTdlib');
+      expect(effect.fileId).assertEqual(501);
+    });
+
+    it('removeRecentSticker_filtersRecentList_andEmitsEffect', 0, () => {
+      const item1: StickerSetItem = makeStickerItem(601, '👍');
+      const item2: StickerSetItem = makeStickerItem(602, '🔥');
+      const state: ChatUiState = makeStateWith([]).copyWith({
+        recentStickers: [item1, item2]
+      });
+      const res: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        state, new RemoveRecentSticker(601), makeEnv()
+      );
+      expect(res.state.recentStickers.length).assertEqual(1);
+      expect(res.state.recentStickers[0].fileId).assertEqual(602);
+      expect(res.effects.length).assertEqual(1);
+      const effect: RemoveRecentStickerInTdlib = res.effects[0] as RemoveRecentStickerInTdlib;
+      expect(effect.kind).assertEqual('removeRecentStickerInTdlib');
+      expect(effect.fileId).assertEqual(601);
+    });
+
+    it('onMessageActionMenuLoaded_forStickerMessage_populatesStickerActionOptions', 0, () => {
+      const stickerMsg: MessageItem = makeStickerMessage(10, 777, 'pack-999');
+      const favItem: StickerSetItem = makeStickerItem(777, '😂');
+      const state: ChatUiState = makeStateWith([stickerMsg]).copyWith({
+        favoriteStickers: [favItem]
+      });
+      const res: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        state,
+        new OnMessageActionMenuLoaded(10, false, false, false),
+        makeEnv()
+      );
+      expect(res.state.actionMenu !== null).assertTrue();
+      const menu: MessageActionMenuState = res.state.actionMenu as MessageActionMenuState;
+      expect(menu.showFavoriteSticker).assertTrue();
+      expect(menu.isFavoriteSticker).assertTrue();
+      expect(menu.stickerFileId).assertEqual(777);
+      expect(menu.showViewStickerSet).assertTrue();
+      expect(menu.stickerSetId).assertEqual('pack-999');
+
+      // 当不在收藏列表中时 isFavoriteSticker 为 false
+      const stateNotFav: ChatUiState = makeStateWith([stickerMsg]).copyWith({
+        favoriteStickers: []
+      });
+      const resNotFav: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        stateNotFav,
+        new OnMessageActionMenuLoaded(10, false, false, false),
+        makeEnv()
+      );
+      const menuNotFav: MessageActionMenuState = resNotFav.state.actionMenu as MessageActionMenuState;
+      expect(menuNotFav.showFavoriteSticker).assertTrue();
+      expect(menuNotFav.isFavoriteSticker).assertFalse();
+      expect(menuNotFav.showViewStickerSet).assertTrue();
     });
   });
 }

@@ -98,6 +98,16 @@ export class MessageActionMenuState {
   readonly availableReactions: string[];
   /** REACTION-101：当前消息中被本端用户已点选的表情列表。 */
   readonly chosenReactions: string[];
+  /** STICKER-WRITE-101：是否显示添加/移出收藏选项。 */
+  readonly showFavoriteSticker: boolean;
+  /** STICKER-WRITE-101：当前贴纸是否已在收藏列表中。 */
+  readonly isFavoriteSticker: boolean;
+  /** STICKER-WRITE-101：贴纸的文件 ID。 */
+  readonly stickerFileId: number;
+  /** STICKER-WRITE-101：是否显示查看贴纸包选项。 */
+  readonly showViewStickerSet: boolean;
+  /** STICKER-WRITE-101：贴纸所属贴纸包 ID。 */
+  readonly stickerSetId: string;
 
   constructor(
     messageId: number,
@@ -113,7 +123,12 @@ export class MessageActionMenuState {
     showPin: boolean = false,
     isPinned: boolean = false,
     availableReactions: string[] = ['👍', '❤️', '🔥', '🎉', '👏', '😂'],
-    chosenReactions: string[] = []
+    chosenReactions: string[] = [],
+    showFavoriteSticker: boolean = false,
+    isFavoriteSticker: boolean = false,
+    stickerFileId: number = 0,
+    showViewStickerSet: boolean = false,
+    stickerSetId: string = ''
   ) {
     this.messageId = messageId;
     this.showReply = showReply;
@@ -129,6 +144,11 @@ export class MessageActionMenuState {
     this.isPinned = isPinned;
     this.availableReactions = availableReactions;
     this.chosenReactions = chosenReactions;
+    this.showFavoriteSticker = showFavoriteSticker;
+    this.isFavoriteSticker = isFavoriteSticker;
+    this.stickerFileId = stickerFileId;
+    this.showViewStickerSet = showViewStickerSet;
+    this.stickerSetId = stickerSetId;
   }
 }
 

@@ -142,6 +142,12 @@ import {
   Stickers,
   ClearRecentStickers as TdClearRecentStickers,
   encodeClearRecentStickers,
+  AddFavoriteSticker as TdAddFavoriteSticker,
+  encodeAddFavoriteSticker,
+  RemoveFavoriteSticker as TdRemoveFavoriteSticker,
+  encodeRemoveFavoriteSticker,
+  RemoveRecentSticker as TdRemoveRecentSticker,
+  encodeRemoveRecentSticker,
   UpdateRecentStickers,
   UpdateInstalledStickerSets,
   StickerSetInfo,
@@ -294,6 +300,9 @@ import {
   FetchRecentStickers,
   FetchFavoriteStickers,
   ClearRecentStickersInTdlib,
+  AddFavoriteStickerInTdlib,
+  RemoveFavoriteStickerInTdlib,
+  RemoveRecentStickerInTdlib,
   ChangeStickerSetEffect,
   SendStickerMessage,
   SendAnimationMessage,
@@ -3793,6 +3802,24 @@ export class ChatCoordinator {
         break;
       }
 
+      case 'addFavoriteStickerInTdlib': {
+        const addFav: AddFavoriteStickerInTdlib = effect as AddFavoriteStickerInTdlib;
+        this.handleAddFavoriteSticker(addFav.fileId);
+        break;
+      }
+
+      case 'removeFavoriteStickerInTdlib': {
+        const remFav: RemoveFavoriteStickerInTdlib = effect as RemoveFavoriteStickerInTdlib;
+        this.handleRemoveFavoriteSticker(remFav.fileId);
+        break;
+      }
+
+      case 'removeRecentStickerInTdlib': {
+        const remRecent: RemoveRecentStickerInTdlib = effect as RemoveRecentStickerInTdlib;
+        this.handleRemoveRecentSticker(remRecent.fileId);
+        break;
+      }
+
       case 'fetchStickerSet': {
         const fetchSticker: FetchStickerSet = effect as FetchStickerSet;
         this.handleFetchStickerSet(fetchSticker.setId);
@@ -4390,6 +4417,100 @@ export class ChatCoordinator {
         this.recentStickerDtos = [];
         this.recentStickerFiles.clear();
         this.logger.info(TAG, 'sticker_recent_cleared', 'ok');
+      }).catch(() => {});
+    }
+  }
+
+  /**
+   * STICKER-WRITE-101：向 TDLib 添加收藏贴纸（addFavoriteSticker）。
+   */
+  private handleAddFavoriteSticker(fileId: number): void {
+    const req: TdAddFavoriteSticker = new TdAddFavoriteSticker();
+    const inputFile: InputFileId = new InputFileId();
+    inputFile.id = fileId;
+    req.sticker = inputFile;
+    const result: Result<TdPendingRequest, AppError> =
+      this.scope.request('addFavoriteSticker', encodeAddFavoriteSticker(req) as TdWireObject);
+    if (result.err) {
+      this.logger.logError(TAG, result.error);
+      this.handleFetchFavoriteStickers();
+      return;
+    }
+    if (result.ok) {
+      result.value.promise.then((res: Result<TdWireObject, AppError>) => {
+        if (this.destroyed) {
+          return;
+        }
+        if (res.err) {
+          this.logger.logError(TAG, res.error);
+          this.handleFetchFavoriteStickers();
+          return;
+        }
+        this.logger.info(TAG, 'sticker_favorite_added', `fileId=${fileId}`);
+        this.handleFetchFavoriteStickers();
+      }).catch(() => {});
+    }
+  }
+
+  /**
+   * STICKER-WRITE-101：向 TDLib 移出收藏贴纸（removeFavoriteSticker）。
+   */
+  private handleRemoveFavoriteSticker(fileId: number): void {
+    const req: TdRemoveFavoriteSticker = new TdRemoveFavoriteSticker();
+    const inputFile: InputFileId = new InputFileId();
+    inputFile.id = fileId;
+    req.sticker = inputFile;
+    const result: Result<TdPendingRequest, AppError> =
+      this.scope.request('removeFavoriteSticker', encodeRemoveFavoriteSticker(req) as TdWireObject);
+    if (result.err) {
+      this.logger.logError(TAG, result.error);
+      this.handleFetchFavoriteStickers();
+      return;
+    }
+    if (result.ok) {
+      result.value.promise.then((res: Result<TdWireObject, AppError>) => {
+        if (this.destroyed) {
+          return;
+        }
+        if (res.err) {
+          this.logger.logError(TAG, res.error);
+          this.handleFetchFavoriteStickers();
+          return;
+        }
+        this.logger.info(TAG, 'sticker_favorite_removed', `fileId=${fileId}`);
+        this.handleFetchFavoriteStickers();
+      }).catch(() => {});
+    }
+  }
+
+  /**
+   * STICKER-WRITE-101：从最近使用列表中移除某张贴纸（removeRecentSticker）。
+   */
+  private handleRemoveRecentSticker(fileId: number): void {
+    const req: TdRemoveRecentSticker = new TdRemoveRecentSticker();
+    req.is_attached = false;
+    const inputFile: InputFileId = new InputFileId();
+    inputFile.id = fileId;
+    req.sticker = inputFile;
+    const result: Result<TdPendingRequest, AppError> =
+      this.scope.request('removeRecentSticker', encodeRemoveRecentSticker(req) as TdWireObject);
+    if (result.err) {
+      this.logger.logError(TAG, result.error);
+      this.handleFetchRecentStickers();
+      return;
+    }
+    if (result.ok) {
+      result.value.promise.then((res: Result<TdWireObject, AppError>) => {
+        if (this.destroyed) {
+          return;
+        }
+        if (res.err) {
+          this.logger.logError(TAG, res.error);
+          this.handleFetchRecentStickers();
+          return;
+        }
+        this.logger.info(TAG, 'sticker_recent_removed', `fileId=${fileId}`);
+        this.handleFetchRecentStickers();
       }).catch(() => {});
     }
   }
