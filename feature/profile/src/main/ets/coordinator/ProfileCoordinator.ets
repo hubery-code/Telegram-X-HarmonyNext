@@ -117,7 +117,8 @@ import {
   messageContentSummary,
   audioSessionMetadata,
   withSharedAudioPath,
-  withSharedMediaPath
+  withSharedMediaPath,
+  withSharedVoiceSenderName
 } from '../model/SharedContentFormat';
 import {
   mergeSharedRows,
@@ -277,6 +278,8 @@ export class ProfileCoordinator {
   private notificationSubscription: TdUpdateSubscription | null = null;
   /** 已订阅通知推送的 chatId，避免每次回读都重订一份。 */
   private notificationChatId: number = 0;
+  /** 已订阅语音行发送者更新的 userId，避免重复订阅。 */
+  private readonly subscribedVoiceUserIds: Set<number> = new Set<number>();
   private destroyed: boolean = false;
 
   constructor(scope: AccountScope, userId: number, options?: ProfileCoordinatorOptions) {
@@ -314,8 +317,8 @@ export class ProfileCoordinator {
   }
 
   /**
-   * SHARED-AUDIO：语音行的发送者昵称。私聊里发言人基本只有对方与自己，
-   * 首屏 getUser 已经把两方拉进缓存；没命中时补一次请求，本行先回落到「语音消息」。
+   * SHARED-AUDIO / PROF-VOICENAME-101：语音行的发送者昵称。私聊里发言人基本只有对方与自己，
+   * 首屏 getUser 已经把两方拉进缓存；没命中时补一次请求并订阅用户更新，用户晚到后原位回灌标题。
    */
   private sharedSenderNameOf(userId: number): string {
     if (userId === 0) {
@@ -323,10 +326,42 @@ export class ProfileCoordinator {
     }
     const user: User | null = this.userRegistry.getUser(userId);
     if (user === null) {
-      this.userRegistry.requestUser(userId);
+      if (!this.subscribedVoiceUserIds.has(userId)) {
+        this.subscribedVoiceUserIds.add(userId);
+        this.subscriptions.push(this.userRegistry.subscribeUser(userId, (u: User): void => {
+          this.onSharedVoiceUserLoaded(u);
+        }));
+        this.userRegistry.requestUser(userId);
+      }
       return '';
     }
     return formatFullName(user);
+  }
+
+  /** PROF-VOICENAME-101：语音行发送者 User 数据到达时，原位刷新语音行标题。 */
+  private onSharedVoiceUserLoaded(user: User): void {
+    if (this.destroyed) {
+      return;
+    }
+    const name: string = formatFullName(user);
+    if (name.length === 0) {
+      return;
+    }
+    const rows: SharedContentRows = this.currentSharedRows();
+    const voices: SharedAudioItem[] | null = withSharedVoiceSenderName(rows.voices, user.id, name);
+    if (voices !== null) {
+      this.dispatch(new OnSharedContentLoaded(
+        this.currentState.activeSharedTab,
+        new SharedContentRows({
+          media: rows.media,
+          files: rows.files,
+          links: rows.links,
+          audios: rows.audios,
+          voices: voices
+        }),
+        this.currentState.sharedHasMore
+      ));
+    }
   }
 
   get state(): ProfileUiState {

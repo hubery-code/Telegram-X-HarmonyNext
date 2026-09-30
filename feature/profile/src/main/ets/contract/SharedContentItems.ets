@@ -87,9 +87,11 @@ export class SharedAudioItem {
   /** 时长（秒）；0 表示源消息没给。仅用于日志与后续进度条。 */
   readonly duration: number;
   readonly date: number;
+  /** 发送者用户 ID（语音行回灌晚到昵称用，音乐行留 0）。 */
+  readonly senderUserId: number;
 
   constructor(fileId: number, localPath: string | null, title: string, artist: string,
-    subtitle: string, duration: number = 0, date: number = 0) {
+    subtitle: string, duration: number = 0, date: number = 0, senderUserId: number = 0) {
     this.fileId = fileId;
     this.localPath = localPath;
     this.title = title;
@@ -97,6 +99,7 @@ export class SharedAudioItem {
     this.subtitle = subtitle;
     this.duration = duration;
     this.date = date;
+    this.senderUserId = senderUserId;
   }
 }
 

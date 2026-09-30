@@ -435,7 +435,8 @@ export function voiceItemOf(
     '',
     joinRowParts([formatSharedDuration(voice.duration), formatFileSizeText(file.size)]),
     voice.duration,
-    msg.date
+    msg.date,
+    senderId
   );
 }
 
@@ -454,7 +455,42 @@ export function withSharedAudioPath(
     const item: SharedAudioItem = items[i];
     if (item.fileId === fileId && (item.localPath === null || item.localPath.length === 0)) {
       updated.push(new SharedAudioItem(item.fileId, path, item.title, item.artist, item.subtitle,
-        item.duration, item.date));
+        item.duration, item.date, item.senderUserId));
+      touched = true;
+    } else {
+      updated.push(item);
+    }
+  }
+  return touched ? updated : null;
+}
+
+/**
+ * PROF-VOICENAME-101：发送者 User 晚到后原位回填语音行标题。
+ * 没命中任何行或标题未发生变化返回 null，避免无意义的 UI 重绘。
+ */
+export function withSharedVoiceSenderName(
+  items: SharedAudioItem[],
+  userId: number,
+  name: string
+): SharedAudioItem[] | null {
+  if (items.length === 0 || userId === 0 || name.length === 0) {
+    return null;
+  }
+  let touched: boolean = false;
+  const updated: SharedAudioItem[] = [];
+  for (let i = 0; i < items.length; i++) {
+    const item: SharedAudioItem = items[i];
+    if (item.senderUserId === userId && item.title !== name) {
+      updated.push(new SharedAudioItem(
+        item.fileId,
+        item.localPath,
+        name,
+        item.artist,
+        item.subtitle,
+        item.duration,
+        item.date,
+        item.senderUserId
+      ));
       touched = true;
     } else {
       updated.push(item);

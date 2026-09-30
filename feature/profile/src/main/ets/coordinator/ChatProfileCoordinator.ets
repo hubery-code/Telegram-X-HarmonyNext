@@ -56,7 +56,8 @@ import {
 import {
   audioSessionMetadata,
   withSharedAudioPath,
-  withSharedMediaPath
+  withSharedMediaPath,
+  withSharedVoiceSenderName
 } from '../model/SharedContentFormat';
 import {
   mergeSharedRows,
@@ -125,6 +126,8 @@ export class ChatProfileCoordinator {
   private readonly subscribedSharedFileIds: Set<number> = new Set();
   /** SHARED-AUDIO：文件还没下载完，落盘后自动续播的 fileId；0 = 无等待。 */
   private pendingPlayFileId: number = 0;
+  /** 已订阅语音行发送者更新的 userId，避免重复订阅。 */
+  private readonly subscribedVoiceUserIds: Set<number> = new Set<number>();
   private destroyed: boolean = false;
 
   constructor(
@@ -167,9 +170,9 @@ export class ChatProfileCoordinator {
   }
 
   /**
-   * 语音行的发送者昵称。
-   * 本页成员列表已经把所有发言人 getUser 过，正常都在缓存里；没命中时补一次请求，
-   * 本行先显示「语音消息」，下一页起就有名字。
+   * SHARED-AUDIO / PROF-VOICENAME-101：语音行的发送者昵称。
+   * 本页成员列表已经把所有发言人 getUser 过，正常都在缓存里；没命中时补一次请求并订阅用户更新，
+   * 用户晚到后原位回灌标题。
    */
   private sharedSenderNameOf(userId: number): string {
     if (userId === 0) {
@@ -177,10 +180,42 @@ export class ChatProfileCoordinator {
     }
     const user: User | null = this.userRegistry.getUser(userId);
     if (user === null) {
-      this.userRegistry.requestUser(userId);
+      if (!this.subscribedVoiceUserIds.has(userId)) {
+        this.subscribedVoiceUserIds.add(userId);
+        this.subscriptions.push(this.userRegistry.subscribeUser(userId, (u: User): void => {
+          this.onSharedVoiceUserLoaded(u);
+        }));
+        this.userRegistry.requestUser(userId);
+      }
       return '';
     }
     return formatFullName(user);
+  }
+
+  /** PROF-VOICENAME-101：语音行发送者 User 数据到达时，原位刷新语音行标题。 */
+  private onSharedVoiceUserLoaded(user: User): void {
+    if (this.destroyed) {
+      return;
+    }
+    const name: string = formatFullName(user);
+    if (name.length === 0) {
+      return;
+    }
+    const rows: SharedContentRows = this.currentSharedRows();
+    const voices: SharedAudioItem[] | null = withSharedVoiceSenderName(rows.voices, user.id, name);
+    if (voices !== null) {
+      this.dispatch(new OnSharedContentLoaded(
+        this.state.activeSharedTab,
+        new SharedContentRows({
+          media: rows.media,
+          files: rows.files,
+          links: rows.links,
+          audios: rows.audios,
+          voices: voices
+        }),
+        this.state.sharedHasMore
+      ));
+    }
   }
 
   getState(): ChatProfileUiState {

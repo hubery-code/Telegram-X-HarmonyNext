@@ -22,7 +22,8 @@ import {
   audioTitleOf,
   formatSharedDuration,
   voiceTitleOf,
-  withSharedAudioPath
+  withSharedAudioPath,
+  withSharedVoiceSenderName
 } from '../main/ets/model/SharedContentFormat';
 import { AudioPlaybackMetadata } from '@tgx/platform-ports';
 import {
@@ -104,6 +105,30 @@ export default function sharedAudioRowsTest(): void {
       // 没命中（或已经有路径）时返回 null，调用方据此不派发无意义的状态回灌。
       expect(withSharedAudioPath(items, 99, '/x.mp3')).assertNull();
       expect(withSharedAudioPath(items, 12, '/y.mp3')).assertNull();
+    });
+
+    it('withSharedVoiceSenderName_updatesMatchedSenderTitle', 0, () => {
+      const v1 = new SharedAudioItem(21, null, '', '', '0:07', 7, 0, 1001);
+      const v2 = new SharedAudioItem(22, null, '李四', '', '0:12', 12, 0, 1002);
+      const items: SharedAudioItem[] = [v1, v2];
+
+      // 匹配 senderUserId = 1001，将空标题刷新为「张三」，其余属性完全保留
+      const updated: SharedAudioItem[] | null = withSharedVoiceSenderName(items, 1001, '张三');
+      expect(updated !== null).assertTrue();
+      expect(updated !== null ? updated[0].title : '').assertEqual('张三');
+      expect(updated !== null ? updated[0].fileId : 0).assertEqual(21);
+      expect(updated !== null ? updated[0].senderUserId : 0).assertEqual(1001);
+      expect(updated !== null ? updated[1].title : '').assertEqual('李四');
+
+      // 未匹配任何 senderUserId 返回 null，避免状态流无效触发
+      expect(withSharedVoiceSenderName(items, 9999, '王五')).assertNull();
+
+      // 标题已经相同无需刷新，返回 null
+      expect(withSharedVoiceSenderName(items, 1002, '李四')).assertNull();
+
+      // 空数组或空名字返回 null
+      expect(withSharedVoiceSenderName([], 1001, '张三')).assertNull();
+      expect(withSharedVoiceSenderName(items, 1001, '')).assertNull();
     });
 
     it('audioSessionMetadata_mapsRowsForLockScreenCard', 0, () => {
