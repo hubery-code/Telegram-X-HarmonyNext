@@ -453,6 +453,13 @@ struct Index {
         onOpenStickerSet: (stickerSetName: string, expectCustomEmoji: boolean): void => {
           this.handleOpenStickerSet(stickerSetName, expectCustomEmoji);
         },
+        onBotStartInGroup: (botUsername: string, _startParameter: string, chatId: number): void => {
+          if (this.chatCoordinator !== null) {
+            this.toastAdapter.showToast(this.tr('Bot @%s selected', botUsername));
+          } else {
+            this.navController.navigateTo({ name: 'chat', chatId: chatId });
+          }
+        },
         logger: this.logger
       }
     );

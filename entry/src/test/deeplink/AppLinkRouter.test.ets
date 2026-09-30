@@ -13,7 +13,10 @@ import {
   AppRoute,
   ChatInfoRoute,
   ChatRoute,
+  ContactsRoute,
   DeepLinkRule,
+  SelfProfileRoute,
+  SettingsRoute,
   UserProfileRoute
 } from '@tgx/core-navigation';
 import { TdWireObject, TdWireValue } from '@tgx/td-gateway';
@@ -170,6 +173,47 @@ function stickerSetWire(setName: string, expectCustomEmoji: boolean = false): Td
   return payload;
 }
 
+function botStartInGroupWire(botUsername: string, parameter: string): TdWireObject {
+  const payload: TdWireObject = {};
+  payload['@type'] = 'internalLinkTypeBotStartInGroup';
+  payload['bot_username'] = botUsername;
+  payload['start_parameter'] = parameter;
+  return payload;
+}
+
+function userPhoneNumberWire(phoneNumber: string, openProfile: boolean = false): TdWireObject {
+  const payload: TdWireObject = {};
+  payload['@type'] = 'internalLinkTypeUserPhoneNumber';
+  payload['phone_number'] = phoneNumber;
+  payload['draft_text'] = '';
+  payload['open_profile'] = openProfile;
+  return payload;
+}
+
+function settingsWire(): TdWireObject {
+  const payload: TdWireObject = {};
+  payload['@type'] = 'internalLinkTypeSettings';
+  return payload;
+}
+
+function savedMessagesWire(): TdWireObject {
+  const payload: TdWireObject = {};
+  payload['@type'] = 'internalLinkTypeSavedMessages';
+  return payload;
+}
+
+function contactsPageWire(): TdWireObject {
+  const payload: TdWireObject = {};
+  payload['@type'] = 'internalLinkTypeContactsPage';
+  return payload;
+}
+
+function myProfilePageWire(): TdWireObject {
+  const payload: TdWireObject = {};
+  payload['@type'] = 'internalLinkTypeMyProfilePage';
+  return payload;
+}
+
 function userWire(userId: number, isBot: boolean): TdWireObject {
   const type: TdWireObject = {};
   type['@type'] = isBot ? 'userTypeBot' : 'userTypeRegular';
@@ -244,8 +288,11 @@ class FakeAppLinkPort implements AppLinkTdPort {
     if (method === 'getMessageLinkInfo') {
       return this.messageLinkResult;
     }
-    if (method === 'getUser') {
+    if (method === 'getUser' || method === 'searchUserByPhoneNumber' || method === 'getMe') {
       return this.userResult;
+    }
+    if (method === 'createPrivateChat') {
+      return this.chatResult;
     }
     if (method === 'addProxy') {
       // TDLib 的 addProxy 回 `ok`；这里只关心「有没有发出去、enable 是什么」。
@@ -330,7 +377,8 @@ function makeRouter(
   nav: NavRecorder,
   ready: boolean = true,
   prompt: AppLinkPromptPort | null = null,
-  onOpenStickerSet?: (name: string, expectCustomEmoji: boolean) => void
+  onOpenStickerSet?: (name: string, expectCustomEmoji: boolean) => void,
+  onBotStartInGroup?: (botUsername: string, startParameter: string, chatId: number) => void
 ): AppLinkRouter {
   return new AppLinkRouter(port, {
     navigate: (route: AppRoute): void => {
@@ -338,7 +386,8 @@ function makeRouter(
     },
     isReady: (): boolean => ready,
     prompt: prompt !== null ? prompt : undefined,
-    onOpenStickerSet: onOpenStickerSet
+    onOpenStickerSet: onOpenStickerSet,
+    onBotStartInGroup: onBotStartInGroup
   });
 }
 
@@ -1003,6 +1052,195 @@ export default function appLinkRouterTest() {
       const res: AppLinkResult = await makeRouter(port, nav).handle('https://t.me/addstickers/Animals');
       // 认得的 Telegram 贴纸链接绝不落浏览器
       expect(res.outcome !== 'external').assertTrue();
+    });
+
+    // ---- DEEPLINK-EXPAND-102：Bot群内启动、手机号私聊/资料、设置页、收藏夹、联系人页、个人资料页 ----
+
+    it('botStartInGroup_withCallback_callsCallbackAndRoutes', 0, async (): Promise<void> => {
+      const port: FakeAppLinkPort = new FakeAppLinkPort();
+      port.linkTypeResult = ok(botStartInGroupWire('my_group_bot', 'ref123'));
+      port.chatResult = ok(chatWire(501, privateTypeWire(501)));
+      const nav: NavRecorder = new NavRecorder();
+      let calledBot: string = '';
+      let calledParam: string = '';
+      let calledChatId: number = 0;
+      const router: AppLinkRouter = makeRouter(
+        port,
+        nav,
+        true,
+        null,
+        undefined,
+        (bot: string, param: string, chatId: number): void => {
+          calledBot = bot;
+          calledParam = param;
+          calledChatId = chatId;
+        }
+      );
+
+      const res: AppLinkResult = await router.handle('https://t.me/my_group_bot?startgroup=ref123');
+      expect(res.outcome).assertEqual('routed');
+      expect(res.linkType).assertEqual('internalLinkTypeBotStartInGroup');
+      expect(res.chatId).assertEqual(501);
+      expect(calledBot).assertEqual('my_group_bot');
+      expect(calledParam).assertEqual('ref123');
+      expect(calledChatId).assertEqual(501);
+    });
+
+    it('botStartInGroup_withoutCallback_navigatesToBotChat', 0, async (): Promise<void> => {
+      const port: FakeAppLinkPort = new FakeAppLinkPort();
+      port.linkTypeResult = ok(botStartInGroupWire('my_group_bot', 'ref123'));
+      port.chatResult = ok(chatWire(502, privateTypeWire(502)));
+      const nav: NavRecorder = new NavRecorder();
+      const router: AppLinkRouter = makeRouter(port, nav);
+
+      const res: AppLinkResult = await router.handle('https://t.me/my_group_bot?startgroup=ref123');
+      expect(res.outcome).assertEqual('routed');
+      expect(res.linkType).assertEqual('internalLinkTypeBotStartInGroup');
+      expect(res.chatId).assertEqual(502);
+      expect(nav.routes.length).assertEqual(1);
+      const target: ChatRoute = nav.last() as ChatRoute;
+      expect(target.name).assertEqual('chat');
+      expect(target.chatId).assertEqual(502);
+    });
+
+    it('botStartInGroup_emptyUsername_fails', 0, async (): Promise<void> => {
+      const port: FakeAppLinkPort = new FakeAppLinkPort();
+      port.linkTypeResult = ok(botStartInGroupWire('   ', 'ref123'));
+      const nav: NavRecorder = new NavRecorder();
+      const res: AppLinkResult = await makeRouter(port, nav).handle('https://t.me/?startgroup=ref123');
+      expect(res.outcome).assertEqual('failed');
+      expect(res.linkType).assertEqual('internalLinkTypeBotStartInGroup');
+      expect(res.reason).assertEqual('empty_bot_username');
+      expect(nav.routes.length).assertEqual(0);
+    });
+
+    it('botStartInGroup_chatUnresolved_fails', 0, async (): Promise<void> => {
+      const port: FakeAppLinkPort = new FakeAppLinkPort();
+      port.linkTypeResult = ok(botStartInGroupWire('missing_bot', 'ref123'));
+      port.chatResult = err(testError('chat not found'));
+      const nav: NavRecorder = new NavRecorder();
+      const res: AppLinkResult = await makeRouter(port, nav).handle('https://t.me/missing_bot?startgroup=ref123');
+      expect(res.outcome).assertEqual('failed');
+      expect(res.linkType).assertEqual('internalLinkTypeBotStartInGroup');
+      expect(res.reason).assertEqual('chat_unresolved');
+      expect(nav.routes.length).assertEqual(0);
+    });
+
+    it('userPhoneNumber_openChat_success', 0, async (): Promise<void> => {
+      const port: FakeAppLinkPort = new FakeAppLinkPort();
+      port.linkTypeResult = ok(userPhoneNumberWire('+8613800000000', false));
+      port.userResult = ok(userWire(888, false));
+      port.chatResult = ok(chatWire(601, privateTypeWire(888)));
+      const nav: NavRecorder = new NavRecorder();
+      const res: AppLinkResult = await makeRouter(port, nav).handle('tg://resolve?phone=+8613800000000');
+      expect(res.outcome).assertEqual('routed');
+      expect(res.linkType).assertEqual('internalLinkTypeUserPhoneNumber');
+      expect(res.chatId).assertEqual(601);
+      expect(nav.routes.length).assertEqual(1);
+      const target: ChatRoute = nav.last() as ChatRoute;
+      expect(target.name).assertEqual('chat');
+      expect(target.chatId).assertEqual(601);
+    });
+
+    it('userPhoneNumber_openProfile_success', 0, async (): Promise<void> => {
+      const port: FakeAppLinkPort = new FakeAppLinkPort();
+      port.linkTypeResult = ok(userPhoneNumberWire('+8613800000000', true));
+      port.userResult = ok(userWire(888, false));
+      const nav: NavRecorder = new NavRecorder();
+      const res: AppLinkResult = await makeRouter(port, nav).handle('tg://resolve?phone=+8613800000000');
+      expect(res.outcome).assertEqual('routed');
+      expect(res.linkType).assertEqual('internalLinkTypeUserPhoneNumber');
+      expect(nav.routes.length).assertEqual(1);
+      const target: UserProfileRoute = nav.last() as UserProfileRoute;
+      expect(target.name).assertEqual('userProfile');
+      expect(target.userId).assertEqual(888);
+    });
+
+    it('userPhoneNumber_notFound_fails', 0, async (): Promise<void> => {
+      const port: FakeAppLinkPort = new FakeAppLinkPort();
+      port.linkTypeResult = ok(userPhoneNumberWire('+8613800000000', false));
+      port.userResult = err(testError('user not found'));
+      const nav: NavRecorder = new NavRecorder();
+      const res: AppLinkResult = await makeRouter(port, nav).handle('tg://resolve?phone=+8613800000000');
+      expect(res.outcome).assertEqual('failed');
+      expect(res.linkType).assertEqual('internalLinkTypeUserPhoneNumber');
+      expect(res.reason).assertEqual('user_not_found');
+      expect(nav.routes.length).assertEqual(0);
+    });
+
+    it('userPhoneNumber_empty_fails', 0, async (): Promise<void> => {
+      const port: FakeAppLinkPort = new FakeAppLinkPort();
+      port.linkTypeResult = ok(userPhoneNumberWire('   ', false));
+      const nav: NavRecorder = new NavRecorder();
+      const res: AppLinkResult = await makeRouter(port, nav).handle('tg://resolve?phone=');
+      expect(res.outcome).assertEqual('failed');
+      expect(res.linkType).assertEqual('internalLinkTypeUserPhoneNumber');
+      expect(res.reason).assertEqual('empty_phone_number');
+      expect(nav.routes.length).assertEqual(0);
+    });
+
+    it('settings_routesToSettings', 0, async (): Promise<void> => {
+      const port: FakeAppLinkPort = new FakeAppLinkPort();
+      port.linkTypeResult = ok(settingsWire());
+      const nav: NavRecorder = new NavRecorder();
+      const res: AppLinkResult = await makeRouter(port, nav).handle('https://t.me/settings');
+      expect(res.outcome).assertEqual('routed');
+      expect(res.linkType).assertEqual('internalLinkTypeSettings');
+      expect(nav.routes.length).assertEqual(1);
+      expect(nav.last()?.name).assertEqual('settings');
+    });
+
+    it('savedMessages_routesToSelfChat', 0, async (): Promise<void> => {
+      const port: FakeAppLinkPort = new FakeAppLinkPort();
+      port.linkTypeResult = ok(savedMessagesWire());
+      port.userResult = ok(userWire(1, false)); // getMe
+      port.chatResult = ok(chatWire(999, privateTypeWire(1))); // createPrivateChat
+      const nav: NavRecorder = new NavRecorder();
+      const res: AppLinkResult = await makeRouter(port, nav).handle('https://t.me/savedmessages');
+      expect(res.outcome).assertEqual('routed');
+      expect(res.linkType).assertEqual('internalLinkTypeSavedMessages');
+      expect(res.chatId).assertEqual(999);
+      expect(nav.routes.length).assertEqual(1);
+      const target: ChatRoute = nav.last() as ChatRoute;
+      expect(target.name).assertEqual('chat');
+      expect(target.chatId).assertEqual(999);
+    });
+
+    it('contactsPage_routesToContacts', 0, async (): Promise<void> => {
+      const port: FakeAppLinkPort = new FakeAppLinkPort();
+      port.linkTypeResult = ok(contactsPageWire());
+      const nav: NavRecorder = new NavRecorder();
+      const res: AppLinkResult = await makeRouter(port, nav).handle('https://t.me/contacts');
+      expect(res.outcome).assertEqual('routed');
+      expect(res.linkType).assertEqual('internalLinkTypeContactsPage');
+      expect(nav.routes.length).assertEqual(1);
+      expect(nav.last()?.name).assertEqual('contacts');
+    });
+
+    it('myProfilePage_routesToSelfProfile', 0, async (): Promise<void> => {
+      const port: FakeAppLinkPort = new FakeAppLinkPort();
+      port.linkTypeResult = ok(myProfilePageWire());
+      const nav: NavRecorder = new NavRecorder();
+      const res: AppLinkResult = await makeRouter(port, nav).handle('https://t.me/me');
+      expect(res.outcome).assertEqual('routed');
+      expect(res.linkType).assertEqual('internalLinkTypeMyProfilePage');
+      expect(nav.routes.length).assertEqual(1);
+      expect(nav.last()?.name).assertEqual('selfProfile');
+    });
+
+    it('expandedTypes_neverEscapeToBrowser', 0, async (): Promise<void> => {
+      const port: FakeAppLinkPort = new FakeAppLinkPort();
+      const nav: NavRecorder = new NavRecorder();
+      const router: AppLinkRouter = makeRouter(port, nav);
+
+      port.linkTypeResult = ok(settingsWire());
+      expect((await router.handle('https://t.me/settings')).outcome !== 'external').assertTrue();
+
+      port.linkTypeResult = ok(contactsPageWire());
+      expect((await router.handle('https://t.me/contacts')).outcome !== 'external').assertTrue();
+
+      port.linkTypeResult = ok(myProfilePageWire());
+      expect((await router.handle('https://t.me/me')).outcome !== 'external').assertTrue();
     });
   });
 }

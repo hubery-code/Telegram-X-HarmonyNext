@@ -47,25 +47,35 @@ import {
   CheckChatInviteLink,
   ChatInviteLinkInfo,
   ChatJoinResultSuccess,
+  CreatePrivateChat,
+  GetMe,
   GetMessageLinkInfo,
   GetUser,
   GetInternalLinkType,
   InternalLinkTypeBotStart,
+  InternalLinkTypeBotStartInGroup,
   InternalLinkTypeChatInvite,
+  InternalLinkTypeContactsPage,
   InternalLinkTypeMessage,
+  InternalLinkTypeMyProfilePage,
   InternalLinkTypeProxy,
   InternalLinkTypePublicChat,
+  InternalLinkTypeSavedMessages,
+  InternalLinkTypeSettings,
   InternalLinkTypeStickerSet,
+  InternalLinkTypeUserPhoneNumber,
   JoinChatByInviteLink,
   MessageLinkInfo,
   ProxyValue,
   SearchPublicChat,
+  SearchUserByPhoneNumber,
   SendBotStartMessage,
   TdChatJoinResult,
   TdChatType,
   TdInternalLinkType,
   TdJsonRaw,
   TdUserType,
+  User,
   decodeChat,
   decodeChatInviteLinkInfo,
   decodeMessageLinkInfo,
@@ -74,11 +84,14 @@ import {
   decodeUser,
   encodeAddProxy,
   encodeCheckChatInviteLink,
+  encodeCreatePrivateChat,
   encodeGetInternalLinkType,
+  encodeGetMe,
   encodeGetMessageLinkInfo,
   encodeGetUser,
   encodeJoinChatByInviteLink,
   encodeSearchPublicChat,
+  encodeSearchUserByPhoneNumber,
   encodeSendBotStartMessage
 } from '@tgx/core-td-api-generated';
 import { TdWireObject } from '@tgx/td-gateway';
@@ -145,6 +158,10 @@ export interface AppLinkRouterOptions {
    * DEEPLINK-STICKER-101：打开贴纸包回调（入参为 stickerSetName 与 expectCustomEmoji）。
    */
   readonly onOpenStickerSet?: (stickerSetName: string, expectCustomEmoji: boolean) => void;
+  /**
+   * DEEPLINK-EXPAND-102：群聊中添加/启动 Bot 回调（入参为 botUsername、startParameter、chatId）。
+   */
+  readonly onBotStartInGroup?: (botUsername: string, startParameter: string, chatId: number) => void;
 }
 
 const TAG: string = 'AppLinkRouter';
@@ -158,6 +175,7 @@ export class AppLinkRouter {
   private readonly rules: DeepLinkRule[];
   private readonly prompt: AppLinkPromptPort;
   private readonly onOpenStickerSet?: (stickerSetName: string, expectCustomEmoji: boolean) => void;
+  private readonly onBotStartInGroup?: (botUsername: string, startParameter: string, chatId: number) => void;
   /** 在途链接（归一化后）；TDLib 没有取消接口，只能自己挡住重复。 */
   private inFlight: string | null = null;
 
@@ -170,6 +188,7 @@ export class AppLinkRouter {
     this.rules = options.rules !== undefined ? options.rules : defaultDeepLinkRules();
     this.prompt = options.prompt !== undefined ? options.prompt : DECLINING_APP_LINK_PROMPT;
     this.onOpenStickerSet = options.onOpenStickerSet;
+    this.onBotStartInGroup = options.onBotStartInGroup;
   }
 
   /** 一次只能有一条链接在解析（队列会按序重投）。 */
@@ -252,6 +271,24 @@ export class AppLinkRouter {
     }
     if (discriminator === 'internalLinkTypeStickerSet') {
       return await this.openStickerSetLink(discriminator, linkType as InternalLinkTypeStickerSet);
+    }
+    if (discriminator === 'internalLinkTypeBotStartInGroup') {
+      return await this.openBotStartInGroup(discriminator, linkType as InternalLinkTypeBotStartInGroup);
+    }
+    if (discriminator === 'internalLinkTypeUserPhoneNumber') {
+      return await this.openUserPhoneNumber(discriminator, linkType as InternalLinkTypeUserPhoneNumber);
+    }
+    if (discriminator === 'internalLinkTypeSettings') {
+      return this.openSettingsLink(discriminator, linkType as InternalLinkTypeSettings);
+    }
+    if (discriminator === 'internalLinkTypeSavedMessages') {
+      return await this.openSavedMessages(discriminator);
+    }
+    if (discriminator === 'internalLinkTypeContactsPage') {
+      return this.openContactsPage(discriminator);
+    }
+    if (discriminator === 'internalLinkTypeMyProfilePage') {
+      return this.openMyProfilePage(discriminator);
     }
     // 认得判别式、但这一步还没实现（语音聊天 / 语言包 …）：提示，不外溢浏览器。
     return result('unsupported', discriminator, 0, discriminator);
@@ -530,6 +567,139 @@ export class AppLinkRouter {
     }
     this.log('info', `outcome=notified linkType=${discriminator},setName=${setName}`);
     return result('notified', discriminator, 0, setName);
+  }
+
+  /** `t.me/<bot>?startgroup=<param>` —— 群内启动 Bot 链接（DEEPLINK-EXPAND-102）。 */
+  private async openBotStartInGroup(
+    discriminator: string,
+    linkType: InternalLinkTypeBotStartInGroup
+  ): Promise<AppLinkResult> {
+    const botUsername: string = stripAtSign(linkType.bot_username);
+    if (botUsername.length === 0) {
+      return result('failed', discriminator, 0, 'empty_bot_username');
+    }
+    const chat: Chat | null = await this.fetchPublicChat(botUsername);
+    if (chat === null) {
+      return result('failed', discriminator, 0, 'chat_unresolved');
+    }
+    if (this.onBotStartInGroup !== undefined) {
+      this.onBotStartInGroup(botUsername, linkType.start_parameter, chat.id);
+      this.log('info', `outcome=routed linkType=${discriminator},bot=${botUsername},chatId=${chat.id}`);
+      return result('routed', discriminator, chat.id, '');
+    }
+    // 未注入特定群选择器回调时，直接导航至该 Bot 会话
+    this.navigate({ name: 'chat', chatId: chat.id });
+    this.log('info', `outcome=routed linkType=${discriminator},bot=${botUsername},chatId=${chat.id}`);
+    return result('routed', discriminator, chat.id, '');
+  }
+
+  /** `tg://resolve?phone=<phone>` 或 `t.me/+<phone>` —— 手机号私聊/资料链接（DEEPLINK-EXPAND-102）。 */
+  private async openUserPhoneNumber(
+    discriminator: string,
+    linkType: InternalLinkTypeUserPhoneNumber
+  ): Promise<AppLinkResult> {
+    const phone: string = linkType.phone_number.trim();
+    if (phone.length === 0) {
+      return result('failed', discriminator, 0, 'empty_phone_number');
+    }
+    const req: SearchUserByPhoneNumber = new SearchUserByPhoneNumber();
+    req.phone_number = phone;
+    req.only_local = false;
+    const res: Result<TdWireObject, AppError> = await this.port.request(
+      'searchUserByPhoneNumber',
+      encodeSearchUserByPhoneNumber(req) as TdWireObject
+    );
+    if (res.err) {
+      this.log('warn', `outcome=failed linkType=${discriminator},phoneSearchErr=${res.error.kind}`);
+      return result('failed', discriminator, 0, 'user_not_found');
+    }
+    const user: User | null = decodeUser(res.getOrNull() as TdJsonRaw);
+    if (user === null || user.id <= 0) {
+      return result('failed', discriminator, 0, 'user_not_found');
+    }
+    if (linkType.open_profile) {
+      this.navigate({ name: 'userProfile', userId: user.id });
+      this.log('info', `outcome=routed linkType=${discriminator},userId=${user.id},openProfile=true`);
+      return result('routed', discriminator, 0, '');
+    }
+    // 打开与该用户的私聊
+    const createReq: CreatePrivateChat = new CreatePrivateChat();
+    createReq.user_id = user.id;
+    createReq.force = false;
+    const createRes: Result<TdWireObject, AppError> = await this.port.request(
+      'createPrivateChat',
+      encodeCreatePrivateChat(createReq) as TdWireObject
+    );
+    if (createRes.err) {
+      this.log('warn', `outcome=failed linkType=${discriminator},createChatErr=${createRes.error.kind}`);
+      return result('failed', discriminator, 0, 'create_chat_failed');
+    }
+    const chat: Chat | null = decodeChat(createRes.getOrNull() as TdJsonRaw);
+    if (chat === null || chat.id === 0) {
+      return result('failed', discriminator, 0, 'create_chat_failed');
+    }
+    this.navigate({ name: 'chat', chatId: chat.id });
+    this.log('info', `outcome=routed linkType=${discriminator},chatId=${chat.id}`);
+    return result('routed', discriminator, chat.id, '');
+  }
+
+  /** `tg://settings` —— 设置页链接（DEEPLINK-EXPAND-102）。 */
+  private openSettingsLink(
+    discriminator: string,
+    _linkType: InternalLinkTypeSettings
+  ): AppLinkResult {
+    this.navigate({ name: 'settings' });
+    this.log('info', `outcome=routed linkType=${discriminator}`);
+    return result('routed', discriminator, 0, '');
+  }
+
+  /** `tg://savedmessages` —— 我的收藏（Saved Messages）（DEEPLINK-EXPAND-102）。 */
+  private async openSavedMessages(
+    discriminator: string
+  ): Promise<AppLinkResult> {
+    const meReq: GetMe = new GetMe();
+    const meRes: Result<TdWireObject, AppError> = await this.port.request(
+      'getMe',
+      encodeGetMe(meReq) as TdWireObject
+    );
+    if (meRes.err) {
+      return result('failed', discriminator, 0, 'get_me_failed');
+    }
+    const me: User | null = decodeUser(meRes.getOrNull() as TdJsonRaw);
+    if (me === null || me.id <= 0) {
+      return result('failed', discriminator, 0, 'get_me_failed');
+    }
+    const chatReq: CreatePrivateChat = new CreatePrivateChat();
+    chatReq.user_id = me.id;
+    chatReq.force = false;
+    const chatRes: Result<TdWireObject, AppError> = await this.port.request(
+      'createPrivateChat',
+      encodeCreatePrivateChat(chatReq) as TdWireObject
+    );
+    if (chatRes.err) {
+      return result('failed', discriminator, 0, 'create_chat_failed');
+    }
+    const chat: Chat | null = decodeChat(chatRes.getOrNull() as TdJsonRaw);
+    if (chat === null || chat.id === 0) {
+      return result('failed', discriminator, 0, 'create_chat_failed');
+    }
+    this.navigate({ name: 'chat', chatId: chat.id });
+    this.log('info', `outcome=routed linkType=${discriminator},chatId=${chat.id}`);
+    return result('routed', discriminator, chat.id, '');
+  }
+
+  /** `tg://contacts` —— 联系人页（DEEPLINK-EXPAND-102）。 */
+  private openContactsPage(discriminator: string): AppLinkResult {
+    this.navigate({ name: 'contacts' });
+    this.log('info', `outcome=routed linkType=${discriminator}`);
+    return result('routed', discriminator, 0, '');
+  }
+
+  /** `tg://profile` / `t.me/me` —— 个人资料页（DEEPLINK-EXPAND-102）。 */
+  private openMyProfilePage(discriminator: string): AppLinkResult {
+    this.navigate({ name: 'selfProfile' });
+    this.log('info', `outcome=routed linkType=${discriminator}`);
+    return result('routed', discriminator, 0, '');
   }
 
   /**
