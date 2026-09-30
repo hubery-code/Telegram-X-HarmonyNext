@@ -80,6 +80,9 @@
         "name": "ohos.permission.KEEP_BACKGROUND_RUNNING"
       },
       {
+        "name": "ohos.permission.VIBRATE"
+      },
+      {
         "name": "ohos.permission.MICROPHONE",
         "reason": "$string:permission_microphone_reason",
         "usedScene": {

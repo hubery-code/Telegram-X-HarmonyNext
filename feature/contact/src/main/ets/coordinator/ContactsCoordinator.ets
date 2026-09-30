@@ -98,6 +98,25 @@ function primaryUsernameOf(user: User): string {
   return '';
 }
 
+/** 取用户全部有效用户名列表（editable + active_usernames，去重）。 */
+function allUsernamesOf(user: User): string[] {
+  const usernames = user.usernames;
+  if (usernames === null || usernames === undefined) {
+    return [];
+  }
+  const result: string[] = [];
+  if (usernames.editable_username.length > 0) {
+    result.push(usernames.editable_username);
+  }
+  for (let i: number = 0; i < usernames.active_usernames.length; i++) {
+    const un: string = usernames.active_usernames[i];
+    if (un.length > 0 && result.indexOf(un) === -1) {
+      result.push(un);
+    }
+  }
+  return result;
+}
+
 /** 小头像本地路径：命中即用；未命中触发下载并订阅 updateFile。 */
 function avatarPathOf(user: User, fileRegistry: FileRegistry): string | null {
   const photo = user.profile_photo;
@@ -284,7 +303,8 @@ export class ContactsCoordinator {
       formatUserStatusText(user),
       // 联系人行副标题显电话号码（Android TGUser 的 FLAG_CONTACT 分支）；
       // getContacts 回包里的都是联系人，所以这里无条件取号码，有就显。
-      formatContactPhone(user.phone_number)
+      formatContactPhone(user.phone_number),
+      allUsernamesOf(user)
     );
   }
 

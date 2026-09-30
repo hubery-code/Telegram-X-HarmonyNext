@@ -5,6 +5,11 @@
     "deviceTypes": [
       "default",
       "tablet"
+    ],
+    "requestPermissions": [
+      {
+        "name": "ohos.permission.VIBRATE"
+      }
     ]
   }
 }

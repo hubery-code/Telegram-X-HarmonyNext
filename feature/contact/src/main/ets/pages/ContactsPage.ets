@@ -25,6 +25,7 @@
 import { LightTheme, Theme } from '@tgx/core-design-system';
 import { A11y, a11y } from '@tgx/core-common';
 import { fileUri } from '@kit.CoreFileKit';
+import { vibrator } from '@kit.SensorServiceKit';
 import { ContactsItem, ContactsSection, ContactsUiState } from '../contract/ContactsUiState';
 import {
   activeSectionIndex,
@@ -181,6 +182,25 @@ export struct ContactsPage {
     this.scrubCenterY = hit.centerY;
     if (hit.index !== this.activeIndex) {
       this.scrollToSection(hit.index, false);
+      this.triggerScrubHaptic();
+    }
+  }
+
+  /** 索引拖拽换段触感反馈（对齐 Android HapticFeedbackConstants.CLOCK_TICK）。 */
+  private triggerScrubHaptic(): void {
+    try {
+      vibrator.startVibration({
+        type: 'preset',
+        effectId: 'haptic.clock.timer',
+        count: 1
+      }, {
+        id: 0,
+        usage: 'physicalFeedback'
+      }, (_err) => {
+        // 模拟器/未搭载器件忽略错误
+      });
+    } catch (_e) {
+      // 降级容错
     }
   }
 

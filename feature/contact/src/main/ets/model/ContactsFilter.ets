@@ -67,12 +67,12 @@ export function anyWordStartsWith(source: string, prefix: string): boolean {
 }
 
 /**
- * 单个联系人是否命中查询：展示名词首匹配，或用户名前缀匹配。
+ * 单个联系人是否命中查询：展示名词首匹配，或任一有效用户名前缀匹配（含 @ 前缀搜索支持）。
  *
  * `query` 归一为 `trim`（Android 传进来的 `q` 同样是去掉首尾空白的输入框文本），
- * 大小写不敏感由 `anyWordStartsWith` 内部处理。
+ * 大小写不敏感由 `anyWordStartsWith` / `startsWithIgnoreCaseAt` 内部处理。
  *
- * 刻意**不**匹配电话号码：Android 的联系人页过滤只有这两项
+ * 刻意**不**匹配电话号码：Android 的联系人页过滤只有展示名与用户名两项
  * （`ContactsController.java:901`），号码匹配只存在于全局搜索 `SearchManager`。
  */
 export function contactMatchesQuery(item: ContactsItem, query: string): boolean {
@@ -80,8 +80,24 @@ export function contactMatchesQuery(item: ContactsItem, query: string): boolean 
   if (q.length === 0) {
     return true;
   }
-  if (anyWordStartsWith(item.displayName, q)) {
+
+  // 1. 若查询不以 '@' 开头，优先匹配展示名的词首前缀
+  if (!q.startsWith('@') && anyWordStartsWith(item.displayName, q)) {
     return true;
   }
-  return item.username.length > 0 && startsWithIgnoreCaseAt(item.username, 0, q);
+
+  // 2. 匹配用户名（剥离可选的 '@' 前缀，对齐 Android Td.findUsernameByPrefix）
+  const usernameQuery: string = q.startsWith('@') ? q.substring(1).trim() : q;
+  if (usernameQuery.length > 0) {
+    const list: string[] = item.usernames !== undefined && item.usernames.length > 0
+      ? item.usernames
+      : (item.username.length > 0 ? [item.username] : []);
+    for (let i: number = 0; i < list.length; i++) {
+      if (startsWithIgnoreCaseAt(list[i], 0, usernameQuery)) {
+        return true;
+      }
+    }
+  }
+
+  return false;
 }
