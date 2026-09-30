@@ -102,8 +102,13 @@ export class AudioSessionOrchestrator implements AudioSessionCommandHandler {
     });
   }
 
-  /** 播放态变化（含进度）。 */
-  onPlaybackStateChanged(playing: boolean, positionMs: number, durationMs: number): Promise<void> {
+  /** 播放态变化（含进度）。forced=true 允许 seek 等关键事件穿透 1s 节流。 */
+  onPlaybackStateChanged(
+    playing: boolean,
+    positionMs: number,
+    durationMs: number,
+    forced: boolean = false
+  ): Promise<void> {
     if (!this.sessionReady || this.activeAssetId.length === 0) {
       return Promise.resolve();
     }
@@ -111,8 +116,8 @@ export class AudioSessionOrchestrator implements AudioSessionCommandHandler {
       this.lastDurationMs = durationMs;
     }
     const now: number = this.nowMs();
-    const forced: boolean = playing !== this.lastPlayingPushed;
-    if (!forced && now - this.lastPushAtMs < POSITION_PUSH_INTERVAL_MS) {
+    const shouldPush: boolean = forced || (playing !== this.lastPlayingPushed);
+    if (!shouldPush && now - this.lastPushAtMs < POSITION_PUSH_INTERVAL_MS) {
       return Promise.resolve();
     }
     this.lastPlayingPushed = playing;

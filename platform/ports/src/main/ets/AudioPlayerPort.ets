@@ -16,6 +16,12 @@ export type AudioPlaybackCompleteCallback = () => void;
 export type AudioPlaybackErrorCallback = (errorMsg: string) => void;
 
 /**
+ * Audio playback callback when playback state changes (playing / paused / completed).
+ * @param isPlaying True if audio is playing, false if paused, stopped, or completed.
+ */
+export type AudioPlaybackStateCallback = (isPlaying: boolean) => void;
+
+/**
  * 一条音频的展示元数据（AUDIO-BG-101）。
  *
  * 锁屏/控制中心的播控卡片只有这几个字段可写，语义按 TGX 的 `MediaPlayer` 通知来：
@@ -42,13 +48,15 @@ export interface AudioPlayerPort {
    * Start or resume playing the audio file at the specified path/URI.
    *
    * `metadata` 可选：不传时装配层按文件名兜底出标题（见 `metadataForAudioSource`）。
+   * `onStateChange` 可选：播放状态变化（播放/暂停/停止/完成）时的同步回调。
    */
   play(
     uriOrPath: string,
     onProgress?: AudioPlaybackProgressCallback,
     onComplete?: AudioPlaybackCompleteCallback,
     onError?: AudioPlaybackErrorCallback,
-    metadata?: AudioPlaybackMetadata
+    metadata?: AudioPlaybackMetadata,
+    onStateChange?: AudioPlaybackStateCallback
   ): Promise<void>;
 
   /**

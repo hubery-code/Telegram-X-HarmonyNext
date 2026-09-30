@@ -3,7 +3,8 @@ import {
   AudioPlaybackMetadata,
   AudioPlaybackProgressCallback,
   AudioPlaybackCompleteCallback,
-  AudioPlaybackErrorCallback
+  AudioPlaybackErrorCallback,
+  AudioPlaybackStateCallback
 } from '../AudioPlayerPort';
 
 export class FakeAudioPlayer implements AudioPlayerPort {
@@ -15,13 +16,15 @@ export class FakeAudioPlayer implements AudioPlayerPort {
   private onProgressCallback?: AudioPlaybackProgressCallback;
   private onCompleteCallback?: AudioPlaybackCompleteCallback;
   private onErrorCallback?: AudioPlaybackErrorCallback;
+  private onStateChangeCallback?: AudioPlaybackStateCallback;
 
   public async play(
     uriOrPath: string,
     onProgress?: AudioPlaybackProgressCallback,
     onComplete?: AudioPlaybackCompleteCallback,
     onError?: AudioPlaybackErrorCallback,
-    metadata?: AudioPlaybackMetadata
+    metadata?: AudioPlaybackMetadata,
+    onStateChange?: AudioPlaybackStateCallback
   ): Promise<void> {
     this.currentUri = uriOrPath;
     this.currentMetadata = metadata === undefined ? null : metadata;
@@ -29,7 +32,11 @@ export class FakeAudioPlayer implements AudioPlayerPort {
     this.onProgressCallback = onProgress;
     this.onCompleteCallback = onComplete;
     this.onErrorCallback = onError;
+    this.onStateChangeCallback = onStateChange;
     this.currentPosMs = 0;
+    if (this.onStateChangeCallback) {
+      this.onStateChangeCallback(true);
+    }
     if (this.onProgressCallback) {
       this.onProgressCallback(0, this.totalDurationMs);
     }
@@ -37,19 +44,34 @@ export class FakeAudioPlayer implements AudioPlayerPort {
 
   public async pause(): Promise<void> {
     this.playing = false;
+    if (this.onStateChangeCallback) {
+      this.onStateChangeCallback(false);
+    }
   }
 
   public async resume(): Promise<void> {
     this.playing = true;
+    if (this.onStateChangeCallback) {
+      this.onStateChangeCallback(true);
+    }
+    if (this.onProgressCallback) {
+      this.onProgressCallback(this.currentPosMs, this.totalDurationMs);
+    }
   }
 
   public async stop(): Promise<void> {
     this.playing = false;
     this.currentPosMs = 0;
+    if (this.onStateChangeCallback) {
+      this.onStateChangeCallback(false);
+    }
   }
 
   public async seek(positionMs: number): Promise<void> {
     this.currentPosMs = Math.max(0, Math.min(positionMs, this.totalDurationMs));
+    if (this.onProgressCallback) {
+      this.onProgressCallback(this.currentPosMs, this.totalDurationMs);
+    }
   }
 
   public isPlaying(): boolean {
@@ -83,6 +105,12 @@ export class FakeAudioPlayer implements AudioPlayerPort {
   public simulateComplete(): void {
     this.playing = false;
     this.currentPosMs = this.totalDurationMs;
+    if (this.onProgressCallback) {
+      this.onProgressCallback(this.totalDurationMs, this.totalDurationMs);
+    }
+    if (this.onStateChangeCallback) {
+      this.onStateChangeCallback(false);
+    }
     if (this.onCompleteCallback) {
       this.onCompleteCallback();
     }
@@ -90,6 +118,9 @@ export class FakeAudioPlayer implements AudioPlayerPort {
 
   public simulateError(errorMsg: string): void {
     this.playing = false;
+    if (this.onStateChangeCallback) {
+      this.onStateChangeCallback(false);
+    }
     if (this.onErrorCallback) {
       this.onErrorCallback(errorMsg);
     }

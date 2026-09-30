@@ -27,6 +27,7 @@ import {
   AudioPlaybackProgressCallback,
   AudioPlaybackCompleteCallback,
   AudioPlaybackErrorCallback,
+  AudioPlaybackStateCallback,
   AudioSessionPort,
   ContinuousTaskPort
 } from '@tgx/platform-ports';
@@ -53,6 +54,7 @@ export class HarmonyAudioPlayerAdapter implements AudioPlayerPort, AudioPlayback
   private onProgressCallback?: AudioPlaybackProgressCallback;
   private onCompleteCallback?: AudioPlaybackCompleteCallback;
   private onErrorCallback?: AudioPlaybackErrorCallback;
+  private onStateChangeCallback?: AudioPlaybackStateCallback;
 
   // 降级模拟定时器
   private fallbackTimer: number | undefined = undefined;
@@ -76,7 +78,8 @@ export class HarmonyAudioPlayerAdapter implements AudioPlayerPort, AudioPlayback
     onProgress?: AudioPlaybackProgressCallback,
     onComplete?: AudioPlaybackCompleteCallback,
     onError?: AudioPlaybackErrorCallback,
-    metadata?: AudioPlaybackMetadata
+    metadata?: AudioPlaybackMetadata,
+    onStateChange?: AudioPlaybackStateCallback
   ): Promise<void> {
     await this.releasePlayer();
 
@@ -87,10 +90,14 @@ export class HarmonyAudioPlayerAdapter implements AudioPlayerPort, AudioPlayback
     this.onProgressCallback = onProgress;
     this.onCompleteCallback = onComplete;
     this.onErrorCallback = onError;
+    this.onStateChangeCallback = onStateChange;
     this.playing = true;
     this.finished = false;
     this.currentPositionMs = 0;
     this.notifySessionStarted();
+    if (this.onStateChangeCallback) {
+      this.onStateChangeCallback(true);
+    }
 
     if (uriOrPath.startsWith('http://') || uriOrPath.startsWith('https://')) {
       await this.startPlayer(uriOrPath, -1);
@@ -174,10 +181,16 @@ export class HarmonyAudioPlayerAdapter implements AudioPlayerPort, AudioPlayback
           break;
         case 'playing':
           this.playing = true;
+          if (this.onStateChangeCallback) {
+            this.onStateChangeCallback(true);
+          }
           this.notifySessionState();
           break;
         case 'paused':
           this.playing = false;
+          if (this.onStateChangeCallback) {
+            this.onStateChangeCallback(false);
+          }
           this.notifySessionState();
           break;
         case 'completed':
@@ -185,15 +198,28 @@ export class HarmonyAudioPlayerAdapter implements AudioPlayerPort, AudioPlayback
           this.finished = true;
           this.currentPositionMs = this.durationMs;
           // 不销毁会话：锁屏上留在结束位置的卡片按 ▶ 可以重听，这是 TGX 播放器的行为。
-          this.notifySessionState();
+          this.notifySessionState(true);
+          if (this.onProgressCallback) {
+            this.onProgressCallback(this.durationMs, this.durationMs);
+          }
+          if (this.onStateChangeCallback) {
+            this.onStateChangeCallback(false);
+          }
           if (this.onCompleteCallback) {
             this.onCompleteCallback();
           }
           break;
         case 'stopped':
           this.playing = false;
+          if (this.onStateChangeCallback) {
+            this.onStateChangeCallback(false);
+          }
           break;
         case 'error':
+          this.playing = false;
+          if (this.onStateChangeCallback) {
+            this.onStateChangeCallback(false);
+          }
           // 具体错误码由 'error' 事件打印；这里只负责把 UI 从「播放中」摘出来。
           this.degradeToSimulatedPlayback('player_state_error');
           break;
@@ -260,8 +286,10 @@ export class HarmonyAudioPlayerAdapter implements AudioPlayerPort, AudioPlayback
   }
 
   private startFallbackPlayback(): void {
-    this.durationMs = SIMULATED_DURATION_MS;
-    this.notifySessionDuration();
+    if (this.durationMs <= 0) {
+      this.durationMs = SIMULATED_DURATION_MS;
+      this.notifySessionDuration();
+    }
     const intervalMs: number = 200;
     this.fallbackTimer = setInterval(() => {
       if (!this.playing) {
@@ -276,6 +304,12 @@ export class HarmonyAudioPlayerAdapter implements AudioPlayerPort, AudioPlayback
         this.stopFallback();
         this.playing = false;
         this.finished = true;
+        if (this.onProgressCallback) {
+          this.onProgressCallback(this.durationMs, this.durationMs);
+        }
+        if (this.onStateChangeCallback) {
+          this.onStateChangeCallback(false);
+        }
         if (this.onCompleteCallback) {
           this.onCompleteCallback();
         }
@@ -292,7 +326,11 @@ export class HarmonyAudioPlayerAdapter implements AudioPlayerPort, AudioPlayback
 
   async pause(): Promise<void> {
     this.playing = false;
-    this.notifySessionState();
+    this.stopFallback();
+    if (this.onStateChangeCallback) {
+      this.onStateChangeCallback(false);
+    }
+    this.notifySessionState(true);
     if (this.avPlayer) {
       try {
         await this.avPlayer.pause();
@@ -305,7 +343,13 @@ export class HarmonyAudioPlayerAdapter implements AudioPlayerPort, AudioPlayback
   async resume(): Promise<void> {
     this.playing = true;
     this.finished = false;
-    this.notifySessionState();
+    if (this.onStateChangeCallback) {
+      this.onStateChangeCallback(true);
+    }
+    if (this.onProgressCallback) {
+      this.onProgressCallback(this.currentPositionMs, this.durationMs > 0 ? this.durationMs : this.currentPositionMs);
+    }
+    this.notifySessionState(true);
     if (this.avPlayer) {
       try {
         await this.avPlayer.play();
@@ -322,7 +366,11 @@ export class HarmonyAudioPlayerAdapter implements AudioPlayerPort, AudioPlayback
   async stop(): Promise<void> {
     this.playing = false;
     this.finished = false;
+    this.currentPositionMs = 0;
     this.stopFallback();
+    if (this.onStateChangeCallback) {
+      this.onStateChangeCallback(false);
+    }
     await this.releasePlayer();
     await this.releaseSession();
   }
@@ -344,18 +392,23 @@ export class HarmonyAudioPlayerAdapter implements AudioPlayerPort, AudioPlayback
   }
 
   async seek(positionMs: number): Promise<void> {
-    this.currentPositionMs = positionMs;
-    if (positionMs < this.durationMs) {
+    const clampedMs: number = Math.max(0, this.durationMs > 0 ? Math.min(positionMs, this.durationMs) : positionMs);
+    this.currentPositionMs = clampedMs;
+    if (clampedMs < this.durationMs) {
       this.finished = false;
+    }
+    // AUDIO-PROGRESS-101：seek 必须立即回调 onProgressCallback 驱动内部进度
+    if (this.onProgressCallback) {
+      this.onProgressCallback(this.currentPositionMs, this.durationMs > 0 ? this.durationMs : this.currentPositionMs);
     }
     if (this.avPlayer) {
       try {
-        await this.avPlayer.seek(positionMs);
+        await this.avPlayer.seek(clampedMs);
       } catch (_e) {
         // ignore
       }
     }
-    this.notifySessionState();
+    this.notifySessionState(true);
   }
 
   isPlaying(): boolean {
@@ -403,12 +456,12 @@ export class HarmonyAudioPlayerAdapter implements AudioPlayerPort, AudioPlayback
     orchestrator.onPlaybackStarted(this.currentUri, withDuration).catch((): void => {});
   }
 
-  private notifySessionState(): void {
+  private notifySessionState(forced: boolean = false): void {
     const orchestrator: AudioSessionOrchestrator | null = this.orchestrator;
     if (orchestrator === null) {
       return;
     }
-    orchestrator.onPlaybackStateChanged(this.playing, this.currentPositionMs, this.durationMs)
+    orchestrator.onPlaybackStateChanged(this.playing, this.currentPositionMs, this.durationMs, forced)
       .catch((): void => {});
   }
 

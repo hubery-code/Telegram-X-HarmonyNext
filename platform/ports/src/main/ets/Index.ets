@@ -35,7 +35,8 @@ export {
   AudioPlaybackMetadata,
   AudioPlaybackProgressCallback,
   AudioPlaybackCompleteCallback,
-  AudioPlaybackErrorCallback
+  AudioPlaybackErrorCallback,
+  AudioPlaybackStateCallback
 } from './AudioPlayerPort';
 export {
   AudioSessionCommandHandler,

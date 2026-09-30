@@ -143,6 +143,23 @@ export default function audioSessionOrchestratorTest() {
       expect(session.lastPlaying).assertFalse();
     });
 
+    it('forced_seek_bypasses_throttle_and_updates_position', 0, async () => {
+      const session = new FakeAudioSession();
+      const clock = new TestClock();
+      const orch = new AudioSessionOrchestrator(session, new FakeContinuousTask(),
+        new FakePlaybackController(), clock.nowMs);
+      await orch.onPlaybackStarted('/a/one.mp3', meta('1', 'One', 60000));
+      const afterStart: number = session.setPlaybackStateCalls;
+
+      // 仅前进 100ms（< 1000ms 节流窗口），但 forced=true 代表 seek/强推，必须立即上报同步
+      clock.current += 100;
+      await orch.onPlaybackStateChanged(true, 15000, 60000, true);
+
+      expect(session.setPlaybackStateCalls).assertEqual(afterStart + 1);
+      expect(session.lastPositionMs).assertEqual(15000);
+      expect(session.lastPlaying).assertTrue();
+    });
+
     it('duration_from_state_backfills_metadata_zero', 0, async () => {
       const session = new FakeAudioSession();
       const clock = new TestClock();

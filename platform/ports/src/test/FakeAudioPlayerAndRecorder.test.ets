@@ -17,6 +17,7 @@ export default function fakeAudioPlayerAndRecorderTest() {
 
       let lastProgressPos = -1;
       let completed = false;
+      let stateChanges: boolean[] = [];
 
       await player.play(
         '/data/storage/el2/base/cache/voice.m4a',
@@ -25,27 +26,47 @@ export default function fakeAudioPlayerAndRecorderTest() {
         },
         () => {
           completed = true;
+        },
+        undefined,
+        undefined,
+        (isPlaying: boolean) => {
+          stateChanges.push(isPlaying);
         }
       );
 
       expect(player.isPlaying()).assertTrue();
       expect(player.getCurrentUri()).assertEqual('/data/storage/el2/base/cache/voice.m4a');
       expect(lastProgressPos).assertEqual(0);
+      expect(stateChanges.length).assertEqual(1);
+      expect(stateChanges[0]).assertTrue();
 
       player.simulateProgress(2500);
       expect(player.getCurrentPositionMs()).assertEqual(2500);
       expect(lastProgressPos).assertEqual(2500);
 
+      // AUDIO-PROGRESS-101: seek 应当立即回调 onProgressCallback 驱动内部进度
+      await player.seek(4000);
+      expect(player.getCurrentPositionMs()).assertEqual(4000);
+      expect(lastProgressPos).assertEqual(4000);
+
       await player.pause();
       expect(player.isPlaying()).assertFalse();
+      expect(stateChanges.length).assertEqual(2);
+      expect(stateChanges[1]).assertFalse();
 
       await player.resume();
       expect(player.isPlaying()).assertTrue();
+      expect(stateChanges.length).assertEqual(3);
+      expect(stateChanges[2]).assertTrue();
+      expect(lastProgressPos).assertEqual(4000);
 
       player.simulateComplete();
       expect(player.isPlaying()).assertFalse();
       expect(completed).assertTrue();
       expect(player.getCurrentPositionMs()).assertEqual(6000);
+      expect(lastProgressPos).assertEqual(6000);
+      expect(stateChanges.length).assertEqual(4);
+      expect(stateChanges[3]).assertFalse();
 
       await player.stop();
       expect(player.isPlaying()).assertFalse();
