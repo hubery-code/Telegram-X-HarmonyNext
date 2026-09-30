@@ -84,7 +84,8 @@ import {
   ForwardSelectedToChat,
   CommentsPage,
   CommentsUiState,
-  CommentsCoordinator
+  CommentsCoordinator,
+  OpenStickerSet
 } from '@tgx/feature-chat';
 import {
   SettingsPage,
@@ -449,10 +450,25 @@ struct Index {
           confirmInvite: (data: InvitePromptData): Promise<boolean> => this.askInvite(data),
           chooseProxy: (data: ProxyPromptData): Promise<ProxyPromptChoice> => this.askProxy(data)
         },
+        onOpenStickerSet: (stickerSetName: string, expectCustomEmoji: boolean): void => {
+          this.handleOpenStickerSet(stickerSetName, expectCustomEmoji);
+        },
         logger: this.logger
       }
     );
     return this.appLinkRouter;
+  }
+
+  /**
+   * DEEPLINK-STICKER-101：打开贴纸包。
+   * 会话中直接触发弹窗预览；会话外给予友好 Toast 提示。
+   */
+  private handleOpenStickerSet(stickerSetName: string, _expectCustomEmoji: boolean): void {
+    if (this.chatCoordinator !== null) {
+      this.chatCoordinator.dispatch(new OpenStickerSet(stickerSetName));
+      return;
+    }
+    this.toastAdapter.showToast(this.tr('Sticker set: %s', stickerSetName));
   }
 
   /** 翻译入口：弹窗构卡要的是当前语言的句子，而 Lang 是全局单例。 */

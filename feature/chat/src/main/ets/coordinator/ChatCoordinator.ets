@@ -4748,8 +4748,9 @@ export class ChatCoordinator {
     // 数字码 406 有两个来源（服务端 STICKERSET_INVALID / TDLib 本地把 420 FROZEN_METHOD_INVALID
     // 重映射成 406），分不开就会把配置问题当服务端问题，见 `model/StickerSetFetch.ets`。
     const setName: string = stickerSetShortNameOf([this.stickerBoardSets, this.trendingSets], setId);
-    if (setName.length > 0) {
-      this.requestStickerSetByName(setId, setName);
+    const targetName: string = setName.length > 0 ? setName : (!/^-?\d+$/.test(setId) ? setId : '');
+    if (targetName.length > 0) {
+      this.requestStickerSetByName(setId, targetName);
     } else {
       this.requestStickerSetById(setId);
     }
@@ -4800,8 +4801,14 @@ export class ChatCoordinator {
         }
         if (res.err) {
           this.logStickerSetFailure('name', setId, res.error);
-          // 名字这条走不通就换 id；id 那条自己会收尾，不会再递归回名字。
-          this.requestStickerSetById(setId);
+          if (!this.destroyed) {
+            if (/^-?\d+$/.test(setId)) {
+              // 名字这条走不通就换 id；id 那条自己会收尾，不会再递归回名字。
+              this.requestStickerSetById(setId);
+            } else {
+              this.dispatch(new OnStickerSetLoadFailed(setId, res.error.message));
+            }
+          }
         }
       }).catch(() => {
       });

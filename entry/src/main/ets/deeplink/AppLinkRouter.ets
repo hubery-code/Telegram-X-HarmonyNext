@@ -55,6 +55,7 @@ import {
   InternalLinkTypeMessage,
   InternalLinkTypeProxy,
   InternalLinkTypePublicChat,
+  InternalLinkTypeStickerSet,
   JoinChatByInviteLink,
   MessageLinkInfo,
   ProxyValue,
@@ -140,6 +141,10 @@ export interface AppLinkRouterOptions {
    * 所以忘了接弹窗的装配路径最坏也只是链接点了没反应，不会替用户加入会话或切代理。
    */
   readonly prompt?: AppLinkPromptPort;
+  /**
+   * DEEPLINK-STICKER-101：打开贴纸包回调（入参为 stickerSetName 与 expectCustomEmoji）。
+   */
+  readonly onOpenStickerSet?: (stickerSetName: string, expectCustomEmoji: boolean) => void;
 }
 
 const TAG: string = 'AppLinkRouter';
@@ -152,6 +157,7 @@ export class AppLinkRouter {
   private readonly codec: RouteCodec;
   private readonly rules: DeepLinkRule[];
   private readonly prompt: AppLinkPromptPort;
+  private readonly onOpenStickerSet?: (stickerSetName: string, expectCustomEmoji: boolean) => void;
   /** 在途链接（归一化后）；TDLib 没有取消接口，只能自己挡住重复。 */
   private inFlight: string | null = null;
 
@@ -163,6 +169,7 @@ export class AppLinkRouter {
     this.codec = new RouteCodec(defaultRegistry());
     this.rules = options.rules !== undefined ? options.rules : defaultDeepLinkRules();
     this.prompt = options.prompt !== undefined ? options.prompt : DECLINING_APP_LINK_PROMPT;
+    this.onOpenStickerSet = options.onOpenStickerSet;
   }
 
   /** 一次只能有一条链接在解析（队列会按序重投）。 */
@@ -243,7 +250,10 @@ export class AppLinkRouter {
     if (discriminator === 'internalLinkTypeBotStart') {
       return await this.openBotStart(discriminator, linkType as InternalLinkTypeBotStart);
     }
-    // 认得判别式、但这一步还没实现（贴纸包 / 语音聊天 / 语言包 …）：提示，不外溢浏览器。
+    if (discriminator === 'internalLinkTypeStickerSet') {
+      return await this.openStickerSetLink(discriminator, linkType as InternalLinkTypeStickerSet);
+    }
+    // 认得判别式、但这一步还没实现（语音聊天 / 语言包 …）：提示，不外溢浏览器。
     return result('unsupported', discriminator, 0, discriminator);
   }
 
@@ -502,6 +512,24 @@ export class AppLinkRouter {
     }
     const type: TdUserType | null = user.type_;
     return type !== null && type.type === 'userTypeBot';
+  }
+
+  /** `t.me/addstickers/<name>` —— 贴纸包链接（DEEPLINK-STICKER-101）。 */
+  private async openStickerSetLink(
+    discriminator: string,
+    linkType: InternalLinkTypeStickerSet
+  ): Promise<AppLinkResult> {
+    const setName: string = linkType.sticker_set_name.trim();
+    if (setName.length === 0) {
+      return result('failed', discriminator, 0, 'empty_sticker_set_name');
+    }
+    if (this.onOpenStickerSet !== undefined) {
+      this.onOpenStickerSet(setName, linkType.expect_custom_emoji);
+      this.log('info', `outcome=routed linkType=${discriminator},setName=${setName}`);
+      return result('routed', discriminator, 0, setName);
+    }
+    this.log('info', `outcome=notified linkType=${discriminator},setName=${setName}`);
+    return result('notified', discriminator, 0, setName);
   }
 
   /**

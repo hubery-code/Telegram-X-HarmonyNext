@@ -162,6 +162,14 @@ function botStartWire(botUsername: string, parameter: string, autostart: boolean
   return payload;
 }
 
+function stickerSetWire(setName: string, expectCustomEmoji: boolean = false): TdWireObject {
+  const payload: TdWireObject = {};
+  payload['@type'] = 'internalLinkTypeStickerSet';
+  payload['sticker_set_name'] = setName;
+  payload['expect_custom_emoji'] = expectCustomEmoji;
+  return payload;
+}
+
 function userWire(userId: number, isBot: boolean): TdWireObject {
   const type: TdWireObject = {};
   type['@type'] = isBot ? 'userTypeBot' : 'userTypeRegular';
@@ -305,27 +313,32 @@ class NavRecorder {
   }
 }
 
+class StickerSetRecorder {
+  readonly names: string[] = [];
+  readonly customEmojis: boolean[] = [];
+
+  callback(): (name: string, expectCustomEmoji: boolean) => void {
+    return (name: string, expectCustomEmoji: boolean): void => {
+      this.names.push(name);
+      this.customEmojis.push(expectCustomEmoji);
+    };
+  }
+}
+
 function makeRouter(
   port: AppLinkTdPort,
   nav: NavRecorder,
   ready: boolean = true,
-  prompt: AppLinkPromptPort | null = null
+  prompt: AppLinkPromptPort | null = null,
+  onOpenStickerSet?: (name: string, expectCustomEmoji: boolean) => void
 ): AppLinkRouter {
-  if (prompt === null) {
-    // 不传 prompt：测「装配忘了接弹窗」时的缺省行为（一律拒绝）。
-    return new AppLinkRouter(port, {
-      navigate: (route: AppRoute): void => {
-        nav.navigate(route);
-      },
-      isReady: (): boolean => ready
-    });
-  }
   return new AppLinkRouter(port, {
     navigate: (route: AppRoute): void => {
       nav.navigate(route);
     },
     isReady: (): boolean => ready,
-    prompt: prompt
+    prompt: prompt !== null ? prompt : undefined,
+    onOpenStickerSet: onOpenStickerSet
   });
 }
 
@@ -462,8 +475,8 @@ export default function appLinkRouterTest() {
     });
 
     it('recognizedButUnimplemented_neverEscapesToBrowser', 0, async (): Promise<void> => {
-      // DEEPLINK-102 之后仍没实现的类型（邀请/代理/消息/bot 都已经接上了）。
-      const cases: string[] = ['internalLinkTypeStickerSet', 'internalLinkTypeLanguagePack', 'internalLinkTypeGroupCall'];
+      // DEEPLINK-STICKER-101 之后仍没实现的类型（贴纸包/邀请/代理/消息/bot 都已经接上了）。
+      const cases: string[] = ['internalLinkTypeLanguagePack', 'internalLinkTypeGroupCall'];
       for (let i = 0; i < cases.length; i++) {
         const port: FakeAppLinkPort = new FakeAppLinkPort();
         port.linkTypeResult = ok(linkTypeWire(cases[i]));
@@ -920,6 +933,76 @@ export default function appLinkRouterTest() {
       expect(joined.length > 0).assertTrue();
       expect(joined.indexOf('outcome=') >= 0).assertTrue();
       expect(joined.indexOf('SECRETInviteHash')).assertEqual(-1);
+    });
+
+    it('stickerSet_withCallback_routesAndPassesName', 0, async (): Promise<void> => {
+      const port: FakeAppLinkPort = new FakeAppLinkPort();
+      port.linkTypeResult = ok(stickerSetWire('Animals', false));
+      const nav: NavRecorder = new NavRecorder();
+      const stickerRec: StickerSetRecorder = new StickerSetRecorder();
+      const router: AppLinkRouter = makeRouter(port, nav, true, null, stickerRec.callback());
+
+      const res: AppLinkResult = await router.handle('https://t.me/addstickers/Animals');
+      expect(res.outcome).assertEqual('routed');
+      expect(res.linkType).assertEqual('internalLinkTypeStickerSet');
+      expect(res.reason).assertEqual('Animals');
+      expect(nav.routes.length).assertEqual(0);
+      expect(stickerRec.names.length).assertEqual(1);
+      expect(stickerRec.names[0]).assertEqual('Animals');
+      expect(stickerRec.customEmojis[0]).assertFalse();
+    });
+
+    it('stickerSet_withCustomEmoji_passesCustomEmojiFlag', 0, async (): Promise<void> => {
+      const port: FakeAppLinkPort = new FakeAppLinkPort();
+      port.linkTypeResult = ok(stickerSetWire('DuckEmoji', true));
+      const nav: NavRecorder = new NavRecorder();
+      const stickerRec: StickerSetRecorder = new StickerSetRecorder();
+      const router: AppLinkRouter = makeRouter(port, nav, true, null, stickerRec.callback());
+
+      const res: AppLinkResult = await router.handle('https://t.me/addemoji/DuckEmoji');
+      expect(res.outcome).assertEqual('routed');
+      expect(res.linkType).assertEqual('internalLinkTypeStickerSet');
+      expect(res.reason).assertEqual('DuckEmoji');
+      expect(stickerRec.names.length).assertEqual(1);
+      expect(stickerRec.names[0]).assertEqual('DuckEmoji');
+      expect(stickerRec.customEmojis[0]).assertTrue();
+    });
+
+    it('stickerSet_withoutCallback_fallsBackToNotified', 0, async (): Promise<void> => {
+      const port: FakeAppLinkPort = new FakeAppLinkPort();
+      port.linkTypeResult = ok(stickerSetWire('Animals', false));
+      const nav: NavRecorder = new NavRecorder();
+      const router: AppLinkRouter = makeRouter(port, nav, true, null);
+
+      const res: AppLinkResult = await router.handle('https://t.me/addstickers/Animals');
+      expect(res.outcome).assertEqual('notified');
+      expect(res.linkType).assertEqual('internalLinkTypeStickerSet');
+      expect(res.reason).assertEqual('Animals');
+      expect(nav.routes.length).assertEqual(0);
+    });
+
+    it('stickerSet_emptyName_fails', 0, async (): Promise<void> => {
+      const port: FakeAppLinkPort = new FakeAppLinkPort();
+      port.linkTypeResult = ok(stickerSetWire('   ', false));
+      const nav: NavRecorder = new NavRecorder();
+      const stickerRec: StickerSetRecorder = new StickerSetRecorder();
+      const router: AppLinkRouter = makeRouter(port, nav, true, null, stickerRec.callback());
+
+      const res: AppLinkResult = await router.handle('https://t.me/addstickers/');
+      expect(res.outcome).assertEqual('failed');
+      expect(res.linkType).assertEqual('internalLinkTypeStickerSet');
+      expect(res.reason).assertEqual('empty_sticker_set_name');
+      expect(stickerRec.names.length).assertEqual(0);
+      expect(nav.routes.length).assertEqual(0);
+    });
+
+    it('stickerSet_neverEscapesToBrowser', 0, async (): Promise<void> => {
+      const port: FakeAppLinkPort = new FakeAppLinkPort();
+      port.linkTypeResult = ok(stickerSetWire('Animals', false));
+      const nav: NavRecorder = new NavRecorder();
+      const res: AppLinkResult = await makeRouter(port, nav).handle('https://t.me/addstickers/Animals');
+      // 认得的 Telegram 贴纸链接绝不落浏览器
+      expect(res.outcome !== 'external').assertTrue();
     });
   });
 }
