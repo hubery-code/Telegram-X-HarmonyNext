@@ -48,6 +48,7 @@ import { A11y, a11y, Lang } from '@tgx/core-common';
 import { isTelegramLinkCandidate } from '@tgx/core-navigation';
 import {
   AttachmentEntry,
+  ATTACHMENT_CAMERA,
   ATTACHMENT_FILE,
   ATTACHMENT_GALLERY,
   ATTACHMENT_POLL,
@@ -132,6 +133,7 @@ import {
   ChangeViewerIndex,
   RequestMediaDownload,
   PickAndSendPhoto,
+  PickAndSendCamera,
   PickAndSendFile,
   PickAndSendVideo,
   CancelMediaUpload,
@@ -3686,6 +3688,9 @@ export struct ChatPage {
     if (key === ATTACHMENT_GALLERY) {
       return $r('app.media.ic_photo');
     }
+    if (key === ATTACHMENT_CAMERA) {
+      return $r('app.media.ic_camera');
+    }
     if (key === ATTACHMENT_VIDEO) {
       return $r('app.media.ic_video');
     }
@@ -3698,6 +3703,9 @@ export struct ChatPage {
   private attachmentLabel(key: string): string {
     if (key === ATTACHMENT_GALLERY) {
       return 'Gallery';
+    }
+    if (key === ATTACHMENT_CAMERA) {
+      return 'Camera';
     }
     if (key === ATTACHMENT_VIDEO) {
       return 'Video';
@@ -3725,6 +3733,8 @@ export struct ChatPage {
     }
     if (entry.key === ATTACHMENT_GALLERY) {
       this.onDispatch(new PickAndSendPhoto());
+    } else if (entry.key === ATTACHMENT_CAMERA) {
+      this.onDispatch(new PickAndSendCamera());
     } else if (entry.key === ATTACHMENT_VIDEO) {
       this.onDispatch(new PickAndSendVideo());
     } else if (entry.key === ATTACHMENT_FILE) {

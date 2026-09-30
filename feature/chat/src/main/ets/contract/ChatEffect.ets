@@ -210,6 +210,20 @@ export class PickAndSendVideoEffect implements Effect {
   }
 }
 
+/** CAM-PICKER-101 / FEAT-P2-005：调用系统相机拍照或录像并发送 */
+export class PickAndSendCameraEffect implements Effect {
+  readonly kind: 'pickAndSendCamera' = 'pickAndSendCamera';
+  readonly chatId: number;
+  readonly replyToMessageId: number;
+  readonly caption: string;
+
+  constructor(chatId: number, replyToMessageId: number = 0, caption: string = '') {
+    this.chatId = chatId;
+    this.replyToMessageId = replyToMessageId;
+    this.caption = caption;
+  }
+}
+
 /** FILE-103：取消媒体/文件下载副作用。 */
 export class CancelMediaDownloadEffect implements Effect {
   readonly kind: 'cancelMediaDownload' = 'cancelMediaDownload';
@@ -502,6 +516,7 @@ export type ChatEffect =
   | PickAndSendPhotoEffect
   | PickAndSendFileEffect
   | PickAndSendVideoEffect
+  | PickAndSendCameraEffect
   | CancelMediaDownloadEffect
   | FetchChatSearch
   | JumpToMessage

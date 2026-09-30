@@ -229,6 +229,7 @@ import {
   OpenMediaViewer,
   RequestMediaDownload,
   PickAndSendPhoto,
+  PickAndSendCamera,
   PickAndSendFile,
   PickAndSendVideo,
   ComposerTextChanged,
@@ -284,6 +285,7 @@ import {
   ResendMessage,
   CopyTextToClipboard,
   PickAndSendPhotoEffect,
+  PickAndSendCameraEffect,
   PickAndSendFileEffect,
   PickAndSendVideoEffect,
   CancelMediaDownloadEffect,
@@ -3672,6 +3674,13 @@ export class ChatCoordinator {
         break;
       }
 
+      case 'pickAndSendCamera': {
+        // CAM-PICKER-101：系统相机拍照/录像并在完成时分发发送。
+        const pick: PickAndSendCameraEffect = effect as PickAndSendCameraEffect;
+        this.handlePickAndSendCamera(pick.replyToMessageId, pick.caption);
+        break;
+      }
+
       case 'cancelMediaDownload': {
         const cancel: CancelMediaDownloadEffect = effect as CancelMediaDownloadEffect;
         this.cancelMediaDownload(cancel.fileId);
@@ -3904,6 +3913,11 @@ export class ChatCoordinator {
     this.dispatch(new PickAndSendVideo());
   }
 
+  /** CAM-PICKER-101：调起系统相机拍照/录像并发送 */
+  public pickAndSendCamera(): void {
+    this.dispatch(new PickAndSendCamera());
+  }
+
   /** FILE-103：取消正在下载的媒体文件 */
   public cancelMediaDownload(fileId: number): Result<TdPendingRequest, AppError> {
     this.requestedFileIds.delete(fileId);
@@ -4062,6 +4076,93 @@ export class ChatCoordinator {
       }
     } catch (err) {
       this.logger.error(TAG, 'pick_video_error', String(err));
+    }
+  }
+
+  /**
+   * CAM-PICKER-101：系统相机拍照/录像选择器返回后，区分图片/视频分发发送。
+   */
+  private async handlePickAndSendCamera(replyToMessageId: number = 0, caption: string = ''): Promise<void> {
+    try {
+      const pickedMedia: PickedMedia[] = await this.mediaPickerPort.pickCamera();
+      if (this.destroyed || pickedMedia.length === 0) {
+        return;
+      }
+      const picked: PickedMedia = pickedMedia[0];
+      const path: string = (picked.path !== undefined && picked.path.length > 0) ? picked.path : picked.uri;
+      if (path.length === 0) {
+        return;
+      }
+      this.dispatch(new ComposerTextChanged(''));
+      if (this.currentState.composerMode !== null) {
+        this.dispatch(new CancelComposerMode());
+      }
+
+      const isVideo: boolean = (picked.duration !== undefined && picked.duration > 0) ||
+        (picked.mimeType !== undefined && picked.mimeType.startsWith('video/')) ||
+        path.toLowerCase().endsWith('.mp4') ||
+        path.toLowerCase().endsWith('.mov');
+
+      if (isVideo) {
+        const thumbnailPath: string | undefined =
+          (picked.thumbnailPath !== undefined && picked.thumbnailPath.length > 0) ? picked.thumbnailPath : undefined;
+        if (thumbnailPath !== undefined) {
+          this.pendingVideoThumbnails.set(path, thumbnailPath);
+        }
+        const result: Result<TdPendingRequest, AppError> = this.projection.sendVideoMessage(
+          path,
+          caption.length > 0 ? caption : undefined,
+          replyToMessageId,
+          picked.duration !== undefined ? picked.duration : 0,
+          picked.width !== undefined ? picked.width : 0,
+          picked.height !== undefined ? picked.height : 0,
+          thumbnailPath,
+          picked.thumbnailWidth !== undefined ? picked.thumbnailWidth : 0,
+          picked.thumbnailHeight !== undefined ? picked.thumbnailHeight : 0
+        );
+        this.projection.clearChatDraftMessage();
+        if (result.err) {
+          this.logger.logError(TAG, result.error);
+          this.dispatch(new OnMessageSendFailed(result.error));
+        }
+        if (result.ok) {
+          result.value.promise.then((res: Result<TdWireObject, AppError>) => {
+            if (res.err) {
+              this.logger.logError(TAG, res.error);
+              if (!this.destroyed) {
+                this.dispatch(new OnMessageSendFailed(res.error));
+              }
+            } else {
+              this.logger.info(TAG, 'send_camera_video_message_ok', `chatId=${this.currentState.chatId}`);
+            }
+          }).catch(() => {});
+        }
+      } else {
+        const result: Result<TdPendingRequest, AppError> = this.projection.sendPhotoMessage(
+          path,
+          caption.length > 0 ? caption : undefined,
+          replyToMessageId
+        );
+        this.projection.clearChatDraftMessage();
+        if (result.err) {
+          this.logger.logError(TAG, result.error);
+          this.dispatch(new OnMessageSendFailed(result.error));
+        }
+        if (result.ok) {
+          result.value.promise.then((res: Result<TdWireObject, AppError>) => {
+            if (res.err) {
+              this.logger.logError(TAG, res.error);
+              if (!this.destroyed) {
+                this.dispatch(new OnMessageSendFailed(res.error));
+              }
+            } else {
+              this.logger.info(TAG, 'send_camera_photo_message_ok', `chatId=${this.currentState.chatId}`);
+            }
+          }).catch(() => {});
+        }
+      }
+    } catch (err) {
+      this.logger.error(TAG, 'pick_camera_error', String(err));
     }
   }
 

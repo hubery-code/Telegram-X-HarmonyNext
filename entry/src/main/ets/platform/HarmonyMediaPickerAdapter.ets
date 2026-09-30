@@ -14,6 +14,8 @@ import { photoAccessHelper } from '@kit.MediaLibraryKit';
 import { picker, fileIo as fs } from '@kit.CoreFileKit';
 import { media } from '@kit.MediaKit';
 import { image } from '@kit.ImageKit';
+import { cameraPicker, camera } from '@kit.CameraKit';
+import { common } from '@kit.AbilityKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { MediaPickerPort, PickedMedia } from '@tgx/platform-ports';
 
@@ -27,6 +29,7 @@ const THUMBNAIL_TIME_US: number = 0;
 
 export class HarmonyMediaPickerAdapter implements MediaPickerPort {
   private cacheDir: string = '/data/storage/el2/base/cache';
+  private context: common.UIAbilityContext | null = null;
 
   constructor(cacheDir?: string) {
     if (cacheDir !== undefined && cacheDir.length > 0) {
@@ -38,6 +41,10 @@ export class HarmonyMediaPickerAdapter implements MediaPickerPort {
     if (cacheDir.length > 0) {
       this.cacheDir = cacheDir;
     }
+  }
+
+  public setContext(context: common.UIAbilityContext): void {
+    this.context = context;
   }
 
   private copyUriToCache(uri: string, defaultExt: string): PickedMedia {
@@ -364,6 +371,47 @@ export class HarmonyMediaPickerAdapter implements MediaPickerPort {
       return list;
     } catch (err) {
       hilog.error(DOMAIN, TAG, 'pickVideo failed: %{public}s', String(err));
+      return [];
+    }
+  }
+
+  /**
+   * CAM-PICKER-101：调起系统相机进行拍照或录像。
+   *
+   * 采用 @kit.CameraKit 的 cameraPicker.pick 独立进程选择器，
+   * 无需在 module.json5 申请相机运行时权限。
+   * 支持用户在相机界面拍摄照片或录制视频，
+   * 返回后根据 mediaType 判定是照片还是视频，若为视频则提取元数据与缩略图后返回。
+   */
+  async pickCamera(): Promise<PickedMedia[]> {
+    if (this.context === null) {
+      hilog.warn(DOMAIN, TAG, 'pickCamera called without UIAbilityContext');
+      return [];
+    }
+    try {
+      const pickerProfile: cameraPicker.PickerProfile = new cameraPicker.PickerProfile();
+      pickerProfile.cameraPosition = camera.CameraPosition.CAMERA_POSITION_BACK;
+      const result: cameraPicker.PickerResult = await cameraPicker.pick(
+        this.context,
+        [cameraPicker.PickerMediaType.PHOTO, cameraPicker.PickerMediaType.VIDEO],
+        pickerProfile
+      );
+      if (result === null || result.resultCode !== 0 || result.resultUri === null || result.resultUri.length === 0) {
+        hilog.info(DOMAIN, TAG, 'cameraPicker dismissed or failed with code=%{public}d',
+          result !== null ? result.resultCode : -1);
+        return [];
+      }
+
+      if (result.mediaType === cameraPicker.PickerMediaType.VIDEO) {
+        const copied: PickedMedia = this.copyUriToCache(result.resultUri, '.mp4');
+        const enriched: PickedMedia = await this.enrichVideo(copied);
+        return [enriched];
+      }
+
+      const copied: PickedMedia = this.copyUriToCache(result.resultUri, '.jpg');
+      return [copied];
+    } catch (err) {
+      hilog.error(DOMAIN, TAG, 'pickCamera failed: %{public}s', String(err));
       return [];
     }
   }

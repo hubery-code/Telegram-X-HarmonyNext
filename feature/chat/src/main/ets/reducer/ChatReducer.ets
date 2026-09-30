@@ -161,6 +161,7 @@ import {
   PickAndSendPhotoEffect,
   PickAndSendVideoEffect,
   PickAndSendFileEffect,
+  PickAndSendCameraEffect,
   CancelMediaDownloadEffect,
   FetchChatSearch,
   JumpToMessage,
@@ -533,6 +534,20 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
       const caption: string = state.composerText.trim();
       const effects: ChatEffect[] = [
         new PickAndSendVideoEffect(state.chatId, replyToMessageId, caption)
+      ];
+      const nextState: ChatUiState = state.showAttachmentMenu ? state.copyWith({ showAttachmentMenu: false }) : state;
+      return reduced(nextState, effects);
+    }
+
+    // CAM-PICKER-101：调起系统相机拍照/录像，带出回复目标与草稿 caption，并收起附件面板。
+    case 'pickAndSendCamera': {
+      let replyToMessageId: number = 0;
+      if (state.composerMode !== null && state.composerMode.kind === 'reply') {
+        replyToMessageId = (state.composerMode as ComposerReplyMode).targetMessageId;
+      }
+      const caption: string = state.composerText.trim();
+      const effects: ChatEffect[] = [
+        new PickAndSendCameraEffect(state.chatId, replyToMessageId, caption)
       ];
       const nextState: ChatUiState = state.showAttachmentMenu ? state.copyWith({ showAttachmentMenu: false }) : state;
       return reduced(nextState, effects);

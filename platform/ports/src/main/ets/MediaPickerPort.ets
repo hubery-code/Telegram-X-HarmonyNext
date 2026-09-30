@@ -47,4 +47,7 @@ export interface MediaPickerPort {
 
   /** 调起系统相册选取视频。maxSelectNumber 默认为 1。 */
   pickVideo(maxSelectNumber?: number): Promise<PickedMedia[]>;
+
+  /** 调起系统相机拍照或录像（CAM-PICKER-101 / FEAT-P2-005）。 */
+  pickCamera(): Promise<PickedMedia[]>;
 }

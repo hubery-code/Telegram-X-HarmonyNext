@@ -313,6 +313,7 @@ struct Index {
       const abilityContext = hostContext as common.UIAbilityContext;
       this.avSessionAdapter.setContext(abilityContext);
       this.continuousTaskAdapter.setContext(abilityContext);
+      this.mediaPickerAdapter.setContext(abilityContext);
       this.audioPlayerAdapter.attachAudioSession(this.avSessionAdapter, this.continuousTaskAdapter);
     } else {
       hilog.warn(DOMAIN, TAG, 'no host context; voice recording will fall back to placeholder clip');

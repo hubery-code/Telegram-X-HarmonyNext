@@ -13,9 +13,11 @@ export class FakeMediaPicker implements MediaPickerPort {
   public nextPhotosToReturn: PickedMedia[] = [];
   public nextFilesToReturn: PickedMedia[] = [];
   public nextVideosToReturn: PickedMedia[] = [];
+  public nextCameraToReturn: PickedMedia[] = [];
   public pickPhotoCalls: number = 0;
   public pickFileCalls: number = 0;
   public pickVideoCalls: number = 0;
+  public pickCameraCalls: number = 0;
   public shouldReject: boolean = false;
   public rejectError: Error = new Error('User cancelled');
 
@@ -43,6 +45,14 @@ export class FakeMediaPicker implements MediaPickerPort {
     return [...this.nextVideosToReturn.slice(0, maxSelectNumber)];
   }
 
+  async pickCamera(): Promise<PickedMedia[]> {
+    this.pickCameraCalls += 1;
+    if (this.shouldReject) {
+      throw this.rejectError;
+    }
+    return [...this.nextCameraToReturn];
+  }
+
   setPhotosToReturn(photos: PickedMedia[]): void {
     this.nextPhotosToReturn = photos;
   }
@@ -55,13 +65,19 @@ export class FakeMediaPicker implements MediaPickerPort {
     this.nextVideosToReturn = videos;
   }
 
+  setCameraToReturn(media: PickedMedia[]): void {
+    this.nextCameraToReturn = media;
+  }
+
   reset(): void {
     this.nextPhotosToReturn = [];
     this.nextFilesToReturn = [];
     this.nextVideosToReturn = [];
+    this.nextCameraToReturn = [];
     this.pickPhotoCalls = 0;
     this.pickFileCalls = 0;
     this.pickVideoCalls = 0;
+    this.pickCameraCalls = 0;
     this.shouldReject = false;
   }
 }

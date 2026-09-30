@@ -13,6 +13,7 @@ import { describe, it, expect } from '@ohos/hypium';
 import { ChatPermissions } from '@tgx/core-td-api-generated';
 import {
   AttachmentEntry,
+  ATTACHMENT_CAMERA,
   ATTACHMENT_FILE,
   ATTACHMENT_GALLERY,
   ATTACHMENT_POLL,
@@ -102,19 +103,34 @@ export default function chatSendRightsTest(): void {
     });
 
     it('attachmentEntries_followMediaBitsIndependently', 0, () => {
-      // 只放开图片：Gallery 可用，Video / File / Poll 不可用。
+      // 只放开图片：Gallery 与 Camera 可用，Video / File / Poll 不可用。
       const permissions: ChatPermissions = emptyPermissions();
       permissions.can_send_photos = true;
       const entries: AttachmentEntry[] = buildAttachmentEntries(sendRightsFromPermissions(permissions));
-      expect(entries.length).assertEqual(4);
+      expect(entries.length).assertEqual(5);
       expect(entries[0].key).assertEqual(ATTACHMENT_GALLERY);
-      expect(entries[1].key).assertEqual(ATTACHMENT_VIDEO);
-      expect(entries[2].key).assertEqual(ATTACHMENT_FILE);
-      expect(entries[3].key).assertEqual(ATTACHMENT_POLL);
+      expect(entries[1].key).assertEqual(ATTACHMENT_CAMERA);
+      expect(entries[2].key).assertEqual(ATTACHMENT_VIDEO);
+      expect(entries[3].key).assertEqual(ATTACHMENT_FILE);
+      expect(entries[4].key).assertEqual(ATTACHMENT_POLL);
       expect(entries[0].enabled).assertTrue();
-      expect(entries[1].enabled).assertFalse();
+      expect(entries[1].enabled).assertTrue();
       expect(entries[2].enabled).assertFalse();
       expect(entries[3].enabled).assertFalse();
+      expect(entries[4].enabled).assertFalse();
+    });
+
+    it('attachmentCamera_enabledWhenEitherPhotosOrVideosAllowed', 0, () => {
+      const none: ChatPermissions = emptyPermissions();
+      expect(buildAttachmentEntries(sendRightsFromPermissions(none))[1].enabled).assertFalse();
+
+      const photoOnly: ChatPermissions = emptyPermissions();
+      photoOnly.can_send_photos = true;
+      expect(buildAttachmentEntries(sendRightsFromPermissions(photoOnly))[1].enabled).assertTrue();
+
+      const videoOnly: ChatPermissions = emptyPermissions();
+      videoOnly.can_send_videos = true;
+      expect(buildAttachmentEntries(sendRightsFromPermissions(videoOnly))[1].enabled).assertTrue();
     });
 
     it('attachmentEntries_readOnlyChatKeepsAllEntriesVisible', 0, () => {
@@ -122,7 +138,7 @@ export default function chatSendRightsTest(): void {
       const permissions: ChatPermissions = emptyPermissions();
       permissions.can_send_basic_messages = true;
       const entries: AttachmentEntry[] = buildAttachmentEntries(sendRightsFromPermissions(permissions));
-      expect(entries.length).assertEqual(4);
+      expect(entries.length).assertEqual(5);
       for (let i = 0; i < entries.length; i++) {
         expect(entries[i].enabled).assertFalse();
         expect(attachmentRestrictionLabel(entries[i]).length > 0).assertTrue();
@@ -131,18 +147,18 @@ export default function chatSendRightsTest(): void {
 
     it('restrictionLabel_emptyForEnabledAndDistinctPerKind', 0, () => {
       const labels: string[] = [];
-      const keys: string[] = [ATTACHMENT_GALLERY, ATTACHMENT_VIDEO, ATTACHMENT_FILE, ATTACHMENT_POLL];
+      const keys: string[] = [ATTACHMENT_GALLERY, ATTACHMENT_CAMERA, ATTACHMENT_VIDEO, ATTACHMENT_FILE, ATTACHMENT_POLL];
       for (let i = 0; i < keys.length; i++) {
         const disabled: AttachmentEntry = new AttachmentEntry(keys[i], false);
         labels.push(attachmentRestrictionLabel(disabled));
         expect(attachmentRestrictionLabel(new AttachmentEntry(keys[i], true))).assertEqual('');
       }
-      // 四种受限原因文案不得雷同，否则用户看不出到底是哪一类被禁。
+      // 五种受限原因文案不得雷同，否则用户看不出到底是哪一类被禁。
       const seen: Set<string> = new Set<string>();
       for (let i = 0; i < labels.length; i++) {
         seen.add(labels[i]);
       }
-      expect(seen.size).assertEqual(4);
+      expect(seen.size).assertEqual(5);
       expect(attachmentRestrictionLabel(new AttachmentEntry('unknown', false)).length > 0).assertTrue();
     });
 
@@ -181,10 +197,10 @@ export default function chatSendRightsTest(): void {
     });
 
     it('sendVeto_distinctSentencePerContentKind', 0, () => {
-      // 六类受限内容六句不同的话：同一句会让用户猜不到被禁的是哪一类。
+      // 七类受限内容七句不同的话：同一句会让用户猜不到被禁的是哪一类。
       const rights: ChatSendRights = new ChatSendRights(false, false, false, false, false, false, false, false, false);
       const keys: string[] = [
-        ATTACHMENT_GALLERY, ATTACHMENT_VIDEO, ATTACHMENT_FILE, ATTACHMENT_POLL, CONTENT_STICKER, CONTENT_GIF
+        ATTACHMENT_GALLERY, ATTACHMENT_CAMERA, ATTACHMENT_VIDEO, ATTACHMENT_FILE, ATTACHMENT_POLL, CONTENT_STICKER, CONTENT_GIF
       ];
       const seen: Set<string> = new Set<string>();
       for (let i = 0; i < keys.length; i++) {
@@ -192,7 +208,7 @@ export default function chatSendRightsTest(): void {
         expect(veto.length > 0).assertTrue();
         seen.add(veto);
       }
-      expect(seen.size).assertEqual(6);
+      expect(seen.size).assertEqual(7);
     });
 
     it('sendVeto_unknownContentKindPassesThrough', 0, () => {
@@ -204,7 +220,7 @@ export default function chatSendRightsTest(): void {
 
     it('attachmentLabel_and_sendVeto_readTheSameSentenceTable', 0, () => {
       // 置灰提示与发送否决必须同一张表：两处各抄一遍迟早写成两个句子。
-      const pairs: string[] = [ATTACHMENT_GALLERY, ATTACHMENT_VIDEO, ATTACHMENT_FILE, ATTACHMENT_POLL];
+      const pairs: string[] = [ATTACHMENT_GALLERY, ATTACHMENT_CAMERA, ATTACHMENT_VIDEO, ATTACHMENT_FILE, ATTACHMENT_POLL];
       const none: ChatSendRights = new ChatSendRights(false, false, false, false, false, false, false, false, false);
       for (let i = 0; i < pairs.length; i++) {
         const entry: AttachmentEntry = new AttachmentEntry(pairs[i], false);

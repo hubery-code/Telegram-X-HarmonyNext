@@ -35,6 +35,7 @@ import {
   OnForwardCompleted,
   OnForwardFailed,
   PickAndSendPhoto,
+  PickAndSendCamera,
   PickAndSendFile,
   PickAndSendVideo,
   RestoreDraft,
@@ -139,6 +140,7 @@ import {
   ForwardMessages,
   CopyTextToClipboard,
   PickAndSendPhotoEffect,
+  PickAndSendCameraEffect,
   PickAndSendVideoEffect,
   CancelMediaDownloadEffect,
   ResendMessage,
@@ -1293,6 +1295,37 @@ export default function chatReducerTest() {
       expect(effect.chatId).assertEqual(42);
       expect(effect.caption).assertEqual('Look at this');
       expect(effect.replyToMessageId).assertEqual(88);
+    });
+
+    it('pickAndSendCamera_closesAttachmentMenu', 0, () => {
+      const initial: ChatUiState = makeState('').copyWith({ showAttachmentMenu: true });
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        initial,
+        new PickAndSendCamera(),
+        makeEnv()
+      );
+
+      expect(result.state.showAttachmentMenu).assertFalse();
+      expect(result.effects.length).assertEqual(1);
+      expect(result.effects[0].kind).assertEqual('pickAndSendCamera');
+    });
+
+    it('pickAndSendCamera_carriesComposerCaptionAndReplyTarget', 0, () => {
+      const initial: ChatUiState = makeState('Photo from camera').copyWith({
+        composerMode: new ComposerReplyMode(99, 'Bob', 'previous message')
+      });
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        initial,
+        new PickAndSendCamera(),
+        makeEnv()
+      );
+
+      expect(result.effects.length).assertEqual(1);
+      const effect: PickAndSendCameraEffect = result.effects[0] as PickAndSendCameraEffect;
+      expect(effect.kind).assertEqual('pickAndSendCamera');
+      expect(effect.chatId).assertEqual(42);
+      expect(effect.caption).assertEqual('Photo from camera');
+      expect(effect.replyToMessageId).assertEqual(99);
     });
 
     it('backToChatList_closesAttachmentMenu_withoutNavigatingBack', 0, () => {

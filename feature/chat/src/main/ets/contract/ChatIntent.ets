@@ -351,6 +351,11 @@ export class PickAndSendVideo implements Intent {
   readonly kind: 'pickAndSendVideo' = 'pickAndSendVideo';
 }
 
+/** CAM-PICKER-101 / FEAT-P2-005：调起系统相机拍照或录像并发送（附带当前输入栏草稿作为 caption 与回复引用）。 */
+export class PickAndSendCamera implements Intent {
+  readonly kind: 'pickAndSendCamera' = 'pickAndSendCamera';
+}
+
 /** 取消正在上传或待发送的媒体消息并撤回 */
 export class CancelMediaUpload implements Intent {
   readonly kind: 'cancelMediaUpload' = 'cancelMediaUpload';
@@ -708,6 +713,7 @@ export type ChatIntent =
   | PickAndSendPhoto
   | PickAndSendFile
   | PickAndSendVideo
+  | PickAndSendCamera
   | CancelMediaUpload
   | RestoreDraft
   | OpenAttachmentMenu

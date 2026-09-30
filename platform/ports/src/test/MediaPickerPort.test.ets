@@ -134,5 +134,46 @@ export default function mediaPickerPortTest() {
       expect(empty.length).assertEqual(0);
     });
 
+    it('pickCamera_returnsConfiguredMedia', 0, async () => {
+      const picker: FakeMediaPicker = new FakeMediaPicker();
+      const mockCamera: PickedMedia[] = [
+        { uri: 'camera_capture.jpg', mimeType: 'image/jpeg' }
+      ];
+      picker.setCameraToReturn(mockCamera);
+
+      const res: PickedMedia[] = await picker.pickCamera();
+      expect(picker.pickCameraCalls).assertEqual(1);
+      expect(res.length).assertEqual(1);
+      expect(res[0].uri).assertEqual('camera_capture.jpg');
+    });
+
+    it('pickCamera_handlesRejection_whenConfigured', 0, async () => {
+      const picker: FakeMediaPicker = new FakeMediaPicker();
+      picker.shouldReject = true;
+      picker.rejectError = new Error('Camera cancelled');
+
+      let caught: boolean = false;
+      try {
+        await picker.pickCamera();
+      } catch (err) {
+        caught = true;
+      }
+      expect(caught).assertTrue();
+      expect(picker.pickCameraCalls).assertEqual(1);
+    });
+
+    it('reset_alsoClearsCameraState', 0, async () => {
+      const picker: FakeMediaPicker = new FakeMediaPicker();
+      picker.setCameraToReturn([{ uri: 'cam.mp4', duration: 5 }]);
+      const before: PickedMedia[] = await picker.pickCamera();
+      expect(before.length).assertEqual(1);
+      expect(picker.pickCameraCalls).assertEqual(1);
+
+      picker.reset();
+      expect(picker.pickCameraCalls).assertEqual(0);
+      const empty: PickedMedia[] = await picker.pickCamera();
+      expect(empty.length).assertEqual(0);
+    });
+
   });
 }

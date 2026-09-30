@@ -120,6 +120,7 @@ export class AttachmentEntry {
 }
 
 export const ATTACHMENT_GALLERY: string = 'gallery';
+export const ATTACHMENT_CAMERA: string = 'camera';
 export const ATTACHMENT_VIDEO: string = 'video';
 export const ATTACHMENT_FILE: string = 'file';
 export const ATTACHMENT_POLL: string = 'poll';
@@ -131,6 +132,7 @@ export const ATTACHMENT_POLL: string = 'poll';
 export function buildAttachmentEntries(rights: ChatSendRights): AttachmentEntry[] {
   const out: AttachmentEntry[] = [
     new AttachmentEntry(ATTACHMENT_GALLERY, rights.photos),
+    new AttachmentEntry(ATTACHMENT_CAMERA, rights.photos || rights.videos),
     new AttachmentEntry(ATTACHMENT_VIDEO, rights.videos),
     new AttachmentEntry(ATTACHMENT_FILE, rights.documents),
     new AttachmentEntry(ATTACHMENT_POLL, rights.polls)
@@ -156,6 +158,8 @@ export function canSendContent(rights: ChatSendRights, contentKey: string): bool
   switch (contentKey) {
     case ATTACHMENT_GALLERY:
       return rights.photos;
+    case ATTACHMENT_CAMERA:
+      return rights.photos || rights.videos;
     case ATTACHMENT_VIDEO:
       return rights.videos;
     case ATTACHMENT_FILE:
@@ -180,11 +184,13 @@ export function attachmentRestrictionLabel(entry: AttachmentEntry): string {
   return entry.enabled ? '' : restrictionSentence(entry.key);
 }
 
-/** 六类受限内容共用一张文案表，避免同一语义在两处各写一遍。 */
+/** 七类受限内容共用一张文案表，避免同一语义在两处各写一遍。 */
 function restrictionSentence(contentKey: string): string {
   switch (contentKey) {
     case ATTACHMENT_GALLERY:
       return '此会话不允许发送图片';
+    case ATTACHMENT_CAMERA:
+      return '此会话不允许发送拍摄的照片或视频';
     case ATTACHMENT_VIDEO:
       return '此会话不允许发送视频';
     case ATTACHMENT_FILE:
