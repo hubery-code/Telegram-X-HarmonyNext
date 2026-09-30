@@ -8,7 +8,7 @@
 import { describe, it, expect } from '@ohos/hypium';
 import { SettingsUiState } from '../main/ets/contract/SettingsUiState';
 import { PrivacyDetailState } from '../main/ets/model/PrivacyDetail';
-import { settingsOverlayCloseIntent } from '../main/ets/model/SettingsOverlayBack';
+import { settingsOverlayCloseIntent, isSettingsBackBlocked } from '../main/ets/model/SettingsOverlayBack';
 
 function detail(pickerTarget: 'always' | 'never' | null): PrivacyDetailState {
   return PrivacyDetailState.forLoading('show_last_seen').copyWith({ pickerTarget: pickerTarget });
@@ -18,6 +18,20 @@ export default function settingsOverlayBackTest(): void {
   describe('SettingsOverlayBack', () => {
     it('idle_returnsNullSoRouterPops', 0, () => {
       expect(settingsOverlayCloseIntent(SettingsUiState.initial())).assertNull();
+    });
+
+    it('isLoggingOut_blocksBackPress', 0, () => {
+      const state: SettingsUiState = SettingsUiState.initial().copyWith({ isLoggingOut: true });
+      expect(isSettingsBackBlocked(state)).assertTrue();
+    });
+
+    it('isLoading_blocksBackPress', 0, () => {
+      const state: SettingsUiState = SettingsUiState.initial().copyWith({ isLoading: true });
+      expect(isSettingsBackBlocked(state)).assertTrue();
+    });
+
+    it('idle_allowsBackPress', 0, () => {
+      expect(isSettingsBackBlocked(SettingsUiState.initial())).assertFalse();
     });
 
     it('devicesPage_closesDevicesOnly', 0, () => {

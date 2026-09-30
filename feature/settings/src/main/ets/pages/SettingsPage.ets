@@ -1381,7 +1381,10 @@ export struct SettingsPage {
       Column()
         .width('100%')
         .height('100%')
-        .backgroundColor('#44000000')
+        .backgroundColor(this.getTheme().colors.scrim)
+        .onClick((): void => {
+          // 阻断全屏点击，防止穿透至下层设置项
+        })
 
       Column() {
         LoadingProgress()
@@ -1400,5 +1403,6 @@ export struct SettingsPage {
     }
     .width('100%')
     .height('100%')
+    .hitTestBehavior(HitTestMode.Default)
   }
 }

@@ -94,6 +94,7 @@ import {
   SwitchAccount,
   RequestAddAccount,
   settingsOverlayCloseIntent,
+  isSettingsBackBlocked,
   SectionFocused
 } from '@tgx/feature-settings';
 import {
@@ -404,6 +405,10 @@ struct Index {
       return this.navController.pop();
     }
     if (this.currentRoute.name === 'settings' || this.currentRoute.name === 'settingsSection') {
+      // SET-LOGOUT-101：若处于登出或全局加载忙碌态，直接吞掉返回键，禁止退出设置页破坏登出清理链路
+      if (isSettingsBackBlocked(this.settingsUiState)) {
+        return true;
+      }
       // SET-BACK-101：设置页的子页与弹层全是同一层 Stack 上的覆盖层，导航栈管不到，
       // 所以「先关最上层、关完才 pop」的层级只能由 feature/settings 自己定（那里才有
       // 渲染顺序这唯一真相）。隐私详情页尤其要紧：它的写回挂在关闭意图上，

@@ -65,3 +65,12 @@ export function settingsOverlayCloseIntent(state: SettingsUiState): SettingsInte
   }
   return null;
 }
+
+/**
+ * 判定设置页是否处于应当拦截物理返回键的忙碌态（例如登出在途或全局加载中）。
+ * 登出在途时必须吞掉物理返回键，防止在数据清理与账号注销未结案时 pop 造成状态残缺。
+ */
+export function isSettingsBackBlocked(state: SettingsUiState): boolean {
+  return state.isLoggingOut || state.isLoading;
+}
+
