@@ -57,10 +57,18 @@ export struct AnimatedSticker {
    * 设置页刚勾完不会让屏幕上正在演的那张立刻改速或停下，下一张挂上来的才按新值走。
    */
   loop: boolean = true;
+  /** 点按重播触发器（STICKER-VIEWER-101）：在不循环模式下点按贴纸触发重新播放一次。 */
+  @Prop @Watch('onReplayTrigger') replayTrigger: number = 0;
   /** 动画是否已经挂上；决定缩略图还在不在屏幕上。 */
   @State private animated: boolean = false;
   /** 第一圈的取证日志只落一次。 */
   private lapLogged: boolean = false;
+
+  private onReplayTrigger(): void {
+    if (this.item !== null) {
+      this.item.goToAndPlay(0, true);
+    }
+  }
 
   private settings: RenderingContextSettings = new RenderingContextSettings(true);
   private ctx: CanvasRenderingContext2D = new CanvasRenderingContext2D(this.settings);

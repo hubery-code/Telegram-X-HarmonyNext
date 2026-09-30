@@ -113,7 +113,7 @@ export function viewerMotionRender(media: MediaAttachment, isActive: boolean): V
   return isActive ? 'player' : 'poster';
 }
 
-/** 缩放与拖拽只对照片开放（视频页交给播放器自己的控制条）。 */
+/** 缩放与拖拽对照片与静态贴纸开放（视频页交给播放器自己的控制条）。 */
 export function viewerZoomable(kind: MediaKind): boolean {
-  return kind === 'photo';
+  return kind === 'photo' || kind === 'sticker';
 }

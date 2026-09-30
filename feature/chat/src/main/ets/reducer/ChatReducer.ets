@@ -219,11 +219,11 @@ export function buildViewerItems(messages: readonly MessageItem[]): MediaViewerI
     if (item.albumItems.length > 0) {
       for (let j = 0; j < item.albumItems.length; j++) {
         const media: MediaAttachment = item.albumItems[j];
-        if (media.kind === 'photo' || media.kind === 'animation' || media.kind === 'video') {
+        if (media.kind === 'photo' || media.kind === 'animation' || media.kind === 'video' || media.kind === 'sticker') {
           list.push(new MediaViewerItem(item.messageId, sender, item.timestampMs, media));
         }
       }
-    } else if (item.media !== null && (item.media.kind === 'photo' || item.media.kind === 'animation' || item.media.kind === 'video')) {
+    } else if (item.media !== null && (item.media.kind === 'photo' || item.media.kind === 'animation' || item.media.kind === 'video' || item.media.kind === 'sticker')) {
       list.push(new MediaViewerItem(item.messageId, sender, item.timestampMs, item.media));
     }
   }

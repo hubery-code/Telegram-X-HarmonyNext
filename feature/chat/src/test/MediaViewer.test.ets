@@ -21,6 +21,7 @@ import {
   NavigateBack
 } from '../main/ets/contract/ChatEffect';
 import { chatReducer, buildViewerItems } from '../main/ets/reducer/ChatReducer';
+import { viewerZoomable } from '../main/ets/model/ViewerPlayback';
 
 function makeEnv(): ReducerEnv {
   const env: ReducerEnv = {
@@ -63,6 +64,34 @@ function makeVideoMedia(fileId: number): MediaAttachment {
     '',
     [],
     false
+  );
+}
+
+function makeStickerMedia(fileId: number, stickerSetId: string = '0'): MediaAttachment {
+  return new MediaAttachment(
+    'sticker',
+    fileId,
+    '/path/sticker.webp',
+    '/path/thumb.webp',
+    512,
+    512,
+    0,
+    false,
+    true,
+    1.0,
+    '🔥',
+    [],
+    false,
+    false,
+    0,
+    'sticker.webp',
+    1024,
+    'image/webp',
+    [],
+    '',
+    '',
+    false,
+    stickerSetId
   );
 }
 
@@ -259,6 +288,47 @@ export default function mediaViewerTest() {
       // 照片页不因为翻页白白重建（重建就是重新解码，会闪）。
       const photo: MediaViewerItem = new MediaViewerItem(202, 'Bob', 1000, makePhotoMedia(6));
       expect(mediaViewerItemKey(photo, true)).assertEqual(mediaViewerItemKey(photo, false));
+    });
+
+    // ---- STICKER-VIEWER-101：贴纸大图查看器集成测试 ----
+
+    it('buildViewerItems_includesStickers', 0, () => {
+      const stickerMsg = makeMediaMessage(301, false, makeStickerMedia(10));
+      const textMsg = makeTextMessage(302, 'just text');
+      const photoMsg = makeMediaMessage(303, false, makePhotoMedia(11));
+
+      const items = buildViewerItems([stickerMsg, textMsg, photoMsg]);
+      expect(items.length).assertEqual(2);
+      expect(items[0].messageId).assertEqual(301);
+      expect(items[0].media.kind).assertEqual('sticker');
+      expect(items[1].messageId).assertEqual(303);
+      expect(items[1].media.kind).assertEqual('photo');
+    });
+
+    it('openMediaViewer_forSticker_activatesCorrectIndex', 0, () => {
+      const photoMsg = makeMediaMessage(101, false, makePhotoMedia(1));
+      const stickerMsg = makeMediaMessage(102, false, makeStickerMedia(2));
+      const state = new ChatUiState(1, 'Test Chat', [photoMsg, stickerMsg], false, false, null, '', null, null, -1, []);
+
+      const result: ReducerResult<ChatUiState, ChatEffect> =
+        chatReducer(state, new OpenMediaViewer(102), makeEnv());
+
+      expect(result.state.activeViewerIndex).assertEqual(1);
+      expect(result.state.viewerItems.length).assertEqual(2);
+      expect(result.state.viewerItems[1].media.kind).assertEqual('sticker');
+    });
+
+    it('viewerZoomable_returnsTrueForPhotoAndSticker', 0, () => {
+      expect(viewerZoomable('photo')).assertTrue();
+      expect(viewerZoomable('sticker')).assertTrue();
+      expect(viewerZoomable('video')).assertFalse();
+      expect(viewerZoomable('animation')).assertFalse();
+    });
+
+    it('itemKey_stickerIgnoresPlayerBit', 0, () => {
+      // 贴纸页与照片页一样，不随播放器位翻转而变键
+      const sticker: MediaViewerItem = new MediaViewerItem(305, 'Bob', 1000, makeStickerMedia(7));
+      expect(mediaViewerItemKey(sticker, true)).assertEqual(mediaViewerItemKey(sticker, false));
     });
   });
 }

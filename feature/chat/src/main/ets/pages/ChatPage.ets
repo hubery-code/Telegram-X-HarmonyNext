@@ -469,6 +469,8 @@ export struct ChatPage {
   @State private pinchStartScale: number = 1.0;
   @State private viewerBarsVisible: boolean = true;
   @State private activeVideoNoteId: number | null = null;
+  /** STICKER-VIEWER-101：非循环模式下动效贴纸点按重播触发器记录（key = messageId）。 */
+  @State private stickerReplayMap: Record<string, number> = {};
   private swiperController: SwiperController = new SwiperController();
   /**
    * MEDIA-VIEWER-101：放大后的位移（vp）与视口尺寸（vp）。
@@ -1883,6 +1885,24 @@ export struct ChatPage {
     return this.stickerLoopProvider();
   }
 
+  /** STICKER-VIEWER-101：获取某条贴纸消息的单次重播计数。 */
+  private stickerReplayCount(key: string): number {
+    const val: number | undefined = this.stickerReplayMap[key];
+    return val !== undefined ? val : 0;
+  }
+
+  /** STICKER-VIEWER-101：在非循环模式下触发贴纸单次重新播放。 */
+  private triggerStickerReplay(key: string): void {
+    const current: number = this.stickerReplayCount(key);
+    const updated: Record<string, number> = {};
+    const keys: string[] = Object.keys(this.stickerReplayMap);
+    for (let i = 0; i < keys.length; i++) {
+      updated[keys[i]] = this.stickerReplayMap[keys[i]];
+    }
+    updated[key] = current + 1;
+    this.stickerReplayMap = updated;
+  }
+
   /**
    * 贴纸渲染（STICKER-101 / STICKER-MSG-101 / TGS-101）：对齐 Telegram X 标准，无气泡框透明渲染，
    * 右下角半透明胶囊时间戳。
@@ -1902,7 +1922,8 @@ export struct ChatPage {
           // TGS-102：按消息 id 记播放头。行重建（sendState / isRead / 进度都要参与签名，
           // 见 messageRowKey）会把实例连着画布一起换掉，不续上就永远停在开头。
           playbackKey: `${item.messageId}`,
-          loop: this.stickerLoopOn()
+          loop: this.stickerLoopOn(),
+          replayTrigger: this.stickerReplayCount(`${item.messageId}`)
         })
           .width('100%')
           .height('100%')
@@ -1977,8 +1998,17 @@ export struct ChatPage {
       if (this.uiState.selectionMode) {
         return;
       }
+      // STICKER-VIEWER-101：若处于非循环模式且为动效贴纸，点击触发单次重播（对齐 TGMessageSticker.java openOrLoopSticker）
+      if (!this.stickerLoopOn() && this.stickerTier(media) === 'tgs') {
+        this.triggerStickerReplay(`${item.messageId}`);
+        return;
+      }
+      // 若包含 stickerSetId，打开整包贴纸预览
       if (media.stickerSetId.length > 0 && media.stickerSetId !== '0') {
         this.onDispatch(new OpenStickerSet(media.stickerSetId));
+      } else {
+        // 无贴纸包/独立贴纸：打开全屏媒体大图画廊
+        this.onDispatch(new OpenMediaViewer(item.messageId, media.fileId));
       }
     })
   }
@@ -4352,6 +4382,45 @@ export struct ChatPage {
                   .objectFit(ImageFit.Contain)
                   .width('100%')
                   .height('100%')
+              }
+            } else if (item.media.kind === 'sticker') {
+              // STICKER-VIEWER-101：贴纸在大图查看器中的全屏渲染分支
+              if (this.stickerTier(item.media) === 'tgs') {
+                AnimatedSticker({
+                  tgsPath: stickerAnimationTgsPath(item.media),
+                  decoder: this.tgsDecoder,
+                  fallbackUri: item.media.thumbnailPath === null ? null : toSandboxUri(item.media.thumbnailPath),
+                  playbackKey: `viewer_${item.messageId}`,
+                  loop: true
+                })
+                  .width(320)
+                  .height(320)
+              } else if (this.stickerTier(item.media) === 'video' && item.media.localPath !== null) {
+                Video({
+                  src: toSandboxUri(item.media.localPath),
+                  previewUri: toSandboxUri(item.media.thumbnailPath)
+                })
+                  .autoPlay(true)
+                  .loop(true)
+                  .controls(false)
+                  .muted(true)
+                  .objectFit(ImageFit.Contain)
+                  .hitTestBehavior(HitTestMode.Transparent)
+                  .width(320)
+                  .height(320)
+              } else if (this.viewerRenderSrc(item).length > 0) {
+                Image(this.viewerRenderSrc(item))
+                  .objectFit(ImageFit.Contain)
+                  .width('100%')
+                  .height('100%')
+              } else if (item.media.thumbnailPath !== null) {
+                Image(toSandboxUri(item.media.thumbnailPath))
+                  .objectFit(ImageFit.Contain)
+                  .width('100%')
+                  .height('100%')
+              } else {
+                Text(item.media.caption.length > 0 ? item.media.caption : '⭐️')
+                  .fontSize(72)
               }
             } else if (this.viewerRenderSrc(item).length > 0) {
               // MEDIA-VIEWER-101：优先画最大档，大图还在路上时先画显示档。
