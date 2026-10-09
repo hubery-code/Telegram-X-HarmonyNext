@@ -16,6 +16,7 @@
  */
 
 import { File, Sticker, StickerSetInfo, Thumbnail } from '@tgx/core-td-api-generated';
+import { Lang } from '@tgx/core-common';
 import { StickerSetItem } from './StickerSetPreviewState';
 
 /**
@@ -258,7 +259,7 @@ export function stickerBoardRecentPack(items: readonly StickerSetItem[]): Sticke
   const covers: StickerSetItem[] = items.slice(0);
   return new StickerBoardPack(
     STICKER_BOARD_RECENT_SET_ID,
-    '最近使用',
+    Lang.getInstance().getString('Recently Used'),
     covers.length > 0 ? firstRenderablePath(covers[0]) : null,
     covers,
     items.length,
@@ -330,7 +331,7 @@ export function stickerBoardFavoritePack(items: readonly StickerSetItem[]): Stic
   const covers: StickerSetItem[] = items.slice(0);
   return new StickerBoardPack(
     STICKER_BOARD_FAVORITE_SET_ID,
-    '收藏',
+    Lang.getInstance().getString('Favorites'),
     covers.length > 0 ? firstRenderablePath(covers[0]) : null,
     covers,
     items.length,

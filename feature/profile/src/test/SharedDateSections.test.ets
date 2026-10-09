@@ -5,9 +5,13 @@
  * `needDateSectionSplitting` 规则切段 —— 首条必给头，7 天内按天（今天/昨天/星期X），
  * 上一个自然周归「上周」，再往前按自然月切（`TD.shouldSplitDatesByMonth`）。
  * 全部用本地时区构造时间戳，避免用例在不同 tz 的机器上漂移。
+ * 分组头自 I18N-LITERAL-103 起经 `Lang` 取词典；单测里 preference 是 `system`、系统语言
+ * 默认 `en`，所以用例开头显式钉成中文，断言的是真正上屏的那串字。
+ * 自然月头（`2026年9月`）仍是带 i18n-allow 的日期形态，归 I18N-DATE。
  */
 
 import { describe, expect, it } from '@ohos/hypium';
+import { Lang } from '@tgx/core-common';
 import { SharedMediaItem } from '../main/ets/contract/SharedContentItems';
 import {
   formatSharedDateHeader,
@@ -27,6 +31,7 @@ function at(y: number, month: number, day: number, hour: number = 12): number {
 }
 
 export default function sharedDateSectionsTest(): void {
+  Lang.getInstance().setSystemLanguage('zh');
   describe('SharedDateSectionsTest', () => {
 
     it('todayAndYesterday_getTheirOwnAnchor', 0, () => {

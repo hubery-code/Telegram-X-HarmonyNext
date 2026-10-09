@@ -238,7 +238,7 @@ export struct ChatProfilePage {
 
       Column() {
         Row() {
-          Text(member.fullName.length > 0 ? member.fullName : 'User')
+          Text(member.fullName.length > 0 ? member.fullName : this.t('User'))
             .fontSize(this.T.typography.body.fontSize)
             .fontWeight(FontWeight.Medium)
             .fontColor(this.T.colors.textPrimary)

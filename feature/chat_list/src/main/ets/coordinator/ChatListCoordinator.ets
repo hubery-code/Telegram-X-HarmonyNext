@@ -19,7 +19,7 @@
  */
 
 import { Logger } from '@tgx/observability';
-import { ManualClock, SequentialIdGenerator, AppError, AppErrors } from '@tgx/core-common';
+import { Lang, ManualClock, SequentialIdGenerator, AppError, AppErrors } from '@tgx/core-common';
 import { AccountScope } from '@tgx/core-account';
 import {
   Chat,
@@ -110,39 +110,39 @@ function messagePreview(message: Message | null): string {
       return text !== null ? text.text.split('\n').join(' ') : '';
     }
     case 'messagePhoto':
-      return '[Photo]';
+      return Lang.getInstance().getString('[Photo]');
     case 'messageVideo':
-      return '[Video]';
+      return Lang.getInstance().getString('[Video]');
     case 'messageAnimation':
-      return '[GIF]';
+      return Lang.getInstance().getString('[GIF]');
     case 'messageAudio':
-      return '[Audio]';
+      return Lang.getInstance().getString('[Audio]');
     case 'messageVoiceNote':
-      return '[Voice message]';
+      return Lang.getInstance().getString('[Voice message]');
     case 'messageVideoNote':
-      return '[Video message]';
+      return Lang.getInstance().getString('[Video message]');
     case 'messageDocument':
-      return '[Document]';
+      return Lang.getInstance().getString('[Document]');
     case 'messageSticker': {
       const stickerContent: MessageSticker = message.content as MessageSticker;
       if (stickerContent.sticker !== null && stickerContent.sticker.emoji.length > 0) {
-        return `${stickerContent.sticker.emoji} Sticker`;
+        return Lang.getInstance().getString('{0} Sticker', stickerContent.sticker.emoji);
       }
-      return 'Sticker';
+      return Lang.getInstance().getString('Sticker');
     }
     case 'messageLocation':
     case 'messageLiveLocation':
-      return '[Location]';
+      return Lang.getInstance().getString('[Location]');
     case 'messageVenue':
-      return '[Venue]';
+      return Lang.getInstance().getString('[Venue]');
     case 'messageContact':
-      return '[Contact]';
+      return Lang.getInstance().getString('[Contact]');
     case 'messagePoll':
-      return '[Poll]';
+      return Lang.getInstance().getString('[Poll]');
     case 'messageCall':
-      return '[Call]';
+      return Lang.getInstance().getString('[Call]');
     case 'messageGame':
-      return '[Game]';
+      return Lang.getInstance().getString('[Game]');
     default:
       return '';
   }
@@ -365,11 +365,11 @@ export class ChatListCoordinator {
     }
 
     const folders: readonly ChatFolderTab[] = [
-      { id: 'all', title: 'All', unreadCount: allUnread },
-      { id: 'personal', title: 'Personal', unreadCount: personalUnread },
-      { id: 'groups', title: 'Groups', unreadCount: groupsUnread },
-      { id: 'channels', title: 'Channels', unreadCount: channelsUnread },
-      { id: 'unread', title: 'Unread', unreadCount: unreadTotal }
+      { id: 'all', titleKey: 'All', unreadCount: allUnread },
+      { id: 'personal', titleKey: 'Personal', unreadCount: personalUnread },
+      { id: 'groups', titleKey: 'Groups', unreadCount: groupsUnread },
+      { id: 'channels', titleKey: 'Channels', unreadCount: channelsUnread },
+      { id: 'unread', titleKey: 'Unread', unreadCount: unreadTotal }
     ];
 
     this.dispatch(new OnChatsLoaded(items, archiveUnreadCount, archiveChatCount, folders));

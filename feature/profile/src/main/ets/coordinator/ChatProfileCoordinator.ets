@@ -8,7 +8,7 @@
  */
 
 import { AccountScope } from '@tgx/core-account';
-import { AppError, Result, ManualClock, SequentialIdGenerator } from '@tgx/core-common';
+import { AppError, Result, ManualClock, SequentialIdGenerator, Lang } from '@tgx/core-common';
 import {
   ChatRegistry,
   GroupRegistry,
@@ -462,7 +462,9 @@ export class ChatProfileCoordinator {
           username = user.usernames ? user.usernames.active_usernames[0] || '' : '';
           letters = getAvatarLetters(user);
           online = isOnline(user);
-          statusText = online ? 'online' : 'last seen recently';
+          statusText = online
+            ? Lang.getInstance().getString('online')
+            : Lang.getInstance().getString('last seen recently');
           if (user.profile_photo && user.profile_photo.small) {
             avatarPath = this.fileRegistry.getLocalPath(user.profile_photo.small.id);
           }
@@ -606,7 +608,7 @@ export class ChatProfileCoordinator {
     // 播放态已由 reducer 乐观置位，这里不退回，避免图标闪一下。
     this.pendingPlayFileId = fileId;
     this.subscribeSharedFile(fileId);
-    this.toastPort.showToast('正在下载音频...');
+    this.toastPort.showToast(Lang.getInstance().getString('Downloading audio…'));
   }
 
   private startSharedAudioPlayback(path: string, item: SharedAudioItem | null): void {

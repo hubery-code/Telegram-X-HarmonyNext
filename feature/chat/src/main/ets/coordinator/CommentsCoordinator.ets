@@ -8,7 +8,7 @@
  * 3. sendComment()：向讨论群以 message_thread_id 为 replyTo 派发 SendMessage，并支持本地即时乐观回显。
  */
 
-import { Result, AppError } from '@tgx/core-common';
+import { Lang, Result, AppError } from '@tgx/core-common';
 import { AccountScope } from '@tgx/core-account';
 import {
   Chat,
@@ -113,7 +113,7 @@ export class CommentsCoordinator {
     this.state = {
       channelChatId: channelChatId,
       channelPostId: channelPostId,
-      channelTitle: '频道帖子',
+      channelTitle: Lang.getInstance().getString('Channel post'),
       postText: '',
       postDate: '',
       commentsCount: 0,
@@ -233,7 +233,7 @@ export class CommentsCoordinator {
               channelChatId: this.state.channelChatId,
               channelPostId: this.state.channelPostId,
               channelTitle: this.state.channelTitle,
-              postText: text.length > 0 ? text : '频道消息',
+              postText: text.length > 0 ? text : Lang.getInstance().getString('Channel message'),
               postDate: dateText,
               commentsCount: count,
               isLoading: this.state.isLoading,
@@ -311,7 +311,7 @@ export class CommentsCoordinator {
               isSending: this.state.isSending,
               comments: this.state.comments,
               inputText: this.state.inputText,
-              errorMessage: '无法获取评论线程'
+              errorMessage: Lang.getInstance().getString('No comment thread')
             };
             this.notify();
             return;
@@ -356,7 +356,7 @@ export class CommentsCoordinator {
           isSending: this.state.isSending,
           comments: this.state.comments,
           inputText: this.state.inputText,
-          errorMessage: '网络异常'
+          errorMessage: Lang.getInstance().getString('Network error')
         };
         this.notify();
       }
@@ -415,7 +415,9 @@ export class CommentsCoordinator {
       if (text.length === 0) {
         continue;
       }
-      let senderName: string = m.is_outgoing ? '我' : '用户';
+      let senderName: string = m.is_outgoing
+        ? Lang.getInstance().getString('Me')
+        : Lang.getInstance().getString('User');
       let avatarLetter: string = senderName.charAt(0).toUpperCase();
       let avatarColor: string = pickAvatarColor(m.sender_id !== null ? 1 : 0);
 
@@ -449,8 +451,8 @@ export class CommentsCoordinator {
     const tempId: number = Date.now();
     const optimisticItem: CommentItem = {
       id: tempId,
-      senderName: '我',
-      senderAvatarLetter: '我',
+      senderName: Lang.getInstance().getString('Me'),
+      senderAvatarLetter: Lang.getInstance().getString('Me'),
       senderAvatarColor: pickAvatarColor(0),
       text: text,
       dateText: formatUnixTime(Math.floor(Date.now() / 1000)),

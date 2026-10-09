@@ -8,9 +8,13 @@
  *    绝不把裸 user id 印到界面上；
  * 3. 按 Tab 局部替换/追加：音乐页追加不能冲掉语音页已经到手的数据，反之亦然；
  * 4. 落盘回灌只动命中且原本没有路径的那一行，没命中就返回 null（调用方据此不刷状态）。
+ *
+ * 「我」「语音消息」自 I18N-LITERAL-103 起经 `Lang` 取词典；单测里系统语言默认 `en`，
+ * 用例开头显式钉成中文，断言的是真正上屏的那串字。
  */
 
 import { describe, expect, it } from '@ohos/hypium';
+import { Lang } from '@tgx/core-common';
 import {
   SharedAudioItem,
   SharedContentRows,
@@ -38,6 +42,7 @@ function audio(fileId: number, localPath: string | null = null): SharedAudioItem
 }
 
 export default function sharedAudioRowsTest(): void {
+  Lang.getInstance().setSystemLanguage('zh');
   describe('SharedAudioRowsTest', (): void => {
 
     it('audioTitle_prefersTagThenFileNameWithoutExtension', 0, () => {

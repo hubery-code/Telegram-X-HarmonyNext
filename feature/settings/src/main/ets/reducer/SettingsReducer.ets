@@ -181,7 +181,7 @@ import {
   PROXY_NONE_ID,
   ProxyConnectionState,
   ProxyItem,
-  proxyFormError,
+  proxyFormErrorKey,
   proxyPingsPrunedTo,
   proxyPingsWith,
   proxyFailuresPrunedTo,
@@ -1074,7 +1074,7 @@ export const settingsReducer: Reducer<SettingsUiState, SettingsIntent, SettingsE
         return reduced(state);
       }
       // 页面已经把「完成」置灰，这里再挡一道：表单不能凭空绕过校验写出去。
-      const errorKey: string = proxyFormError(saveIntent.form);
+      const errorKey: string = proxyFormErrorKey(saveIntent.form);
       if (errorKey.length > 0) {
         const options: SettingsUiStateOptions = {
           errorMessage: errorKey

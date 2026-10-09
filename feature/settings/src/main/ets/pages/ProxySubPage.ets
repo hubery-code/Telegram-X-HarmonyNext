@@ -47,7 +47,7 @@ import {
   proxyAddress,
   proxyEnabledItem,
   proxyFailureOf,
-  proxyFormError,
+  proxyFormErrorKey,
   proxyFormFromItem,
   proxyFormHasCredentials,
   proxyKindLabel,
@@ -205,11 +205,11 @@ export struct ProxySubPage {
   }
 
   private isFormValid(): boolean {
-    return proxyFormError(this.currentForm()).length === 0;
+    return proxyFormErrorKey(this.currentForm()).length === 0;
   }
 
   private formErrorText(): string {
-    const key: string = proxyFormError(this.currentForm());
+    const key: string = proxyFormErrorKey(this.currentForm());
     return key.length === 0 ? '' : this.t(key);
   }
 

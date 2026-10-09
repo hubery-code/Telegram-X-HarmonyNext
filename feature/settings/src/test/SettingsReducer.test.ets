@@ -131,7 +131,7 @@ import {
   stickerLoopEnabled
 } from '@tgx/core-domain';
 import { ActiveSessionItem } from '../main/ets/model/ActiveSessionItem';
-import { PrivacySettingItem, PrivacySettingKey, privacyRowLabel } from '../main/ets/model/PrivacySettings';
+import { PrivacySettingItem, PrivacySettingKey, privacyRowLabelKey } from '../main/ets/model/PrivacySettings';
 import { parsePrivacyRules } from '../main/ets/model/PrivacyRules';
 import {
   PrivacyChatRow,
@@ -1055,8 +1055,8 @@ export default function settingsReducerTest(): void {
       const result = settingsReducer(state, new PrivacySettingsLoaded(items), makeEnv());
 
       expect(result.state.privacyItems.length).assertEqual(2);
-      expect(privacyRowLabel(result.state.privacyItems[0])).assertEqual('My Contacts');
-      expect(privacyRowLabel(result.state.privacyItems[1])).assertEqual('Everybody');
+      expect(privacyRowLabelKey(result.state.privacyItems[0])).assertEqual('My Contacts');
+      expect(privacyRowLabelKey(result.state.privacyItems[1])).assertEqual('Everybody');
       expect(result.state.isLoadingPrivacy).assertFalse();
     });
 
@@ -1587,8 +1587,8 @@ export default function settingsReducerTest(): void {
       const saved: PrivacyRulesSaved = new PrivacyRulesSaved('show_bio', nobodyRules());
       const result = settingsReducer(state, saved, makeEnv());
 
-      expect(privacyRowLabel(result.state.privacyItems[0])).assertEqual('Nobody');
-      expect(privacyRowLabel(result.state.privacyItems[1])).assertEqual('My Contacts');
+      expect(privacyRowLabelKey(result.state.privacyItems[0])).assertEqual('Nobody');
+      expect(privacyRowLabelKey(result.state.privacyItems[1])).assertEqual('My Contacts');
       expect(result.state.updatingPrivacyKey === null).assertTrue();
       expect(result.state.errorMessage === null).assertTrue();
     });
@@ -1601,7 +1601,7 @@ export default function settingsReducerTest(): void {
       const result = settingsReducer(state, failed, makeEnv());
 
       // 失败时行上显示的仍是服务端真值，靠横幅说明这次没写进去。
-      expect(privacyRowLabel(result.state.privacyItems[0])).assertEqual('Everybody');
+      expect(privacyRowLabelKey(result.state.privacyItems[0])).assertEqual('Everybody');
       expect(result.state.updatingPrivacyKey === null).assertTrue();
       expect(result.state.errorMessage).assertEqual('Unable to update privacy settings.');
     });

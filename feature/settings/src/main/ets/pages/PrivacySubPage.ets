@@ -36,8 +36,8 @@ import {
   PrivacySettingItem,
   PrivacySettingKey,
   PRIVACY_SETTING_KEYS,
-  privacyRowLabel,
-  privacySettingLabel
+  privacyRowLabelKey,
+  privacySettingLabelKey
 } from '../model/PrivacySettings';
 
 @Component
@@ -248,7 +248,7 @@ export struct PrivacySubPage {
   @Builder
   PrivacyRowView(key: PrivacySettingKey) {
     Row() {
-      Text(this.t(privacySettingLabel(key)))
+      Text(this.t(privacySettingLabelKey(key)))
         .fontSize(this.getTheme().typography.body.fontSize)
         .fontColor(this.getTheme().colors.textPrimary)
         .layoutWeight(1)
@@ -261,7 +261,7 @@ export struct PrivacySubPage {
           .margin({ right: this.getTheme().spacing.sm })
       }
 
-      Text(this.t(privacyRowLabel(this.itemOf(key))))
+      Text(this.t(privacyRowLabelKey(this.itemOf(key))))
         .fontSize(this.getTheme().typography.subheadline.fontSize)
         .fontColor(this.getTheme().colors.textSecondary)
         .maxLines(1)

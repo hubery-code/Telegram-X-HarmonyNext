@@ -1162,7 +1162,7 @@ export struct EmojiBoard {
                 .alignItems(HorizontalAlign.Center)
 
                 Row() {
-                  Text('GIF')
+                  Text(this.t('GIF'))
                     .fontSize(10)
                     .fontWeight(FontWeight.Bold)
                     .fontColor('#FFFFFF')

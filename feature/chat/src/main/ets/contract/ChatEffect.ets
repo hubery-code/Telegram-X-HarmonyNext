@@ -160,11 +160,12 @@ export class ResendMessage implements Effect {
 export class CopyTextToClipboard implements Effect {
   readonly kind: 'copyTextToClipboard' = 'copyTextToClipboard';
   readonly text: string;
-  readonly toastMessage: string;
+  /** 轻提示的 Lang key（原名 toastMessage，I18N-LITERAL-103 改传 key，由 ChatCoordinator 查词典）。 */
+  readonly toastMessageKey: string;
 
-  constructor(text: string, toastMessage: string = '已复制到剪贴板') {
+  constructor(text: string, toastMessageKey: string = 'Copied to clipboard') {
     this.text = text;
-    this.toastMessage = toastMessage;
+    this.toastMessageKey = toastMessageKey;
   }
 }
 

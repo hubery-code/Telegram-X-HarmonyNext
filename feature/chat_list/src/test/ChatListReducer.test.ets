@@ -398,11 +398,11 @@ export default function chatListReducerTest() {
     it('onChatsLoaded_carriesCustomFolders', 0, () => {
       const state: ChatListUiState = makeState([]);
       const customFolders: ChatFolderTab[] = [
-        { id: 'all', title: 'All', unreadCount: 5 },
-        { id: 'personal', title: 'Personal', unreadCount: 2 },
-        { id: 'groups', title: 'Groups', unreadCount: 3 },
-        { id: 'channels', title: 'Channels', unreadCount: 0 },
-        { id: 'unread', title: 'Unread', unreadCount: 5 }
+        { id: 'all', titleKey: 'All', unreadCount: 5 },
+        { id: 'personal', titleKey: 'Personal', unreadCount: 2 },
+        { id: 'groups', titleKey: 'Groups', unreadCount: 3 },
+        { id: 'channels', titleKey: 'Channels', unreadCount: 0 },
+        { id: 'unread', titleKey: 'Unread', unreadCount: 5 }
       ];
 
       const loaded: ReducerResult<ChatListUiState, ChatListEffect> = chatListReducer(

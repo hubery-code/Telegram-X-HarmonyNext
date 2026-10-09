@@ -7,7 +7,7 @@
  * - `proxyItemFromAdded`：把 TDLib 对象投影成页面行，识别不出代理类型时返回 null
  *   （宁可少一行，也不要用空壳冒充一个可用代理）；
  * - `proxyValueFromForm`：表单 → `proxy` 负载，类型分支与字段裁剪只此一处；
- * - `proxyFormError`：表单校验，返回 Lang key（不是成品文案），模型层零 Kit /
+ * - `proxyFormErrorKey`：表单校验，返回 Lang key（不是成品文案），模型层零 Kit /
  *   零 Lang 依赖，单测可直接断言。
  *
  * 探测部分同样只留纯逻辑：`proxyStatusOf` 给的是 Lang key，延迟单独成尾巴；
@@ -183,7 +183,7 @@ export function proxyEnabledCount(items: readonly ProxyItem[]): number {
  * 设置主页「代理」行的副标题（TGX `SettingsDataController` 同规则）：
  * 一个都没有 → 「点按设置」；有但没启用 → 「已停用」；否则直接显示启用的那个。
  */
-export function proxyRowSummary(items: readonly ProxyItem[]): string {
+export function proxyRowSummaryKey(items: readonly ProxyItem[]): string {
   if (items.length === 0) {
     return 'Tap to set up';
   }
@@ -231,7 +231,7 @@ export function isMtprotoSecretValid(secret: string): boolean {
  * 表单首个校验失败的 Lang key；'' 表示可以提交。
  * 顺序与页面上字段的上下顺序一致，用户先看到最靠上的那个错误。
  */
-export function proxyFormError(form: ProxyForm): string {
+export function proxyFormErrorKey(form: ProxyForm): string {
   if (form.server.trim().length === 0) {
     return 'Server address required';
   }
@@ -245,7 +245,7 @@ export function proxyFormError(form: ProxyForm): string {
 }
 
 export function isProxyFormValid(form: ProxyForm): boolean {
-  return proxyFormError(form) === '';
+  return proxyFormErrorKey(form) === '';
 }
 
 /** SOCKS5 / HTTP 才有账号密码；MTProto 只有 secret。 */
@@ -582,7 +582,7 @@ export function proxyFailuresPrunedTo(
  * 认得出的连接故障给对应的句子，认不出给一句通用的，绝不把原文搬上屏幕。
  * 原文本身进日志（`proxy_ping_error` 那行），排查时仍然看得到。
  */
-export function classifyProxyFailure(error: AppError, elapsedMs: number = 0): string {
+export function classifyProxyFailureKey(error: AppError, elapsedMs: number = 0): string {
   const text: string = proxyFailureHaystack(error);
   // 慢到 TDLib 自己的 connect 上限才失败，说的就是「等太久」—— 不看它的原文长什么样。
   // 模拟器实测：不可达地址 9.0s 回 400、DNS 失败 4.0s、拒连 7ms、成功 230ms，

@@ -49,16 +49,17 @@ export class ChatActionMenuState {
 
 export interface ChatFolderTab {
   readonly id: string;
-  readonly title: string;
+  /** 页签标题的 Lang key，由页面 `t()` 解析（原名 title，I18N-LITERAL-103 改名让「传 key 不传串」进字段名）。 */
+  readonly titleKey: string;
   readonly unreadCount: number;
 }
 
 export const DEFAULT_CHAT_FOLDERS: readonly ChatFolderTab[] = [
-  { id: 'all', title: 'All', unreadCount: 0 },
-  { id: 'personal', title: 'Personal', unreadCount: 0 },
-  { id: 'groups', title: 'Groups', unreadCount: 0 },
-  { id: 'channels', title: 'Channels', unreadCount: 0 },
-  { id: 'unread', title: 'Unread', unreadCount: 0 }
+  { id: 'all', titleKey: 'All', unreadCount: 0 },
+  { id: 'personal', titleKey: 'Personal', unreadCount: 0 },
+  { id: 'groups', titleKey: 'Groups', unreadCount: 0 },
+  { id: 'channels', titleKey: 'Channels', unreadCount: 0 },
+  { id: 'unread', titleKey: 'Unread', unreadCount: 0 }
 ];
 
 /** FOLDERS-101：按 selectedFolderId 过滤会话列表。 */

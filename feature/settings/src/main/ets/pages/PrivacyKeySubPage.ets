@@ -50,18 +50,18 @@ import {
 } from '../contract/SettingsIntent';
 import {
   PrivacySettingKey,
-  privacyAlwaysAllowLabel,
+  privacyAlwaysAllowLabelKey,
   privacyNeedNobodyOption,
   privacyNeedExceptions,
-  privacyNeverAllowLabel,
+  privacyNeverAllowLabelKey,
   privacyNeedsPremiumRow,
   privacyNeedsReadDateRow,
-  privacySettingLabel
+  privacySettingLabelKey
 } from '../model/PrivacySettings';
 import {
   parsePrivacyRules,
   PrivacyMode,
-  privacyModeLabel,
+  privacyModeLabelKey,
   privacyNeedsHideReadTime,
   PrivacyRulesView
 } from '../model/PrivacyRules';
@@ -236,12 +236,12 @@ export struct PrivacyKeySubPage {
    */
   private alwaysLabel(): string {
     const detail: PrivacyDetailState | null = this.detail();
-    return detail === null ? 'Always Allow' : privacyAlwaysAllowLabel(detail.key);
+    return detail === null ? 'Always Allow' : privacyAlwaysAllowLabelKey(detail.key);
   }
 
   private neverLabel(): string {
     const detail: PrivacyDetailState | null = this.detail();
-    return detail === null ? 'Never Allow' : privacyNeverAllowLabel(detail.key);
+    return detail === null ? 'Never Allow' : privacyNeverAllowLabelKey(detail.key);
   }
 
   /**
@@ -384,7 +384,7 @@ export struct PrivacyKeySubPage {
 
   private headerTitle(): string {
     const detail: PrivacyDetailState | null = this.detail();
-    return detail === null ? '' : this.t(privacySettingLabel(detail.key));
+    return detail === null ? '' : this.t(privacySettingLabelKey(detail.key));
   }
 
   @Builder
@@ -469,7 +469,7 @@ export struct PrivacyKeySubPage {
                 : this.getTheme().colors.textSecondary
             })
 
-            Text(this.t(privacyModeLabel(mode, this.isPremiumOn())))
+            Text(this.t(privacyModeLabelKey(mode, this.isPremiumOn())))
               .fontSize(this.getTheme().typography.body.fontSize)
               .fontColor(this.getTheme().colors.textPrimary)
               .layoutWeight(1)

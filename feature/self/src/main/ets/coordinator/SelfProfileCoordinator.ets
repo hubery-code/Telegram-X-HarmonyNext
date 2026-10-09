@@ -15,7 +15,7 @@
  */
 
 import { AccountScope } from '@tgx/core-account';
-import { ManualClock, Result, AppError, SequentialIdGenerator } from '@tgx/core-common';
+import { ManualClock, Result, AppError, SequentialIdGenerator, Lang } from '@tgx/core-common';
 import {
   UserRegistry,
   FileRegistry,
@@ -59,7 +59,7 @@ export interface SelfProfileCoordinatorOptions {
 
 export type SelfProfileUiStateListener = (uiState: SelfProfileUiState) => void;
 
-/** SELF-101：在线状态简文案（MVP 中文短文案，不格式化 last seen 具体时间）。 */
+/** SELF-101：在线状态简文案（走 `Lang`，与 ChatCoordinator 同一组 key；不格式化 last seen 具体时间）。 */
 function formatUserStatusText(user: User): string {
   const status = user.status;
   if (status === null || status === undefined) {
@@ -67,15 +67,15 @@ function formatUserStatusText(user: User): string {
   }
   switch (status.type) {
     case 'userStatusOnline':
-      return '在线';
+      return Lang.getInstance().getString('online');
     case 'userStatusOffline':
-      return '离线';
+      return Lang.getInstance().getString('offline');
     case 'userStatusRecently':
-      return '最近上线';
+      return Lang.getInstance().getString('last seen recently');
     case 'userStatusLastWeek':
-      return '一周内上线';
+      return Lang.getInstance().getString('last seen within a week');
     case 'userStatusLastMonth':
-      return '一月内上线';
+      return Lang.getInstance().getString('last seen within a month');
     default:
       return '';
   }
@@ -120,7 +120,7 @@ function formatBirthdayText(birthdate: Birthdate | null): string {
     return '';
   }
   if (year <= 0) {
-    return `${month}月${day}日`;
+    return `${month}月${day}日`; // i18n-allow 日期形态：数字+年月日排布，属 I18N-DATE 的 locale 格式化
   }
   const now: Date = new Date();
   let age: number = now.getFullYear() - year;
@@ -132,7 +132,7 @@ function formatBirthdayText(birthdate: Birthdate | null): string {
   if (age < 0) {
     age = 0;
   }
-  return `${year}年${month}月${day}日 (${age} 岁)`;
+  return `${year}年${month}月${day}日 (${age} 岁)`; // i18n-allow 日期形态（数字+年月日/岁，归 I18N-DATE）
 }
 
 export class SelfProfileCoordinator {

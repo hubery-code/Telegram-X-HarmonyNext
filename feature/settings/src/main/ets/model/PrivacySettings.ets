@@ -20,7 +20,7 @@ import {
   UserPrivacySettingShowStatus,
   TdUserPrivacySetting
 } from '@tgx/core-td-api-generated';
-import { PrivacyMode, PrivacyRulesView, privacyModeLabel } from './PrivacyRules';
+import { PrivacyMode, PrivacyRulesView, privacyModeLabelKey } from './PrivacyRules';
 
 export type PrivacySettingKey =
   | 'show_last_seen'
@@ -54,11 +54,11 @@ export class PrivacySettingItem {
  * 行的副标题（当前可见范围）。返回 Lang key，由页面 `t()` 翻译。
  * 入参可为 null：列表页在项未加载到时会先渲染占位，这里统一回「Unknown」而不是猜一个档位。
  */
-export function privacyRowLabel(item: PrivacySettingItem | null): string {
+export function privacyRowLabelKey(item: PrivacySettingItem | null): string {
   if (item === null || item.view === null) {
     return 'Unknown';
   }
-  return privacyModeLabel(item.view.mode, item.view.plusPremium);
+  return privacyModeLabelKey(item.view.mode, item.view.plusPremium);
 }
 
 /** 设置页展示顺序（对齐 TGX：在线状态与手机号在前）。 */
@@ -77,7 +77,7 @@ export const PRIVACY_SETTING_KEYS: PrivacySettingKey[] = [
  * 行标题。返回的是 Lang 字典里的英文 key（不是成品文案），由页面 `t()` 翻译；
  * 模型层保持零 Kit / 零 Lang 依赖，单测可直接断言。
  */
-export function privacySettingLabel(key: PrivacySettingKey): string {
+export function privacySettingLabelKey(key: PrivacySettingKey): string {
   if (key === 'show_last_seen') {
     return 'Last Seen';
   }
@@ -149,11 +149,11 @@ export function privacyNeedExceptions(key: PrivacySettingKey): boolean {
  * 两条例外行的标题。Android `buildCells()`（:494-517）按项分文案：
  * 「最后上线」用 Always Share With / Never Share With，其余用 Always Allow / Never Allow。
  */
-export function privacyAlwaysAllowLabel(key: PrivacySettingKey): string {
+export function privacyAlwaysAllowLabelKey(key: PrivacySettingKey): string {
   return key === 'show_last_seen' ? 'Always Share With' : 'Always Allow';
 }
 
-export function privacyNeverAllowLabel(key: PrivacySettingKey): string {
+export function privacyNeverAllowLabelKey(key: PrivacySettingKey): string {
   return key === 'show_last_seen' ? 'Never Share With' : 'Never Allow';
 }
 

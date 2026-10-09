@@ -128,7 +128,7 @@
 |---|---|---|---|---|---|---|---|---|
 | FEAT-UI-001 | 深色/浅色主题 | P1 | `theme/ThemeManager.java:48`（DEFAULT_DARK_THEME = NIGHT_BLUE）, `theme/Theme.java` | —（平台侧） | 跟随系统/手动切换，关键页面（列表/聊天/设置）色值正确 | — | Accepted | 迁移组 |
 | FEAT-UI-002 | 大字体（聊天字号调节） | P1 | `unsorted/Settings.java:791`（CHAT_FONT_SIZES）, `ui/SettingsController.java:218`（getChatFontSize） | —（平台侧） | 大字号模式下气泡/列表不截断不重叠 | 字体缩放 | Accepted | SET-105 |
-| FEAT-UI-003 | 中/英文案资源 | P1 | `core/Lang.java`, `ui/SettingsLanguageController.java` | — | 关键路径文案中英齐全，无硬编码遗漏（视图层写死文案与词典缺项由 `check_i18n_literals.py` 强制） | — | Accepted | I18N-LITERAL-101/102 |
+| FEAT-UI-003 | 中/英文案资源 | P1 | `core/Lang.java`, `ui/SettingsLanguageController.java` | — | 关键路径文案中英齐全，无硬编码遗漏（视图层与 coordinator/model 数据层的写死文案、词典缺项由 `check_i18n_literals.py` 五条规则强制） | — | Accepted | I18N-LITERAL-101/102/103 |
 | FEAT-UI-004 | 抽屉主导航（≡ 账号头 + 联系人/通话/我的收藏/设置/邀请朋友/帮助 + 夜间模式开关） | P1 | `navigation/DrawerController.java`, `MainActivity.java` | —（平台侧） | 会话列表抽屉导航，账号头展示在线状态，入口路由正确 | — | Accepted | DRAWER-101 |
 
 ---
@@ -1977,6 +1977,114 @@
 >
 > **依赖与后续**：`@Builder` 按值参热切换不刷新已由 101 定位根因，接线成 **I18N-HOTSWITCH-101**；
 > coordinator/model 侧的写死文案（101 残留 ①③ 加上 ② 里那三条 coordinator）转 **I18N-LITERAL-103**。
+
+### FEAT-UI-003 / I18N-LITERAL-103 数据层写死文案接回 Lang + 守卫 R5（2026-10-09）
+
+> **题面**：101/102 关掉的都在视图层 —— 而视图层的字是**看得见的**，改词典的人至少知道去哪找。
+> 真正隐蔽的是「数据加工函数」里的串：`formatUserStatusText` 里 `return '最近上线'`、
+> `messagePreview` 里 `return '照片'`、`this.toastPort.showToast('清空历史失败')`、
+> `summary = 'Photo'` —— 串在 coordinator/model 里拼好，页面只是把它渲染出来，
+> 于是中文界面上一句英文（或反过来），而词典里明明两条都有。
+> R1 只管 `pages/`+`components/`，R4 只管视图层槽位，这一整批**一条规则都不覆盖**。
+> 本包把它做成 **R5**，并把这批串接回 `Lang`。
+>
+> **R5 与 R1/R4 同构，按文件分两层**：
+> **R5a 汉字禁令** —— `entry` 与 `feature/*` 里**不在** `pages/`/`components/` 下的 .ets，
+> 任何含汉字的字符串字面量都是违规（口径与 R1 完全一致，豁免也一致）；
+> **R5b 词典已知英文** —— 同批文件里，命中词典（EN ∪ ZH）的英文字面量出现在两个位置之一：
+> ① `return` 的**直接**操作数（要求外层没有任何调用，`return new Row('Proxy error', …)` 不算），
+> ② 显示出口 `showToast(` / `showHintToast(` 的实参（`DATA_DISPLAY_SINKS`）。
+> 豁免沿用 R4 的两条（key 调用实参位、`*Key` 接收），再加一条同约定的另一半：
+> **函数名以 `Key` 结尾**时返回值按定义就是 key，由页面 `this.t(...)` 解析 ——
+> settings 那批 `privacyModeLabelKey` / `appLinkReasonKey` 纯函数由此免标记通过，
+> 不用挂一堆 `// i18n-allow`。
+>
+> **R5b 的形状是量出来的，不是猜的**：首轮 107 处命中，逐条读完分成三类 ——
+> ①真正的写死显示串，②`return new Foo('key', …)` 这类构造器实参（数据载体，不算），
+> ③`*Key` 纯函数的返回值（本就是 key）。加「空调用栈」与「函数名 `*Key`」两条豁免后降到 52，
+> 再补「对象字段名 `*Key`」（`{ titleKey: 'All' }`）后清零。**最终 0 处、0 个 i18n-allow 兜底**。
+>
+> **负向对照**（证明 R5 会咬人）：临时文件里各造一条 —— `return '最近上线'`（R5a）、
+> `return 'Photo'`、`showToast('Muted')`（R5b 两个位置），守卫 exit 1 且逐条点名
+> （`[i18n] DATA-LITERAL …` / `[i18n] DATA-ENGLISH … 文案位置 return 里写死了词典已知的英文`），
+> 而同一文件里 `function inviteReasonKey(): string { return 'Joined'; }` 不出现在报告里 ——
+> 豁免是按定义生效，不是把整类都放过了。探针文件随后删除并复核过。
+>
+> **两条如实记录的射程外类别**（本包把碰到的都接进了词典，但规则管不住下一个）：
+> **中间变量赋值**（`summary = 'Photo'`，函数末尾才 `return summary`）不在 R5b 的两个位置里；
+> **数据载体构造器实参**（`new StickerBoardPack(id, '最近使用', …)`、`new ProxyStatus('Connected', …)`）同理 ——
+> 汉字那半边由 R5a 拦，英文那半边只靠 R2（接进 `t()` 后缺项会被拦）与 `*Key` 命名约定兜。
+>
+> **落地量**：43 个文件（29 个 main .ets + 10 个 test .ets + `Lang.ets` + 守卫/CI/两份文档）、
+> 699 增 / 325 删；`Lang` 新增 **85 条 key**，EN/ZH 由 360 → **445/445 保持对等**；
+> 新增 `getString` 调用 **132 处**（其中 25 处直接进 `showToast`）+ 视图层 `this.t(...)` **20 处**；
+> 守卫口径从「视图层 30 文件」扩到
+> **视图层 30 + 数据层 145 文件**，字面量 key 调用点覆盖 183 → **260**；
+> 就地豁免 15 处，**全部是写死中文**（日期/相对时间形态串），写死英文豁免 **0** 处。
+>
+> **「传 key 不传串」这次进了类型名**，三处改名让约定自说明且被守卫强制：
+> `ChatFolderTab.title` → **`titleKey`**、`CopyTextToClipboard.toastMessage` → **`toastMessageKey`**
+> （effect 里带 key，由 `ChatCoordinator` 查词典后才出 Toast 端口）、
+> settings 的 `name` → **`nameKey`** 与 `privacyModeLabelKey` / `proxyRowSummaryKey` /
+> `proxyFormErrorKey` / `classifyProxyFailureKey` 一批函数改名。
+>
+> **两处附带修复与一处架构让步，记清楚**：
+> ① `SharedContentFormat.ets` **本来就在缺 `import` 的状态下调用 `Lang.getInstance()`**
+> （五处，102 遗留的潜在编译断裂），本包补上 import 才让它真能编过；
+> ② `HarmonyAudioPlayerAdapter`（entry 平台适配层）同样补 `Lang` import；
+> ③ `feature/chat/model/StickerBoard.ets` 此前是零依赖纯模型，为两条伪包标题
+> （`Recently Used` / `Favorites`）**引入 `@tgx/core-common`** —— 只依赖 common 的 `Lang`，
+> 不穿透 platform，`check_architecture.py` 仍 0 违规，但这层依赖是新添的，后续包别把它当纯函数库复用。
+>
+> **一处有意的文案变更**：`SelfProfileCoordinator` 原本用的是中文短形
+> （`最近上线` / `一周内上线` / `一月内上线`）而联系人那边是 TDLib 口径的英文原文
+> （`last seen recently` …）。本包两侧合并到同一组 key，于是**自己的资料页**在中文下
+> 由 `一周内上线` 变 `最近一周内上线`、`一月内上线` 变 `最近一个月内上线`，
+> 英文下由 `在线` 变 `online`。换来的是同一状态在列表/头部/资料页三处只有一套措辞。
+>
+> **测试与守卫**：受影响 10 个模块（`core_common core_domain feature_chat feature_chat_list
+> feature_contact feature_profile feature_self feature_settings feature_search entry`）
+> 全部 `BUILD SUCCESSFUL`、`hvigor ERROR` 计数 **0**；
+> 取数仍按 102 那条口径（`test_result.txt` 末行 + 全量 stdout grep，不看 `tail -4`）。
+> `Lang.test.ets` 新增 2 条：本批 73 个 key 在 ZH 必须出汉字、EN 必须与 key 同形
+> （R5b 只认「词典已有的英文」，漏词条它自己看不见，靠这条兜），
+> 以及 `{0} online` / `{0}, {1} online` / `{0} Sticker` 的实参替换在两本词典里都成立。
+> `feature/profile` 两个日期/语音用例改为开头 `Lang.getInstance().setSystemLanguage('zh')`
+> —— 单测里 preference 是 `system`、系统语言默认 `en`，不钉语言就会断到英文值上。
+> 五守卫（架构/代码生成/token/无障碍/i18n）全 OK。
+>
+> **设备双 locale 证据**（127.0.0.1:5555，装的是含本包全部改动的 `entry-default-unsigned.hap`
+> —— `signingConfigs` 按 SECURITY_BASELINE 刻意留空，推送到独立子目录后 `bm install -p <dir>` 可装；
+> 全程只读页面，未发消息、未卸载、未清数据，取证完把语言切回 English 并干净重启）：
+> 英文侧 —— 会话列表 `Chats / Search` + 筛选条 `All / Personal / Groups / Channels / Unread`、
+> 行预览 `[Photo] / [Voice message] / 🐱 Sticker / 😂 Sticker`、
+> 会话头部 `last seen recently` 与 `1039 subscribers`、气泡底部 `2 comments`、
+> 贴纸板 `Trending Sticker Sets` + `25 stickers` + `Add`、
+> 会话资料页 `Media / Files / Links / Music / Voice` + 日期分组头 `Yesterday` / `Tuesday`；
+> 中文侧（同一次会话内 设置 → 语言 → 简体中文）—— 同一批面翻成
+> `聊天 / 搜索` + `全部 / 个人 / 群组 / 频道 / 未读`、头部 `最近上线` / `1040 位订阅者`、
+> `2 条评论` / `静音`、贴纸板 `热门贴纸包` / `25 个贴纸` / `添加`、
+> 资料页 `媒体 / 文件 / 链接 / 音乐 / 语音` + 分组头 `昨天` / `星期二`、抽屉入口 `设置`。
+> **两侧都零 raw key 上屏**，且中文侧出现的每一条都是本包接进 `Lang` 的数据层串。
+>
+> **五条取证盲区，如实记**：
+> ① **换语言不会重算已经落进状态的数据层串** —— 中文 locale 下会话列表行预览仍是
+> `[Photo] / 🐱 Sticker`（英文时算好的），只有切语言后**新建**的页面（聊天头部、资料页分组头、
+> 贴纸板）才出中文。本包保证的是「取数时用当前语言」，不是「换语言后重取数」，后者是 **I18N-HOTSWITCH-101**。
+> ② 同一条根因在视图层复现：切回 English 后 `通知 / 贴纸与表情 / 外观 / 语言 / 关于` 五个分节标题
+> 仍是中文，而同一页重建过的行已翻回英文 —— 中英混排，即 101 定位的 `@Builder` 按值参不刷新。
+> ③ `Recently Used` / `Favorites` 两条伪包标题**没有屏幕证据**：该账号最近/收藏贴纸为空，板卡只出热门区，
+> 这两条只有 `Lang.test` 的 ZH 汉字断言与 `StickerBoard.test` 兜着。
+> ④ 设备上抓到一处**四条规则一起放行**的残留（转 104，本包未动）：
+> `feature/search/pages/SearchPage.ets:371,375`（`Search Telegram` / `Search for chats, channels, and messages`）、
+> `feature/chat/pages/ChatPage.ets:1742`（`edited`）、`feature/profile/pages/ChatProfilePage.ets:84,148`
+> （`Channel Info` / `Group Info` / `Description`）—— 都是视图层写死英文，但**词典里就没这些 key**，
+> 而 R4 只拦「词典已知的英文」，所以中文 locale 下原样上屏。
+> ⑤ 语言选择仍不跨进程持久（`aa force-stop` 后回 Follow System → English）→ **LANG-PERSIST-101**。
+>
+> **后续**：R5 的英文盲区（中间变量、构造器实参）与 102 遗留的未建词条写死英文合并成
+> **I18N-LITERAL-104**；日期形态串（`2026年9月`、`N分钟前`、生日）全部挂在 **I18N-DATE**；
+> 语言选择不跨进程持久是 **LANG-PERSIST-101**。
 
 
 | 功能 ID | 功能名 |

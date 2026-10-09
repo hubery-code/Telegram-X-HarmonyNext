@@ -151,7 +151,7 @@ import {
   PrivacySettingItem,
   PrivacySettingKey,
   PRIVACY_SETTING_KEYS,
-  privacySettingLabel,
+  privacySettingLabelKey,
   privacyNeedsReadDateRow,
   toUserPrivacySetting
 } from '../model/PrivacySettings';
@@ -164,7 +164,7 @@ import {
   privacyContactRows
 } from '../model/PrivacyDetail';
 import {
-  classifyProxyFailure,
+  classifyProxyFailureKey,
   pingProxyRequestFromItem,
   PROXY_NONE_ID,
   PROXY_PING_FAILED,
@@ -1904,7 +1904,7 @@ export class SettingsCoordinator {
           return err<TdUserPrivacySettingRule[], AppError>(
             AppErrors.internal(
               'settings_privacy_decode',
-              `TDLib privacy rules for ${privacySettingLabel(key)} could not be decoded`
+              `TDLib privacy rules for ${privacySettingLabelKey(key)} could not be decoded`
             )
           );
         }
@@ -2335,7 +2335,7 @@ export class SettingsCoordinator {
     if (pendingResult.err) {
       this.logger.logError(TAG, pendingResult.error);
       // 请求根本没发出去（本地失败），原因同样按分类给一句话。
-      this.applyPing(generation, proxyId, PROXY_PING_FAILED, classifyProxyFailure(pendingResult.error, 0));
+      this.applyPing(generation, proxyId, PROXY_PING_FAILED, classifyProxyFailureKey(pendingResult.error, 0));
       return;
     }
     if (!pendingResult.ok) {
@@ -2348,7 +2348,7 @@ export class SettingsCoordinator {
         // PROXY-103：TDLib 原文只进得了分类器、进不了屏幕与日志
         // （`AppError` 刻意把 message 留作诊断、原文放 cause，别的请求的原文里可能出现手机号），
         // 行上说的是本端分类出来的一句话，数字码只留给日志。
-        const reason: string = classifyProxyFailure(response.error, Date.now() - startedAt);
+        const reason: string = classifyProxyFailureKey(response.error, Date.now() - startedAt);
         this.logger.info(
           TAG,
           'proxy_ping_error',

@@ -148,7 +148,7 @@ export function canRecordVoice(rights: ChatSendRights): boolean {
 /**
  * 贴纸与 GIF：Android 里它们**不是附件面板的一格**，而是表情面板的页签；页签永远可点，
  * 否决发生在「选中要发出去的那一张」时（MessagesController.java:9230 sendSticker / :9238 sendAnimation）。
- * 所以这两个 key 只喂给 sendVetoLabel，不参与 buildAttachmentEntries。
+ * 所以这两个 key 只喂给 sendVetoLabelKey，不参与 buildAttachmentEntries。
  */
 export const CONTENT_STICKER: string = 'sticker';
 export const CONTENT_GIF: string = 'gif';
@@ -174,34 +174,34 @@ export function canSendContent(rights: ChatSendRights, contentKey: string): bool
   }
 }
 
-/** 发送时否决的统一入口：返回提示文案表示「不发」，'' 表示放行。 */
-export function sendVetoLabel(rights: ChatSendRights, contentKey: string): string {
-  return canSendContent(rights, contentKey) ? '' : restrictionSentence(contentKey);
+/** 发送时否决的统一入口：返回提示文案的**词典 key** 表示「不发」，'' 表示放行（渲染处 `this.t(...)`）。 */
+export function sendVetoLabelKey(rights: ChatSendRights, contentKey: string): string {
+  return canSendContent(rights, contentKey) ? '' : restrictionSentenceKey(contentKey);
 }
 
-/** 受限点击的提示文案；返回 '' 表示该条目其实可用，不该出提示。 */
-export function attachmentRestrictionLabel(entry: AttachmentEntry): string {
-  return entry.enabled ? '' : restrictionSentence(entry.key);
+/** 受限点击的提示文案 key；返回 '' 表示该条目其实可用，不该出提示。 */
+export function attachmentRestrictionLabelKey(entry: AttachmentEntry): string {
+  return entry.enabled ? '' : restrictionSentenceKey(entry.key);
 }
 
-/** 七类受限内容共用一张文案表，避免同一语义在两处各写一遍。 */
-function restrictionSentence(contentKey: string): string {
+/** 七类受限内容共用一张 key 表，避免同一语义在两处各写一遍；core/domain 不依赖 `Lang`，所以只出 key。 */
+function restrictionSentenceKey(contentKey: string): string {
   switch (contentKey) {
     case ATTACHMENT_GALLERY:
-      return '此会话不允许发送图片';
+      return 'This chat does not allow sending photos';
     case ATTACHMENT_CAMERA:
-      return '此会话不允许发送拍摄的照片或视频';
+      return 'This chat does not allow sending camera photos or videos';
     case ATTACHMENT_VIDEO:
-      return '此会话不允许发送视频';
+      return 'This chat does not allow sending videos';
     case ATTACHMENT_FILE:
-      return '此会话不允许发送文件';
+      return 'This chat does not allow sending files';
     case ATTACHMENT_POLL:
-      return '此会话不允许发起投票';
+      return 'This chat does not allow creating polls';
     case CONTENT_STICKER:
-      return '此会话不允许发送贴纸';
+      return 'This chat does not allow sending stickers';
     case CONTENT_GIF:
-      return '此会话不允许发送 GIF';
+      return 'This chat does not allow sending GIFs';
     default:
-      return '此会话不允许发送该内容';
+      return 'This chat does not allow sending this content';
   }
 }

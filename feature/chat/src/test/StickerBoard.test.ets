@@ -28,6 +28,7 @@
  */
 
 import { describe, it, expect } from '@ohos/hypium';
+import { Lang } from '@tgx/core-common';
 import {
   File,
   Sticker,
@@ -374,7 +375,7 @@ export default function stickerBoardTest(): void {
       expect(rec.downloaded.length).assertEqual(9);
 
       const pack: StickerBoardPack = stickerBoardFavoritePack(items);
-      expect(pack.title).assertEqual('收藏');
+      expect(pack.title).assertEqual(Lang.getInstance().getString('Favorites'));
       expect(pack.setId).assertEqual(STICKER_BOARD_FAVORITE_SET_ID);
       expect(pack.covers.length).assertEqual(9);
       expect(pack.hasMore).assertFalse();
@@ -404,7 +405,8 @@ export default function stickerBoardTest(): void {
 
     it('recentPack_titleIsTheUiHeader', 0, () => {
       // 这一行标题就是 EmojiBoard 那个整宽标题行念出来的字符串（`EmojiBoard.ets` 直接渲染
-      // `pack.title`），所以它必须是界面语言，不是英文占位。
+      // `pack.title`）。I18N-LITERAL-103 起它由 `Lang` 查词典得到，测试环境默认英文界面，
+      // 所以断言口径也跟着走词典：写死中文的旧实现在这里会直接失败。
       const item: StickerSetItem = {
         id: 1,
         fileId: 1,
@@ -417,7 +419,7 @@ export default function stickerBoardTest(): void {
         isDownloading: false
       };
       const pack: StickerBoardPack = stickerBoardRecentPack([item]);
-      expect(pack.title).assertEqual('最近使用');
+      expect(pack.title).assertEqual(Lang.getInstance().getString('Recently Used'));
       expect(pack.setId).assertEqual(STICKER_BOARD_RECENT_SET_ID);
     });
 

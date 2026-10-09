@@ -294,6 +294,66 @@ export default function langTest(): void {
       expect(Lang.getInstance().t('Bot @%s selected', 'telegram')).assertEqual('已选择机器人 @telegram');
     });
 
+    it('dataLayerCopy_i18nLiteral103_hasBothLanguages', 0, () => {
+      // I18N-LITERAL-103 接回的这批：它们在 coordinator/model 里拼好再上屏，
+      // 守卫 R5 只看「词典已知的英文」，漏词条时 R5 反而看不见（汉字那半边由 R5a 兜）。
+      // 这批 key 的英文取值与 key 同形，所以这里能双向钉：中文出汉字、英文原样出这句。
+      const convertedKeys: string[] = [
+        'online', 'offline', 'last seen recently', 'last seen within a week',
+        'last seen within a month', 'Service Notifications', 'Me', 'User',
+        'Channel', 'Supergroup', 'Group', 'Private Chat',
+        'Today', 'Yesterday', 'Last Week',
+        'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday',
+        '[Photo]', '[Video]', '[GIF]', '[Audio]', '[Voice message]', '[Voice]',
+        '[Video message]', '[Document]', '[Sticker]', '[Location]', '[Venue]',
+        '[Contact]', '[Poll]', '[Call]', '[Game]',
+        'Recently Used', 'Favorites',
+        'Mute failed', 'Unmute failed', 'Muted', 'Failed to clear history',
+        'Chat history cleared', 'Failed to delete chat', 'Chat deleted',
+        'Failed to report', 'Reported', 'Failed to leave', 'Left the chat',
+        'Vote failed', 'Microphone permission required', 'Cannot start recording',
+        'Recording failed, not sent', 'Downloading voice message…',
+        'Voice file unavailable', 'Downloading audio…', 'Cannot start the secret chat',
+        'Operation failed, please try again later', 'Voice file cannot be read',
+        'Copied to clipboard', 'Link copied', 'No comment thread', 'Network error',
+        'Channel post', 'Channel message',
+        'This chat does not allow sending photos',
+        'This chat does not allow sending videos',
+        'This chat does not allow sending files',
+        'This chat does not allow creating polls',
+        'This chat does not allow sending stickers',
+        'This chat does not allow sending GIFs',
+        'This chat does not allow sending this content'
+      ];
+
+      Lang.getInstance().reset();
+      Lang.getInstance().setLanguage('zh');
+      for (let i = 0; i < convertedKeys.length; i++) {
+        const key: string = convertedKeys[i];
+        const value: string = Lang.getInstance().t(key);
+        expect(value !== key).assertTrue();
+        expect(hasHan(value)).assertTrue();
+      }
+
+      Lang.getInstance().setLanguage('en');
+      for (let i = 0; i < convertedKeys.length; i++) {
+        expect(Lang.getInstance().t(convertedKeys[i])).assertEqual(convertedKeys[i]);
+      }
+    });
+
+    it('dataLayerCopy_i18nLiteral103_substitutesCountArgs', 0, () => {
+      Lang.getInstance().reset();
+      Lang.getInstance().setLanguage('en');
+      expect(Lang.getInstance().t('{0} online', 3)).assertEqual('3 online');
+      expect(Lang.getInstance().t('{0}, {1} online', 3, 12)).assertEqual('3, 12 online');
+      expect(Lang.getInstance().t('{0} Sticker', '😀')).assertEqual('😀 Sticker');
+
+      Lang.getInstance().setLanguage('zh');
+      expect(Lang.getInstance().t('{0} online', 3)).assertEqual('3 在线');
+      expect(Lang.getInstance().t('{0}, {1} online', 3, 12)).assertEqual('3, 12 在线');
+      expect(Lang.getInstance().t('{0} Sticker', '😀')).assertEqual('😀 贴纸');
+    });
+
     it('getString_fallsBackToKeyWhenUntranslated', 0, () => {
       Lang.getInstance().reset();
       Lang.getInstance().setLanguage('zh');

@@ -18,7 +18,7 @@ import {
   ATTACHMENT_GALLERY,
   ATTACHMENT_POLL,
   ATTACHMENT_VIDEO,
-  attachmentRestrictionLabel,
+  attachmentRestrictionLabelKey,
   buildAttachmentEntries,
   canRecordVoice,
   canSendAnyMedia,
@@ -27,7 +27,7 @@ import {
   CONTENT_STICKER,
   ChatSendRights,
   sendRightsFromPermissions,
-  sendVetoLabel
+  sendVetoLabelKey
 } from '../../main/ets/chat/ChatSendRights';
 
 /** 全 false 的 TDLib permissions；调用方再点亮自己要验证的那一位。 */
@@ -141,7 +141,7 @@ export default function chatSendRightsTest(): void {
       expect(entries.length).assertEqual(5);
       for (let i = 0; i < entries.length; i++) {
         expect(entries[i].enabled).assertFalse();
-        expect(attachmentRestrictionLabel(entries[i]).length > 0).assertTrue();
+        expect(attachmentRestrictionLabelKey(entries[i]).length > 0).assertTrue();
       }
     });
 
@@ -150,8 +150,8 @@ export default function chatSendRightsTest(): void {
       const keys: string[] = [ATTACHMENT_GALLERY, ATTACHMENT_CAMERA, ATTACHMENT_VIDEO, ATTACHMENT_FILE, ATTACHMENT_POLL];
       for (let i = 0; i < keys.length; i++) {
         const disabled: AttachmentEntry = new AttachmentEntry(keys[i], false);
-        labels.push(attachmentRestrictionLabel(disabled));
-        expect(attachmentRestrictionLabel(new AttachmentEntry(keys[i], true))).assertEqual('');
+        labels.push(attachmentRestrictionLabelKey(disabled));
+        expect(attachmentRestrictionLabelKey(new AttachmentEntry(keys[i], true))).assertEqual('');
       }
       // 五种受限原因文案不得雷同，否则用户看不出到底是哪一类被禁。
       const seen: Set<string> = new Set<string>();
@@ -159,7 +159,7 @@ export default function chatSendRightsTest(): void {
         seen.add(labels[i]);
       }
       expect(seen.size).assertEqual(5);
-      expect(attachmentRestrictionLabel(new AttachmentEntry('unknown', false)).length > 0).assertTrue();
+      expect(attachmentRestrictionLabelKey(new AttachmentEntry('unknown', false)).length > 0).assertTrue();
     });
 
     it('canSendAnyMedia_ignoresBasicOnlyRight', 0, () => {
@@ -186,7 +186,7 @@ export default function chatSendRightsTest(): void {
       for (let bit = 0; bit < 9; bit++) {
         const rights: ChatSendRights = rightsWithOnlyBitOff(bit);
         for (let k = 0; k < keys.length; k++) {
-          const veto: string = sendVetoLabel(rights, keys[k]);
+          const veto: string = sendVetoLabelKey(rights, keys[k]);
           if (bit === 8) {
             expect(veto.length > 0).assertTrue();
           } else {
@@ -204,7 +204,7 @@ export default function chatSendRightsTest(): void {
       ];
       const seen: Set<string> = new Set<string>();
       for (let i = 0; i < keys.length; i++) {
-        const veto: string = sendVetoLabel(rights, keys[i]);
+        const veto: string = sendVetoLabelKey(rights, keys[i]);
         expect(veto.length > 0).assertTrue();
         seen.add(veto);
       }
@@ -214,7 +214,7 @@ export default function chatSendRightsTest(): void {
     it('sendVeto_unknownContentKindPassesThrough', 0, () => {
       // 未知 key 放行：本地误杀比让 TDLib 报错更难查（新加入口时忘了登记会立刻暴露在这里）。
       const none: ChatSendRights = new ChatSendRights(false, false, false, false, false, false, false, false, false);
-      expect(sendVetoLabel(none, 'contact')).assertEqual('');
+      expect(sendVetoLabelKey(none, 'contact')).assertEqual('');
       expect(canSendContent(none, 'contact')).assertTrue();
     });
 
@@ -224,7 +224,7 @@ export default function chatSendRightsTest(): void {
       const none: ChatSendRights = new ChatSendRights(false, false, false, false, false, false, false, false, false);
       for (let i = 0; i < pairs.length; i++) {
         const entry: AttachmentEntry = new AttachmentEntry(pairs[i], false);
-        expect(sendVetoLabel(none, pairs[i])).assertEqual(attachmentRestrictionLabel(entry));
+        expect(sendVetoLabelKey(none, pairs[i])).assertEqual(attachmentRestrictionLabelKey(entry));
       }
     });
   });

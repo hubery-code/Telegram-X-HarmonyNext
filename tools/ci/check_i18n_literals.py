@@ -7,7 +7,7 @@
 `Lang` 缺译文时**原样回吐 key**，于是 Toast 上屏的是 `Sticker set: %s` 本身。也就是说
 「key 拼错」和「漏翻译」在屏幕上长得一模一样，没人会当场发现。
 
-本脚本守四条：
+本脚本守五条：
 
   R1 视图层字面量禁令：`entry` 与各 `feature/*` 的 **pages/ 与 components/** 下，任何 .ets 文件
      里都不允许出现含汉字的字符串字面量（emoji 不在 `一-鿿` 段内，不会被误伤）。
@@ -19,7 +19,8 @@
      （English 界面里的 'English' 本来就该长这样）。
   R2 key 必须双词典命中：`getString('X')` / `.t('X')` / `t('X')` / `formatByKey('X', ...)` 的**字面量**
      key 必须同时存在于 EN 与 ZH。这就是上面那次事故的直接防线。动态 key（变量、三元）不在射程内，
-     所以 R3 兜住整本表。
+     所以 R3 兜住整本表。射程 = 视图层 + 数据层（I18N-LITERAL-103 起 coordinator/model 里的
+     `getString('X')` 同样进检，否则这一路的新调用一个都不被查）。
   R3 两本词典 key 集合全等：EN 有 ZH 没有 = 中文界面回吐英文原文；ZH 有 EN 没有 = 英文界面回吐中文。
      两个方向都是「界面上出现另一种语言」，所以全等比「ZH 覆盖 EN 的差集」更严，也更便宜。
   R4 文案槽位里不许放「词典里已经有的英文字面量」（I18N-LITERAL-102 引入）：R1 只禁汉字，于是
@@ -38,6 +39,25 @@
      射程外的一类如实记下：把 key 存在数据行里再传进 `Text(row.labelKey)` 的**构造点**
      （`new DrawerMenuRow('calls', icon, 'Calls', false)`）不是文案槽位，守卫看不见；
      那一类靠 R2（接进 `t()` 之后缺项会被拦）与 `*Key` 命名约束兜。
+  R5 数据层展示串禁令（I18N-LITERAL-103 引入）：R1/R4 只看 `*/pages/` 与 `*/components/`，于是
+     coordinator / model / reducer / contract 里拼好的显示串一路畅通 —— `return '最近上线'`、
+     `this.toastPort.showToast('清空历史失败')`、`summary = 'Photo'` 都改不到词典。这类串比页面里的
+     更隐蔽：它藏在「数据加工函数」里，改词典的人根本不会想到那一屏的字是这儿来的。
+     口径与 R1/R4 同构，按文件分两层：
+       R5a 汉字禁令 —— `entry` 与 `feature/*` 里 **不在** pages//components/ 下的 .ets，
+            任何含汉字的字符串字面量都是违规（豁免同 R1：就地 `// i18n-allow <原因>`，
+            本仓只用于日期/相对时间的形态串）。
+       R5b 词典已知英文 —— 同批文件里，值命中词典（EN ∪ ZH）的英文字面量出现在两个位置之一：
+            ① `return` 的**直接**操作数（`return 'Photo';`；要求字面量外层没有任何调用）；
+            ② 显示出口 `showToast(` / `showHintToast(` 的实参。
+            豁免在 R4 的两类（`t()`/`getString()`/`formatByKey()` 实参位、被 `*Key` 的调用或字段
+            接收）之外再加一类，认同一枚约定的另一半：**函数名**以 `Key` 结尾（settings 那批
+            `privacyModeLabelKey` / `appLinkReasonKey` 纯函数）时，返回值按定义就是 key，
+            由页面 `t()` 解析。于是「`…Key` 结尾 = 传 key」在视图层和数据层两侧都被机器兜住。
+     射程外的两类如实记下：**赋值给中间变量**的显示串（`summary = 'Photo'` 这类先赋值、函数末尾
+     再 `return summary`）不在 R5b 的两个位置里，本包把它们逐个接进了词典但规则管不住下一个；
+     **构造器实参**（`new ProxyStatus('Connected', …)`）同理 —— 汉字那半边由 R5a 拦住，
+     英文那半边只有靠 R2（接进 `t()` 之后缺项会被拦）与字段/函数名的 `*Key` 约定兜。
 
 用法：python3 tools/ci/check_i18n_literals.py [--quiet]
 退出码：0 = 无违规；1 = 存在违规；2 = 前置条件坏了（词典解析不出来）
@@ -81,6 +101,10 @@ DISPLAY_FIELDS = frozenset((
     'placeholder', 'title', 'content', 'label', 'text', 'message', 'description',
     'promptText', 'cancelText', 'confirmText', 'buttonText',
 ))
+# R5b：数据层里直接上屏的出口（Toast）。
+DATA_DISPLAY_SINKS = frozenset(('showToast', 'showHintToast'))
+# R5b：`return` 的直接操作数所在行（三元、模板串都算这一行的 return 操作数）。
+RETURN_RE = re.compile(r'return\b')
 QUOTES = ('\'', '"', '`')
 
 
@@ -89,7 +113,7 @@ def is_comment(stripped: str) -> bool:
 
 
 def code_lines(path):
-    """逐行产出参与扫描的代码行（跳过整行注释与块注释；三条规则用同一套口径）。"""
+    """逐行产出参与扫描的代码行（跳过整行注释与块注释；各条规则用同一套口径）。"""
     in_block = False
     for idx, line in enumerate(path.read_text(encoding='utf-8').splitlines()):
         stripped = line.strip()
@@ -105,6 +129,15 @@ def code_lines(path):
 
 
 def view_files():
+    return partitioned_files(True)
+
+
+def data_files():
+    """R5 的射程：同批模块里**不在** pages//components/ 下的 .ets（数据层与装配层）。"""
+    return partitioned_files(False)
+
+
+def partitioned_files(view: bool):
     out = []
     for d in VIEW_DIRS:
         base = ROOT / d
@@ -114,14 +147,15 @@ def view_files():
             rel = str(path.relative_to(ROOT))
             if any(part in SKIP_PARTS for part in rel):
                 continue
-            if not any(seg in rel for seg in VIEW_SEGMENTS):
+            in_view = any(seg in rel for seg in VIEW_SEGMENTS)
+            if in_view != view:
                 continue
             out.append((rel, path))
     return out
 
 
-def scan_literals(files):
-    """R1：视图层文件里的汉字字面量（`// i18n-allow 原因` 可豁免）。"""
+def scan_literals(files, layer: str):
+    """R1 / R5a：文件里的汉字字面量（`// i18n-allow 原因` 可豁免）。"""
     problems = []
     allowed = []
     for rel, path in files:
@@ -141,7 +175,7 @@ def scan_literals(files):
                 else:
                     allowed.append(f'{rel}:{idx + 1}')
                 continue
-            problems.append(f'{rel}:{idx + 1}: 视图层写死中文文案 -> {hit}（改走 Lang key，'
+            problems.append(f'{rel}:{idx + 1}: {layer}写死中文文案 -> {hit}（改走 Lang key，'
                             f'确需保留请标 // i18n-allow <原因>）')
     return problems, allowed
 
@@ -207,14 +241,21 @@ def scan_line_literals(line):
     return out
 
 
-def display_slot_reason(callers, field):
-    """字面量所处文案槽位的写法；不属于文案槽位则回 None（R4 不管它）。"""
+def key_carrier_exemption(callers, field=None) -> bool:
+    """R4/R5b 共用的两种免标记豁免：查词典的实参位，或被 `*Key` 接收。"""
     names = [name for name, _ in callers if name]
     # 豁免 ①：t()/getString()/formatByKey() 的实参 —— 这就是在查词典，正是要的形状。
     if any(name in KEY_CALL_NAMES for name in names):
-        return None
+        return True
     # 豁免 ②：`*Key` 约定的调用/字段 —— 它收的是 key，不是串。
     if any(name.endswith(KEY_CARRIER_SUFFIX) for name in names):
+        return True
+    return field is not None and field.endswith(KEY_CARRIER_SUFFIX)
+
+
+def display_slot_reason(callers, field):
+    """字面量所处文案槽位的写法；不属于文案槽位则回 None（R4 不管它）。"""
+    if key_carrier_exemption(callers, field):
         return None
     for name, member in callers:
         if not name:
@@ -229,17 +270,58 @@ def display_slot_reason(callers, field):
     return None
 
 
-def scan_display_slots(files, dicts):
-    """R4：词典里已存在的英文字面量不许直接写进文案槽位（`// i18n-allow 原因` 可豁免）。"""
+def data_slot_reason(callers, field, stripped_line, fn_name):
+    """R5b：数据层里字面量的「上屏位置」写法；不在射程内回 None。
+
+    只认两个位置，都是本包实测到的形态：
+      ① `return` 的**直接**操作数（`return 'Photo';`、`return x ? '语音消息' : '';`）；
+         要求字面量外层没有任何调用 —— `return new Row('Proxy error', …)` 属构造器实参，
+         是本规则如实记录的射程外类别，不在这里冒充命中。
+      ② 显示出口 `showToast(` / `showHintToast(` 的实参。
+    除 R4 的两类豁免外再加一类，沿用同一套「传 key 不传串」约定的另一半：**函数名**以 `Key`
+    结尾时（settings 那一整批 `autoDownloadKindLabelKey` / `proxyRowSummary` 风格的纯函数），
+    返回值按定义就是 key，由页面 `this.t(...)` 解析，不是显示串。
+    """
+    if key_carrier_exemption(callers, field):
+        return None
+    for name, _ in callers:
+        if name in DATA_DISPLAY_SINKS:
+            return f'{name}('
+    if not callers and (stripped_line.startswith('return ') or stripped_line.startswith('return(')):
+        if fn_name is not None and fn_name.endswith(KEY_CARRIER_SUFFIX):
+            return None
+        return 'return'
+    return None
+
+
+FUNCTION_RE = re.compile(r'\bfunction\s+([A-Za-z_$][\w$]*)\s*\(')
+
+
+def code_lines_with_fn(path):
+    """逐行产出代码行，并带上「最近见过的函数名」，供 R5b 认 `*Key` 约定。
+
+    只做行内正则推进，不是作用域分析：本仓 model/coordinator 的函数都是 `export function xxx(` 平铺，
+    嵌套函数会沿用外层名，误豁免需要函数名正好以 Key 结尾，方向上安全。
+    """
+    fn = None
+    for idx, line, stripped in code_lines(path):
+        m = FUNCTION_RE.search(line)
+        if m is not None:
+            fn = m.group(1)
+        yield idx, line, stripped, fn
+
+
+def scan_known_english(files, dicts, reason_for, fix_hint):
+    """R4 / R5b 的公共骨架：词典已知的英文字面量出现在「文案位置」即违规。"""
     problems = []
     allowed = []
     known = dicts['EN'] | dicts['ZH']
     for rel, path in files:
-        for idx, line, stripped in code_lines(path):
+        for idx, line, stripped, fn in code_lines_with_fn(path):
             for value, callers, field in scan_line_literals(line):
                 if not value or CJK_RE.search(value) or value not in known:
                     continue
-                reason = display_slot_reason(callers, field)
+                reason = reason_for(callers, field, stripped, fn)
                 if reason is None:
                     continue
                 allow = ALLOW_RE.search(line)
@@ -250,10 +332,24 @@ def scan_display_slots(files, dicts):
                     else:
                         allowed.append(f'{rel}:{idx + 1}')
                     continue
-                problems.append(f'{rel}:{idx + 1}: 文案槽位 {reason} 里写死了词典已知的英文 '
-                                f'-> {value}（改走 this.t(...) 或把参数改名成 *Key，'
-                                f'确需保留请标 // i18n-allow <原因>）')
+                problems.append(f'{rel}:{idx + 1}: 文案位置 {reason} 里写死了词典已知的英文 '
+                                f'-> {value}（{fix_hint}，确需保留请标 // i18n-allow <原因>）')
     return problems, allowed
+
+
+def scan_display_slots(files, dicts):
+    """R4：词典里已存在的英文字面量不许直接写进文案槽位（`// i18n-allow 原因` 可豁免）。"""
+    return scan_known_english(
+        files, dicts,
+        lambda callers, field, stripped, fn: display_slot_reason(callers, field),
+        '改走 this.t(...) 或把参数改名成 *Key')
+
+
+def scan_data_layer(files, dicts):
+    """R5b：数据层里 return 操作数 / Toast 实参不许写死词典已知的英文。"""
+    return scan_known_english(
+        files, dicts, data_slot_reason,
+        '改走 Lang.getInstance().getString(...) 或把参数改名成 *Key')
 
 
 def load_dicts():
@@ -303,30 +399,43 @@ def main() -> int:
     args = parser.parse_args()
 
     files = view_files()
+    data = data_files()
     dicts = load_dicts()
 
-    literal_problems, allowed_literal = scan_literals(files)
+    literal_problems, allowed_literal = scan_literals(files, '视图层')
     slot_problems, allowed_slot = scan_display_slots(files, dicts)
-    key_problems, checked = scan_keys(files, dicts)
+    data_literal_problems, allowed_data_literal = scan_literals(data, '数据层')
+    data_slot_problems, allowed_data_slot = scan_data_layer(data, dicts)
+    # R2 覆盖两层：coordinator/model 里的 getString('X') 同样必须双词典命中。
+    key_problems, checked = scan_keys(files + data, dicts)
     parity_problems = scan_parity(dicts)
 
-    allowed = allowed_literal + allowed_slot
-    failed = bool(literal_problems or slot_problems or key_problems or parity_problems)
+    allowed = allowed_literal + allowed_slot + allowed_data_literal + allowed_data_slot
+    failed = bool(literal_problems or slot_problems or data_literal_problems
+                  or data_slot_problems or key_problems or parity_problems)
     if not args.quiet or failed:
         for msg in literal_problems:
             print(f'[i18n] LITERAL {msg}')
         for msg in slot_problems:
             print(f'[i18n] ENGLISH-SLOT {msg}')
+        for msg in data_literal_problems:
+            print(f'[i18n] DATA-LITERAL {msg}')
+        for msg in data_slot_problems:
+            print(f'[i18n] DATA-ENGLISH {msg}')
         for msg in key_problems:
             print(f'[i18n] MISSING-KEY {msg}')
         for msg in parity_problems:
             print(f'[i18n] PARITY {msg}')
         if not args.quiet:
-            print(f'[i18n] 视图层文件 {len(files)} 个，字面量 key 调用点覆盖 {len(checked)} 个，'
+            print(f'[i18n] 视图层文件 {len(files)} 个 / 数据层文件 {len(data)} 个，'
+                  f'字面量 key 调用点覆盖 {len(checked)} 个，'
                   f'词典 EN {len(dicts["EN"])} / ZH {len(dicts["ZH"])} 条，'
-                  f'就地豁免 {len(allowed)} 处（写死中文 {len(allowed_literal)} / 写死英文 {len(allowed_slot)}）')
+                  f'就地豁免 {len(allowed)} 处'
+                  f'（写死中文 {len(allowed_literal) + len(allowed_data_literal)} / '
+                  f'写死英文 {len(allowed_slot) + len(allowed_data_slot)}）')
     if failed:
-        print(f'[i18n] FAILED: 写死中文 {len(literal_problems)} / 写死英文 {len(slot_problems)} / '
+        print(f'[i18n] FAILED: 写死中文 {len(literal_problems) + len(data_literal_problems)} / '
+              f'写死英文 {len(slot_problems) + len(data_slot_problems)} / '
               f'缺词条 {len(key_problems)} / 词典不对称 {len(parity_problems)}', file=sys.stderr)
         return 1
     print('[i18n] OK')

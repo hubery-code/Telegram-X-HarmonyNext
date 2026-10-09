@@ -555,7 +555,7 @@ export default function chatReducerTest() {
       const effect: CopyTextToClipboard = result.effects[0] as CopyTextToClipboard;
       expect(effect.kind).assertEqual('copyTextToClipboard');
       expect(effect.text).assertEqual('Copy me!');
-      expect(effect.toastMessage).assertEqual('已复制到剪贴板');
+      expect(effect.toastMessageKey).assertEqual('Copied to clipboard');
     });
 
     it('copyMessageText_whenNotAllowed_doesNothing', 0, () => {
@@ -581,7 +581,7 @@ export default function chatReducerTest() {
       const effect: CopyTextToClipboard = result.effects[0] as CopyTextToClipboard;
       expect(effect.kind).assertEqual('copyTextToClipboard');
       expect(effect.text).assertEqual('https://tgx.org');
-      expect(effect.toastMessage).assertEqual('已复制链接');
+      expect(effect.toastMessageKey).assertEqual('Link copied');
     });
 
     it('replyToMessage_setsReplyMode_keepsComposerDraft', 0, () => {

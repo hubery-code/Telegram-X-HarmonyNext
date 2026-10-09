@@ -822,7 +822,7 @@ export struct ChatListPage {
         ForEach(this.getFoldersList(), (folder: ChatFolderTab) => {
           Column() {
             Row() {
-              Text(folder.title)
+              Text(this.t(folder.titleKey))
                 .fontSize(this.T.typography.subheadline.fontSize)
                 .fontWeight(this.uiState.selectedFolderId === folder.id ? FontWeight.Bold : FontWeight.Medium)
                 .fontColor(this.uiState.selectedFolderId === folder.id ? this.T.colors.accent : this.T.colors.textSecondary)

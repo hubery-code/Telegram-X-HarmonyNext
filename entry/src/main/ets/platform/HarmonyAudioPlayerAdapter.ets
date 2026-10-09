@@ -21,6 +21,7 @@
 import { media } from '@kit.MediaKit';
 import { fileIo } from '@kit.CoreFileKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
+import { Lang } from '@tgx/core-common';
 import {
   AudioPlayerPort,
   AudioPlaybackMetadata,
@@ -152,7 +153,7 @@ export class HarmonyAudioPlayerAdapter implements AudioPlayerPort, AudioPlayback
       hilog.error(DOMAIN, TAG, `cannot attach audio source: ${String(e)}`);
       this.playing = false;
       if (this.onErrorCallback) {
-        this.onErrorCallback('语音文件无法读取');
+        this.onErrorCallback(Lang.getInstance().getString('Voice file cannot be read'));
       }
     }
   }

@@ -98,10 +98,10 @@ export {
   PRIVACY_SETTING_KEYS,
   privacyNeedNobodyOption,
   privacyNeedExceptions,
-  privacyAlwaysAllowLabel,
-  privacyNeverAllowLabel,
-  privacyRowLabel,
-  privacySettingLabel,
+  privacyAlwaysAllowLabelKey,
+  privacyNeverAllowLabelKey,
+  privacyRowLabelKey,
+  privacySettingLabelKey,
   toUserPrivacySetting
 } from './model/PrivacySettings';
 export {
@@ -110,7 +110,7 @@ export {
   PrivacyRulesView,
   parsePrivacyRules,
   privacyAlwaysAllowCount,
-  privacyModeLabel,
+  privacyModeLabelKey,
   privacyMembersOf,
   privacyNeedAlwaysAllow,
   privacyNeedNeverAllow,

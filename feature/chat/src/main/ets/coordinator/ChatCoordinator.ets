@@ -48,7 +48,7 @@ import {
   FakeAudioPlayer,
   FakeAudioRecorder
 } from '@tgx/platform-ports';
-import { ManualClock, SequentialIdGenerator, AppError, AppErrors } from '@tgx/core-common';
+import { ManualClock, SequentialIdGenerator, AppError, AppErrors, Lang } from '@tgx/core-common';
 import { AccountScope } from '@tgx/core-account';
 import {
   Animation,
@@ -374,41 +374,41 @@ export function messageContentText(content: TdMessageContent | null): string {
       return text !== null ? text.text : '';
     }
     case 'messagePhoto':
-      return '[Photo]';
+      return Lang.getInstance().getString('[Photo]');
     case 'messageVideo':
-      return '[Video]';
+      return Lang.getInstance().getString('[Video]');
     case 'messageAnimation':
-      return '[GIF]';
+      return Lang.getInstance().getString('[GIF]');
     case 'messageAudio':
-      return '[Audio]';
+      return Lang.getInstance().getString('[Audio]');
     case 'messageVoiceNote':
-      return '[Voice message]';
+      return Lang.getInstance().getString('[Voice message]');
     case 'messageVideoNote':
-      return '[Video message]';
+      return Lang.getInstance().getString('[Video message]');
     case 'messageDocument':
-      return '[Document]';
+      return Lang.getInstance().getString('[Document]');
     case 'messageSticker': {
       const stickerContent: MessageSticker = content as MessageSticker;
       if (stickerContent.sticker !== null && stickerContent.sticker.emoji.length > 0) {
-        return `${stickerContent.sticker.emoji} Sticker`;
+        return Lang.getInstance().getString('{0} Sticker', stickerContent.sticker.emoji);
       }
-      return 'Sticker';
+      return Lang.getInstance().getString('Sticker');
     }
     case 'messageLocation':
     case 'messageLiveLocation':
-      return '[Location]';
+      return Lang.getInstance().getString('[Location]');
     case 'messageVenue':
-      return '[Venue]';
+      return Lang.getInstance().getString('[Venue]');
     case 'messageContact':
-      return '[Contact]';
+      return Lang.getInstance().getString('[Contact]');
     case 'messagePoll':
-      return '[Poll]';
+      return Lang.getInstance().getString('[Poll]');
     case 'messageCall':
-      return '[Call]';
+      return Lang.getInstance().getString('[Call]');
     case 'messageGame':
-      return '[Game]';
+      return Lang.getInstance().getString('[Game]');
     case 'messageUnsupported':
-      return '[Unsupported message]';
+      return Lang.getInstance().getString('[Unsupported message]');
     default:
       return '';
   }
@@ -972,7 +972,7 @@ export class ChatCoordinator {
       this.scope.request('setChatNotificationSettings', encodeSetChatNotificationSettings(req) as TdWireObject);
     if (result.err) {
       this.logger.logError(TAG, result.error);
-      this.toastPort.showToast(mute ? '静音失败' : '取消静音失败');
+      this.toastPort.showToast(mute ? Lang.getInstance().getString('Mute failed') : Lang.getInstance().getString('Unmute failed'));
       return;
     }
     if (result.ok) {
@@ -980,11 +980,13 @@ export class ChatCoordinator {
         if (!this.destroyed) {
           if (res.ok) {
             this.logger.info(TAG, 'chat_mute_applied', `chatId=${chatId},mute=${mute}`);
-            this.toastPort.showToast(mute ? '已静音' : '已开启通知');
+            this.toastPort.showToast(mute
+              ? Lang.getInstance().getString('Muted')
+              : Lang.getInstance().getString('Notifications enabled'));
           }
           if (res.err) {
             this.logger.logError(TAG, res.error);
-            this.toastPort.showToast(mute ? '静音失败' : '取消静音失败');
+            this.toastPort.showToast(mute ? Lang.getInstance().getString('Mute failed') : Lang.getInstance().getString('Unmute failed'));
           }
         }
       }).catch(() => {});
@@ -1005,19 +1007,19 @@ export class ChatCoordinator {
       this.scope.request('deleteChatHistory', encodeDeleteChatHistory(req) as TdWireObject);
     if (result.err) {
       this.logger.logError(TAG, result.error);
-      this.toastPort.showToast('清空历史失败');
+      this.toastPort.showToast(Lang.getInstance().getString('Failed to clear history'));
       return;
     }
     if (result.ok) {
       result.value.promise.then((res: Result<TdWireObject, AppError>) => {
         if (!this.destroyed) {
           if (res.ok) {
-            this.toastPort.showToast('已清空聊天历史');
+            this.toastPort.showToast(Lang.getInstance().getString('Chat history cleared'));
             this.onBack();
           }
           if (res.err) {
             this.logger.logError(TAG, res.error);
-            this.toastPort.showToast('清空历史失败');
+            this.toastPort.showToast(Lang.getInstance().getString('Failed to clear history'));
           }
         }
       });
@@ -1036,19 +1038,19 @@ export class ChatCoordinator {
       this.scope.request('deleteChat', encodeDeleteChat(req) as TdWireObject);
     if (result.err) {
       this.logger.logError(TAG, result.error);
-      this.toastPort.showToast('删除聊天失败');
+      this.toastPort.showToast(Lang.getInstance().getString('Failed to delete chat'));
       return;
     }
     if (result.ok) {
       result.value.promise.then((res: Result<TdWireObject, AppError>) => {
         if (!this.destroyed) {
           if (res.ok) {
-            this.toastPort.showToast('已删除聊天');
+            this.toastPort.showToast(Lang.getInstance().getString('Chat deleted'));
             this.onBack();
           }
           if (res.err) {
             this.logger.logError(TAG, res.error);
-            this.toastPort.showToast('删除聊天失败');
+            this.toastPort.showToast(Lang.getInstance().getString('Failed to delete chat'));
           }
         }
       });
@@ -1070,18 +1072,18 @@ export class ChatCoordinator {
       this.scope.request('reportChat', encodeReportChat(req) as TdWireObject);
     if (result.err) {
       this.logger.logError(TAG, result.error);
-      this.toastPort.showToast('举报失败');
+      this.toastPort.showToast(Lang.getInstance().getString('Failed to report'));
       return;
     }
     if (result.ok) {
       result.value.promise.then((res: Result<TdWireObject, AppError>) => {
         if (!this.destroyed) {
           if (res.ok) {
-            this.toastPort.showToast('已举报');
+            this.toastPort.showToast(Lang.getInstance().getString('Reported'));
           }
           if (res.err) {
             this.logger.logError(TAG, res.error);
-            this.toastPort.showToast('举报失败');
+            this.toastPort.showToast(Lang.getInstance().getString('Failed to report'));
           }
         }
       });
@@ -1100,19 +1102,19 @@ export class ChatCoordinator {
       this.scope.request('leaveChat', encodeLeaveChat(req) as TdWireObject);
     if (result.err) {
       this.logger.logError(TAG, result.error);
-      this.toastPort.showToast('退出失败');
+      this.toastPort.showToast(Lang.getInstance().getString('Failed to leave'));
       return;
     }
     if (result.ok) {
       result.value.promise.then((res: Result<TdWireObject, AppError>) => {
         if (!this.destroyed) {
           if (res.ok) {
-            this.toastPort.showToast('已退出');
+            this.toastPort.showToast(Lang.getInstance().getString('Left the chat'));
             this.onBack();
           }
           if (res.err) {
             this.logger.logError(TAG, res.error);
-            this.toastPort.showToast('退出失败');
+            this.toastPort.showToast(Lang.getInstance().getString('Failed to leave'));
           }
         }
       });
@@ -2347,7 +2349,7 @@ export class ChatCoordinator {
           if (photoContent.caption !== null && photoContent.caption.text.length > 0) {
             summary = photoContent.caption.text;
           } else {
-            summary = 'Photo';
+            summary = Lang.getInstance().getString('Photo');
           }
           if (photoContent.photo !== null && photoContent.photo.sizes.length > 0) {
             // 优先检查是否已有任何尺寸已在本地缓存
@@ -2380,7 +2382,9 @@ export class ChatCoordinator {
           isSticker = true;
           if (stickerContent.sticker !== null) {
             const sticker: Sticker = stickerContent.sticker;
-            summary = sticker.emoji.length > 0 ? `${sticker.emoji} Sticker` : 'Sticker';
+            summary = sticker.emoji.length > 0
+              ? Lang.getInstance().getString('{0} Sticker', sticker.emoji)
+              : Lang.getInstance().getString('Sticker');
             if (sticker.thumbnail !== null && sticker.thumbnail.file !== null) {
               const fileId: number = sticker.thumbnail.file.id;
               thumbnailPath = this.fileRegistry.getLocalPath(fileId);
@@ -2396,7 +2400,7 @@ export class ChatCoordinator {
               }
             }
           } else {
-            summary = 'Sticker';
+            summary = Lang.getInstance().getString('Sticker');
           }
           break;
         }
@@ -2405,7 +2409,7 @@ export class ChatCoordinator {
           if (videoContent.caption !== null && videoContent.caption.text.length > 0) {
             summary = videoContent.caption.text;
           } else {
-            summary = 'Video';
+            summary = Lang.getInstance().getString('Video');
           }
           if (videoContent.video !== null && videoContent.video.thumbnail !== null && videoContent.video.thumbnail.file !== null) {
             const fileId: number = videoContent.video.thumbnail.file.id;
@@ -2421,7 +2425,7 @@ export class ChatCoordinator {
           if (animContent.caption !== null && animContent.caption.text.length > 0) {
             summary = animContent.caption.text;
           } else {
-            summary = 'GIF';
+            summary = Lang.getInstance().getString('GIF');
           }
           if (animContent.animation !== null && animContent.animation.thumbnail !== null && animContent.animation.thumbnail.file !== null) {
             const fileId: number = animContent.animation.thumbnail.file.id;
@@ -2433,7 +2437,7 @@ export class ChatCoordinator {
           break;
         }
         case 'messageVideoNote': {
-          summary = 'Video message';
+          summary = Lang.getInstance().getString('Video message');
           const noteContent: MessageVideoNote = message.content as MessageVideoNote;
           if (noteContent.video_note !== null && noteContent.video_note.thumbnail !== null && noteContent.video_note.thumbnail.file !== null) {
             const fileId: number = noteContent.video_note.thumbnail.file.id;
@@ -2445,7 +2449,7 @@ export class ChatCoordinator {
           break;
         }
         case 'messageVoiceNote': {
-          summary = 'Voice message';
+          summary = Lang.getInstance().getString('Voice message');
           break;
         }
         case 'messageAudio': {
@@ -2453,7 +2457,7 @@ export class ChatCoordinator {
           if (audioContent.audio !== null && audioContent.audio.title.length > 0) {
             summary = audioContent.audio.title;
           } else {
-            summary = 'Audio';
+            summary = Lang.getInstance().getString('Audio');
           }
           if (audioContent.audio !== null && audioContent.audio.album_cover_thumbnail !== null && audioContent.audio.album_cover_thumbnail.file !== null) {
             const fileId: number = audioContent.audio.album_cover_thumbnail.file.id;
@@ -2469,7 +2473,7 @@ export class ChatCoordinator {
           if (docContent.document !== null && docContent.document.file_name.length > 0) {
             summary = docContent.document.file_name;
           } else {
-            summary = 'Document';
+            summary = Lang.getInstance().getString('Document');
           }
           if (docContent.document !== null && docContent.document.thumbnail !== null && docContent.document.thumbnail.file !== null) {
             const fileId: number = docContent.document.thumbnail.file.id;
@@ -3093,7 +3097,7 @@ export class ChatCoordinator {
     if (this.chatKind === 'private') {
       const chatId: number = this.currentState.chatId;
       if (chatId === 777000) {
-        this.dispatch(new OnHeaderSubtitleChanged('服务通知'));
+        this.dispatch(new OnHeaderSubtitleChanged(Lang.getInstance().getString('Service Notifications')));
         return;
       }
       const user: User | null = this.userRegistry.getUser(chatId);
@@ -3117,19 +3121,18 @@ export class ChatCoordinator {
     }
   }
 
-  /** MSG-109：UserStatus → 头部副标题文案（对齐 TGX 中文截图）。 */
+  /** MSG-109：UserStatus → 头部副标题文案（走 `Lang`，`offline` 与 `recently` 在此并档）。 */
   private formatUserStatus(status: TdUserStatus): string {
     switch (status.type) {
       case 'userStatusOnline':
-        return '在线';
+        return Lang.getInstance().getString('online');
       case 'userStatusOffline':
-        return '最近在线';
       case 'userStatusRecently':
-        return '最近上线';
+        return Lang.getInstance().getString('last seen recently');
       case 'userStatusLastWeek':
-        return '最近一周内上线';
+        return Lang.getInstance().getString('last seen within a week');
       case 'userStatusLastMonth':
-        return '最近一个月内上线';
+        return Lang.getInstance().getString('last seen within a month');
       default:
         return '';
     }
@@ -3229,20 +3232,21 @@ export class ChatCoordinator {
     }
   }
 
-  /** MSG-109：按已缓存的成员数/在线人数回灌群副标题（'N 位成员' / 'N 位成员, M 在线'）。 */
+  /** MSG-109：按已缓存的成员数/在线人数回灌群副标题（`{0} members` / `{0}, {1} online`）。 */
   private updateGroupHeaderSubtitle(): void {
     if (this.chatKind !== 'group' && this.chatKind !== 'channel') {
       return;
     }
     let text: string = '';
     if (this.memberCount > 0) {
-      text = this.chatKind === 'channel'
-        ? `${this.memberCount} 位订阅者`
-        : `${this.memberCount} 位成员`;
+      text = Lang.getInstance().getString(
+        this.chatKind === 'channel' ? '{0} subscribers' : '{0} members', this.memberCount);
     }
     // 在线人数仅群聊展示（频道不显示在线数）。
     if (this.chatKind === 'group' && this.onlineMemberCount > 0) {
-      text = text.length > 0 ? `${text}, ${this.onlineMemberCount} 在线` : `${this.onlineMemberCount} 在线`;
+      text = text.length > 0
+        ? Lang.getInstance().getString('{0}, {1} online', text, this.onlineMemberCount)
+        : Lang.getInstance().getString('{0} online', this.onlineMemberCount);
     }
     this.dispatch(new OnHeaderSubtitleChanged(text));
   }
@@ -3653,7 +3657,7 @@ export class ChatCoordinator {
       case 'copyTextToClipboard': {
         // MSG-105：复制文本到系统剪贴板并弹出轻提示。
         const copy: CopyTextToClipboard = effect as CopyTextToClipboard;
-        this.copyToClipboard(copy.text, copy.toastMessage);
+        this.copyToClipboard(copy.text, copy.toastMessageKey);
         break;
       }
 
@@ -4169,11 +4173,11 @@ export class ChatCoordinator {
   }
 
   /** MSG-105：复制文本到系统剪贴板并弹出 Toast 提示。 */
-  private copyToClipboard(text: string, toastMessage: string): void {
+  private copyToClipboard(text: string, toastMessageKey: string): void {
     this.clipboardPort.setPlainText(text).then(() => {
       this.logger.info(TAG, 'copy_to_clipboard_success', `len=${text.length}`);
       try {
-        this.toastPort.showToast(toastMessage, 2000);
+        this.toastPort.showToast(Lang.getInstance().getString(toastMessageKey), 2000);
       } catch (toastErr) {
         this.logger.warn(TAG, 'toast_show_exception', String(toastErr));
       }
@@ -5005,14 +5009,14 @@ export class ChatCoordinator {
       this.projection.setPollAnswer(vote.messageId, vote.optionIds);
     if (result.err) {
       this.logger.logError(TAG, result.error);
-      this.toastPort.showToast('投票失败');
+      this.toastPort.showToast(Lang.getInstance().getString('Vote failed'));
     }
     if (result.ok) {
       result.value.promise.then((res: Result<TdWireObject, AppError>) => {
         if (res.err) {
           this.logger.logError(TAG, res.error);
           if (!this.destroyed) {
-            this.toastPort.showToast('投票失败');
+            this.toastPort.showToast(Lang.getInstance().getString('Vote failed'));
           }
         }
         if (res.ok) {
@@ -5149,7 +5153,7 @@ export class ChatCoordinator {
       this.logger.error(TAG, 'start_voice_record_failed', reason);
       // 麦克风权限是最常见且唯一「用户可自救」的失败原因，单独给可操作提示。
       this.toastPort.showToast(
-        reason.indexOf(ERR_MIC_PERMISSION_DENIED) >= 0 ? '需要麦克风权限才能录音' : '无法开始录音',
+        reason.indexOf(ERR_MIC_PERMISSION_DENIED) >= 0 ? Lang.getInstance().getString('Microphone permission required') : Lang.getInstance().getString('Cannot start recording'),
         2000
       );
       this.dispatch(new CancelVoiceRecord());
@@ -5169,7 +5173,7 @@ export class ChatCoordinator {
       if (result.playable === false) {
         // 产物不可解码：宁可少发一条，也不要落地一条永远打不开的语音消息。
         this.logger.error(TAG, 'voice_record_unplayable', 'recording output is not decodable; skip send');
-        this.toastPort.showToast('录音失败，未发送', 2000);
+        this.toastPort.showToast(Lang.getInstance().getString('Recording failed, not sent'), 2000);
         return;
       }
       const durationSec: number = Math.max(1, Math.round(result.durationMs / 1000));
@@ -5213,13 +5217,13 @@ export class ChatCoordinator {
           } else {
             // 触发下载并提示
             this.fileRegistry.downloadFile(effect.fileId, 32);
-            this.toastPort.showToast('正在下载语音消息...', 1000);
+            this.toastPort.showToast(Lang.getInstance().getString('Downloading voice message…'), 1000);
             return;
           }
         }
       }
       if (!localPath || localPath.length === 0) {
-        this.dispatch(new VoicePlaybackFailed(effect.messageId, '语音文件不可用'));
+        this.dispatch(new VoicePlaybackFailed(effect.messageId, Lang.getInstance().getString('Voice file unavailable')));
         return;
       }
 
@@ -5241,7 +5245,8 @@ export class ChatCoordinator {
           }
         },
         // AUDIO-BG-101：锁屏卡片显「语音消息 — 会话名」。时长留 0，由播放器 prepared 后回填。
-        new AudioPlaybackMetadata(`${effect.messageId}`, '语音消息', this.currentState.chatTitle, 0)
+        new AudioPlaybackMetadata(`${effect.messageId}`,
+          Lang.getInstance().getString('Voice message'), this.currentState.chatTitle, 0)
       );
     } catch (e) {
       this.logger.error(TAG, 'play_voice_note_failed', String(e));
@@ -5274,7 +5279,7 @@ export function formatDateHeader(timestampMs: number): string {
   const month: number = date.getMonth() + 1;
   const day: number = date.getDate();
   if (date.getFullYear() === now.getFullYear()) {
-    return `${month}月${day}日`;
+    return `${month}月${day}日`; // i18n-allow 日期形态（数字+月日排布，归 I18N-DATE）
   }
-  return `${date.getFullYear()}年${month}月${day}日`;
+  return `${date.getFullYear()}年${month}月${day}日`; // i18n-allow 日期形态（跨年时补年份，归 I18N-DATE）
 }

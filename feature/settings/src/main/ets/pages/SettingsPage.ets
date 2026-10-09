@@ -57,9 +57,9 @@ import { NotificationScopeKey } from '../model/NotificationSettings';
 import {
   PrivacySettingItem,
   PrivacySettingKey,
-  privacyRowLabel
+  privacyRowLabelKey
 } from '../model/PrivacySettings';
-import { proxyRowSummary } from '../model/ProxySettings';
+import { proxyRowSummaryKey } from '../model/ProxySettings';
 import { AutoDownloadScopeSummary, autoDownloadRowSummary } from '../model/AutoDownloadRows';
 import { SettingsCardKey, sectionShowsCard, settingsSectionTitleKey } from '../model/SettingsSection';
 import { DevicesSubPage } from './DevicesSubPage';
@@ -656,7 +656,7 @@ export struct SettingsPage {
           .fontColor(this.getTheme().colors.textPrimary)
 
         Text(this.uiState.privacyItems.length > 0
-          ? `${this.t('Last Seen')}: ${this.t(privacyRowLabel(this.privacyItemOf('show_last_seen')))}`
+          ? `${this.t('Last Seen')}: ${this.t(privacyRowLabelKey(this.privacyItemOf('show_last_seen')))}`
           : this.t('Tap a row to change who can see it.'))
           .fontSize(this.getTheme().typography.footnote.fontSize)
           .fontColor(this.getTheme().colors.textSecondary)
@@ -698,7 +698,7 @@ export struct SettingsPage {
         // 读回来之前不说「点按设置」：那一刻「没配代理」和「还没查到」是两回事。
         Text(this.uiState.isLoadingProxies && this.uiState.proxyItems.length === 0
           ? this.t('Loading...')
-          : this.t(proxyRowSummary(this.uiState.proxyItems)))
+          : this.t(proxyRowSummaryKey(this.uiState.proxyItems)))
           .fontSize(this.getTheme().typography.footnote.fontSize)
           .fontColor(this.getTheme().colors.textSecondary)
           .margin({ top: this.getTheme().spacing.xs })

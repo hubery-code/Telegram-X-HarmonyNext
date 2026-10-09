@@ -483,7 +483,7 @@ export struct SearchPage {
             .layoutWeight(1)
 
           if (item.isChannel) {
-            Text('Channel')
+            Text(this.t('Channel'))
               .fontSize(this.T.typography.caption.fontSize)
               .fontColor(this.T.colors.accent)
               .padding({ left: this.T.spacing.xs, right: this.T.spacing.xs })
@@ -491,7 +491,7 @@ export struct SearchPage {
               .borderRadius(this.T.radius.sm)
               .margin({ left: this.T.spacing.xs })
           } else if (item.isGroup) {
-            Text('Group')
+            Text(this.t('Group'))
               .fontSize(this.T.typography.caption.fontSize)
               .fontColor(this.T.colors.textSecondary)
               .padding({ left: this.T.spacing.xs, right: this.T.spacing.xs })

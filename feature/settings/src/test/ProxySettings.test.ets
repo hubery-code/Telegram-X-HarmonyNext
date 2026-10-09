@@ -27,7 +27,7 @@ import {
   TdUnknownObject
 } from '@tgx/core-td-api-generated';
 import {
-  classifyProxyFailure,
+  classifyProxyFailureKey,
   pingProxyRequestFromItem,
   PROXY_NEW_ID,
   PROXY_NONE_ID,
@@ -51,7 +51,7 @@ import {
   proxyFailureOf,
   proxyFailuresPrunedTo,
   proxyFailuresWith,
-  proxyFormError,
+  proxyFormErrorKey,
   proxyFormFromItem,
   proxyFormHasCredentials,
   proxyItemFromAdded,
@@ -63,7 +63,7 @@ import {
   proxyPingsWith,
   proxyPortOf,
   proxyRowIsEffective,
-  proxyRowSummary,
+  proxyRowSummaryKey,
   proxyStatusOf,
   proxyTdlibCodeOf,
   proxyTitle,
@@ -144,10 +144,10 @@ export default function proxySettingsTest(): void {
     });
 
     it('rowSummary_threeStates', 0, () => {
-      expect(proxyRowSummary([])).assertEqual('Tap to set up');
-      expect(proxyRowSummary([item(1, 'socks5', 'a.com', 1080, '', false)]))
+      expect(proxyRowSummaryKey([])).assertEqual('Tap to set up');
+      expect(proxyRowSummaryKey([item(1, 'socks5', 'a.com', 1080, '', false)]))
         .assertEqual('Proxy Disabled');
-      expect(proxyRowSummary([
+      expect(proxyRowSummaryKey([
         item(1, 'socks5', 'a.com', 1080, '', false),
         item(2, 'mtproto', 'b.com', 443, '加速', true)
       ])).assertEqual('加速');
@@ -190,11 +190,11 @@ export default function proxySettingsTest(): void {
     });
 
     it('formError_reportsTopmostFieldFirst', 0, () => {
-      expect(proxyFormError(form('socks5', '', '1080', ''))).assertEqual('Server address required');
-      expect(proxyFormError(form('socks5', 'a.com', '', ''))).assertEqual('Port must be 1-65535');
-      expect(proxyFormError(form('mtproto', 'a.com', '443', 'zz')))
+      expect(proxyFormErrorKey(form('socks5', '', '1080', ''))).assertEqual('Server address required');
+      expect(proxyFormErrorKey(form('socks5', 'a.com', '', ''))).assertEqual('Port must be 1-65535');
+      expect(proxyFormErrorKey(form('mtproto', 'a.com', '443', 'zz')))
         .assertEqual('Secret must be hexadecimal');
-      expect(proxyFormError(form('mtproto', 'a.com', '443', 'aabb'))).assertEqual('');
+      expect(proxyFormErrorKey(form('mtproto', 'a.com', '443', 'aabb'))).assertEqual('');
       // 凭据可选：socks5 不填账号密码也算合法。
       expect(isProxyFormValid(form('socks5', 'a.com', '1080', ''))).assertTrue();
       expect(isProxyFormValid(form('http', 'a.com', '0', ''))).assertFalse();
@@ -486,47 +486,47 @@ export default function proxySettingsTest(): void {
 
     it('classify_mapsKnownTdlibTextsToOwnSentence', 0, () => {
       // 分类而不是转发：Android 把 TDLib 原文印到行上，本端只给一句自己的话。
-      expect(classifyProxyFailure(tdlib(400, '[Error 400] Connection timed out')))
+      expect(classifyProxyFailureKey(tdlib(400, '[Error 400] Connection timed out')))
         .assertEqual('Connection timed out');
-      expect(classifyProxyFailure(tdlib(400, '[Error 400] connect failed: Connection refused')))
+      expect(classifyProxyFailureKey(tdlib(400, '[Error 400] connect failed: Connection refused')))
         .assertEqual('Connection refused');
-      expect(classifyProxyFailure(tdlib(400, 'Failed to resolve "proxy.example.invalid": ...')))
+      expect(classifyProxyFailureKey(tdlib(400, 'Failed to resolve "proxy.example.invalid": ...')))
         .assertEqual('Address not found');
-      expect(classifyProxyFailure(tdlib(400, 'getaddrinfo: nodename nor servname provided')))
+      expect(classifyProxyFailureKey(tdlib(400, 'getaddrinfo: nodename nor servname provided')))
         .assertEqual('Address not found');
-      expect(classifyProxyFailure(tdlib(400, 'Network is unreachable')))
+      expect(classifyProxyFailureKey(tdlib(400, 'Network is unreachable')))
         .assertEqual('Network unavailable');
-      expect(classifyProxyFailure(tdlib(400, 'proxy handshake failed')))
+      expect(classifyProxyFailureKey(tdlib(400, 'proxy handshake failed')))
         .assertEqual('Proxy handshake failed');
-      expect(classifyProxyFailure(tdlib(400, 'Wrong secret: can not decrypt')))
+      expect(classifyProxyFailureKey(tdlib(400, 'Wrong secret: can not decrypt')))
         .assertEqual('Proxy settings rejected');
       // 认不出的原文只能给一句通用的 —— 绝不调头把 message 搬上来。
-      expect(classifyProxyFailure(tdlib(400, 'some TDLib wording nobody mapped')))
+      expect(classifyProxyFailureKey(tdlib(400, 'some TDLib wording nobody mapped')))
         .assertEqual('Proxy error');
     });
 
     it('classify_prefersTheFirstMatchingBranch', 0, () => {
       // 一句话里同时有 timeout 与 refused 时，先说的是超时（更长的那个等待才是真相）。
-      expect(classifyProxyFailure(tdlib(400, 'connect refused after timeout')))
+      expect(classifyProxyFailureKey(tdlib(400, 'connect refused after timeout')))
         .assertEqual('Connection timed out');
     });
 
     it('classify_readsASlowFailureAsTimeout', 0, () => {
       // 模拟器实测：不可达地址 TDLib 约 9s 才回 400，且那句里不带 timeout 字样。
       // 慢到这份上就是超时，不必等它亲口承认 —— 否则这一行只会得到一句没信息量的「代理异常」。
-      expect(classifyProxyFailure(tdlib(400, 'proxy connect failed'), PROXY_PING_SLOW_MS))
+      expect(classifyProxyFailureKey(tdlib(400, 'proxy connect failed'), PROXY_PING_SLOW_MS))
         .assertEqual('Connection timed out');
-      expect(classifyProxyFailure(tdlib(400, 'proxy connect failed'), PROXY_PING_SLOW_MS - 1))
+      expect(classifyProxyFailureKey(tdlib(400, 'proxy connect failed'), PROXY_PING_SLOW_MS - 1))
         .assertEqual('Proxy error');
       // DNS 失败实测 4s 回来，不能被这条线误伤成超时。
-      expect(classifyProxyFailure(tdlib(400, 'Failed to resolve host'), 4000))
+      expect(classifyProxyFailureKey(tdlib(400, 'Failed to resolve host'), 4000))
         .assertEqual('Address not found');
     });
 
     it('classify_fallsBackToErrorKind', 0, () => {      // 不是 tdlib 类：network 类错误没有原文可分类，但结论就是「没网」。
-      expect(classifyProxyFailure(AppErrors.network('unreachable', 'network failed', true)))
+      expect(classifyProxyFailureKey(AppErrors.network('unreachable', 'network failed', true)))
         .assertEqual('Network unavailable');
-      expect(classifyProxyFailure(AppErrors.internal('proxy_ping', 'boom')))
+      expect(classifyProxyFailureKey(AppErrors.internal('proxy_ping', 'boom')))
         .assertEqual('Proxy error');
     });
 

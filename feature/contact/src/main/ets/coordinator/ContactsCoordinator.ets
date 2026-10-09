@@ -18,7 +18,7 @@
  */
 
 import { AccountScope } from '@tgx/core-account';
-import { ManualClock, Result, AppError, AppErrors, SequentialIdGenerator } from '@tgx/core-common';
+import { Lang, ManualClock, Result, AppError, AppErrors, SequentialIdGenerator } from '@tgx/core-common';
 import {
   UserRegistry,
   FileRegistry,
@@ -70,14 +70,14 @@ function formatUserStatusText(user: User): string {
   }
   switch (status.type) {
     case 'userStatusOnline':
-      return 'online';
+      return Lang.getInstance().getString('online');
     case 'userStatusOffline':
     case 'userStatusRecently':
-      return 'last seen recently';
+      return Lang.getInstance().getString('last seen recently');
     case 'userStatusLastWeek':
-      return 'last seen within a week';
+      return Lang.getInstance().getString('last seen within a week');
     case 'userStatusLastMonth':
-      return 'last seen within a month';
+      return Lang.getInstance().getString('last seen within a month');
     default:
       return '';
   }

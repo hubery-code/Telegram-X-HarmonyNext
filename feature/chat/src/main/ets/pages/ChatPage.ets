@@ -53,13 +53,13 @@ import {
   ATTACHMENT_GALLERY,
   ATTACHMENT_POLL,
   ATTACHMENT_VIDEO,
-  attachmentRestrictionLabel,
+  attachmentRestrictionLabelKey,
   buildAttachmentEntries,
   canRecordVoice,
   canSendAnyMedia,
   CONTENT_GIF,
   CONTENT_STICKER,
-  sendVetoLabel
+  sendVetoLabelKey
 } from '@tgx/core-domain';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { common } from '@kit.AbilityKit';
@@ -2119,7 +2119,7 @@ export struct ChatPage {
 
       // 右侧：文件名与文件大小 / 进度信息 / 失败提示
       Column() {
-        Text(media.fileName.length > 0 ? media.fileName : 'Document')
+        Text(media.fileName.length > 0 ? media.fileName : this.t('Document'))
           .fontSize(this.chatText(this.T.typography.body.fontSize))
           .fontWeight(FontWeight.Medium)
           .fontColor(this.T.colors.textPrimary)
@@ -2811,7 +2811,7 @@ export struct ChatPage {
       } else if (media.kind === 'animation') {
         // GIF 动图：左上角出 GIF 角标
         Row() {
-          Text('GIF')
+          Text(this.t('GIF'))
             .fontSize(10)
             .fontWeight(FontWeight.Bold)
             .fontColor(Color.White)
@@ -3758,9 +3758,9 @@ export struct ChatPage {
 
   /** 受限条目不静默失效：出提示说明为什么点不动，可用条目才分发选择动作。 */
   private onAttachmentTap(entry: AttachmentEntry): void {
-    const hint: string = attachmentRestrictionLabel(entry);
+    const hint: string = attachmentRestrictionLabelKey(entry);
     if (hint.length > 0) {
-      this.showHintToast(hint);
+      this.showHintToast(this.t(hint));
       return;
     }
     if (entry.key === ATTACHMENT_GALLERY) {
@@ -3794,9 +3794,9 @@ export struct ChatPage {
       send();
       return;
     }
-    const hint: string = sendVetoLabel(this.uiState.sendRights, contentKey);
+    const hint: string = sendVetoLabelKey(this.uiState.sendRights, contentKey);
     if (hint.length > 0) {
-      this.showHintToast(hint);
+      this.showHintToast(this.t(hint));
       return;
     }
     send();

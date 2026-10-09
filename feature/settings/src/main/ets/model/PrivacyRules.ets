@@ -316,7 +316,7 @@ export function privacyRulesWithRestrictExceptions(
 }
 
 /** 档位文案（Lang key）。「我的联系人 + Premium」是 Android 的合并标签写法。 */
-export function privacyModeLabel(mode: PrivacyMode, plusPremium: boolean): string {
+export function privacyModeLabelKey(mode: PrivacyMode, plusPremium: boolean): string {
   if (mode === 'everybody') {
     return 'Everybody';
   }

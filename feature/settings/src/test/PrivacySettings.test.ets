@@ -41,15 +41,15 @@ import {
   PrivacySettingItem,
   PrivacySettingKey,
   PRIVACY_SETTING_KEYS,
-  privacyAlwaysAllowLabel,
+  privacyAlwaysAllowLabelKey,
   privacyNeedNobodyOption,
   privacyNeedExceptions,
-  privacyNeverAllowLabel,
+  privacyNeverAllowLabelKey,
   privacyNeedsPremiumRow,
   privacyNeedsReadDateRow,
   privacyPremiumForMode,
-  privacyRowLabel,
-  privacySettingLabel,
+  privacyRowLabelKey,
+  privacySettingLabelKey,
   toUserPrivacySetting
 } from '../main/ets/model/PrivacySettings';
 import {
@@ -58,7 +58,7 @@ import {
   parsePrivacyRules,
   privacyAlwaysAllowCount,
   privacyMembersOf,
-  privacyModeLabel,
+  privacyModeLabelKey,
   privacyNeedAlwaysAllow,
   privacyNeedNeverAllow,
   privacyNeedsHideReadTime,
@@ -478,10 +478,10 @@ export default function privacySettingsTest(): void {
     it('modeLabel_usesMergedPremiumLabel', 0, () => {
       const modes: PrivacyMode[] = ['everybody', 'contacts', 'nobody'];
       for (let i = 0; i < modes.length; i++) {
-        expect(privacyModeLabel(modes[i], false).length > 0).assertTrue();
+        expect(privacyModeLabelKey(modes[i], false).length > 0).assertTrue();
       }
-      expect(privacyModeLabel('contacts', true)).assertEqual('My Contacts & Premium');
-      expect(privacyModeLabel('contacts', false)).assertEqual('My Contacts');
+      expect(privacyModeLabelKey('contacts', true)).assertEqual('My Contacts & Premium');
+      expect(privacyModeLabelKey('contacts', false)).assertEqual('My Contacts');
     });
 
     it('exceptionsView_labelsBothSidesByPosition', 0, () => {
@@ -610,10 +610,10 @@ export default function privacySettingsTest(): void {
     });
 
     it('lastSeen_exceptionRowsReadAsShareWith', 0, () => {
-      expect(privacyAlwaysAllowLabel('show_last_seen')).assertEqual('Always Share With');
-      expect(privacyNeverAllowLabel('show_last_seen')).assertEqual('Never Share With');
-      expect(privacyAlwaysAllowLabel('show_bio')).assertEqual('Always Allow');
-      expect(privacyNeverAllowLabel('show_bio')).assertEqual('Never Allow');
+      expect(privacyAlwaysAllowLabelKey('show_last_seen')).assertEqual('Always Share With');
+      expect(privacyNeverAllowLabelKey('show_last_seen')).assertEqual('Never Share With');
+      expect(privacyAlwaysAllowLabelKey('show_bio')).assertEqual('Always Allow');
+      expect(privacyNeverAllowLabelKey('show_bio')).assertEqual('Never Allow');
     });
 
     it('privacySettingKeys_areEightDistinctRows', 0, () => {
@@ -625,7 +625,7 @@ export default function privacySettingsTest(): void {
         seen.push(key);
         // 每行都必须有(setting 对象 / 标题 / 档位文案)，否则页面上会是空行。
         expect(toUserPrivacySetting(key).type.length > 0).assertTrue();
-        expect(privacySettingLabel(key).length > 0).assertTrue();
+        expect(privacySettingLabelKey(key).length > 0).assertTrue();
       }
     });
 
@@ -643,9 +643,9 @@ export default function privacySettingsTest(): void {
 
     it('rowLabel_nullWhenNotLoaded', 0, () => {
       // 没读到就是没读到，不能退成一个猜出来的默认档。
-      expect(privacyRowLabel(null)).assertEqual('Unknown');
-      expect(privacyRowLabel(new PrivacySettingItem('show_bio', null))).assertEqual('Unknown');
-      expect(privacyRowLabel(new PrivacySettingItem('show_bio', parsePrivacyRules([]))))
+      expect(privacyRowLabelKey(null)).assertEqual('Unknown');
+      expect(privacyRowLabelKey(new PrivacySettingItem('show_bio', null))).assertEqual('Unknown');
+      expect(privacyRowLabelKey(new PrivacySettingItem('show_bio', parsePrivacyRules([]))))
         .assertEqual('Nobody');
     });
 

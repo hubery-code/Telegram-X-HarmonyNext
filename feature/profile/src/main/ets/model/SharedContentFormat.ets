@@ -11,6 +11,7 @@
  */
 
 import { AudioPlaybackMetadata } from '@tgx/platform-ports';
+import { Lang } from '@tgx/core-common';
 import {
   Message,
   TdMessageContent,
@@ -80,8 +81,8 @@ export function formatSharedDate(unixSeconds: number): string {
 
 const DAY_MS: number = 24 * 60 * 60 * 1000;
 
-/** 星期名（`Lang.weekFull` = `"cccc"` 的中文全写），下标即 `Date.getDay()`。 */
-const SHARED_WEEKDAY_NAMES: string[] = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];
+/** 星期名（词典 key，下标即 `Date.getDay()`）；展示时经 `Lang` 取当前语言的写法。 */
+const SHARED_WEEKDAY_KEYS: string[] = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
 function startOfDayMs(ms: number): number {
   const d: Date = new Date(ms);
@@ -151,19 +152,19 @@ export function formatSharedDateHeader(unixSeconds: number, nowMs: number): stri
     return '';
   }
   if (anchor === 11) {
-    return '上周';
+    return Lang.getInstance().getString('Last Week');
   }
   if (anchor === 1) {
-    return '今天';
+    return Lang.getInstance().getString('Today');
   }
   if (anchor === 2) {
-    return '昨天';
+    return Lang.getInstance().getString('Yesterday');
   }
   if (anchor >= 4 && anchor <= 10) {
-    return SHARED_WEEKDAY_NAMES[anchor - 3];
+    return Lang.getInstance().getString(SHARED_WEEKDAY_KEYS[anchor - 3]);
   }
   const d: Date = new Date(unixSeconds * 1000);
-  return `${d.getFullYear()}年${d.getMonth() + 1}月`;
+  return `${d.getFullYear()}年${d.getMonth() + 1}月`; // i18n-allow 日期形态（自然月排布，归 I18N-DATE）
 }
 
 /** 一段同日期分组的条目区间（左闭右开），组件按它渲染「分组头 + 该段内容」。 */
@@ -242,13 +243,15 @@ export function chatTypeLabel(type: TdChatType | null): string {
   }
   if (type.type === 'chatTypeSupergroup') {
     const supergroup: ChatTypeSupergroup = type as ChatTypeSupergroup;
-    return supergroup.is_channel ? '频道' : '超级群组';
+    return supergroup.is_channel
+      ? Lang.getInstance().getString('Channel')
+      : Lang.getInstance().getString('Supergroup');
   }
   if (type.type === 'chatTypeBasicGroup') {
-    return '群组';
+    return Lang.getInstance().getString('Group');
   }
   if (type.type === 'chatTypePrivate') {
-    return '私聊';
+    return Lang.getInstance().getString('Private Chat');
   }
   return '';
 }
@@ -264,19 +267,19 @@ export function messageContentSummary(content: TdMessageContent | null): string 
       return text.text !== null ? text.text.text : '';
     }
     case 'messagePhoto':
-      return '[照片]';
+      return Lang.getInstance().getString('[Photo]');
     case 'messageVideo':
-      return '[视频]';
+      return Lang.getInstance().getString('[Video]');
     case 'messageDocument':
-      return '[文件]';
+      return Lang.getInstance().getString('[Document]');
     case 'messageAudio':
-      return '[音频]';
+      return Lang.getInstance().getString('[Audio]');
     case 'messageVoiceNote':
-      return '[语音]';
+      return Lang.getInstance().getString('[Voice]');
     case 'messageSticker':
-      return '[贴纸]';
+      return Lang.getInstance().getString('[Sticker]');
     case 'messageAnimation':
-      return '[GIF]';
+      return Lang.getInstance().getString('[GIF]');
     default:
       return '';
   }
@@ -374,7 +377,7 @@ export function voiceTitleOf(senderName: string, isOutgoing: boolean): string {
   if (senderName.length > 0) {
     return senderName;
   }
-  return isOutgoing ? '我' : '';
+  return isOutgoing ? Lang.getInstance().getString('Me') : '';
 }
 
 /**
@@ -644,7 +647,7 @@ export function audioSessionMetadata(
 ): AudioPlaybackMetadata {
   const title: string = item.title.length > 0
     ? item.title
-    : (isVoice ? '语音消息' : '');
+    : (isVoice ? Lang.getInstance().getString('Voice message') : '');
   const artist: string = item.artist.length > 0 ? item.artist : contextTitle;
   return new AudioPlaybackMetadata(`${item.fileId}`, title, artist, item.duration * 1000);
 }

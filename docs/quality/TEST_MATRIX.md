@@ -51,7 +51,7 @@
 4. `check_architecture.py`：核心域、Reducer 及 Coordinator 100% Kit-free 架构防线；
 5. `check_codegen.py`：3205 个 DTO 类与 154 个敏感字段代码生成一致性字节比对；
 6. `check_accessibility_labels.py`：图标控件无障碍标签与分组吞并守卫（A11Y-101/102）；
-7. `check_i18n_literals.py`：视图层写死中文/写死英文（词典已知键落进文案槽位）与 Lang 词典缺项/EN-ZH 不对等守卫（I18N-LITERAL-101/102）；
+7. `check_i18n_literals.py`：五条规则 —— 视图层与数据层写死中文（R1/R5a）、词典已知英文落进文案槽位或 `return`/Toast 出口（R4/R5b）、字面量 key 双词典命中（R2，两层同检）、EN/ZH 键集合全等（R3）（I18N-LITERAL-101/102/103）；
 8. `check.sh`：全仓 linter 与 ArkTS 静态类型检查；
 9. `test_all_modules.py`：全量 19 模块 836 项单元测试执行与基线断言（≥790 项）；
 10. `build.sh debug`：构建 Debug HAP 产物；

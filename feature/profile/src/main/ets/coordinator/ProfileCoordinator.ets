@@ -13,7 +13,7 @@
  */
 
 import { AccountScope } from '@tgx/core-account';
-import { ManualClock, Result, AppError, SequentialIdGenerator } from '@tgx/core-common';
+import { ManualClock, Result, AppError, SequentialIdGenerator, Lang } from '@tgx/core-common';
 import {
   UserRegistry,
   FileRegistry,
@@ -163,9 +163,9 @@ function formatBirthdayText(info: UserFullInfo, now: Date): string {
   }
   if (birth.year > 0) {
     const age: number = ageOf(birth.year, birth.month, birth.day, now);
-    return `${birth.year}年${birth.month}月${birth.day}日 (${age} 岁)`;
+    return `${birth.year}年${birth.month}月${birth.day}日 (${age} 岁)`; // i18n-allow 日期形态（数字+年月日/岁，归 I18N-DATE）
   }
-  return `${birth.month}月${birth.day}日`;
+  return `${birth.month}月${birth.day}日`; // i18n-allow 日期形态（数字+年月日排布，归 I18N-DATE）
 }
 
 export interface ProfileCoordinatorOptions {
@@ -180,7 +180,7 @@ export interface ProfileCoordinatorOptions {
 
 export type ProfileUiStateListener = (uiState: ProfileUiState) => void;
 
-/** PROFILE-101：在线状态文案（MVP 简化，不格式化 last seen 具体时间）。 */
+/** PROFILE-101：在线状态文案（走 `Lang`，MVP 不格式化 last seen 具体时间）。 */
 function formatUserStatusText(user: User): string {
   const status = user.status;
   if (status === null || status === undefined) {
@@ -188,14 +188,14 @@ function formatUserStatusText(user: User): string {
   }
   switch (status.type) {
     case 'userStatusOnline':
-      return 'online';
+      return Lang.getInstance().getString('online');
     case 'userStatusOffline':
     case 'userStatusRecently':
-      return 'last seen recently';
+      return Lang.getInstance().getString('last seen recently');
     case 'userStatusLastWeek':
-      return 'last seen within a week';
+      return Lang.getInstance().getString('last seen within a week');
     case 'userStatusLastMonth':
-      return 'last seen within a month';
+      return Lang.getInstance().getString('last seen within a month');
     default:
       return '';
   }
@@ -796,7 +796,7 @@ export class ProfileCoordinator {
     // 播放态已由 reducer 乐观置位，这里不退回，避免图标闪一下。
     this.pendingPlayFileId = fileId;
     this.subscribeSharedFile(fileId);
-    this.toastPort.showToast('正在下载音频...');
+    this.toastPort.showToast(Lang.getInstance().getString('Downloading audio…'));
   }
 
   private startSharedAudioPlayback(path: string, item: SharedAudioItem | null): void {
@@ -1030,13 +1030,13 @@ export class ProfileCoordinator {
         }
         if (out.err) {
           this.logger.logError(TAG, out.error);
-          this.toastPort.showToast('无法开启密聊');
+          this.toastPort.showToast(Lang.getInstance().getString('Cannot start the secret chat'));
           return;
         }
         if (out.ok) {
           const secretChat: SecretChat | null = decodeSecretChat(out.value as TdJsonRaw);
           if (secretChat === null || secretChat.id === 0) {
-            this.toastPort.showToast('无法开启密聊');
+            this.toastPort.showToast(Lang.getInstance().getString('Cannot start the secret chat'));
             return;
           }
           this.logger.info(TAG, 'secret_chat_created',
@@ -1050,7 +1050,7 @@ export class ProfileCoordinator {
     if (res.err) {
       this.logger.logError(TAG, res.error);
     }
-    this.toastPort.showToast('无法开启密聊');
+    this.toastPort.showToast(Lang.getInstance().getString('Cannot start the secret chat'));
   }
 
   /**
@@ -1064,7 +1064,7 @@ export class ProfileCoordinator {
         this.writePeerBlock(chatId, blocked);
       },
       (): void => {
-        this.toastPort.showToast('操作失败，请稍后重试');
+        this.toastPort.showToast(Lang.getInstance().getString('Operation failed, please try again later'));
         this.dispatch(new OnPeerBlockFailed());
       }
     );
@@ -1090,7 +1090,7 @@ export class ProfileCoordinator {
         }
         if (out.err) {
           this.logger.logError(TAG, out.error);
-          this.toastPort.showToast('操作失败，请稍后重试');
+          this.toastPort.showToast(Lang.getInstance().getString('Operation failed, please try again later'));
           this.dispatch(new OnPeerBlockFailed());
           return;
         }
@@ -1103,7 +1103,7 @@ export class ProfileCoordinator {
     if (res.err) {
       this.logger.logError(TAG, res.error);
     }
-    this.toastPort.showToast('操作失败，请稍后重试');
+    this.toastPort.showToast(Lang.getInstance().getString('Operation failed, please try again later'));
     this.dispatch(new OnPeerBlockFailed());
   }
 

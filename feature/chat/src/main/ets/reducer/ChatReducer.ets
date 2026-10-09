@@ -755,7 +755,7 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
         return reduced(state.copyWith({ actionMenu: null }));
       }
       const nextState: ChatUiState = state.copyWith({ actionMenu: null });
-      const effects: ChatEffect[] = [new CopyTextToClipboard(item.text, '已复制到剪贴板')];
+      const effects: ChatEffect[] = [new CopyTextToClipboard(item.text, 'Copied to clipboard')];
       return reduced(nextState, effects);
     }
 
@@ -765,7 +765,7 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
         return reduced(state);
       }
       const nextState: ChatUiState = state.copyWith({ actionMenu: null });
-      const effects: ChatEffect[] = [new CopyTextToClipboard(menu.linkUrlToCopy, '已复制链接')];
+      const effects: ChatEffect[] = [new CopyTextToClipboard(menu.linkUrlToCopy, 'Link copied')];
       return reduced(nextState, effects);
     }
 
