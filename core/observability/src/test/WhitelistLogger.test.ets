@@ -157,6 +157,31 @@ export default function whitelistLoggerTest() {
       expect((line as string).indexOf('FLOOD_WAIT_42') >= 0).assertFalse();
     });
 
+    // —— FAVWRITE-ATTRIB-101：调用方归属串 ——
+    it('logError_appendsCallerAttribution_afterClassification', 0, () => {
+      const ctx: CollectingLogger = collectingLogger();
+      const error = AppErrors.network('timeout', 'TDLib request timed out', true, undefined,
+        'method=addFavoriteSticker,requestId=req-test-1');
+      const line: string | null = ctx.logger.logError('Chat', error, 'method=addFavoriteSticker,requestId=req-test-1');
+      expect(line).assertEqual('ERROR Chat error network/timeout/retryable=true method=addFavoriteSticker,requestId=req-test-1');
+    });
+
+    it('logError_attributionDoesNotOpenADoorForMessageOrCause', 0, () => {
+      const ctx: CollectingLogger = collectingLogger();
+      const secret = 'raw-tdlib-text-7q';
+      const error = AppErrors.fromTdlibError(400, `can't parse entities: ${secret}`);
+      const line: string | null = ctx.logger.logError('Chat', error, 'method=getFavoriteStickers,requestId=req-test-2');
+      expect((line as string).indexOf(secret) >= 0).assertFalse();
+      expect((line as string).indexOf('method=getFavoriteStickers,requestId=req-test-2') >= 0).assertTrue();
+    });
+
+    it('logError_emptyOrMissingAttribution_keepsLegacyLine', 0, () => {
+      const ctx: CollectingLogger = collectingLogger();
+      const error = AppErrors.network('timeout', 'TDLib request timed out', true);
+      expect(ctx.logger.logError('A', error)).assertEqual('ERROR A error network/timeout/retryable=true');
+      expect(ctx.logger.logError('B', error, '')).assertEqual('ERROR B error network/timeout/retryable=true');
+    });
+
     // —— 永不抛错 ——
     it('logTdJson_invalidJson_noThrow_outputsPlaceholder', 0, () => {
       const ctx: CollectingLogger = collectingLogger();

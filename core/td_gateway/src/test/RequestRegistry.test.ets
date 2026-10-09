@@ -1,6 +1,6 @@
 import { describe, it, expect } from '@ohos/hypium';
 import { AppError, IdGenerator, ManualClock, RandomIdGenerator, Result, SequentialIdGenerator } from '@tgx/core-common';
-import { RequestRegistry, TdPendingRequest, TdGatewayCancelledError, TdAbortSignal } from '../main/ets/RequestRegistry';
+import { RequestRegistry, TdPendingRequest, TdGatewayCancelledError, tdRequestAttribution, TdAbortSignal } from '../main/ets/RequestRegistry';
 import { ManualTimeoutScheduler } from '../main/ets/TimeoutScheduler';
 import { TdWireObject } from '../main/ets/TdWire';
 import { tdWire } from './TestWire';
@@ -19,7 +19,7 @@ function expectErr(result: Result<TdWireObject, AppError>): AppError {
   if (result.ok === false) {
     return result.error;
   }
-  return TdGatewayCancelledError('unreachable');
+  return TdGatewayCancelledError('unreachable', '');
 }
 
 /** AppError 宽松视图（声明式接口替代内联字面量类型断言）。 */
@@ -188,6 +188,30 @@ export default function requestRegistryTest() {
       expect(viewOf(error).retryable).assertTrue();
       expect(h.registry.getMetrics().timedOutCount).assertEqual(1);
       expect(h.registry.getMetrics().pendingCount).assertEqual(0);
+    });
+
+    /** 一条超时必须能归因到「哪个方法的哪一次请求」：归属串走 cause（网关自写诊断，不含 TDLib 原文）。 */
+    it('timeout_causeCarriesMethodAndRequestId', 0, async () => {
+      const h: Harness = newHarness();
+      const pending: TdPendingRequest = h.registry.request(1, 'addFavoriteSticker', tdWire('{}'));
+      expect(pending.method).assertEqual('addFavoriteSticker');
+      advance(h, 10001);
+      const error: AppError = expectErr(await pending.promise);
+      expect(viewOf(error).cause).assertEqual(`method=addFavoriteSticker,requestId=${pending.requestId}`);
+    });
+
+    it('cancel_causeCarriesMethodAndRequestId', 0, async () => {
+      const h: Harness = newHarness();
+      const pending: TdPendingRequest = h.registry.request(1, 'removeFavoriteSticker', tdWire('{}'));
+      expect(pending.cancel()).assertTrue();
+      const error: AppError = expectErr(await pending.promise);
+      expect(viewOf(error).origin).assertEqual('td_gateway.request_cancelled');
+      expect(viewOf(error).cause).assertEqual(`method=removeFavoriteSticker,requestId=${pending.requestId}`);
+    });
+
+    it('tdRequestAttribution_isExactlyMethodAndRequestId', 0, () => {
+      expect(tdRequestAttribution('getFavoriteStickers', 'req-test-3'))
+        .assertEqual('method=getFavoriteStickers,requestId=req-test-3');
     });
 
     it('timeout_defaultIsTenSeconds', 0, async () => {

@@ -195,7 +195,7 @@ import {
   DownloadLimitsByNetwork,
   isMediaWithinDownloadLimits
 } from '@tgx/core-domain';
-import { TdPendingRequest, TdRoutedEvent, TdUpdateFilter, TdUpdateSubscription, TdWireObject, TdWireValue } from '@tgx/td-gateway';
+import { tdRequestAttribution, TdPendingRequest, TdRoutedEvent, TdUpdateFilter, TdUpdateSubscription, TdWireObject, TdWireValue } from '@tgx/td-gateway';
 import { Subscription } from '@tgx/platform-ports';
 import { Result } from '@tgx/core-common';
 import { ReducerEnv, ReducerResult } from '@tgx/feature-template';
@@ -4215,6 +4215,15 @@ export class ChatCoordinator {
   }
 
   /**
+   * 错误行带上「哪个方法的哪一次请求」。归属串由调用方自己给，不从 `AppError.message/cause` 取 ——
+   * 那两个字段可能掺 TDLib 原文，永不入日志的规矩不变。
+   */
+  private logRequestError(method: string, error: AppError, pending?: TdPendingRequest): void {
+    this.logger.logError(TAG, error,
+      pending !== undefined ? tdRequestAttribution(method, pending.requestId) : `method=${method}`);
+  }
+
+  /**
    * 实际发一条 `getInstalledStickerSets`。
    *
    * 四条结算路径（请求建立即失败 / 回包报错 / 回包解析失败 / 成功）都必须走
@@ -4226,18 +4235,19 @@ export class ChatCoordinator {
     const result: Result<TdPendingRequest, AppError> =
       this.scope.request('getInstalledStickerSets', encodeGetInstalledStickerSets(req) as TdWireObject);
     if (result.err) {
-      this.logger.logError(TAG, result.error);
+      this.logRequestError('getInstalledStickerSets', result.error);
       this.dispatch(new OnStickerBoardFailed(result.error.message));
       this.finishStickerBoardFetch(false);
       return;
     }
     if (result.ok) {
-      result.value.promise.then((res: Result<TdWireObject, AppError>) => {
+      const pending: TdPendingRequest = result.value;
+      pending.promise.then((res: Result<TdWireObject, AppError>) => {
         if (this.destroyed) {
           return;
         }
         if (res.err) {
-          this.logger.logError(TAG, res.error);
+          this.logRequestError('getInstalledStickerSets', res.error, pending);
           this.dispatch(new OnStickerBoardFailed(res.error.message));
           this.finishStickerBoardFetch(false);
           return;
@@ -4313,17 +4323,18 @@ export class ChatCoordinator {
     const result: Result<TdPendingRequest, AppError> =
       this.scope.request('getTrendingStickerSets', encodeGetTrendingStickerSets(req) as TdWireObject);
     if (result.err) {
-      this.logger.logError(TAG, result.error);
+      this.logRequestError('getTrendingStickerSets', result.error);
       this.dispatch(new OnTrendingFailed(result.error.message));
       return;
     }
     if (result.ok) {
-      result.value.promise.then((res: Result<TdWireObject, AppError>) => {
+      const pending: TdPendingRequest = result.value;
+      pending.promise.then((res: Result<TdWireObject, AppError>) => {
         if (this.destroyed) {
           return;
         }
         if (res.err) {
-          this.logger.logError(TAG, res.error);
+          this.logRequestError('getTrendingStickerSets', res.error, pending);
           this.dispatch(new OnTrendingFailed(res.error.message));
         }
         if (res.ok) {
@@ -4378,17 +4389,18 @@ export class ChatCoordinator {
     const result: Result<TdPendingRequest, AppError> =
       this.scope.request('getRecentStickers', encodeGetRecentStickers(req) as TdWireObject);
     if (result.err) {
-      this.logger.logError(TAG, result.error);
+      this.logRequestError('getRecentStickers', result.error);
       this.dispatch(new OnRecentStickersFailed(result.error.message));
       return;
     }
     if (result.ok) {
-      result.value.promise.then((res: Result<TdWireObject, AppError>) => {
+      const pending: TdPendingRequest = result.value;
+      pending.promise.then((res: Result<TdWireObject, AppError>) => {
         if (this.destroyed) {
           return;
         }
         if (res.err) {
-          this.logger.logError(TAG, res.error);
+          this.logRequestError('getRecentStickers', res.error, pending);
           this.dispatch(new OnRecentStickersFailed(res.error.message));
         }
         if (res.ok) {
@@ -4442,17 +4454,18 @@ export class ChatCoordinator {
     const result: Result<TdPendingRequest, AppError> =
       this.scope.request('getFavoriteStickers', encodeGetFavoriteStickers(req) as TdWireObject);
     if (result.err) {
-      this.logger.logError(TAG, result.error);
+      this.logRequestError('getFavoriteStickers', result.error);
       this.dispatch(new OnFavoriteStickersFailed(result.error.message));
       return;
     }
     if (result.ok) {
-      result.value.promise.then((res: Result<TdWireObject, AppError>) => {
+      const pending: TdPendingRequest = result.value;
+      pending.promise.then((res: Result<TdWireObject, AppError>) => {
         if (this.destroyed) {
           return;
         }
         if (res.err) {
-          this.logger.logError(TAG, res.error);
+          this.logRequestError('getFavoriteStickers', res.error, pending);
           this.dispatch(new OnFavoriteStickersFailed(res.error.message));
         }
         if (res.ok) {
@@ -4503,17 +4516,18 @@ export class ChatCoordinator {
     const result: Result<TdPendingRequest, AppError> =
       this.scope.request('clearRecentStickers', encodeClearRecentStickers(req) as TdWireObject);
     if (result.err) {
-      this.logger.logError(TAG, result.error);
+      this.logRequestError('clearRecentStickers', result.error);
       this.handleFetchRecentStickers();
       return;
     }
     if (result.ok) {
-      result.value.promise.then((res: Result<TdWireObject, AppError>) => {
+      const pending: TdPendingRequest = result.value;
+      pending.promise.then((res: Result<TdWireObject, AppError>) => {
         if (this.destroyed) {
           return;
         }
         if (res.err) {
-          this.logger.logError(TAG, res.error);
+          this.logRequestError('clearRecentStickers', res.error, pending);
           this.handleFetchRecentStickers();
           return;
         }
@@ -4535,17 +4549,18 @@ export class ChatCoordinator {
     const result: Result<TdPendingRequest, AppError> =
       this.scope.request('addFavoriteSticker', encodeAddFavoriteSticker(req) as TdWireObject);
     if (result.err) {
-      this.logger.logError(TAG, result.error);
+      this.logRequestError('addFavoriteSticker', result.error);
       this.handleFetchFavoriteStickers();
       return;
     }
     if (result.ok) {
-      result.value.promise.then((res: Result<TdWireObject, AppError>) => {
+      const pending: TdPendingRequest = result.value;
+      pending.promise.then((res: Result<TdWireObject, AppError>) => {
         if (this.destroyed) {
           return;
         }
         if (res.err) {
-          this.logger.logError(TAG, res.error);
+          this.logRequestError('addFavoriteSticker', res.error, pending);
           this.handleFetchFavoriteStickers();
           return;
         }
@@ -4566,17 +4581,18 @@ export class ChatCoordinator {
     const result: Result<TdPendingRequest, AppError> =
       this.scope.request('removeFavoriteSticker', encodeRemoveFavoriteSticker(req) as TdWireObject);
     if (result.err) {
-      this.logger.logError(TAG, result.error);
+      this.logRequestError('removeFavoriteSticker', result.error);
       this.handleFetchFavoriteStickers();
       return;
     }
     if (result.ok) {
-      result.value.promise.then((res: Result<TdWireObject, AppError>) => {
+      const pending: TdPendingRequest = result.value;
+      pending.promise.then((res: Result<TdWireObject, AppError>) => {
         if (this.destroyed) {
           return;
         }
         if (res.err) {
-          this.logger.logError(TAG, res.error);
+          this.logRequestError('removeFavoriteSticker', res.error, pending);
           this.handleFetchFavoriteStickers();
           return;
         }
@@ -4598,17 +4614,18 @@ export class ChatCoordinator {
     const result: Result<TdPendingRequest, AppError> =
       this.scope.request('removeRecentSticker', encodeRemoveRecentSticker(req) as TdWireObject);
     if (result.err) {
-      this.logger.logError(TAG, result.error);
+      this.logRequestError('removeRecentSticker', result.error);
       this.handleFetchRecentStickers();
       return;
     }
     if (result.ok) {
-      result.value.promise.then((res: Result<TdWireObject, AppError>) => {
+      const pending: TdPendingRequest = result.value;
+      pending.promise.then((res: Result<TdWireObject, AppError>) => {
         if (this.destroyed) {
           return;
         }
         if (res.err) {
-          this.logger.logError(TAG, res.error);
+          this.logRequestError('removeRecentSticker', res.error, pending);
           this.handleFetchRecentStickers();
           return;
         }
@@ -4779,16 +4796,17 @@ export class ChatCoordinator {
     const result: Result<TdPendingRequest, AppError> =
       this.scope.request('getStickerSet', encodeGetStickerSet(req) as TdWireObject);
     if (result.err) {
-      this.logStickerSetFailure('id', setId, result.error);
+      this.logStickerSetFailure('id', setId, result.error, 'method=getStickerSet');
       this.dispatch(new OnStickerSetLoadFailed(setId, result.error.message));
     }
     if (result.ok) {
-      result.value.promise.then((res: Result<TdWireObject, AppError>) => {
+      const pending: TdPendingRequest = result.value;
+      pending.promise.then((res: Result<TdWireObject, AppError>) => {
         if (res.ok) {
           this.onStickerSetPreviewResponse(setId, res.value);
         }
         if (res.err) {
-          this.logStickerSetFailure('id', setId, res.error);
+          this.logStickerSetFailure('id', setId, res.error, tdRequestAttribution('getStickerSet', pending.requestId));
           if (!this.destroyed) {
             this.dispatch(new OnStickerSetLoadFailed(setId, res.error.message));
           }
@@ -4808,16 +4826,18 @@ export class ChatCoordinator {
     const result: Result<TdPendingRequest, AppError> =
       this.scope.request('searchStickerSet', encodeSearchStickerSet(search) as TdWireObject);
     if (result.err) {
-      this.logStickerSetFailure('name', setId, result.error);
+      this.logStickerSetFailure('name', setId, result.error, 'method=searchStickerSet');
       this.dispatch(new OnStickerSetLoadFailed(setId, result.error.message));
     }
     if (result.ok) {
-      result.value.promise.then((res: Result<TdWireObject, AppError>) => {
+      const pending: TdPendingRequest = result.value;
+      pending.promise.then((res: Result<TdWireObject, AppError>) => {
         if (res.ok) {
           this.onStickerSetPreviewResponse(setId, res.value);
         }
         if (res.err) {
-          this.logStickerSetFailure('name', setId, res.error);
+          this.logStickerSetFailure('name', setId, res.error,
+            tdRequestAttribution('searchStickerSet', pending.requestId));
           if (!this.destroyed) {
             if (/^-?\d+$/.test(setId)) {
               // 名字这条走不通就换 id；id 那条自己会收尾，不会再递归回名字。
@@ -4833,8 +4853,8 @@ export class ChatCoordinator {
   }
 
   /** 原文只进 `AppError.cause`，日志落的是数字码 + 稳定分类（406 的两个来源分得开）。 */
-  private logStickerSetFailure(path: string, setId: string, error: AppError): void {
-    this.logger.logError(TAG, error);
+  private logStickerSetFailure(path: string, setId: string, error: AppError, attribution?: string): void {
+    this.logger.logError(TAG, error, attribution);
     this.logger.info(TAG, 'sticker_set_fetch_failed',
       `path=${path},setId=${setId},${stickerSetFetchFailureLogKey(error)}`);
   }
@@ -4901,13 +4921,14 @@ export class ChatCoordinator {
     const result: Result<TdPendingRequest, AppError> =
       this.scope.request('changeStickerSet', encodeChangeStickerSet(req) as TdWireObject);
     if (result.err) {
-      this.logger.logError(TAG, result.error);
+      this.logRequestError('changeStickerSet', result.error);
       this.dispatch(new OnStickerSetActionFailed(setId, result.error.message));
     }
     if (result.ok) {
-      result.value.promise.then((res: Result<TdWireObject, AppError>) => {
+      const pending: TdPendingRequest = result.value;
+      pending.promise.then((res: Result<TdWireObject, AppError>) => {
         if (res.err) {
-          this.logger.logError(TAG, res.error);
+          this.logRequestError('changeStickerSet', res.error, pending);
           if (!this.destroyed) {
             this.dispatch(new OnStickerSetActionFailed(setId, res.error.message));
           }

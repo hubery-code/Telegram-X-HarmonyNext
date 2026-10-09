@@ -15,6 +15,7 @@ export {
   RequestRegistry,
   GATEWAY_ORIGIN,
   GATEWAY_CLOSED_ORIGIN,
+  tdRequestAttribution,
   TdGatewayCancelledError
 } from './RequestRegistry';
 export {

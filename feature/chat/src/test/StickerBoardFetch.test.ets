@@ -66,6 +66,7 @@ import {
   TdWireValue
 } from '@tgx/td-gateway';
 import { Result, AppError } from '@tgx/core-common';
+import { Logger, LogLevel } from '@tgx/observability';
 import { ChatCoordinator } from '../main/ets/coordinator/ChatCoordinator';
 import { ChatUiState } from '../main/ets/contract/ChatUiState';
 import {
@@ -1159,6 +1160,34 @@ export default function stickerBoardFetchTest(): void {
       expect(recorder.last().favoriteStickers.length).assertEqual(1);
 
       unsubscribe();
+      coordinator.destroy();
+    });
+
+    /**
+     * 收藏写的错误行要自己说清「哪个方法的哪一次请求」：归属串由调用方给（方法名 + 网关 requestId），
+     * TDLib 原文照旧进不了日志。
+     */
+    it('favoriteWriteErrorLineCarriesMethodAndRequestId', 0, async (): Promise<void> => {
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const scope: AccountScope = createScope(bridge);
+      const lines: string[] = [];
+      const logger: Logger = new Logger('debug', (level: LogLevel, line: string): void => {
+        lines.push(line);
+      });
+      const coordinator: ChatCoordinator = new ChatCoordinator(
+        scope, 42, 'Test Chat', undefined, undefined, undefined, { logger: logger });
+
+      coordinator.dispatch(new AddFavoriteSticker(7001));
+      await settle();
+      const requestId: string = lastRequestIdOfType(bridge, 'addFavoriteSticker');
+      bridge.respondError(requestId, 'FLOOD_WAIT_77 not allowed yet');
+      await settle();
+
+      const joined: string = lines.join('\n');
+      expect(joined.indexOf(`method=addFavoriteSticker,requestId=${requestId}`) >= 0).assertTrue();
+      // 归属串是调用方写的，不是从错误里取的：原文依旧一句都不许进日志。
+      expect(joined.indexOf('FLOOD_WAIT_77') >= 0).assertFalse();
+
       coordinator.destroy();
     });
 

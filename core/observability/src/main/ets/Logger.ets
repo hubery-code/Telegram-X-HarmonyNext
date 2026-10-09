@@ -171,9 +171,14 @@ export class Logger {
   /**
    * AppError 日志：只输出 AppErrors.toLogString 的稳定分类串
    * （network/dns/retryable=true 这类），message/cause 永不入日志。
+   *
+   * `attribution` 是**调用方自己写的**归属串（如 `method=…,requestId=…`），不是错误的 message/cause ——
+   * 后者可能掺 TDLib 原文；没有它时一条超时既说不出方法、也说不出是哪一次请求。
    */
-  logError(tag: string, error: AppError): string | null {
-    return this.emit('error', tag, 'error', AppErrors.toLogString(error));
+  logError(tag: string, error: AppError, attribution?: string): string | null {
+    const classification: string = AppErrors.toLogString(error);
+    return this.emit('error', tag, 'error',
+      attribution !== undefined && attribution.length > 0 ? `${classification} ${attribution}` : classification);
   }
 
   /**

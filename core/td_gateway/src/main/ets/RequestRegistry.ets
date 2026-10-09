@@ -79,6 +79,8 @@ type SettleReason = 'resolved' | 'timed_out' | 'cancelled';
 
 interface PendingEntry {
   readonly requestId: string;
+  /** TDLib 方法名：超时/取消的错误行只带 requestId 时，一句「哪个方法慢了」仍然答不上来。 */
+  readonly method: string;
   readonly clientId: number;
   readonly deadlineMillis: number;
   timeoutHandle: number;
@@ -92,6 +94,7 @@ interface PendingEntry {
  */
 export class TdPendingRequest {
   readonly requestId: string;
+  readonly method: string;
   readonly clientId: number;
   readonly promise: Promise<Result<TdWireObject, AppError>>;
   private readonly entry: PendingEntry;
@@ -101,6 +104,7 @@ export class TdPendingRequest {
     this.registry = registry;
     this.entry = entry;
     this.requestId = entry.requestId;
+    this.method = entry.method;
     this.clientId = entry.clientId;
     this.promise = promise;
   }
@@ -112,6 +116,11 @@ export class TdPendingRequest {
   cancel(): boolean {
     return this.registry.cancelEntry(this.entry);
   }
+}
+
+/** 错误行归属串：只含方法名与 requestId（调用方与网关自己写的诊断，永不掺入 TDLib 原文）。 */
+export function tdRequestAttribution(method: string, requestId: string): string {
+  return `method=${method},requestId=${requestId}`;
 }
 
 export class RequestRegistry {
@@ -158,6 +167,7 @@ export class RequestRegistry {
     if (this.closedFlag) {
       const closedEntry: PendingEntry = {
         requestId: '',
+        method: method,
         clientId: clientId,
         deadlineMillis: 0,
         timeoutHandle: -1,
@@ -174,6 +184,7 @@ export class RequestRegistry {
     if (!isValidClientId(clientId)) {
       const invalidEntry: PendingEntry = {
         requestId: '',
+        method: method,
         clientId: clientId,
         deadlineMillis: 0,
         timeoutHandle: -1,
@@ -201,6 +212,7 @@ export class RequestRegistry {
     const timeoutMillis: number = options?.timeoutMillis !== undefined ? options.timeoutMillis : this.defaultTimeoutMillis;
     const entry: PendingEntry = {
       requestId: requestId,
+      method: method,
       clientId: clientId,
       deadlineMillis: this.clock.monotonicMillis() + Math.max(0, timeoutMillis),
       timeoutHandle: -1,
@@ -218,7 +230,8 @@ export class RequestRegistry {
       this.tombstones.set(requestId, 'cancelled');
       this.sendFailureCount += 1;
       const message: string = e instanceof Error ? e.message : String(e);
-      entry.resolve(err<TdWireObject, AppError>(AppErrors.platform(-1, 'td gateway send failed', true, undefined, message)));
+      entry.resolve(err<TdWireObject, AppError>(AppErrors.platform(-1, 'td gateway send failed', true, undefined,
+        `${tdRequestAttribution(method, requestId)},bridge=${message}`)));
       return new TdPendingRequest(this, entry, promise);
     }
 
@@ -277,7 +290,7 @@ export class RequestRegistry {
       entry.timeoutHandle = -1;
     }
     this.cancelledCount += 1;
-    entry.resolve(err<TdWireObject, AppError>(TdGatewayCancelledError(entry.requestId)));
+    entry.resolve(err<TdWireObject, AppError>(TdGatewayCancelledError(entry.method, entry.requestId)));
     return true;
   }
 
@@ -343,7 +356,7 @@ export class RequestRegistry {
       'TDLib request timed out',
       true,
       undefined,
-      `requestId=${entry.requestId}`
+      tdRequestAttribution(entry.method, entry.requestId)
     )));
   }
 
@@ -369,6 +382,7 @@ export class RequestRegistry {
 }
 
 /** 稳定取消错误：kind='unknown' + 固定 origin（AppError 七类无 cancel 专用 kind，见文件头说明）。 */
-export function TdGatewayCancelledError(requestId: string): AppError {
-  return AppErrors.unknown(`${GATEWAY_ORIGIN}.request_cancelled`, 'request cancelled by caller', `requestId=${requestId}`);
+export function TdGatewayCancelledError(method: string, requestId: string): AppError {
+  return AppErrors.unknown(`${GATEWAY_ORIGIN}.request_cancelled`, 'request cancelled by caller',
+    tdRequestAttribution(method, requestId));
 }

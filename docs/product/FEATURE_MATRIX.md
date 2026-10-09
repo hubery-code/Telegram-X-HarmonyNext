@@ -1343,6 +1343,7 @@
 > `stickerBlocks()` 里的下标，而 List 的 **index 0 是热门区那个 ListItem**（STICKER-BOARD-102 把热门排在已装包之前），
 > 有热门区时永远差一位；本轮为把收藏行滚进画面改用了 `uiInput swipe`，所以那条点按路径至今没有设备证据。
 > **（✅ 遗留 ② 已于同日 EMOJISCROLL-101 结掉，含那条点按路径的设备证据，见下面那条注。）**
+> **（✅ 遗留 ① 已于同日 FAVWRITE-ATTRIB-101 处理：错误行现在带 `method` + `requestId`，且那两条超时在本轮同一台模拟器上没能复现 —— 两条写路径都在 300 ms 内结算，见下面那条注。）**
 
 > **2026-10-09（EMOJISCROLL-101，上一行遗留 ②「包条点按滚不到位」）**：`EmojiBoard` 贴纸页顶部那排包缩略图 chip 的点按路径到此有设备证据了。
 > **一、成因是两套下标不同源**：chip 条 `ForEach` 的是 `stickerBoardBlocks()`（收藏伪包 → 最近使用伪包 → 已装包），
@@ -1373,6 +1374,36 @@
 > 这是 ArkUI `List` 的既有行为、不是本包的偏移量问题 —— 判定依据是热门区是否已离开画面与落到的是哪一块，两条都成立。
 > 测试：新增 `stickerBlockListIndex_shiftsEveryBlockPastTheTrendingRow`（有/无热门区两侧各有中间块与最后一块），
 > `feature_chat` **460/460 全绿**，`check_architecture` / `check_codegen` / `check_design_tokens` / `check_accessibility_labels` 0 违规。
+
+> **2026-10-09（FAVWRITE-ATTRIB-101，STICKER-FAV-102 遗留 ①「写请求的 promise 不结算」）**：这一包拆的是**归因能力**本身，不是那条超时 —— 上一轮之所以只能写「疑似」，是因为**错误行里既没有方法名也没有 request id**。
+> **一、为什么日志里那两个字段本来就不该出现**：`Logger` 打的是 `AppErrors.toLogString(error)`（`network/timeout/retryable=true` 这一类稳定串），
+> 而 `message` 与 `cause` 被硬性禁掉 —— TDLib 原文只能进 `AppError.cause`，一旦让日志直接读 `cause`，
+> `can't parse entities: …`、`FLOOD_WAIT_77 not allowed yet` 这类服务端原文就会成串落到用户可见的日志里。
+> **二、修法分两层，各管一半**：① **网关侧**（`core/td_gateway`）`PendingEntry` 与 `TdPendingRequest` 新增 `method`，
+> 网关自己写的那三类诊断错误（超时 / 取消 / 发送失败）把 `tdRequestAttribution(method, requestId)` 拼进 `cause`
+> （取消那条 `TdGatewayCancelledError` 由 1 参改 2 参）；② **日志侧**（`core/observability`）`Logger.logError(tag, error, attribution?)`
+> 加一个**调用方自己写**的可选第三参，接在分类串后面 —— 刻意**不读 `cause`**，理由就是上面那句：
+> 归属串必须是调用方构造的、只含方法名与 requestId 的白名单内容，`logError_attributionDoesNotOpenADoorForMessageOrCause`
+> 把这条钉住（拿 `AppErrors.fromTdlibError(400, "can't parse entities: <secret>")` 传归属串，断言 `<secret>` 不在行里）。
+> `feature/chat` 侧新增 `ChatCoordinator.logRequestError(method, error, pending?)`，贴纸读 / 写全部 11 条请求路径改用它
+> （此前只 `await result.value.promise`，把网关已经带在手里的 requestId 丢掉了），
+> `logStickerSetFailure` 同样收归属串参数。**同步请求**（发送即失败）只有方法名可给，就只给方法名，不硬凑一个假 requestId。
+> **三、设备取证**（127.0.0.1:10555，Pura 90 Pro HVD，`bm install -p` 覆盖不清数据，`.hvigor/outputs/favwrite-attrib-101/`）：
+> ① **归属串在真实错误行上落地**（走整包预览那条已知会 406 的链，点热门区「Lady Noir」一行）：
+> `11:46:49.911 ERROR ChatCoordinator error tdlib/unknown/retryable=true method=searchStickerSet,requestId=req-RXCMkhnCPAKYcGQg`
+> 紧跟 `sticker_set_fetch_failed path=name,setId=336920350212227105,code=406 reason=stickerSetInvalid`，
+> 281 ms 后名字那条走不通换 id 重试：`ERROR … method=getStickerSet,requestId=req-1QXV6Kkx6Arxby4Q` + `path=id,…code=406 reason=stickerSetInvalid` ——
+> **两条错误行现在各自点名了方法与自己那一次请求**，而整行里没有半个服务端原文；
+> ② **写路径本轮复现：两条都在 300 ms 内结算** —— Saved Messages 长按贴纸气泡 `11:45:08.275 ids=1` → `.570 sticker_favorite_added fileId=70` → `.599 rows=1`；
+> 贴纸板卡收藏格长按（FAV-102 用的正是这条路径）`11:49:52.085 ids=0` → `.318 sticker_favorite_removed fileId=70`，
+> **全程零条 `network/timeout`，`sticker_favorite_added` 也不再是零条**；还原 `ids=0` / `rows=0`，未装包、未向任何群或频道发送。
+> **四、这条遗留怎么收口**：`sticker_favorite_update` 比写回包先到（本轮 295 ms 的差）正是那个设计的用处；
+> 而「promise 不结算」在改后的同一台模拟器、同一条 UI 路径上**复现不出来**，所以它更像当时那一屏里 TDLib 侧的一次慢响应撞上 10 s 网关超时，
+> 不是写链结构上漏了结算 —— **历史上那两条 `10:32:05.517` / `10:32:45.441` 的超时属于哪个方法，本轮仍无法回填**（它们早于本机制），
+> 但下一次再出现时，错误行自己会说：方法名 + requestId，且能与同屏的 `sticker_favorite_*` 计数对上。测试：`core_td_gateway` **56/56**（+3：超时与取消的 `cause` 带归属串、`tdRequestAttribution` 字面量）、
+> `core_observability` **46/46**（+3：追加归属串、归属串不放行原文、空/缺省归属串保持旧行格式）、`feature_chat` **461/461**
+> （+1：`favoriteWriteErrorLineCarriesMethodAndRequestId` —— 断言 `addFavoriteSticker` 失败行里有 `method=…,requestId=…`，且 `FLOOD_WAIT_77` 一个字都不出现），
+> 四守卫 0 违规。
 
 
 > **2026-09-26（CHAT-HIST-101，上一行遗留 ②「冷启动首屏历史空窗」）**：结掉 TGS-102 顺带发现的那条 —— 进程刚起来时进会话可能一行消息都没有，且**永远不自愈**。
