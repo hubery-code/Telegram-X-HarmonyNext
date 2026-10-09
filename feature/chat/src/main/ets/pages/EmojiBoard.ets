@@ -14,7 +14,7 @@
  */
 
 import { LightTheme, Theme } from '@tgx/core-design-system';
-import { A11y, a11y } from '@tgx/core-common';
+import { A11y, a11y, Lang } from '@tgx/core-common';
 import { StickerSetItem } from '../model/StickerSetPreviewState';
 import { GifItem, GIF_CATEGORIES, DEFAULT_RECENT_GIFS, DEFAULT_GIF_PACKS } from '../model/GifItem';
 import {
@@ -382,7 +382,7 @@ export struct EmojiBoard {
 
         // 发送
         Row() {
-          Text('发送贴纸')
+          Text(this.t('Send Sticker'))
             .fontSize(this.T.typography.body.fontSize)
             .fontColor(this.T.colors.accent)
             .fontWeight(FontWeight.Medium)
@@ -404,7 +404,7 @@ export struct EmojiBoard {
 
         // 添加/移出收藏
         Row() {
-          Text(this.isFavoriteCell(item.fileId) ? '移出收藏' : '添加至收藏')
+          Text(this.isFavoriteCell(item.fileId) ? this.t('Remove from Favorites') : this.t('Add to Favorites'))
             .fontSize(this.T.typography.body.fontSize)
             .fontColor(this.T.colors.textPrimary)
             .layoutWeight(1)
@@ -427,7 +427,7 @@ export struct EmojiBoard {
             .strokeWidth(0.5)
 
           Row() {
-            Text('从最近使用中移除')
+            Text(this.t('Remove from Recent'))
               .fontSize(this.T.typography.body.fontSize)
               .fontColor(this.T.colors.destructive)
               .layoutWeight(1)
@@ -452,7 +452,7 @@ export struct EmojiBoard {
             .strokeWidth(0.5)
 
           Row() {
-            Text('查看贴纸包')
+            Text(this.t('View Sticker Set'))
               .fontSize(this.T.typography.body.fontSize)
               .fontColor(this.T.colors.textPrimary)
               .layoutWeight(1)
@@ -721,7 +721,7 @@ export struct EmojiBoard {
 
                     if (pack.setId === STICKER_BOARD_RECENT_SET_ID) {
                       if (this.onClearRecentStickers) {
-                        Text('清空')
+                        Text(this.t('Clear Recent'))
                           .fontSize(this.T.typography.caption.fontSize)
                           .fontWeight(FontWeight.Medium)
                           .fontColor(this.T.colors.accent)
@@ -733,7 +733,7 @@ export struct EmojiBoard {
                           })
                       }
                     } else {
-                      Text(pack.hasMore ? `查看其余 ${pack.totalSize - pack.covers.length} 张` : '查看贴纸包')
+                      Text(pack.hasMore ? this.t('View {0} more', pack.totalSize - pack.covers.length) : this.t('View Sticker Set'))
                         .fontSize(this.T.typography.caption.fontSize)
                         .fontWeight(FontWeight.Medium)
                         .fontColor(this.T.colors.accent)
@@ -824,7 +824,7 @@ export struct EmojiBoard {
   @Builder
   StickerTrendingSection() {
     Column() {
-      Text('热门贴纸包')
+      Text(this.t('Trending Sticker Sets'))
         .fontSize(this.T.typography.caption.fontSize)
         .fontWeight(FontWeight.Medium)
         .fontColor(this.T.colors.textSecondary)
@@ -858,7 +858,7 @@ export struct EmojiBoard {
               .fontColor(this.T.colors.textPrimary)
               .maxLines(1)
               .textOverflow({ overflow: TextOverflow.Ellipsis })
-            Text(`${row.totalSize} 张`)
+            Text(this.t('{0} stickers', row.totalSize))
               .fontSize(this.T.typography.caption.fontSize)
               .fontColor(this.T.colors.textSecondary)
               .margin({ top: 2 })
@@ -894,6 +894,10 @@ export struct EmojiBoard {
    * STICKER-FAV-102：这一格是否已在收藏列表 —— 查推送带回来的成员位，不查格子行。
    * 与消息长按菜单（`ChatReducer` 的 `isFavoriteSticker`）同一个口径，两处入口不会各说各话。
    */
+  private t(key: string, ...args: (string | number)[]): string {
+    return Lang.getInstance().getString(key, ...args);
+  }
+
   private isFavoriteCell(fileId: number): boolean {
     return this.favoriteStickerIds.indexOf(fileId) >= 0;
   }
@@ -904,9 +908,9 @@ export struct EmojiBoard {
    */
   private trendingActionLabel(row: StickerTrendingPack): string {
     if (this.stickerInstallingSetId === row.setId) {
-      return row.isInstalled ? '移除中…' : '添加中…';
+      return row.isInstalled ? this.t('Removing…') : this.t('Adding…');
     }
-    return row.isInstalled ? '已添加' : '添加';
+    return row.isInstalled ? this.t('Added') : this.t('Add');
   }
 
   private triggerTrendingAction(row: StickerTrendingPack): void {
@@ -936,12 +940,12 @@ export struct EmojiBoard {
           .width(28)
           .height(28)
           .color(this.T.colors.accent)
-        Text('正在读取贴纸包…')
+        Text(this.t('Loading sticker set…'))
           .fontSize(this.T.typography.caption.fontSize)
           .fontColor(this.T.colors.textSecondary)
           .margin({ top: this.T.spacing.xs })
       } else if (this.stickerBoardError !== null) {
-        Text('贴纸包读取失败')
+        Text(this.t('Failed to load sticker set'))
           .fontSize(this.T.typography.body.fontSize)
           .fontWeight(FontWeight.Medium)
           .fontColor(this.T.colors.textPrimary)
@@ -952,7 +956,7 @@ export struct EmojiBoard {
           .textOverflow({ overflow: TextOverflow.Ellipsis })
           .textAlign(TextAlign.Center)
           .margin({ top: this.T.spacing.xs })
-        Text('重试')
+        Text(this.t('Retry'))
           .fontSize(this.T.typography.caption.fontSize)
           .fontWeight(FontWeight.Medium)
           .fontColor(this.T.colors.accent)
@@ -966,11 +970,11 @@ export struct EmojiBoard {
           .fontSize(34)
           .opacity(0.35)
           .margin({ bottom: this.T.spacing.sm })
-        Text('还没有安装贴纸包')
+        Text(this.t('No installed sticker sets'))
           .fontSize(this.T.typography.body.fontSize)
           .fontWeight(FontWeight.Medium)
           .fontColor(this.T.colors.textPrimary)
-        Text('点上方热门贴纸包的「添加」即可安装，安装后会出现在这里')
+        Text(this.t('Tap "Add" on a trending pack to install it. Installed packs show up here.'))
           .fontSize(this.T.typography.caption.fontSize)
           .fontColor(this.T.colors.textSecondary)
           .textAlign(TextAlign.Center)

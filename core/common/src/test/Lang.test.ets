@@ -8,6 +8,10 @@ import {
   resolveLanguage
 } from '../main/ets/Lang';
 
+function hasHan(text: string): boolean {
+  return /[\u4e00-\u9fff]/.test(text);
+}
+
 export default function langTest(): void {
   describe('LangTest', () => {
     it('resolveLanguage_resolvesSystemAndExplicitPreferences', 0, () => {
@@ -145,6 +149,102 @@ export default function langTest(): void {
       expect(Lang.getInstance().t('Cache size: {0}', '24.5 MB')).assertEqual('缓存大小：24.5 MB');
       expect(Lang.getInstance().t('Theme mode set to {0}', 'dark')).assertEqual('主题模式已设置为 dark');
       expect(Lang.getInstance().t('Language set to {0}', 'zh')).assertEqual('语言已设置为 zh');
+    });
+
+    it('viewLayerCopy_i18nLiteral101_translatesPinnedEntries', 0, () => {
+      Lang.getInstance().reset();
+      Lang.getInstance().setLanguage('zh');
+
+      const requiredEntries: Record<string, string> = {
+        'New Message': '新消息',
+        'Clear History': '清空历史记录',
+        'Clear Recent': '清空',
+        'Delete this chat?': '删除聊天？',
+        'Leave this channel?': '退出频道？',
+        'Mute': '静音',
+        'Unmute': '取消静音',
+        'Join Channel': '加入频道',
+        'Comments': '评论',
+        'Original post': '原始帖子内容',
+        'Send Sticker': '发送贴纸',
+        'Add to Favorites': '添加至收藏',
+        'View Sticker Set': '查看贴纸包',
+        'Trending Sticker Sets': '热门贴纸包',
+        'Installed': '已安装',
+        'Sticker Set Details': '贴纸包详情',
+        'Media': '媒体',
+        'No Common Groups': '暂无共同群组',
+        'Load More': '加载更多',
+        'Send Message': '发送消息',
+        'Block User': '屏蔽用户',
+        'Data and Storage': '数据和存储',
+        'Logs out all devices except for this one.': '退出除当前设备外的所有登录会话',
+        'Switch Account': '切换账号',
+        'Add Account': '添加账号'
+      };
+
+      const keys: string[] = Object.keys(requiredEntries);
+      for (let i = 0; i < keys.length; i++) {
+        const key: string = keys[i];
+        expect(Lang.getInstance().t(key)).assertEqual(requiredEntries[key]);
+      }
+    });
+
+    it('viewLayerCopy_i18nLiteral101_neverFallsBackToKeyUnderChinese', 0, () => {
+      // Lang 缺译文时原样回吐 key，屏幕上就是一串英文标识 —— 和正常英文文案肉眼难以区分，
+      // 所以这里按「中文界面里不能出现纯 ASCII 的整句」来断言（本仓视图层文案均含汉字）。
+      const convertedKeys: string[] = [
+        'New Message', 'Retry', 'Confirm', 'Leave', 'Report', 'Clear History', 'Clear Recent',
+        'Delete Chat', 'Leave Channel', 'Leave Group', 'Linked Channel', 'Clear history?',
+        'Delete this chat?', 'Report this chat?', 'Leave this group?', 'Mute', 'Unmute',
+        'Enable Notifications', 'Join Channel', '{0} comments',
+        'Voice messages are not allowed in this chat', 'Comments', 'Comments ({0})',
+        'Original post', 'No comments yet. Leave the first one!', 'Send Sticker',
+        'Add to Favorites', 'Remove from Favorites', 'Remove from Recent', 'View Sticker Set',
+        'View {0} more', 'Trending Sticker Sets', '{0} stickers', 'Add', 'Added', 'Adding…',
+        'Removing…', 'Loading sticker set…', 'Failed to load sticker set',
+        'No installed sticker sets', 'Sticker Set Details',
+        'Failed to load the sticker set. Please try again later.', 'Fetching info…', 'Installed',
+        'Not installed', '{0} stickers · {1}', 'Add Sticker Set', 'Remove Sticker Set',
+        'Add {0} stickers', 'Media', 'Links', 'Voice', 'Groups', 'Failed to load',
+        'Tap the tab above to retry.', 'No Media Yet', 'No Files Yet', 'No Links Yet',
+        'No Music Yet', 'No Voice Messages Yet', 'No Common Groups', 'Loading more…',
+        'Load More', 'Send Message', 'Start Secret Chat', 'Block User', 'Block User (not loaded)',
+        'Unblock User', 'Phone', 'Data and Storage',
+        'Logs out all devices except for this one.', 'Switch Account', 'Close', 'Active',
+        'Add Account'
+      ];
+
+      Lang.getInstance().reset();
+      Lang.getInstance().setLanguage('zh');
+      for (let i = 0; i < convertedKeys.length; i++) {
+        const key: string = convertedKeys[i];
+        const value: string = Lang.getInstance().t(key);
+        expect(value !== key).assertTrue();
+        expect(hasHan(value)).assertTrue();
+      }
+
+      Lang.getInstance().setLanguage('en');
+      for (let i = 0; i < convertedKeys.length; i++) {
+        expect(Lang.getInstance().t(convertedKeys[i])).assertEqual(convertedKeys[i]);
+      }
+    });
+
+    it('viewLayerCopy_i18nLiteral101_substitutesPositionalArgsInBothLanguages', 0, () => {
+      Lang.getInstance().reset();
+      Lang.getInstance().setLanguage('en');
+      expect(Lang.getInstance().t('{0} comments', 3)).assertEqual('3 comments');
+      expect(Lang.getInstance().t('View {0} more', 12)).assertEqual('View 12 more');
+      expect(Lang.getInstance().t('{0} stickers', 40)).assertEqual('40 stickers');
+      expect(Lang.getInstance().t('Add {0} stickers', 40)).assertEqual('Add 40 stickers');
+      expect(Lang.getInstance().t('{0} stickers · {1}', 40, 'Installed')).assertEqual('40 stickers · Installed');
+
+      Lang.getInstance().setLanguage('zh');
+      expect(Lang.getInstance().t('{0} comments', 3)).assertEqual('3 条评论');
+      expect(Lang.getInstance().t('Comments ({0})', 7)).assertEqual('评论 (7)');
+      expect(Lang.getInstance().t('View {0} more', 12)).assertEqual('查看其余 12 张');
+      expect(Lang.getInstance().t('Add {0} stickers', 40)).assertEqual('添加 40 个贴纸');
+      expect(Lang.getInstance().t('{0} stickers · {1}', 40, '已安装')).assertEqual('40 个贴纸 · 已安装');
     });
 
     it('getString_fallsBackToKeyWhenUntranslated', 0, () => {

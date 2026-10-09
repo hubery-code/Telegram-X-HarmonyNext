@@ -38,17 +38,17 @@ import {
 
 export function formatSessionDate(timestampSeconds: number, isZh: boolean = false): string {
   if (timestampSeconds <= 0) {
-    return isZh ? '在线' : 'Online';
+    return isZh ? '在线' : 'Online'; // i18n-allow 日期与相对时间形态，归 I18N-DATE
   }
   const date: Date = new Date(timestampSeconds * 1000);
   const now: Date = new Date();
   const diffSec: number = Math.floor((now.getTime() - date.getTime()) / 1000);
   if (diffSec < 60) {
-    return isZh ? '刚刚' : 'Just now';
+    return isZh ? '刚刚' : 'Just now'; // i18n-allow 同上
   }
   if (diffSec < 3600) {
     const mins: number = Math.floor(diffSec / 60);
-    return isZh ? `${mins} 分钟前` : `${mins} min ago`;
+    return isZh ? `${mins} 分钟前` : `${mins} min ago`; // i18n-allow 同上
   }
   const hours: string = String(date.getHours()).padStart(2, '0');
   const minutes: string = String(date.getMinutes()).padStart(2, '0');
@@ -58,9 +58,9 @@ export function formatSessionDate(timestampSeconds: number, isZh: boolean = fals
 
   if (isZh) {
     if (isSameYear) {
-      return `${month}月${day}日 ${hours}:${minutes}`;
+      return `${month}月${day}日 ${hours}:${minutes}`; // i18n-allow 同上
     }
-    return `${date.getFullYear()}年${month}月${day}日 ${hours}:${minutes}`;
+    return `${date.getFullYear()}年${month}月${day}日 ${hours}:${minutes}`; // i18n-allow 同上
   } else {
     const months: string[] = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     const monthStr: string = months[date.getMonth()];
@@ -181,14 +181,14 @@ export struct DevicesSubPage {
               this.ErrorBannerView()
             }
 
-            this.SectionTitle(this.t('THIS DEVICE'))
+            this.SectionTitle(this.t('This Device'))
             this.CurrentDeviceCardView()
 
             if (this.getOtherSessions().length > 0) {
               this.TerminateAllButtonView()
             }
 
-            this.SectionTitle(this.t('ACTIVE SESSIONS'))
+            this.SectionTitle(this.t('Active Sessions'))
             this.OtherSessionsCardView()
           }
           .width('100%')
@@ -368,7 +368,7 @@ export struct DevicesSubPage {
             .fontWeight(this.getTheme().typography.headline.fontWeight)
             .fontColor(this.getTheme().colors.destructive)
 
-          Text(this.isChinese() ? '退出除当前设备外的所有登录会话' : 'Logs out all devices except for this one.')
+          Text(this.t('Logs out all devices except for this one.'))
             .fontSize(this.getTheme().typography.footnote.fontSize)
             .fontColor(this.getTheme().colors.textSecondary)
             .margin({ top: this.getTheme().spacing.xs })

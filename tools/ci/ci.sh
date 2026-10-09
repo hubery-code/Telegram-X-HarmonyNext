@@ -8,16 +8,20 @@
 #   4. check_architecture.py   核心层架构依赖与 Kit-free 校验（P1-QA-003）
 #   5. check_codegen.py        TDLib 代码生成与敏感字段一致性校验（P1-QA-003）
 #   6. check_accessibility_labels.py 图标控件无障碍标签守卫（A11Y-101）
-#   7. check.sh         codelinter（若存在）+ ArkTS typecheck 构建（GOV-006）
-#   8. test_all_modules.py 全模块单元测试调度与断言（P1-QA-001 / QA-002）
-#   9. build.sh debug   Debug HAP（GOV-001）
-#   10. build.sh release Release HAP（GOV-001）
+#   7. check_i18n_literals.py  视图层写死文案与词典键守卫（I18N-LITERAL-101）
+#   8. check.sh         codelinter（若存在）+ ArkTS typecheck 构建（GOV-006）
+#   9. test_all_modules.py 全模块单元测试调度与断言（P1-QA-001 / QA-002）
+#   10. build.sh debug   Debug HAP（GOV-001）
+#   11. build.sh release Release HAP（GOV-001）
 #
 # 备注（INTEG-002）：拼错的 design token（如 T.typography.caption1）编译期不报错，
 # 只在渲染到该分支时抛 TypeError 并杀进程（exit 254）。第 3 步把这类缺陷前移到 CI。
 #
 # 备注（QA-002 / P1-QA-001）：枚举 build-profile.json5 全量 21 模块，
 # 调度 19 个具备单测的模块真实执行测试，并断言 Failures == 0, Errors == 0 且用例数 >= 770。
+#
+# 备注（I18N-LITERAL-101）：Lang 缺译文时原样回吐 key，所以「写了 this.t('X')」并不等于
+# 屏幕上有文案 —— 拼错的键会渲染成英文标识本身。第 7 步同时拦视图层写死的中文与词典缺项。
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -36,16 +40,17 @@ run_step() {
   fi
 }
 
-run_step "1/10 toolchain gate (GOV-002)"       "${ROOT}/tools/ci/setup-check.sh"
-run_step "2/10 secret scan (GOV-007)"          "${ROOT}/tools/ci/secret-scan.sh"
-run_step "3/10 design tokens (INTEG-002)"      python3 "${ROOT}/tools/ci/check_design_tokens.py"
-run_step "4/10 architecture guard (QA-002)"    python3 "${ROOT}/tools/ci/check_architecture.py"
-run_step "5/10 codegen verify (QA-002)"        python3 "${ROOT}/tools/ci/check_codegen.py"
-run_step "6/10 a11y label guard (A11Y-101)"    python3 "${ROOT}/tools/ci/check_accessibility_labels.py"
-run_step "7/10 lint + typecheck (GOV-006)"     "${ROOT}/tools/ci/check.sh"
-run_step "8/10 unit test all modules (QA-002)" python3 "${ROOT}/tools/ci/test_all_modules.py"
-run_step "9/10 build debug (GOV-001)"          "${ROOT}/tools/ci/build.sh" debug
-run_step "10/10 build release (GOV-001)"       "${ROOT}/tools/ci/build.sh" release
+run_step "1/11 toolchain gate (GOV-002)"       "${ROOT}/tools/ci/setup-check.sh"
+run_step "2/11 secret scan (GOV-007)"          "${ROOT}/tools/ci/secret-scan.sh"
+run_step "3/11 design tokens (INTEG-002)"      python3 "${ROOT}/tools/ci/check_design_tokens.py"
+run_step "4/11 architecture guard (QA-002)"    python3 "${ROOT}/tools/ci/check_architecture.py"
+run_step "5/11 codegen verify (QA-002)"        python3 "${ROOT}/tools/ci/check_codegen.py"
+run_step "6/11 a11y label guard (A11Y-101)"    python3 "${ROOT}/tools/ci/check_accessibility_labels.py"
+run_step "7/11 i18n literal guard (I18N-101)"  python3 "${ROOT}/tools/ci/check_i18n_literals.py"
+run_step "8/11 lint + typecheck (GOV-006)"     "${ROOT}/tools/ci/check.sh"
+run_step "9/11 unit test all modules (QA-002)" python3 "${ROOT}/tools/ci/test_all_modules.py"
+run_step "10/11 build debug (GOV-001)"         "${ROOT}/tools/ci/build.sh" debug
+run_step "11/11 build release (GOV-001)"       "${ROOT}/tools/ci/build.sh" release
 
 echo ""
 echo "[ci] ALL STEPS PASSED"

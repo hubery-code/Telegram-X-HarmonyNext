@@ -10,6 +10,7 @@
  */
 
 import { LightTheme, Theme } from '@tgx/core-design-system';
+import { Lang } from '@tgx/core-common';
 import { getAvatarColorIndex } from '@tgx/core-domain';
 import { fileUri } from '@kit.CoreFileKit';
 import { SharedAudioItem, SharedFileItem, SharedGroupItem, SharedLinkItem, SharedMediaItem } from '../contract/SharedContentItems';
@@ -113,7 +114,8 @@ export class SharedContentViewData {
 interface SharedTabSpec {
   tab: number;
   icon: Resource;
-  label: string;
+  /** 存的是 Lang key，不是文案：页签文字要随语言在渲染时取。 */
+  labelKey: string;
 }
 
 /**
@@ -122,12 +124,12 @@ interface SharedTabSpec {
  * model/SharedContentSearch 的 SHARED_TAB_* 一致，缺一项就会点错 Tab。
  */
 const SHARED_TABS: SharedTabSpec[] = [
-  { tab: SHARED_TAB_MEDIA, icon: $r('app.media.ic_photo'), label: '媒体' },
-  { tab: SHARED_TAB_FILES, icon: $r('app.media.ic_file'), label: '文件' },
-  { tab: SHARED_TAB_LINKS, icon: $r('app.media.ic_link'), label: '链接' },
-  { tab: SHARED_TAB_AUDIO, icon: $r('app.media.ic_music'), label: '音乐' },
-  { tab: SHARED_TAB_VOICE, icon: $r('app.media.ic_mic'), label: '语音' },
-  { tab: SHARED_TAB_GROUPS, icon: $r('app.media.ic_group'), label: '群组' }
+  { tab: SHARED_TAB_MEDIA, icon: $r('app.media.ic_photo'), labelKey: 'Media' },
+  { tab: SHARED_TAB_FILES, icon: $r('app.media.ic_file'), labelKey: 'Files' },
+  { tab: SHARED_TAB_LINKS, icon: $r('app.media.ic_link'), labelKey: 'Links' },
+  { tab: SHARED_TAB_AUDIO, icon: $r('app.media.ic_music'), labelKey: 'Music' },
+  { tab: SHARED_TAB_VOICE, icon: $r('app.media.ic_mic'), labelKey: 'Voice' },
+  { tab: SHARED_TAB_GROUPS, icon: $r('app.media.ic_group'), labelKey: 'Groups' }
 ];
 
 @Component
@@ -139,6 +141,10 @@ export struct SharedContentSection {
   onOpenGroup: (chatId: number) => void = (): void => {};
   /** 点音乐/语音行：同一行再点一次是暂停，切换行由 reducer 负责换轨。 */
   onToggleAudio: (fileId: number) => void = (): void => {};
+
+  private t(key: string, ...args: (string | number)[]): string {
+    return Lang.getInstance().getString(key, ...args);
+  }
 
   private tabs(): SharedTabSpec[] {
     if (this.view.showGroupsTab) {
@@ -218,7 +224,7 @@ export struct SharedContentSection {
             .fillColor(this.view.activeTab === spec.tab
               ? this.T.colors.accent
               : this.T.colors.textSecondary)
-          Text(spec.label)
+          Text(this.t(spec.labelKey))
             .fontSize(this.T.typography.footnote.fontSize)
             .fontColor(this.view.activeTab === spec.tab
               ? this.T.colors.accent
@@ -264,11 +270,11 @@ export struct SharedContentSection {
   @Builder
   LoadFailed() {
     Column() {
-      Text('加载失败')
+      Text(this.t('Failed to load'))
         .fontSize(this.T.typography.subheadline.fontSize)
         .fontColor(this.T.colors.textPrimary)
         .textAlign(TextAlign.Center)
-      Text('点击顶部对应页签重试。')
+      Text(this.t('Tap the tab above to retry.'))
         .fontSize(this.T.typography.footnote.fontSize)
         .fontColor(this.T.colors.textSecondary)
         .textAlign(TextAlign.Center)
@@ -311,7 +317,7 @@ export struct SharedContentSection {
       if (this.view.loadFailed) {
         this.LoadFailed()
       } else {
-        this.Empty('暂无媒体文件', '在此聊天中分享图片和视频，并在您所有的设备上访问。')
+        this.Empty(this.t('No Media Yet'), this.t('Share photos and videos in this chat and access them on all your devices.'))
       }
     } else {
       // 一段一个宫格：分组头要独占一行，所以不能全塞进同一个 wrap Flex。
@@ -376,7 +382,7 @@ export struct SharedContentSection {
       if (this.view.loadFailed) {
         this.LoadFailed()
       } else {
-        this.Empty('暂无文件', '在此聊天中分享文件，并在您所有的设备上访问。')
+        this.Empty(this.t('No Files Yet'), this.t('Share files in this chat and access them on all your devices.'))
       }
     } else {
       Column() {
@@ -438,7 +444,7 @@ export struct SharedContentSection {
       if (this.view.loadFailed) {
         this.LoadFailed()
       } else {
-        this.Empty('暂无链接', '在此聊天中分享链接，并在您所有的设备上访问。')
+        this.Empty(this.t('No Links Yet'), this.t('Share links in this chat and access them on all your devices.'))
       }
     } else {
       Column() {
@@ -489,7 +495,7 @@ export struct SharedContentSection {
       .justifyContent(FlexAlign.Center)
       .alignItems(HorizontalAlign.Center)
       Column() {
-        Text(item.title.length > 0 ? item.title : '语音消息')
+        Text(item.title.length > 0 ? item.title : this.t('Voice message'))
           .fontSize(this.T.typography.body.fontSize)
           .fontColor(this.T.colors.textPrimary)
           .maxLines(1)
@@ -525,7 +531,7 @@ export struct SharedContentSection {
       if (this.view.loadFailed) {
         this.LoadFailed()
       } else {
-        this.Empty('暂无音乐文件', '在此聊天中分享音频文件，并在您所有的设备上访问。')
+        this.Empty(this.t('No Music Yet'), this.t('Share audio files in this chat and access them on all your devices.'))
       }
     } else {
       Column() {
@@ -551,7 +557,7 @@ export struct SharedContentSection {
       if (this.view.loadFailed) {
         this.LoadFailed()
       } else {
-        this.Empty('暂无语音消息', '在此聊天中分享语音消息，并在您所有的设备上访问。')
+        this.Empty(this.t('No Voice Messages Yet'), this.t('Share voice messages in this chat and access them on all your devices.'))
       }
     } else {
       Column() {
@@ -578,7 +584,7 @@ export struct SharedContentSection {
       if (this.view.loadFailed) {
         this.LoadFailed()
       } else {
-        this.Empty('暂无共同群组', '你们所在的共同群组会显示在这里。')
+        this.Empty(this.t('No Common Groups'), this.t('Groups you have in common with this user will appear here.'))
       }
     } else {
       Column() {
@@ -671,7 +677,7 @@ export struct SharedContentSection {
                 .width(20)
                 .height(20)
                 .color(this.T.colors.accent)
-              Text('正在加载更多...')
+              Text(this.t('Loading more…'))
                 .fontSize(this.T.typography.footnote.fontSize)
                 .fontColor(this.T.colors.textSecondary)
             }
@@ -680,7 +686,7 @@ export struct SharedContentSection {
             .padding({ top: this.T.spacing.md, bottom: this.T.spacing.md })
           } else if (this.view.hasMore) {
             Row() {
-              Text('加载更多')
+              Text(this.t('Load More'))
                 .fontSize(this.T.typography.subheadline.fontSize)
                 .fontColor(this.T.colors.accent)
             }

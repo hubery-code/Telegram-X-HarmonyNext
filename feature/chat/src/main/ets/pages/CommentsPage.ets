@@ -9,7 +9,7 @@
  */
 
 import { LightTheme, Theme } from '@tgx/core-design-system';
-import { A11y, a11y } from '@tgx/core-common';
+import { A11y, a11y, Lang } from '@tgx/core-common';
 import { CommentItem, CommentsCoordinator, CommentsUiState } from '../coordinator/CommentsCoordinator';
 
 
@@ -49,7 +49,7 @@ export struct CommentsPage {
 
         // 标题与副标题
         Column() {
-          Text(this.uiState.commentsCount > 0 ? `评论 (${this.uiState.commentsCount})` : '评论')
+          Text(this.uiState.commentsCount > 0 ? this.t('Comments ({0})', this.uiState.commentsCount) : this.t('Comments'))
             .fontSize(this.T.typography.headline.fontSize)
             .fontWeight(FontWeight.Bold)
             .fontColor(this.T.colors.textPrimary)
@@ -105,7 +105,7 @@ export struct CommentsPage {
           .width('100%')
           .alignItems(VerticalAlign.Center)
 
-          Text(this.uiState.postText.length > 0 ? this.uiState.postText : '原始帖子内容')
+          Text(this.uiState.postText.length > 0 ? this.uiState.postText : this.t('Original post'))
             .fontSize(this.T.typography.body.fontSize)
             .fontColor(this.T.colors.textPrimary)
             .maxLines(2)
@@ -136,7 +136,7 @@ export struct CommentsPage {
               .fillColor(this.T.colors.textTertiary)
               .margin({ bottom: this.T.spacing.sm })
 
-            Text('还没有评论，留下第一条评论吧')
+            Text(this.t('No comments yet. Leave the first one!'))
               .fontSize(this.T.typography.footnote.fontSize)
               .fontColor(this.T.colors.textSecondary)
           }
@@ -169,7 +169,7 @@ export struct CommentsPage {
       Row() {
         TextInput({
           text: this.uiState.inputText,
-          placeholder: '发表评论...'
+          placeholder: this.t('Leave a comment...')
         })
           .fontSize(this.T.typography.body.fontSize)
           .placeholderColor(this.T.colors.textTertiary)
@@ -229,6 +229,10 @@ export struct CommentsPage {
     .width('100%')
     .height('100%')
     .backgroundColor(this.T.colors.background)
+  }
+
+  private t(key: string, ...args: (string | number)[]): string {
+    return Lang.getInstance().getString(key, ...args);
   }
 
   /** 单条评论气泡 */

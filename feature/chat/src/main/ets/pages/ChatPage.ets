@@ -1235,7 +1235,7 @@ export struct ChatPage {
   @Builder
   HeaderOverflowMenu() {
     Menu() {
-      MenuItem({ content: '搜索' })
+      MenuItem({ content: this.t('Search') })
         .onClick(() => {
           this.onDispatch(new OpenChatSearch());
         })
@@ -1244,11 +1244,11 @@ export struct ChatPage {
           .onClick(() => {
             this.onDispatch(new ChatMenuAction(this.muteMenuAction()));
           })
-        MenuItem({ content: '清空历史记录' })
+        MenuItem({ content: this.t('Clear History') })
           .onClick(() => {
             this.onDispatch(new ChatMenuAction('clear_history'));
           })
-        MenuItem({ content: '删除聊天' })
+        MenuItem({ content: this.t('Delete Chat') })
           .contentFontColor(this.T.colors.destructive)
           .onClick(() => {
             this.onDispatch(new ChatMenuAction('delete_chat'));
@@ -1258,16 +1258,16 @@ export struct ChatPage {
           .onClick(() => {
             this.onDispatch(new ChatMenuAction(this.muteMenuAction()));
           })
-        MenuItem({ content: '举报' })
+        MenuItem({ content: this.t('Report') })
           .onClick(() => {
             this.onDispatch(new ChatMenuAction('report'));
           })
-        MenuItem({ content: this.uiState.chatKind === 'channel' ? '退出频道' : '退出群组' })
+        MenuItem({ content: this.uiState.chatKind === 'channel' ? this.t('Leave Channel') : this.t('Leave Group') })
           .onClick(() => {
             this.onDispatch(new ChatMenuAction('leave'));
           })
         if (this.uiState.chatKind === 'group') {
-          MenuItem({ content: '已关联的频道' })
+          MenuItem({ content: this.t('Linked Channel') })
             .onClick(() => {
               this.onDispatch(new ChatMenuAction('linked_channel'));
             })
@@ -1303,7 +1303,7 @@ export struct ChatPage {
           .margin({ bottom: this.T.spacing.md })
 
         Row() {
-          Text('取消')
+          Text(this.t('Cancel'))
             .fontSize(this.T.typography.body.fontSize)
             .fontColor(this.T.colors.textSecondary)
             .layoutWeight(1)
@@ -1338,13 +1338,13 @@ export struct ChatPage {
   private menuConfirmTitle(): string {
     const action: string = this.uiState.pendingMenuAction;
     if (action === 'clear_history') {
-      return '清空历史记录？';
+      return this.t('Clear history?');
     } else if (action === 'delete_chat') {
-      return '删除聊天？';
+      return this.t('Delete this chat?');
     } else if (action === 'report') {
-      return '举报此聊天？';
+      return this.t('Report this chat?');
     } else if (action === 'leave') {
-      return this.uiState.chatKind === 'channel' ? '退出频道？' : '退出群组？';
+      return this.uiState.chatKind === 'channel' ? this.t('Leave this channel?') : this.t('Leave this group?');
     }
     return '';
   }
@@ -1352,15 +1352,15 @@ export struct ChatPage {
   private menuConfirmActionLabel(): string {
     const action: string = this.uiState.pendingMenuAction;
     if (action === 'clear_history') {
-      return '清空';
+      return this.t('Clear History');
     } else if (action === 'delete_chat') {
-      return '删除';
+      return this.t('Delete');
     } else if (action === 'report') {
-      return '举报';
+      return this.t('Report');
     } else if (action === 'leave') {
-      return '退出';
+      return this.t('Leave');
     }
-    return '确认';
+    return this.t('Confirm');
   }
 
   private menuConfirmIsDestructive(): boolean {
@@ -1479,7 +1479,7 @@ export struct ChatPage {
   @Builder
   UnreadSeparator() {
     Row() {
-      Text('新消息')
+      Text(this.t('New Message'))
         .fontSize(13)
         .fontWeight(FontWeight.Medium)
         .fontColor(this.T.colors.accent)
@@ -2895,7 +2895,7 @@ export struct ChatPage {
               .width(22)
               .height(22)
               .fillColor(Color.White)
-            Text('重试')
+            Text(this.t('Retry'))
               .fontSize(11)
               .fontColor(Color.White)
               .margin({ top: 2 })
@@ -3210,7 +3210,7 @@ export struct ChatPage {
         .height(16)
         .fillColor(this.T.colors.accent)
         .margin({ right: this.T.spacing.xs })
-      Text(`${item.commentCount} 条评论`)
+      Text(this.t('{0} comments', item.commentCount))
         .fontSize(this.T.typography.footnote.fontSize)
         .fontWeight(FontWeight.Medium)
         .fontColor(this.T.colors.accent)
@@ -4806,7 +4806,7 @@ export struct ChatPage {
         if (this.canSend()) {
           this.dispatchSend();
         } else if (!this.canRecordVoiceNow()) {
-          this.showHintToast('此会话不允许发送语音消息');
+          this.showHintToast(this.t('Voice messages are not allowed in this chat'));
         } else {
           this.onDispatch(new StartVoiceRecord());
         }
@@ -4918,7 +4918,7 @@ export struct ChatPage {
   @Builder
   JoinChannelBar() {
     Row() {
-      Button('加入频道')
+      Button(this.t('Join Channel'))
         .width('100%')
         .height(40)
         .backgroundColor(this.T.colors.accent)
@@ -4953,7 +4953,7 @@ export struct ChatPage {
           .fillColor(this.T.colors.accent)
           .margin({ right: this.T.spacing.sm })
 
-        Text(this.uiState.isMuted ? '开启通知' : '静音')
+        Text(this.uiState.isMuted ? this.t('Enable Notifications') : this.t('Mute'))
           .fontSize(this.T.typography.headline.fontSize)
           .fontWeight(FontWeight.Medium)
           .fontColor(this.T.colors.accent)
@@ -4984,7 +4984,7 @@ export struct ChatPage {
    * 读 this.uiState 而非入参，保证 @Builder 内的 @Prop 变更能驱动重渲染。
    */
   private muteMenuLabel(): string {
-    return this.uiState.isMuted ? '取消静音' : '静音';
+    return this.uiState.isMuted ? this.t('Unmute') : this.t('Mute');
   }
 
   private muteMenuAction(): string {
@@ -5146,7 +5146,7 @@ export struct ChatPage {
         hilog.warn(DOMAIN, TAG, 'openLink failed: %{public}d', err.code);
         try {
           this.getUIContext().getPromptAction().showToast({
-            message: '无法打开链接',
+            message: this.t('Failed to open link'),
             duration: 2000
           });
         } catch (toastErr) {

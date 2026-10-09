@@ -1057,11 +1057,12 @@ export struct SettingsPage {
 
   private getLanguageSummary(): string {
     if (this.uiState.languagePreference === 'system') {
-      const activeLang: string = this.uiState.languageCode === 'zh' || this.effectiveLang === 'zh' ? '简体中文' : 'English';
+      // 语言名是本族名（self-name），按产品口径不随界面语言翻译。
+      const activeLang: string = this.uiState.languageCode === 'zh' || this.effectiveLang === 'zh' ? '简体中文' : 'English'; // i18n-allow 本族名
       return `${this.t('Follow System')} (${activeLang})`;
     }
     if (this.uiState.languagePreference === 'zh') {
-      return '简体中文';
+      return '简体中文'; // i18n-allow 本族名
     }
     return 'English';
   }
@@ -1094,7 +1095,7 @@ export struct SettingsPage {
       Row() {
         this.LanguageOption('system', this.t('System'))
         this.LanguageOption('en', 'English')
-        this.LanguageOption('zh', '简体中文')
+        this.LanguageOption('zh', '简体中文') // i18n-allow 本族名
       }
       .width('100%')
       .justifyContent(FlexAlign.SpaceBetween)

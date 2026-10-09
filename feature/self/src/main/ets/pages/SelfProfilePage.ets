@@ -10,7 +10,7 @@
  */
 
 import { LightTheme, Theme } from '@tgx/core-design-system';
-import { A11y, a11y } from '@tgx/core-common';
+import { A11y, a11y, Lang } from '@tgx/core-common';
 import { fileUri } from '@kit.CoreFileKit';
 import { SelfProfileUiState } from '../contract/SelfProfileUiState';
 import { SelfProfileIntent, EditTapped, SettingsSectionTapped } from '../contract/SelfProfileIntent';
@@ -46,15 +46,16 @@ const AVATAR_PALETTE: string[] = [
  */
 interface SettingsEntry {
   readonly key: string;
-  readonly label: string;
+  /** 存的是 Lang key，不是文案。 */
+  readonly labelKey: string;
   readonly icon: Resource;
 }
 
 const SETTINGS_ENTRIES: SettingsEntry[] = [
-  { key: 'devices', label: '设备', icon: $r('app.media.ic_devices') },
-  { key: 'notifications', label: '通知', icon: $r('app.media.ic_notifications') },
-  { key: 'privacy', label: '隐私和安全', icon: $r('app.media.ic_lock') },
-  { key: 'data_and_storage', label: '数据和存储', icon: $r('app.media.ic_storage') }
+  { key: 'devices', labelKey: 'Devices', icon: $r('app.media.ic_devices') },
+  { key: 'notifications', labelKey: 'Notifications', icon: $r('app.media.ic_notifications') },
+  { key: 'privacy', labelKey: 'Privacy & Security', icon: $r('app.media.ic_lock') },
+  { key: 'data_and_storage', labelKey: 'Data and Storage', icon: $r('app.media.ic_storage') }
 ];
 
 const BACK_ARROW_SIZE: number = 44;
@@ -183,18 +184,23 @@ export struct SelfProfilePage {
     })
   }
 
+  private t(key: string, ...args: (string | number)[]): string {
+    return Lang.getInstance().getString(key, ...args);
+  }
+
   @Builder
   InfoSection() {
     Column() {
       if (this.uiState.username.length > 0) {
-        this.InfoRow($r('app.media.ic_username'), '用户名', `@${this.uiState.username}`)
+        this.InfoRow($r('app.media.ic_username'), this.t('Username'), `@${this.uiState.username}`)
       }
       if (this.uiState.phone.length > 0) {
-        this.InfoRow($r('app.media.ic_call'), '手机', this.uiState.phone)
+        this.InfoRow($r('app.media.ic_call'), this.t('Phone'), this.uiState.phone)
       }
-      this.InfoRow($r('app.media.ic_info'), '个人简介', this.uiState.bio.length > 0 ? this.uiState.bio : '<空>')
+      this.InfoRow($r('app.media.ic_info'), this.t('Bio'),
+        this.uiState.bio.length > 0 ? this.uiState.bio : this.t('EmptyValue'))
       if (this.uiState.birthdayText.length > 0) {
-        this.InfoRow($r('app.media.ic_cake'), '生日', this.uiState.birthdayText)
+        this.InfoRow($r('app.media.ic_cake'), this.t('Date of Birth'), this.uiState.birthdayText)
       }
     }
     .width('100%')
@@ -213,7 +219,7 @@ export struct SelfProfilePage {
               .fillColor(this.T.colors.textSecondary)
               .margin({ right: this.T.spacing.md })
 
-            Text(entry.label)
+            Text(this.t(entry.labelKey))
               .fontSize(this.T.typography.body.fontSize)
               .fontColor(this.T.colors.textPrimary)
               .layoutWeight(1)

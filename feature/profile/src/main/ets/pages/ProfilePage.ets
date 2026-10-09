@@ -10,7 +10,7 @@
  */
 
 import { LightTheme, Theme } from '@tgx/core-design-system';
-import { A11y, a11y } from '@tgx/core-common';
+import { A11y, a11y, Lang } from '@tgx/core-common';
 import { ProfileUiState } from '../contract/ProfileUiState';
 import {
   ProfileIntent,
@@ -118,25 +118,29 @@ export struct ProfilePage {
    * ⋮ 菜单：三项全部落到 TDLib。
    * 屏蔽项文案跟着真值走；真值未读到时标「未读取」，点击由 reducer no-op。
    */
+  private t(key: string, ...args: (string | number)[]): string {
+    return Lang.getInstance().getString(key, ...args);
+  }
+
   private menuElements(): MenuElement[] {
     const items: MenuElement[] = [];
     items.push({
-      value: '发送消息',
+      value: this.t('Send Message'),
       action: (): void => {
         this.onDispatch(new MessageUserRequested());
       }
     });
     items.push({
-      value: '开启密聊',
+      value: this.t('Start Secret Chat'),
       action: (): void => {
         this.onDispatch(new ProfileMenuAction(PROFILE_MENU_SECRET_CHAT));
       }
     });
-    let blockLabel: string = '屏蔽用户';
+    let blockLabel: string = this.t('Block User');
     if (!this.uiState.peerBlockReady) {
-      blockLabel = '屏蔽用户（未读取）';
+      blockLabel = this.t('Block User (not loaded)');
     } else if (this.uiState.peerBlocked) {
-      blockLabel = '取消屏蔽';
+      blockLabel = this.t('Unblock User');
     }
     items.push({
       value: blockLabel,
@@ -308,7 +312,7 @@ export struct ProfilePage {
     if (!this.uiState.notificationReady) {
       return '—';
     }
-    return this.uiState.notificationMuted ? '静音' : '开启';
+    return this.uiState.notificationMuted ? this.t('Mute') : this.t('On');
   }
 
   /** PROFILE-103 收尾：通知行（🔔 通知 / 真实静音态，点按切换）。 */
@@ -319,7 +323,7 @@ export struct ProfilePage {
         .width(22)
         .height(22)
         .fillColor(this.T.colors.textSecondary)
-      Text('通知')
+      Text(this.t('Notifications'))
         .fontSize(this.T.typography.body.fontSize)
         .fontColor(this.T.colors.textPrimary)
         .margin({ left: this.T.spacing.sm })
@@ -386,7 +390,7 @@ export struct ProfilePage {
                 .backgroundColor(this.T.colors.surfaceVariant)
                 .justifyContent(FlexAlign.Center)
                 .alignItems(HorizontalAlign.Center)
-                Text('通话')
+                Text(this.t('Calls'))
                   .fontSize(this.T.typography.caption.fontSize)
                   .fontColor(this.T.colors.textSecondary)
                   .margin({ top: this.T.spacing.xs })
@@ -403,7 +407,7 @@ export struct ProfilePage {
                 .backgroundColor(this.T.colors.surfaceVariant)
                 .justifyContent(FlexAlign.Center)
                 .alignItems(HorizontalAlign.Center)
-                Text('视频')
+                Text(this.t('Videos'))
                   .fontSize(this.T.typography.caption.fontSize)
                   .fontColor(this.T.colors.textSecondary)
                   .margin({ top: this.T.spacing.xs })
@@ -417,16 +421,16 @@ export struct ProfilePage {
                 .margin({ left: this.T.spacing.screenInset, right: this.T.spacing.screenInset })
 
               if (this.uiState.username.length > 0) {
-                this.InfoRow($r('app.media.ic_username'), 'Username', `@${this.uiState.username}`)
+                this.InfoRow($r('app.media.ic_username'), this.t('Username'), `@${this.uiState.username}`)
               }
               if (this.uiState.phone.length > 0) {
-                this.InfoRow($r('app.media.ic_call'), 'Phone', this.uiState.phone)
+                this.InfoRow($r('app.media.ic_call'), this.t('Phone'), this.uiState.phone)
               }
               if (this.uiState.bio.length > 0) {
-                this.InfoRow($r('app.media.ic_info'), 'Bio', this.uiState.bio)
+                this.InfoRow($r('app.media.ic_info'), this.t('Bio'), this.uiState.bio)
               }
               if (this.uiState.birthdayText.length > 0) {
-                this.InfoRow($r('app.media.ic_cake'), '生日', this.uiState.birthdayText)
+                this.InfoRow($r('app.media.ic_cake'), this.t('Date of Birth'), this.uiState.birthdayText)
               }
               this.NotificationRow()
 

@@ -235,7 +235,7 @@ struct Index {
   @State commentsUiState: CommentsUiState = {
     channelChatId: 0,
     channelPostId: 0,
-    channelTitle: '评论',
+    channelTitle: Lang.getInstance().getString('Comments'),
     postText: '',
     postDate: '',
     commentsCount: 0,

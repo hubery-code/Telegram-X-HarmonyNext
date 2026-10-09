@@ -43,18 +43,19 @@
 
 ## 2. CI 门禁验证流水线 (`./tools/ci/ci.sh`)
 
-全量 9 步静态与动态防线：
+全量 11 步静态与动态防线：
 
 1. `setup-check.sh`：工具链自动探测与 DevEco/Node/SDK 26 版本锁定；
 2. `secret-scan.sh`：全仓严格凭据与签名扫描，严禁密钥字面量入库；
 3. `check_design_tokens.py`：设计系统令牌拼写静态扫描，防止运行时 undefined 异常；
 4. `check_architecture.py`：核心域、Reducer 及 Coordinator 100% Kit-free 架构防线；
 5. `check_codegen.py`：3205 个 DTO 类与 154 个敏感字段代码生成一致性字节比对；
-6. `check.sh`：全仓 linter 与 ArkTS 静态类型检查；
-7. `test_all_modules.py`：全量 19 模块 836 项单元测试执行与基线断言（≥790 项）；
-8. `build.sh debug`：构建 Debug HAP 产物；
-
-9. `build.sh release`：构建 Release HAP 产物，断言构建后工作区 100% 洁净无污染。
+6. `check_accessibility_labels.py`：图标控件无障碍标签与分组吞并守卫（A11Y-101/102）；
+7. `check_i18n_literals.py`：视图层写死中文与 Lang 词典缺项/EN-ZH 不对等守卫（I18N-LITERAL-101）；
+8. `check.sh`：全仓 linter 与 ArkTS 静态类型检查；
+9. `test_all_modules.py`：全量 19 模块 836 项单元测试执行与基线断言（≥790 项）；
+10. `build.sh debug`：构建 Debug HAP 产物；
+11. `build.sh release`：构建 Release HAP 产物，断言构建后工作区 100% 洁净无污染。
 
 ---
 

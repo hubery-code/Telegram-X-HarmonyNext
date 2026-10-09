@@ -9,7 +9,7 @@
  */
 
 import { LightTheme, Theme } from '@tgx/core-design-system';
-import { A11y, a11y } from '@tgx/core-common';
+import { A11y, a11y, Lang } from '@tgx/core-common';
 import { StickerSetPreviewState, StickerSetItem } from '../model/StickerSetPreviewState';
 import { stickerCellImagePath } from '../model/StickerBoard';
 
@@ -63,7 +63,7 @@ export struct StickerSetPreviewSheet {
           // 头部：标题、贴纸数量、关闭按钮
           Row() {
             Column() {
-              Text(this.preview.title.length > 0 ? this.preview.title : '贴纸包详情')
+              Text(this.preview.title.length > 0 ? this.preview.title : this.t('Sticker Set Details'))
                 .fontSize(this.T.typography.headline.fontSize)
                 .fontWeight(FontWeight.Bold)
                 .fontColor(this.T.colors.textPrimary)
@@ -112,7 +112,7 @@ export struct StickerSetPreviewSheet {
                   .width(36)
                   .height(36)
                   .color(this.T.colors.accent)
-                Text('正在加载贴纸包...')
+                Text(this.t('Loading sticker set…'))
                   .fontSize(this.T.typography.caption.fontSize)
                   .fontColor(this.T.colors.textSecondary)
                   .margin({ top: this.T.spacing.sm })
@@ -123,10 +123,10 @@ export struct StickerSetPreviewSheet {
               .alignItems(HorizontalAlign.Center)
             } else if (this.preview.errorMessage !== null && this.preview.stickers.length === 0) {
               Column() {
-                Text('贴纸包加载失败，请稍后重试')
+                Text(this.t('Failed to load the sticker set. Please try again later.'))
                   .fontSize(this.T.typography.body.fontSize)
                   .fontColor(this.T.colors.destructive)
-                Button('重试')
+                Button(this.t('Retry'))
                   .fontSize(this.T.typography.caption.fontSize)
                   .backgroundColor(this.T.colors.accent)
                   .margin({ top: this.T.spacing.sm })
@@ -240,16 +240,20 @@ export struct StickerSetPreviewSheet {
     }
   }
 
+  private t(key: string, ...args: (string | number)[]): string {
+    return Lang.getInstance().getString(key, ...args);
+  }
+
   private formatSubtitle(): string {
     if (this.preview === null) {
       return '';
     }
     if (this.preview.isLoading && this.preview.stickers.length === 0) {
-      return '正在获取信息...';
+      return this.t('Fetching info…');
     }
     const count: number = this.preview.stickers.length;
-    const status: string = this.preview.isInstalled ? '已安装' : '未安装';
-    return count > 0 ? `${count} 个贴纸 · ${status}` : status;
+    const status: string = this.preview.isInstalled ? this.t('Installed') : this.t('Not installed');
+    return count > 0 ? this.t('{0} stickers · {1}', count, status) : status;
   }
 
   private formatButtonLabel(): string {
@@ -257,9 +261,9 @@ export struct StickerSetPreviewSheet {
       return '';
     }
     if (this.preview.isInstalled) {
-      return '移除贴纸包';
+      return this.t('Remove Sticker Set');
     }
     const count: number = this.preview.stickers.length;
-    return count > 0 ? `添加 ${count} 个贴纸` : '添加贴纸包';
+    return count > 0 ? this.t('Add {0} stickers', count) : this.t('Add Sticker Set');
   }
 }

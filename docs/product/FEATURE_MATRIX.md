@@ -128,7 +128,7 @@
 |---|---|---|---|---|---|---|---|---|
 | FEAT-UI-001 | 深色/浅色主题 | P1 | `theme/ThemeManager.java:48`（DEFAULT_DARK_THEME = NIGHT_BLUE）, `theme/Theme.java` | —（平台侧） | 跟随系统/手动切换，关键页面（列表/聊天/设置）色值正确 | — | Accepted | 迁移组 |
 | FEAT-UI-002 | 大字体（聊天字号调节） | P1 | `unsorted/Settings.java:791`（CHAT_FONT_SIZES）, `ui/SettingsController.java:218`（getChatFontSize） | —（平台侧） | 大字号模式下气泡/列表不截断不重叠 | 字体缩放 | Accepted | SET-105 |
-| FEAT-UI-003 | 中/英文案资源 | P1 | `core/Lang.java`, `ui/SettingsLanguageController.java` | — | 关键路径文案中英齐全，无硬编码遗漏 | — | Accepted | 迁移组 |
+| FEAT-UI-003 | 中/英文案资源 | P1 | `core/Lang.java`, `ui/SettingsLanguageController.java` | — | 关键路径文案中英齐全，无硬编码遗漏（视图层写死文案与词典缺项由 `check_i18n_literals.py` 强制） | — | Accepted | I18N-LITERAL-101 |
 | FEAT-UI-004 | 抽屉主导航（≡ 账号头 + 联系人/通话/我的收藏/设置/邀请朋友/帮助 + 夜间模式开关） | P1 | `navigation/DrawerController.java`, `MainActivity.java` | —（平台侧） | 会话列表抽屉导航，账号头展示在线状态，入口路由正确 | — | Accepted | DRAWER-101 |
 
 ---
@@ -1829,6 +1829,73 @@
 > 遗留：① 播报**内容**（`accessibilityText` 的实际句子）仍然只能在真机屏幕朗读下听，本仓没有可观察口径；
 > ② 焦点顺序本身没有单独 API（ArkUI 按布局树序遍历），本轮是靠分组把站数压下来，不是重排；
 > ③ 分组只挑了「一行一句」的高频面，媒体查看器、表情板格子等仍是多站；④ RTL-101 未做。
+
+### FEAT-UI-003 / I18N-LITERAL-101 视图层写死文案与词典缺项（2026-10-09）
+
+> **题面**：FEAT-UI-003 那句验收标准写的是「关键路径文案中英齐全，**无硬编码遗漏**」，而这一条从来没有防线 ——
+> 页面里 `Text('清空历史记录')` 这样的写死中文一路都在过编译、过 lint、过单测。
+> **本包把这句话变成可强制的规则**，并顺手把散在视图层的写死中文接回 `Lang`。
+>
+> **为什么必须拦「写了 `this.t('X')` 却屏幕上没有文案」**：`Lang.formatByKey` 缺译文时**原样回吐 key**，
+> 所以拼错的键在屏幕上就是一串英文标识（`Clear Histor`），和正常英文文案肉眼难以区分 ——
+> 这一类回归既不改视觉结构、也不报错，只有拿语言去读才看得出来。因此守卫同时拦两件事：
+> **R1** 视图层写死 CJK 字面量、**R2/R3** `t('X')` 引用的 key 在词典里缺项或 EN/ZH 条数不对等。
+>
+> **范围口径**：只有 `*/pages/` 与 `*/components/` 下的文件受 R1 约束；豁免唯一写法是就地
+> `// i18n-allow <理由>`，**理由必填**（没有理由的豁免等于没写）。
+> `coordinator` / `model` / `core/domain` 里返回中文的格式化函数记为债，本包不动（见下方遗留 ①）。
+>
+> **落地量**：新增 81 条 key（EN/ZH **各 347 条，条数对等**由守卫断言），改造 10 个文件，
+> 覆盖 30 个视图文件、**170 个 key 调用点**、就地豁免 8 处。
+> 已进 `tools/ci/ci.sh`（第 7 步，全链 9 → **11** 步）与 `docs/quality/TEST_MATRIX.md` §2。
+>
+> **断言形态选的是「翻出来 != key 且含汉字」**（`core/common/src/test/Lang.test.ets` 新增 3 条用例）：
+> ① 25 对 EN→ZH 逐条钉值（`'Clear History' → '清空历史记录'` 这一类，改动词典就会被点名）；
+> ② ~75 个本次接线的 key 在 `zh` 下断言 `value !== key` **且** `hasHan(value)`，在 `en` 下断言 `t(key) === key`；
+> ③ 6 条参数化 key（`{0} comments`、`{0} stickers · {1}` 等）双 locale 各验一遍占位替换。
+> 「!= key」证进过字典，「含汉字」证不是把英文抄进中文表。
+>
+> **设备双 locale A/B**（127.0.0.1:5555，装的是含本包全部改动的 debug HAP，只读页面、未删任何数据、
+> 确认框一律点取消，取证结束已把应用语言切回 English）：
+> 英文侧 —— 会话 ⋮ 菜单 `Search / Mute / Clear History / Delete Chat`、确认框 `Clear history? / Cancel / Clear History`、
+> 附件菜单 `Attach / Gallery / Camera / Video / File / Poll`、会话列表长按 `Pin / Mark as unread / Archive`、
+> 贴纸板 `Trending Sticker Sets` + `Concerned Froge, 25 stickers` + `Add`、
+> 预览弹层 `Sticker Set Details / Not installed / Failed to load the sticker set. Please try again later. / Retry / Add Sticker Set`；
+> 中文侧 —— 同一批面翻成 `搜索 / 静音 / 清空历史记录 / 删除聊天`、`清空历史记录？ / 取消`、
+> `热门贴纸包 / Concerned Froge, 25 个贴纸 / 添加`、`贴纸包详情 / 未安装 / 贴纸包加载失败，请稍后重试 / 重试 / 添加贴纸包`，
+> 资料页 `媒体 / 文件 / 链接 / 音乐 / 语音 / 群组` + `暂无媒体文件…`，
+> 我的资料 `用户名 / 手机 / 个人简介 / 生日 / 设备 / 通知 / 隐私和安全 / 数据和存储`，
+> 设备子页 `当前设备 / 活跃设备与会话 / 终止所有其他会话 / 退出除当前设备外的所有登录会话`。
+> **两侧都零 raw key 上屏** —— 没有任何一处把英文标识本身印在中文界面上。
+>
+> **一个根因本轮才拿到**（原本只当「非设置页语言热切换」的模糊遗留）：切语言后屏上分节标题仍是旧语言，
+> 但 `Back` → 深链重进**同一页**标题立刻翻成新语言。词典缺项被排除（缺项重进也还是错的），
+> 指向 **ArkUI `@Builder` 的按值字符串参不响应** —— `this.SectionTitle(this.t('NOTIFICATIONS'))`、
+> `this.ThemeOption('light', this.t('Light'))` 这类把算好的字符串**传值**进 builder，
+> 首次 build 的结果被缓存，`Lang` 变更不会重跑 itemBuilder。中英两个方向各复现一次。
+> 修法是把传值改成传槽位（builder 内部自己 `t(...)`）或让状态源参与渲染，属独立一包。
+>
+> **测试与守卫**：`core_common` **55/55**（+3），受影响 6 模块全绿且 0 Failure / 0 Error
+> （`feature_chat` 469 / `feature_profile` 107 / `feature_self` 7 / `feature_settings` 345 / `entry` 146）；
+> 五守卫 0 违规（`check_architecture` / `check_codegen` / `check_design_tokens` /
+> `check_accessibility_labels` / `check_i18n_literals`）。
+>
+> **取证点名但本包不改的三类残留**：
+> ① **coordinator/model 写死中文**：`feature/chat/coordinator/ChatCoordinator.ets:3128 formatUserStatus`
+> （在线 / 最近上线 / 最近一周内上线 / 最近一个月内上线）与
+> `feature/self/coordinator/SelfProfileCoordinator.ets:74 formatUserStatusText`（在线 / 离线 / …）——
+> 英文 locale 下会话头部实测仍出中文 `最近上线`，即守卫的 R1 覆盖面外；
+> ② **视图层写死英文**同样不在覆盖面（规则只禁 CJK）：会话列表 `Chats / Search / All / Personal / Groups / Channels / Saved Messages`、
+> 输入栏 placeholder `Message`（`ProfilePage.ets:485`、`ChatPage.ets:4744`）、资料页 `last seen recently`
+> （`ProfileCoordinator.ets:194`、`ChatProfileCoordinator.ets:465`）、
+> `DrawerMenu.ets:79`、`ChatListCoordinator.ets:97/369` —— 中文 locale 下原样英文；
+> ③ **model 侧拼好的英文数量短语**混进中文行：`9 active sessions`、`323 files`
+> （屏上形如 `存储与缓存, 缓存大小：41.8 MB · 323 files`，同一行两种语言）。
+> 另：日期形态（`21.09.2026` 与 `10月9日 10:24` 各自跟随 locale）属 **I18N-DATE**，不在本包范围。
+>
+> **未取到的一格（如实记）**：表情板贴纸格子的长按菜单（`Send Sticker / Add to Favorites / View Sticker Set`）
+> 在设备上没点开 —— 热门榜行始终在格子下方吞掉点按，几次都落进预览弹层；
+> 该面的文案正确性目前只有守卫 R1/R2 与 ② 那条词典用例保证，**无设备证据**。
 
 
 | 功能 ID | 功能名 |
