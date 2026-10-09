@@ -81,7 +81,7 @@ export struct ChatProfilePage {
           this.onBack();
         })
 
-      Text(this.uiState.isChannel ? 'Channel Info' : 'Group Info')
+      Text(this.uiState.isChannel ? this.t('Channel Info') : this.t('Group Info'))
         .fontSize(this.T.typography.title.fontSize)
         .fontWeight(this.T.typography.title.fontWeight)
         .fontColor(this.T.colors.textPrimary)
@@ -145,7 +145,7 @@ export struct ChatProfilePage {
     Column() {
       if (this.uiState.description.length > 0) {
         Column() {
-          Text('Description')
+          Text(this.t('Description'))
             .fontSize(this.T.typography.caption.fontSize)
             .fontColor(this.T.colors.accent)
             .fontWeight(FontWeight.Medium)
@@ -169,7 +169,7 @@ export struct ChatProfilePage {
         Divider().color(this.T.colors.divider).strokeWidth(0.5)
         Row() {
           Column() {
-            Text('Invite Link')
+            Text(this.t('Invite Link'))
               .fontSize(this.T.typography.caption.fontSize)
               .fontColor(this.T.colors.accent)
               .fontWeight(FontWeight.Medium)
@@ -282,7 +282,7 @@ export struct ChatProfilePage {
   MembersSection() {
     Column() {
       Row() {
-        Text(`Members (${this.uiState.members.length})`)
+        Text(this.t('Members ({0})', this.uiState.members.length))
           .fontSize(this.T.typography.caption.fontSize)
           .fontWeight(FontWeight.Medium)
           .fontColor(this.T.colors.textSecondary)

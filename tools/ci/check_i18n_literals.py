@@ -7,7 +7,7 @@
 `Lang` 缺译文时**原样回吐 key**，于是 Toast 上屏的是 `Sticker set: %s` 本身。也就是说
 「key 拼错」和「漏翻译」在屏幕上长得一模一样，没人会当场发现。
 
-本脚本守五条：
+本脚本守六条（R4' 与 R5a/R5b 是各自规则内的子条，不另计）：
 
   R1 视图层字面量禁令：`entry` 与各 `feature/*` 的 **pages/ 与 components/** 下，任何 .ets 文件
      里都不允许出现含汉字的字符串字面量（emoji 不在 `一-鿿` 段内，不会被误伤）。
@@ -36,9 +36,17 @@
        ② 被名字以 `Key` 结尾的调用或字段接收（`labelKey:` / `FieldLabelKey('Server Address')`）——
           本仓「传 key 不传串」的既有约定（`SelfProfilePage.ets` 的 `labelKey` 行就是这么写的），
           约定优先于标记：新 builder 想收 key 就把名字改成 `…Key`，否则它收到的就是显示串。
-     射程外的一类如实记下：把 key 存在数据行里再传进 `Text(row.labelKey)` 的**构造点**
-     （`new DrawerMenuRow('calls', icon, 'Calls', false)`）不是文案槽位，守卫看不见；
-     那一类靠 R2（接进 `t()` 之后缺项会被拦）与 `*Key` 命名约束兜。
+  R4' 收紧（I18N-LITERAL-104）：口径从「词典已知的英文」扩成**「看着像文案的英文」**。
+     第五十三轮设备取证抓到的一批（`SearchPage` 的 `Search Telegram`、`ChatProfilePage` 的
+     `Channel Info` / `Description`）之所以四条规则一起放行，正是旧口径只认词典里**已有**的项 ——
+     「压根没建词条」这个状态本身是漏洞，而且它是 R2 唯一管不到的写法（key 从没进过 `t()`，
+     R2 无从判断）。收紧后按形状判「看着像文案」：含空格、或首字母大写、或命中词典，任一成立即算。
+     这条形状判据把技术 token 挡在射程外（`'zh'` / `'mtproto'` / `'app.media.ic_help'` /
+     `'proxy.example.com'` 都是小写、无空格、不在词典里），而 `All` / `Trending` / `Draft: `
+     这类真文案全部落网；`${…}` 占位段先剥掉再判，于是 `@${username}`、`${n} ms` 不误伤；
+     剥完不足两字符（头像兜底的 `'A'`）不算文案。仍然**只认文案槽位**，槽位外的英文不归本规则管。
+     103 记为射程外的**构造点**（`new DrawerMenuRow('calls', icon, 'Calls', false)`）这一轮
+     由 R5b 的新位置④与 R6 一起接管，不再需要视图层单独看它。
   R5 数据层展示串禁令（I18N-LITERAL-103 引入）：R1/R4 只看 `*/pages/` 与 `*/components/`，于是
      coordinator / model / reducer / contract 里拼好的显示串一路畅通 —— `return '最近上线'`、
      `this.toastPort.showToast('清空历史失败')`、`summary = 'Photo'` 都改不到词典。这类串比页面里的
@@ -47,23 +55,44 @@
        R5a 汉字禁令 —— `entry` 与 `feature/*` 里 **不在** pages//components/ 下的 .ets，
             任何含汉字的字符串字面量都是违规（豁免同 R1：就地 `// i18n-allow <原因>`，
             本仓只用于日期/相对时间的形态串）。
-       R5b 词典已知英文 —— 同批文件里，值命中词典（EN ∪ ZH）的英文字面量出现在两个位置之一：
+       R5b 词典已知英文 —— 同批文件里，值命中词典（EN ∪ ZH）的英文字面量出现在四个位置之一：
             ① `return` 的**直接**操作数（`return 'Photo';`；要求字面量外层没有任何调用）；
-            ② 显示出口 `showToast(` / `showHintToast(` 的实参。
+            ② 显示出口 `showToast(` / `showHintToast(` 的实参；
+            ③（I18N-LITERAL-104）**赋值右侧** —— `const message: string = x ? 'A' : 'B'`、
+               `summary = 'Photo'`、`export const SAVED_MESSAGES_TITLE = 'Saved Messages'`
+               这一整类「先存进中间变量、函数末尾才 return」的串。103 只登记了它们没管住，
+               本包把 `SAVED_MESSAGES_TITLE` → `SAVED_MESSAGES_TITLE_KEY`、
+               `ShowToastEffect.message` → `messageKey` 逐个改名，于是这一位置从此只放行 key 载体；
+            ④（I18N-LITERAL-104）**构造器实参** —— `new ProxyStatus('Connected', …)`、
+               `new DrawerMenuRow('saved', icon, 'Saved Messages', true)`。判这一类要认参数名，
+               所以脚本先对全仓 `src/main/ets` 的 .ets 建一遍「class → constructor 参数表」索引
+               （跨文件也查得到），参数名以 `key` 结尾（`key` / `labelKey` / `messageKey`）视为
+               key 载体而豁免；参数表查不到（构造器在索引范围外的模块）不臆断，直接跳过。
             豁免在 R4 的两类（`t()`/`getString()`/`formatByKey()` 实参位、被 `*Key` 的调用或字段
             接收）之外再加一类，认同一枚约定的另一半：**函数名**以 `Key` 结尾（settings 那批
             `privacyModeLabelKey` / `appLinkReasonKey` 纯函数）时，返回值按定义就是 key，
             由页面 `t()` 解析。于是「`…Key` 结尾 = 传 key」在视图层和数据层两侧都被机器兜住。
-     射程外的两类如实记下：**赋值给中间变量**的显示串（`summary = 'Photo'` 这类先赋值、函数末尾
-     再 `return summary`）不在 R5b 的两个位置里，本包把它们逐个接进了词典但规则管不住下一个；
-     **构造器实参**（`new ProxyStatus('Connected', …)`）同理 —— 汉字那半边由 R5a 拦住，
-     英文那半边只有靠 R2（接进 `t()` 之后缺项会被拦）与字段/函数名的 `*Key` 约定兜。
+     射程外的一类如实记下：**跨行调用里的实参**。本脚本按**行**建模调用栈，`(` 换行了就不进栈，
+     于是 `TextInput({`↵`  placeholder: '…'` 这一类新位置看不见。本包实跑撞到过一次
+     （`CodePage` 的 `Enter ${…}-digit code`），当时靠人工接线补上；收口要改成整文件括号栈，
+     记在后续包里，不在这儿冒充已覆盖。
+  R6 `*Key` 载体必须双词典命中（I18N-LITERAL-104 引入）：R4/R5b 为了「传 key 不传串」开了豁免，
+     豁免自己就成了洞 —— `new ShowToastEffect('Cache cleared')` 被 `messageKey` 接走之后，
+     没有任何一条规则检查这个 key 真在词典里。SET-103 那次事故（`'Sticker set: %s'` 两本词典都
+     没有，Toast 上屏就是 key 原文）正是这个形状，而它此后会一直藏在「看起来已经国际化了」的写法里。
+     R6 只认**文案语义**的 key 载体：取载体名的词根（camelCase 尾段或 SCREAMING_SNAKE 尾段），
+     落在 label / title / subtitle / message / text / placeholder / hint / reason / summary /
+     name / description / desc / error / prompt / content / snippet / cancel / confirm / button /
+     category / section 之内，才要求该字面量 EN 与 ZH 双命中。
+     `accountKey` / `chatKey` / `setKey` / `fileKey` / `cacheKey` 这些载体收的本来就是标识符，
+     按词典要求会全是误伤，所以不进射程。
 
 用法：python3 tools/ci/check_i18n_literals.py [--quiet]
 退出码：0 = 无违规；1 = 存在违规；2 = 前置条件坏了（词典解析不出来）
 """
 
 import argparse
+import collections
 import pathlib
 import re
 import sys
@@ -106,6 +135,29 @@ DATA_DISPLAY_SINKS = frozenset(('showToast', 'showHintToast'))
 # R5b：`return` 的直接操作数所在行（三元、模板串都算这一行的 return 操作数）。
 RETURN_RE = re.compile(r'return\b')
 QUOTES = ('\'', '"', '`')
+
+# 104 收紧后的三条规则共用的基础设施：字面量的语法位置（Hit）与构造器参数表索引。
+Hit = collections.namedtuple('Hit', 'value callers field prefix start line')
+# `new Foo(` 的被调名与 `new` 关键字；`\s*$` 允许 `Foo (`。
+CALL_TAIL_RE = re.compile(r'(?:(?P<newkw>\bnew)\s+)?(?P<ident>[A-Za-z_$][\w$]*)\s*$')
+# R5b③：赋值右侧。`=(?!=)` 排除 `==`/`===`，`=>` 因为前面有 `>` 也不匹配。
+ASSIGN_RE = re.compile(r'^\s*(?:(?:export|declare)\s+)?(?:const|let|var)\s+'
+                       r'([A-Za-z_$][\w$]*)\s*(?::[^=;]+?)?\s*=(?!=)')
+PLAIN_ASSIGN_RE = re.compile(r'^\s*([A-Za-z_$][\w$.]*)\s*=(?!=)')
+# R4'：`${…}` 插值段不算文案内容，判形状之前先剥掉。
+# 允许一层嵌套：`${this.t('{0} GIFs', n)}` 里的 `{0}` 是 key 自带的花括号，
+# 早先的 `[^{}]*` 在它面前停下，于是整段没被剥掉，模板串被当成文案命中 R4'。
+PLACEHOLDER_RE = re.compile(r'\$\{(?:[^{}]|\{[^{}]*\})*\}')
+# 冒号是类型注解而不是对象字段的两种形状（见 scan_line_literals 的 `:` 分支）。
+DECL_BEFORE_RE = re.compile(r'\b(?:const|let|var)\s+$')
+TYPE_AFTER_RE = re.compile(r'\s*[A-Za-z_$][\w$<>\[\].]*\s*[=,);]')
+# R6：只有「文案语义」的 `*Key` 载体才要求双词典命中（词根见 key_carrier_stem）。
+# 名单外的 `accountKey` / `chatKey` / `setKey` / `fileKey` 收的是标识符，按词典要求全是误伤。
+KEY_CARRIER_STEMS = frozenset((
+    'label', 'title', 'subtitle', 'message', 'text', 'placeholder', 'hint', 'reason',
+    'summary', 'name', 'description', 'desc', 'error', 'prompt', 'content', 'snippet',
+    'cancel', 'confirm', 'button', 'category', 'section',
+))
 
 
 def is_comment(stripped: str) -> bool:
@@ -181,12 +233,17 @@ def scan_literals(files, layer: str):
 
 
 def scan_line_literals(line):
-    """把一行拆成「字面量 + 它被谁接走」，供 R4 判定槽位。
+    """把一行拆成「字面量 + 它在语法上的位置」，供 R4/R5b/R6 判定槽位。
 
-    只做粗粒度语法位置判定，不是解析器：
-      callers —— 该行内所有仍未闭合的调用的被调名（`(` 前的标识符段），元数据里同时记住
-                 它是不是成员调用（`this.` / `obj.` 后面那种），用来认 `@Builder`；
-      field   —— 紧邻该字面量之前的 `名字:`，即对象字面量里的键名。
+    只做粗粒度语法位置判定，不是解析器。每个尚未闭合的调用/容器是一个栈帧
+    `(被调名, 是否成员调用, 是否 new 构造, 该层已走过的实参序号)`：
+      被调名 —— `(` 前的标识符段。103 之前这里是**逐字符回扫到非标识符**，于是
+                 `new DrawerMenuRow(` 认出的名字是空的（停在 `new` 后面那个空格），
+                 构造器实参整类位置看不见；现在交给 CALL_TAIL_RE，顺带标出 `new`；
+      成员   —— 名字左边紧跟 `.`（`this.Builder(` / `obj.method(`），用来认 `@Builder`；
+      序号   —— 同层逗号推进，把构造器实参对回参数名（R5b④ 与 R6 都要用）。
+    字面量另带 `prefix`（它左边那半行）与 `start`（偏移），赋值位置（R5b③）要判断
+    它是不是落在 `=` 的右边。
     字符串内部的括号与引号一律不解析（逐字符跳到配对的引号结束），所以 `Text('a(b')` 不误。
     """
     out = []
@@ -210,16 +267,22 @@ def scan_line_literals(line):
                     break
                 buf.append(c)
                 j += 1
-            out.append((''.join(buf), tuple(stack), field))
+            out.append(Hit(''.join(buf), tuple(tuple(fr) for fr in stack),
+                           field, line[:i], i, line))
             i = j + 1
             field = None
             continue
         if ch in '([{':
-            k = i - 1
-            while k >= 0 and (line[k].isalnum() or line[k] in '_$'):
-                k -= 1
-            stack.append((line[k + 1:i] if ch == '(' else None,
-                          k >= 0 and line[k] == '.'))
+            name = None
+            member = False
+            ctor = False
+            if ch == '(':
+                m = CALL_TAIL_RE.search(line[:i])
+                if m is not None:
+                    name = m.group('ident')
+                    ctor = m.group('newkw') is not None
+                    member = line[:m.start('ident')].rstrip().endswith('.')
+            stack.append([name, member, ctor, 0])
             field = None
             i += 1
             continue
@@ -232,32 +295,147 @@ def scan_line_literals(line):
             k = i - 1
             while k >= 0 and (line[k].isalnum() or line[k] in '_$'):
                 k -= 1
-            field = line[k + 1:i] or None
+            ident = line[k + 1:i]
+            # `const nameKey: string = …` 与 `(labelKey: string, …)` 的冒号是**类型注解**，
+            # 不是对象字段。不认这一层，R6 会把日志片段 `',name=${setName}'` 当成 nameKey
+            # 收到的词典 key（ChatCoordinator 的贴纸取数日志就是这么冒出来的误报）。
+            annotation = ident != '' and (
+                DECL_BEFORE_RE.search(line[:k + 1]) is not None
+                or TYPE_AFTER_RE.match(line[i + 1:]) is not None)
+            field = None if annotation else (ident or None)
             i += 1
             continue
         if ch == ',':
+            if stack:
+                stack[-1][3] += 1
             field = None
         i += 1
     return out
 
 
-def key_carrier_exemption(callers, field=None) -> bool:
-    """R4/R5b 共用的两种免标记豁免：查词典的实参位，或被 `*Key` 接收。"""
-    names = [name for name, _ in callers if name]
+FUNCTION_RE = re.compile(r'\bfunction\s+([A-Za-z_$][\w$]*)\s*\(')
+CLASS_HEAD_RE = re.compile(r'(?m)^[ \t]*(?:export[ \t]+)?(?:default[ \t]+)?'
+                           r'class[ \t]+([A-Za-z_$][\w$]*)')
+CTOR_HEAD_RE = re.compile(r'(?m)^[ \t]*(?:(?:public|private|protected|readonly)[ \t]+)?'
+                          r'constructor[ \t]*\(([^)]*)\)')
+# 索引范围比射程宽：构造器常常定义在同模块的 contract/model 里，而 `new` 发生在 coordinator。
+INDEX_GLOBS = ('entry/src/main/ets/**/*.ets', 'feature/*/src/main/ets/**/*.ets',
+               'core/*/src/main/ets/**/*.ets', 'platform/*/src/main/ets/**/*.ets')
+
+
+def split_params(raw: str) -> tuple:
+    """构造器参数表拆成参数名；`readonly labelKey: string` 这类只取 `labelKey`。
+
+    只按 `([{` 计深度（不认尖括号：ArkTS 的泛型实参里带逗号的分隔类型极少，
+    而 `=>` 里的 `>` 会先把深度算坏）。解构参数（`{ a, b }`）取不到名字，留空位。
+    """
+    parts = []
+    depth = 0
+    cur = ''
+    for ch in raw:
+        if ch in '([{':
+            depth += 1
+        elif ch in ')]}':
+            depth -= 1
+        if ch == ',' and depth == 0:
+            parts.append(cur)
+            cur = ''
+        else:
+            cur += ch
+    if cur.strip():
+        parts.append(cur)
+    names = []
+    for part in parts:
+        token = part.strip()
+        while token and not (token[0].isalpha() or token[0] in '_$'):
+            token = token[1:]
+        head = token.split(':')[0].split('=')[0].split('?')[0].strip()
+        head = head.split(',')[0].strip()
+        names.append(head if re.fullmatch(r'[A-Za-z_$][\w$]*', head) else '')
+    return tuple(names)
+
+
+def build_ctor_index():
+    """全仓 `src/main/ets` 的 `class -> constructor 参数名` 表（R5b④ 与 R6 按参数名放行）。"""
+    index = {}
+    for pattern in INDEX_GLOBS:
+        for path in sorted(ROOT.glob(pattern)):
+            rel = str(path.relative_to(ROOT))
+            if any(part in rel for part in SKIP_PARTS):
+                continue
+            try:
+                text = path.read_text(encoding='utf-8')
+            except OSError:
+                continue
+            heads = [(m.start(), m.group(1)) for m in CLASS_HEAD_RE.finditer(text)]
+            if not heads:
+                continue
+            for m in CTOR_HEAD_RE.finditer(text):
+                cls = None
+                for pos, name in heads:
+                    if pos < m.start():
+                        cls = name
+                    else:
+                        break
+                if cls is None or cls in index:
+                    continue
+                index[cls] = split_params(m.group(1))
+    return index
+
+
+def ctor_param_at(callers, ctor_index):
+    """字面量所在的最内层 `new Foo(` 对应的参数名；类或位置查不到回 None。"""
+    if not callers:
+        return None
+    name, _member, is_ctor, arg_index = callers[-1]
+    if not is_ctor or name is None:
+        return None
+    params = ctor_index.get(name)
+    if params is None or arg_index >= len(params):
+        return None
+    return params[arg_index] or None
+
+
+def key_carrier_stem(name: str) -> str:
+    """`toastMessageKey` -> `message`、`PROXY_LABEL_KEY` -> `label`：取载体名的词根。"""
+    base = name[:-len(KEY_CARRIER_SUFFIX)]
+    if base.endswith('_'):
+        return base[:-1].split('_')[-1].lower()
+    if not base:
+        return ''
+    m = re.search(r'[A-Z][A-Za-z0-9]*$', base)
+    return (m.group(0) if m is not None else base).lower()
+
+
+def assign_lhs(line: str, start: int):
+    """R5b③：这一行若是赋值且字面量落在 `=` 右边，回左侧名字。"""
+    m = ASSIGN_RE.match(line) or PLAIN_ASSIGN_RE.match(line)
+    if m is None or m.end() > start:
+        return None
+    return m.group(1)
+
+
+def key_carrier_exemption(callers, field, ctor_index) -> bool:
+    """R4/R5b 共用的免标记豁免：查词典的实参位，或被 key 载体（调用/字段/构造参数）接走。"""
+    names = [c[0] for c in callers if c[0]]
     # 豁免 ①：t()/getString()/formatByKey() 的实参 —— 这就是在查词典，正是要的形状。
     if any(name in KEY_CALL_NAMES for name in names):
         return True
-    # 豁免 ②：`*Key` 约定的调用/字段 —— 它收的是 key，不是串。
+    # 豁免 ②：`*Key` 约定的调用/字段/构造参数 —— 它收的是 key，不是串。
     if any(name.endswith(KEY_CARRIER_SUFFIX) for name in names):
         return True
-    return field is not None and field.endswith(KEY_CARRIER_SUFFIX)
+    if field is not None and field.endswith(KEY_CARRIER_SUFFIX):
+        return True
+    param = ctor_param_at(callers, ctor_index)
+    return param is not None and param.lower().endswith('key')
 
 
-def display_slot_reason(callers, field):
-    """字面量所处文案槽位的写法；不属于文案槽位则回 None（R4 不管它）。"""
-    if key_carrier_exemption(callers, field):
+def display_slot_reason(hit, stripped_line, fn, dicts, ctor_index):
+    """R4/R4'：字面量所处文案槽位的写法；不属于文案槽位则回 None（本规则不管它）。"""
+    callers, field = hit.callers, hit.field
+    if key_carrier_exemption(callers, field, ctor_index):
         return None
-    for name, member in callers:
+    for name, member, _ctor, _idx in callers:
         if not name:
             continue
         if name in DISPLAY_CALL_NAMES:
@@ -270,31 +448,35 @@ def display_slot_reason(callers, field):
     return None
 
 
-def data_slot_reason(callers, field, stripped_line, fn_name):
+def data_slot_reason(hit, stripped_line, fn, dicts, ctor_index):
     """R5b：数据层里字面量的「上屏位置」写法；不在射程内回 None。
 
-    只认两个位置，都是本包实测到的形态：
-      ① `return` 的**直接**操作数（`return 'Photo';`、`return x ? '语音消息' : '';`）；
-         要求字面量外层没有任何调用 —— `return new Row('Proxy error', …)` 属构造器实参，
-         是本规则如实记录的射程外类别，不在这里冒充命中。
-      ② 显示出口 `showToast(` / `showHintToast(` 的实参。
+    四个位置：① `return` 的直接操作数；② 显示出口 `showToast(`/`showHintToast(` 的实参；
+    ③（104）赋值右侧；④（104）构造器实参。①③ 都要求字面量外层没有任何调用，
+    `return new Row('Proxy error', …)` 那种属④，不冒充命中①。
+    ④ 需要参数名才能判「这个位置收的是不是 key」：**参数表查不到就不报**（构造器定义在
+    索引范围外的模块时如此），宁可留射程外也不误伤。
     除 R4 的两类豁免外再加一类，沿用同一套「传 key 不传串」约定的另一半：**函数名**以 `Key`
-    结尾时（settings 那一整批 `autoDownloadKindLabelKey` / `proxyRowSummary` 风格的纯函数），
-    返回值按定义就是 key，由页面 `this.t(...)` 解析，不是显示串。
+    结尾时（settings 那一整批 `privacyModeLabelKey` 纯函数）返回值按定义就是 key。
     """
-    if key_carrier_exemption(callers, field):
+    if key_carrier_exemption(hit.callers, hit.field, ctor_index):
         return None
-    for name, _ in callers:
+    for name, _member, _ctor, _idx in hit.callers:
         if name in DATA_DISPLAY_SINKS:
             return f'{name}('
-    if not callers and (stripped_line.startswith('return ') or stripped_line.startswith('return(')):
-        if fn_name is not None and fn_name.endswith(KEY_CARRIER_SUFFIX):
+    if hit.callers:
+        name, _member, is_ctor, _idx = hit.callers[-1]
+        if is_ctor and name is not None and ctor_param_at(hit.callers, ctor_index) is not None:
+            return f'new {name}( 的 {ctor_param_at(hit.callers, ctor_index)}'
+        return None
+    if stripped_line.startswith('return ') or stripped_line.startswith('return('):
+        if fn is not None and fn.endswith(KEY_CARRIER_SUFFIX):
             return None
         return 'return'
+    lhs = assign_lhs(hit.line, hit.start)
+    if lhs is not None and not lhs.lower().endswith('key'):
+        return f'{lhs} ='
     return None
-
-
-FUNCTION_RE = re.compile(r'\bfunction\s+([A-Za-z_$][\w$]*)\s*\(')
 
 
 def code_lines_with_fn(path):
@@ -311,17 +493,33 @@ def code_lines_with_fn(path):
         yield idx, line, stripped, fn
 
 
-def scan_known_english(files, dicts, reason_for, fix_hint):
-    """R4 / R5b 的公共骨架：词典已知的英文字面量出现在「文案位置」即违规。"""
+def looks_like_copy(value: str, known) -> bool:
+    """R4'（104 收紧）的形状判据：含空格、或首字母大写、或命中词典 —— 三者任一成立就算文案。
+
+    为什么不「禁一切英文字面量」：英文单词同时是技术 token（`'zh'`、`'mtproto'`、
+    `'app.media.ic_help'`），而 token 在本仓的写法特征很稳定 —— 小写、不带空格、不在词典里。
+    `${…}` 插值段先剥掉再判，于是 `@${username}`、`${n} ms` 不误伤；剥完不足两字符
+    （头像兜底的 `'A'`）也不算文案。
+    """
+    if CJK_RE.search(value):
+        return False
+    bare = PLACEHOLDER_RE.sub('', value)
+    if len(bare) < 2 or not re.search(r'[A-Za-z]', bare):
+        return False
+    return bare[0].isupper() or ' ' in bare.strip() or value in known
+
+
+def scan_slots(files, dicts, ctor_index, reason_for, wants, fix_hint):
+    """R4/R4' 与 R5b 的公共骨架：符合 `wants` 的字面量出现在「文案位置」即违规。"""
     problems = []
     allowed = []
     known = dicts['EN'] | dicts['ZH']
     for rel, path in files:
         for idx, line, stripped, fn in code_lines_with_fn(path):
-            for value, callers, field in scan_line_literals(line):
-                if not value or CJK_RE.search(value) or value not in known:
+            for hit in scan_line_literals(line):
+                if not hit.value or not wants(hit.value, known):
                     continue
-                reason = reason_for(callers, field, stripped, fn)
+                reason = reason_for(hit, stripped, fn, dicts, ctor_index)
                 if reason is None:
                     continue
                 allow = ALLOW_RE.search(line)
@@ -332,24 +530,65 @@ def scan_known_english(files, dicts, reason_for, fix_hint):
                     else:
                         allowed.append(f'{rel}:{idx + 1}')
                     continue
-                problems.append(f'{rel}:{idx + 1}: 文案位置 {reason} 里写死了词典已知的英文 '
-                                f'-> {value}（{fix_hint}，确需保留请标 // i18n-allow <原因>）')
+                problems.append(f'{rel}:{idx + 1}: 文案位置 {reason} 里写死了 '
+                                f'{hit.value}（{fix_hint}，确需保留请标 // i18n-allow <原因>）')
     return problems, allowed
 
 
-def scan_display_slots(files, dicts):
-    """R4：词典里已存在的英文字面量不许直接写进文案槽位（`// i18n-allow 原因` 可豁免）。"""
-    return scan_known_english(
-        files, dicts,
-        lambda callers, field, stripped, fn: display_slot_reason(callers, field),
+def scan_display_slots(files, dicts, ctor_index):
+    """R4'：看着像文案的英文字面量不许直接写进视图层文案槽位（`// i18n-allow 原因` 可豁免）。"""
+    return scan_slots(
+        files, dicts, ctor_index,
+        display_slot_reason,
+        lambda value, known: looks_like_copy(value, known),
         '改走 this.t(...) 或把参数改名成 *Key')
 
 
-def scan_data_layer(files, dicts):
-    """R5b：数据层里 return 操作数 / Toast 实参不许写死词典已知的英文。"""
-    return scan_known_english(
-        files, dicts, data_slot_reason,
+def scan_data_layer(files, dicts, ctor_index):
+    """R5b：数据层里 return / Toast 实参 / 赋值右侧 / 构造器实参不许写死词典已知的英文。"""
+    return scan_slots(
+        files, dicts, ctor_index,
+        data_slot_reason,
+        lambda value, known: value in known,
         '改走 Lang.getInstance().getString(...) 或把参数改名成 *Key')
+
+
+def r6_carrier_name(callers, field, ctor_index):
+    """R6 的载体名：构造参数 / 字段 / 被调名里第一个「带文案词根」的 `*Key`；没有回 None。"""
+    candidates = [ctor_param_at(callers, ctor_index), field]
+    candidates += [c[0] for c in callers if c[0]]
+    for name in candidates:
+        if name is None or not name.endswith(KEY_CARRIER_SUFFIX):
+            continue
+        if key_carrier_stem(name) in KEY_CARRIER_STEMS:
+            return name
+    return None
+
+
+def scan_key_carriers(files, dicts, ctor_index):
+    """R6：被「文案语义的 `*Key`」接走的字面量必须双词典命中。
+
+    R4/R5b 给「传 key 不传串」开了豁免，豁免本身就是洞：key 拼错或缺项时 `Lang` 原样回吐，
+    屏幕上就是一串标识（SET-103 的 `'Sticker set: %s'` 事故）。R2 只盯 `t()` 的实参，
+    管不到这些还没接进 `t()` 的载体，所以在这里补一道。
+    """
+    problems = []
+    checked = set()
+    for rel, path in files:
+        for idx, line, stripped in code_lines(path):
+            if ALLOW_RE.search(line):
+                continue
+            for hit in scan_line_literals(line):
+                carrier = r6_carrier_name(hit.callers, hit.field, ctor_index)
+                if carrier is None or not hit.value or CJK_RE.search(hit.value):
+                    continue
+                checked.add(hit.value)
+                missing = [n for n in ('EN', 'ZH') if hit.value not in dicts[n]]
+                if missing:
+                    problems.append(f'{rel}:{idx + 1}: {carrier} 收到的 {hit.value!r} '
+                                    f'缺 {" 与 ".join(missing)} 词条'
+                                    f'（key 载体收的必须是词典里成在的 key）')
+    return problems, checked
 
 
 def load_dicts():
@@ -401,18 +640,21 @@ def main() -> int:
     files = view_files()
     data = data_files()
     dicts = load_dicts()
+    ctor_index = build_ctor_index()
 
     literal_problems, allowed_literal = scan_literals(files, '视图层')
-    slot_problems, allowed_slot = scan_display_slots(files, dicts)
+    slot_problems, allowed_slot = scan_display_slots(files, dicts, ctor_index)
     data_literal_problems, allowed_data_literal = scan_literals(data, '数据层')
-    data_slot_problems, allowed_data_slot = scan_data_layer(data, dicts)
+    data_slot_problems, allowed_data_slot = scan_data_layer(data, dicts, ctor_index)
     # R2 覆盖两层：coordinator/model 里的 getString('X') 同样必须双词典命中。
     key_problems, checked = scan_keys(files + data, dicts)
+    # R6：R4/R5b 的「传 key 不传串」豁免本身就是洞，收进去的 key 必须成在。
+    carrier_problems, carrier_checked = scan_key_carriers(files + data, dicts, ctor_index)
     parity_problems = scan_parity(dicts)
 
     allowed = allowed_literal + allowed_slot + allowed_data_literal + allowed_data_slot
     failed = bool(literal_problems or slot_problems or data_literal_problems
-                  or data_slot_problems or key_problems or parity_problems)
+                  or data_slot_problems or key_problems or carrier_problems or parity_problems)
     if not args.quiet or failed:
         for msg in literal_problems:
             print(f'[i18n] LITERAL {msg}')
@@ -424,11 +666,14 @@ def main() -> int:
             print(f'[i18n] DATA-ENGLISH {msg}')
         for msg in key_problems:
             print(f'[i18n] MISSING-KEY {msg}')
+        for msg in carrier_problems:
+            print(f'[i18n] KEY-CARRIER {msg}')
         for msg in parity_problems:
             print(f'[i18n] PARITY {msg}')
         if not args.quiet:
             print(f'[i18n] 视图层文件 {len(files)} 个 / 数据层文件 {len(data)} 个，'
                   f'字面量 key 调用点覆盖 {len(checked)} 个，'
+                  f'key 载体字面量覆盖 {len(carrier_checked)} 个，'
                   f'词典 EN {len(dicts["EN"])} / ZH {len(dicts["ZH"])} 条，'
                   f'就地豁免 {len(allowed)} 处'
                   f'（写死中文 {len(allowed_literal) + len(allowed_data_literal)} / '
@@ -436,7 +681,8 @@ def main() -> int:
     if failed:
         print(f'[i18n] FAILED: 写死中文 {len(literal_problems) + len(data_literal_problems)} / '
               f'写死英文 {len(slot_problems) + len(data_slot_problems)} / '
-              f'缺词条 {len(key_problems)} / 词典不对称 {len(parity_problems)}', file=sys.stderr)
+              f'缺词条 {len(key_problems)} / key 载体缺项 {len(carrier_problems)} / '
+              f'词典不对称 {len(parity_problems)}', file=sys.stderr)
         return 1
     print('[i18n] OK')
     return 0

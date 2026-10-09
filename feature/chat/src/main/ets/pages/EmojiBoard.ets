@@ -41,18 +41,6 @@ function toSandboxUri(path: string | null): string {
 }
 
 
-export interface StickerPreviewItem {
-  readonly id: string;
-  readonly emoji: string;
-  readonly title: string;
-}
-
-export interface GifPreviewItem {
-  readonly id: string;
-  readonly title: string;
-  readonly tag: string;
-}
-
 /** EMOJI-101：静态内置表情分类（对标 Telegram X EmojiSection 体系） */
 const STATIC_EMOJI_CATEGORIES: string[][] = [
   // 0: Smileys & Emotions
@@ -138,30 +126,6 @@ const STATIC_EMOJI_CATEGORIES: string[][] = [
 
 /** EMOJI-101：8 大分类图标（索引 0 为 Recent 最近使用） */
 const CATEGORY_ICONS: string[] = ['🕒', '😀', '🖐', '🐶', '🍔', '🚗', '💡', '🏁'];
-
-const SAMPLE_STICKERS: StickerPreviewItem[] = [
-  { id: '1', emoji: '😎', title: 'Cool' },
-  { id: '2', emoji: '🎉', title: 'Party' },
-  { id: '3', emoji: '🚀', title: 'Rocket' },
-  { id: '4', emoji: '🔥', title: 'Fire' },
-  { id: '5', emoji: '👍', title: 'Like' },
-  { id: '6', emoji: '❤️', title: 'Love' },
-  { id: '7', emoji: '☕', title: 'Coffee' },
-  { id: '8', emoji: '🌟', title: 'Star' },
-  { id: '9', emoji: '🐱', title: 'Cat' },
-  { id: '10', emoji: '🐶', title: 'Dog' },
-  { id: '11', emoji: '🥳', title: 'Celebrate' },
-  { id: '12', emoji: '💪', title: 'Strong' }
-];
-
-const SAMPLE_GIFS: GifPreviewItem[] = [
-  { id: 'g1', title: 'Thumbs Up', tag: '👍' },
-  { id: 'g2', title: 'Cheers!', tag: '🥂' },
-  { id: 'g3', title: 'Mind Blown', tag: '🤯' },
-  { id: 'g4', title: 'Dancing', tag: '💃' },
-  { id: 'g5', title: 'LOL', tag: '🤣' },
-  { id: 'g6', title: 'Applause', tag: '👏' }
-];
 
 @Component
 export struct EmojiBoard {
@@ -526,7 +490,7 @@ export struct EmojiBoard {
           Column() {
             // Recent 顶栏（展示标题与清空入口）
             Row() {
-              Text('Recent')
+              Text(this.t('Recent'))
                 .fontSize(this.T.typography.caption.fontSize)
                 .fontWeight(FontWeight.Medium)
                 .fontColor(this.T.colors.textSecondary)
@@ -587,11 +551,11 @@ export struct EmojiBoard {
               .fontSize(38)
               .opacity(0.4)
               .margin({ bottom: this.T.spacing.sm })
-            Text('No Recent Emojis')
+            Text(this.t('No Recent Emojis'))
               .fontSize(this.T.typography.body.fontSize)
               .fontWeight(FontWeight.Medium)
               .fontColor(this.T.colors.textPrimary)
-            Text('Emojis you send will appear here')
+            Text(this.t('Emojis you send will appear here'))
               .fontSize(this.T.typography.caption.fontSize)
               .fontColor(this.T.colors.textSecondary)
               .margin({ top: this.T.spacing.xs })
@@ -1026,7 +990,7 @@ export struct EmojiBoard {
           .fontSize(14)
           .margin({ left: 10, right: 6 })
 
-        TextInput({ placeholder: 'Search GIFs', text: this.gifSearchQuery })
+        TextInput({ placeholder: this.t('Search GIFs'), text: this.gifSearchQuery })
           .layoutWeight(1)
           .height('100%')
           .fontSize(this.T.typography.caption.fontSize)
@@ -1084,17 +1048,17 @@ export struct EmojiBoard {
       // 3. 标题与清空栏
       Row() {
         if (this.gifSearchQuery.trim().length > 0) {
-          Text(`Search results (${this.getActiveGifs().length})`)
+          Text(this.t('Search results ({0})', this.getActiveGifs().length))
             .fontSize(this.T.typography.caption.fontSize)
             .fontWeight(FontWeight.Medium)
             .fontColor(this.T.colors.textSecondary)
         } else if (this.currentGifCategoryIndex === 0) {
-          Text('Recent GIFs')
+          Text(this.t('Recent GIFs'))
             .fontSize(this.T.typography.caption.fontSize)
             .fontWeight(FontWeight.Medium)
             .fontColor(this.T.colors.textSecondary)
         } else {
-          Text(`${GIF_CATEGORIES[this.currentGifCategoryIndex]} · ${this.getActiveGifs().length} GIFs`)
+          Text(`${GIF_CATEGORIES[this.currentGifCategoryIndex]} · ${this.t('{0} GIFs', this.getActiveGifs().length)}`)
             .fontSize(this.T.typography.caption.fontSize)
             .fontWeight(FontWeight.Medium)
             .fontColor(this.T.colors.textSecondary)
@@ -1125,12 +1089,12 @@ export struct EmojiBoard {
           Text('🕒')
             .fontSize(44)
             .margin({ bottom: this.T.spacing.sm })
-          Text('No Recent GIFs')
+          Text(this.t('No Recent GIFs'))
             .fontSize(this.T.typography.body.fontSize)
             .fontWeight(FontWeight.Bold)
             .fontColor(this.T.colors.textPrimary)
             .margin({ bottom: 4 })
-          Text('GIFs you send will appear here')
+          Text(this.t('GIFs you send will appear here'))
             .fontSize(this.T.typography.caption.fontSize)
             .fontColor(this.T.colors.textSecondary)
         }

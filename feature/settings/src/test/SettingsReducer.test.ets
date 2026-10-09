@@ -514,7 +514,7 @@ export default function settingsReducerTest(): void {
       expect(result.state.channelNotificationsEnabled).assertFalse();
       expect(result.state.isUpdatingNotifications).assertFalse();
       expect(result.effects.length).assertEqual(1);
-      expect((result.effects[0] as ShowToastEffect).message).assertEqual('Notifications disabled');
+      expect((result.effects[0] as ShowToastEffect).messageKey).assertEqual('Notifications disabled');
     });
 
     it('notificationSettingsUpdateFailed_keepsValueAndUnlocksToggle', 0, () => {
@@ -585,7 +585,9 @@ export default function settingsReducerTest(): void {
       expect(result.state.themeMode).assertEqual('dark');
       expect(result.effects.length).assertEqual(1);
       expect(result.effects[0].kind).assertEqual('showToast');
-      expect((result.effects[0] as ShowToastEffect).message).assertEqual('Theme mode set to dark');
+      const toast: ShowToastEffect = result.effects[0] as ShowToastEffect;
+      expect(toast.messageKey).assertEqual('Theme mode set to {0}');
+      expect(String(toast.args[0])).assertEqual('dark');
       expect(ThemeManager.getInstance().getPreference()).assertEqual('dark');
       expect(ThemeManager.getInstance().getEffectiveTheme()).assertEqual(DarkTheme);
     });
@@ -600,7 +602,9 @@ export default function settingsReducerTest(): void {
       expect(result.state.themeMode).assertEqual('light');
       expect(ThemeManager.getInstance().getPreference()).assertEqual('light');
       expect(ThemeManager.getInstance().getEffectiveTheme()).assertEqual(LightTheme);
-      expect((result.effects[0] as ShowToastEffect).message).assertEqual('Theme mode set to light');
+      const toast: ShowToastEffect = result.effects[0] as ShowToastEffect;
+      expect(toast.messageKey).assertEqual('Theme mode set to {0}');
+      expect(String(toast.args[0])).assertEqual('light');
     });
 
     it('changeThemeMode_toSystem_syncsThemeManagerAndEmitsToast', 0, () => {
@@ -612,7 +616,9 @@ export default function settingsReducerTest(): void {
 
       expect(result.state.themeMode).assertEqual('system');
       expect(ThemeManager.getInstance().getPreference()).assertEqual('system');
-      expect((result.effects[0] as ShowToastEffect).message).assertEqual('Theme mode set to system');
+      const toast: ShowToastEffect = result.effects[0] as ShowToastEffect;
+      expect(toast.messageKey).assertEqual('Theme mode set to {0}');
+      expect(String(toast.args[0])).assertEqual('system');
     });
 
     it('changeThemeMode_sameMode_isNoOp', 0, () => {
@@ -783,7 +789,7 @@ export default function settingsReducerTest(): void {
 
       expect(result.state.storageCacheSize).assertEqual('48.2 MB · 120 files');
       expect(result.effects.length).assertEqual(1);
-      expect((result.effects[0] as ShowToastEffect).message).assertEqual('Cache cleared');
+      expect((result.effects[0] as ShowToastEffect).messageKey).assertEqual('Cache cleared');
     });
 
     it('clearCacheRequested_stillEmitsClearEffect', 0, () => {

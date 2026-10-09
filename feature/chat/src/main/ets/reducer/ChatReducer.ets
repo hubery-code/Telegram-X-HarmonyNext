@@ -39,6 +39,7 @@
  */
 
 import { Reducer, ReducerEnv, ReducerResult, reduced } from '@tgx/feature-template';
+import { Lang } from '@tgx/core-common';
 import {
   ChatUiState,
   ComposerEditMode,
@@ -216,7 +217,9 @@ export function buildViewerItems(messages: readonly MessageItem[]): MediaViewerI
   const list: MediaViewerItem[] = [];
   for (let i = 0; i < messages.length; i++) {
     const item: MessageItem = messages[i];
-    const sender: string = item.isOutgoing ? 'You' : (item.senderName.length > 0 ? item.senderName : '');
+    const sender: string = item.isOutgoing
+      ? Lang.getInstance().getString('You')
+      : (item.senderName.length > 0 ? item.senderName : '');
     if (item.albumItems.length > 0) {
       for (let j = 0; j < item.albumItems.length; j++) {
         const media: MediaAttachment = item.albumItems[j];
@@ -287,7 +290,7 @@ function cancelMode(state: ChatUiState): ChatUiState {
 /** 回复预览条标题：己方消息 "You"，否则 senderName，缺省退化为会话名。 */
 function replyAuthorLabel(state: ChatUiState, item: MessageItem): string {
   if (item.isOutgoing) {
-    return 'You';
+    return Lang.getInstance().getString('You');
   }
   if (item.senderName.length > 0) {
     return item.senderName;
@@ -374,7 +377,7 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
       let composerMode: ComposerMode | null = state.composerMode;
       if (composerMode !== null && composerMode.kind === 'reply') {
         const replyMode: ComposerReplyMode = composerMode as ComposerReplyMode;
-        if (replyMode.previewTitle === 'Reply' || replyMode.previewText.length === 0) {
+        if (replyMode.previewTitle.length === 0 || replyMode.previewText.length === 0) {
           for (let i = 0; i < loadedIntent.messages.length; i++) {
             const msg: MessageItem = loadedIntent.messages[i];
             if (msg.messageId === replyMode.targetMessageId) {
@@ -438,7 +441,10 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
       let mode: ComposerMode | null = state.composerMode;
       if (draftIntent.replyToMessageId > 0 && mode === null) {
         const item: MessageItem | null = findMessage(state, draftIntent.replyToMessageId);
-        const author: string = item !== null ? replyAuthorLabel(state, item) : 'Reply';
+        // I18N-LITERAL-104：这里此前写死英文 'Reply' 当占位，而这个值会被
+        // ChatPage 当实参塞进 `Reply to {0}` —— 中文界面因此出过「回复给 Reply」。
+        // 占位态不需要文案，留空串由视图层自己渲染 this.t('Reply')。
+        const author: string = item !== null ? replyAuthorLabel(state, item) : '';
         const snippet: string = item !== null ? messageSnippet(item.text) : '';
         mode = new ComposerReplyMode(draftIntent.replyToMessageId, author, snippet);
       }

@@ -157,19 +157,19 @@ export struct AuthRootPage {
         })
       } else if (this.uiState.step === 'failed') {
         Column() {
-          Text('Authorization Failed')
+          Text(this.t('Authorization Failed'))
             .fontSize(this.T.typography.title.fontSize)
             .fontWeight(this.T.typography.largeTitle.fontWeight)
             .fontColor(this.T.colors.destructive)
             .margin({ top: 48, bottom: this.T.spacing.md })
 
-          Text(this.uiState.errorMessage !== null ? this.uiState.errorMessage : 'An unexpected error occurred.')
+          Text(this.uiState.errorMessage !== null ? this.uiState.errorMessage : this.t('An unexpected error occurred.'))
             .fontSize(this.T.typography.footnote.fontSize)
             .fontColor(this.T.colors.textSecondary)
             .textAlign(TextAlign.Center)
             .margin({ bottom: this.T.spacing.xxl, left: this.T.spacing.xxl, right: this.T.spacing.xxl })
 
-          Button('Try Again')
+          Button(this.t('Try Again'))
             .width('80%')
             .height(44)
             .backgroundColor(this.T.colors.accent)

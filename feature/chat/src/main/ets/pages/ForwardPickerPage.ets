@@ -90,7 +90,7 @@ export struct ForwardPickerPage {
           this.onCancel();
         })
 
-        Text('Forward to…')
+        Text(this.t('Forward to…'))
           .fontSize(this.T.typography.title.fontSize)
           .fontWeight(this.T.typography.title.fontWeight)
           .fontColor(this.T.colors.textPrimary)
@@ -149,7 +149,7 @@ export struct ForwardPickerPage {
         .alignItems(VerticalAlign.Center)
         .margin({ right: this.T.spacing.sm })
 
-        Text('Send as copy')
+        Text(this.t('Send as copy'))
           .fontSize(this.T.typography.body.fontSize)
           .fontColor(this.T.colors.textPrimary)
           .layoutWeight(1)
@@ -172,7 +172,7 @@ export struct ForwardPickerPage {
       // 目标会话列表
       if (this.filteredTargets().length === 0) {
         Column() {
-          Text('No chats found')
+          Text(this.t('No chats found'))
             .fontSize(this.T.typography.body.fontSize)
             .fontColor(this.T.colors.textSecondary)
         }

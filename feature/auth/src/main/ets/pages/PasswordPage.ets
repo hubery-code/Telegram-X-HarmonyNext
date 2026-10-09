@@ -36,13 +36,13 @@ export struct PasswordPage {
 
   build() {
     Column() {
-      Text('Two-Step Verification')
+      Text(this.t('Two-Step Verification'))
         .fontSize(this.T.typography.largeTitle.fontSize)
         .fontWeight(this.T.typography.largeTitle.fontWeight)
         .fontColor(this.T.colors.textPrimary)
         .margin({ top: this.T.spacing.huge, bottom: this.T.spacing.sm })
 
-      Text('Your account is protected with an additional password.')
+      Text(this.t('Your account is protected with an additional password.'))
         .fontSize(this.T.typography.subheadline.fontSize)
         .fontColor(this.T.colors.textSecondary)
         .textAlign(TextAlign.Center)
@@ -51,7 +51,7 @@ export struct PasswordPage {
       Row() {
         TextInput({
           text: this.password,
-          placeholder: 'Enter your password'
+          placeholder: this.t('Enter your password')
         })
           .type(this.isPasswordVisible ? InputType.Normal : InputType.Password)
           .fontSize(this.T.typography.body.fontSize)
@@ -81,7 +81,7 @@ export struct PasswordPage {
       })
 
       if (this.passwordHint.length > 0) {
-        Text(`Hint: ${this.passwordHint}`)
+        Text(this.t('Hint: {0}', this.passwordHint))
           .fontSize(this.T.typography.footnote.fontSize)
           .fontColor(this.T.colors.textSecondary)
           .margin({ top: this.T.spacing.sm, left: this.T.spacing.xxl, right: this.T.spacing.xxl })

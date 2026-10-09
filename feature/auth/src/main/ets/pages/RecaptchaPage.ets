@@ -2,6 +2,7 @@ import { webview } from '@kit.ArkWeb';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { LightTheme, Theme } from '@tgx/core-design-system';
+import { Lang } from '@tgx/core-common';
 
 const DOMAIN: number = 0x0000;
 const TAG: string = 'RecaptchaPage';
@@ -60,6 +61,10 @@ export struct RecaptchaPage {
       + '</body></html>';
   }
 
+  private t(key: string, ...args: (string | number)[]): string {
+    return Lang.getInstance().getString(key, ...args);
+  }
+
   build() {
     Column() {
       Web({ src: '', controller: this.controller })
@@ -89,7 +94,7 @@ export struct RecaptchaPage {
         .width('100%')
         .layoutWeight(1)
 
-      Button('Log in with QR code instead')
+      Button(this.t('Log in with QR code instead'))
         .width('90%')
         .height(44)
         .fontColor(this.T.colors.accent)

@@ -1101,7 +1101,7 @@ export struct ChatPage {
           this.onDispatch(new ExitMessageSelection());
         })
 
-        Text(`${this.uiState.selectedMessageIds.length} selected`)
+        Text(this.t('{0} selected', this.uiState.selectedMessageIds.length))
           .fontSize(this.T.typography.title.fontSize)
           .fontWeight(this.T.typography.title.fontWeight)
           .fontColor(this.T.colors.textPrimary)
@@ -1739,7 +1739,7 @@ export struct ChatPage {
   MessageStatusBadge(item: MessageItem, isOverlay: boolean = false) {
     Row() {
       if (item.isEdited) {
-        Text('edited')
+        Text(this.t('edited'))
           .fontSize(isOverlay ? 10 : this.T.typography.caption.fontSize)
           .fontColor(isOverlay ? Color.White : (item.sendState === 'failed' ? this.T.colors.destructive : this.T.colors.textSecondary))
           .margin({ right: 3 })
@@ -2126,7 +2126,7 @@ export struct ChatPage {
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
 
-        Text(isFailed ? 'Failed · Tap to retry' : this.documentSubtitle(media))
+        Text(isFailed ? this.t('Failed · Tap to retry') : this.documentSubtitle(media))
           .fontSize(this.chatText(this.T.typography.caption.fontSize, -2))
           .fontColor(isFailed ? this.T.colors.destructive : this.T.colors.textSecondary)
           .margin({ top: this.T.spacing.xs })
@@ -3236,6 +3236,19 @@ export struct ChatPage {
     })
   }
 
+  /**
+   * 回复/编辑预览条标题。I18N-LITERAL-104：author 还没解析出来时 reducer 留的是
+   * 空串（此前是写死的 `'Reply'`，被塞进 `Reply to {0}` 后中文界面成「回复给 Reply」），
+   * 空串这一支在这里单独出 `Reply`。
+   */
+  private composerPreviewTitle(mode: ComposerMode): string {
+    if (mode.kind === 'edit') {
+      return this.t('Edit Message');
+    }
+    const title: string = (mode as ComposerReplyMode).previewTitle;
+    return title.length === 0 ? this.t('Reply') : this.t('Reply to {0}', title);
+  }
+
   /** 回复/编辑预览条（CHAT-004）：accent 竖条 + 标题/摘要 + 取消 X。 */
   @Builder
   ComposerModeBar(mode: ComposerMode) {
@@ -3247,7 +3260,7 @@ export struct ChatPage {
         .borderRadius(this.T.radius.full)
 
       Column() {
-        Text(mode.kind === 'edit' ? 'Edit Message' : `Reply to ${(mode as ComposerReplyMode).previewTitle}`)
+        Text(this.composerPreviewTitle(mode))
           .fontSize(this.T.typography.subheadline.fontSize)
           .fontWeight(this.T.typography.headline.fontWeight)
           .fontColor(this.T.colors.accent)
@@ -3349,7 +3362,7 @@ export struct ChatPage {
               .height(22)
               .fillColor(this.T.colors.accent)
               .margin({ right: this.T.spacing.md })
-            Text('Resend')
+            Text(this.t('Resend'))
               .fontSize(this.T.typography.body.fontSize)
               .fontWeight(FontWeight.Medium)
               .fontColor(this.T.colors.accent)
@@ -3427,7 +3440,7 @@ export struct ChatPage {
               .height(22)
               .fillColor(this.T.colors.textPrimary)
               .margin({ right: this.T.spacing.md })
-            Text('Copy Link')
+            Text(this.t('Copy Link'))
               .fontSize(this.T.typography.body.fontSize)
               .fontColor(this.T.colors.textPrimary)
               .layoutWeight(1)
@@ -3644,7 +3657,7 @@ export struct ChatPage {
 
         // 标题行
         Row() {
-          Text('Attach')
+          Text(this.t('Attach'))
             .fontSize(this.T.typography.title.fontSize)
             .fontWeight(this.T.typography.title.fontWeight)
             .fontColor(this.T.colors.textPrimary)
@@ -3934,7 +3947,7 @@ export struct ChatPage {
       // 否则 Create 会被压缩/顶到键盘背后无法点击。
       Column() {
         Row() {
-          Text('Create Poll')
+          Text(this.t('Create Poll'))
             .fontSize(this.T.typography.title.fontSize)
             .fontWeight(this.T.typography.title.fontWeight)
             .fontColor(this.T.colors.textPrimary)
@@ -3961,7 +3974,7 @@ export struct ChatPage {
             Column() {
               TextInput({
                 text: this.pollDraft.question,
-                placeholder: 'Question'
+                placeholder: this.t('Question')
               })
                 .fontSize(this.T.typography.body.fontSize)
                 .fontColor(this.T.colors.textPrimary)
@@ -3993,7 +4006,7 @@ export struct ChatPage {
                     .width(20)
                   TextInput({
                     text: optionText,
-                    placeholder: `Option ${index + 1}`
+                    placeholder: this.t('Option {0}', index + 1)
                   })
                     .fontSize(this.T.typography.body.fontSize)
                     .fontColor(this.T.colors.textPrimary)
@@ -4029,7 +4042,7 @@ export struct ChatPage {
 
               if (this.pollDraft.options.length < POLL_MAX_OPTIONS) {
                 Row() {
-                  Text('＋ Add Option')
+                  Text(this.t('＋ Add Option'))
                     .fontSize(this.T.typography.subheadline.fontSize)
                     .fontColor(this.T.colors.accent)
                 }
@@ -4049,7 +4062,7 @@ export struct ChatPage {
 
             // 设置行：匿名 / 多选（点击整行切换；Toggle 仅呈现，不吃事件避免双触发）
             Row() {
-              Text('Anonymous Poll')
+              Text(this.t('Anonymous Poll'))
                 .fontSize(this.T.typography.body.fontSize)
                 .fontColor(this.T.colors.textPrimary)
                 .layoutWeight(1)
@@ -4068,7 +4081,7 @@ export struct ChatPage {
             })
 
             Row() {
-              Text('Multiple Answers')
+              Text(this.t('Multiple Answers'))
                 .fontSize(this.T.typography.body.fontSize)
                 .fontColor(this.T.colors.textPrimary)
                 .layoutWeight(1)
@@ -4088,7 +4101,7 @@ export struct ChatPage {
 
             // 提交
             Column() {
-              Text(this.pollDraft.isValid() ? 'Create' : 'Add a question and 2 options')
+              Text(this.pollDraft.isValid() ? this.t('Create') : this.t('Add a question and 2 options'))
                 .fontSize(this.T.typography.subheadline.fontSize)
                 .fontWeight(FontWeight.Medium)
                 .fontColor(this.pollDraft.isValid() ? this.T.colors.textOnAccent : this.T.colors.textSecondary)
@@ -4363,7 +4376,7 @@ export struct ChatPage {
                         .width(26)
                         .height(26)
                         .fillColor(Color.White)
-                      Text(item.media.kind === 'video' ? 'Download Video' : 'Download GIF')
+                      Text(item.media.kind === 'video' ? this.t('Download Video') : this.t('Download GIF'))
                         .fontSize(12)
                         .fontColor(Color.White)
                         .margin({ top: 6 })
@@ -5163,7 +5176,7 @@ export struct ChatPage {
         .color(this.T.colors.accent)
         .margin({ bottom: this.T.spacing.lg })
 
-      Text('Loading messages...')
+      Text(this.t('Loading messages...'))
         .fontSize(this.T.typography.body.fontSize)
         .fontColor(this.T.colors.textSecondary)
     }
@@ -5176,7 +5189,7 @@ export struct ChatPage {
   @Builder
   EmptyView() {
     Column() {
-      Text('No messages yet')
+      Text(this.t('No messages yet'))
         .fontSize(this.T.typography.body.fontSize)
         .fontColor(this.T.colors.textSecondary)
     }
@@ -5189,7 +5202,7 @@ export struct ChatPage {
   @Builder
   ErrorView(errorMessage: string) {
     Column() {
-      Text('Failed to load messages')
+      Text(this.t('Failed to load messages'))
         .fontSize(this.T.typography.title.fontSize)
         .fontWeight(this.T.typography.title.fontWeight)
         .fontColor(this.T.colors.destructive)
@@ -5205,7 +5218,7 @@ export struct ChatPage {
           right: this.T.spacing.xxl
         })
 
-      Button('Try Again')
+      Button(this.t('Try Again'))
         .width('60%')
         .height(44)
         .backgroundColor(this.T.colors.accent)
@@ -5243,7 +5256,7 @@ export struct ChatPage {
           this.onDispatch(new CloseChatSearch());
         })
 
-        TextInput({ placeholder: 'Search in chat...' })
+        TextInput({ placeholder: this.t('Search in chat...') })
           .width('100%')
           .height(COMPOSER_INPUT_HEIGHT)
           .fontSize(this.T.typography.body.fontSize)
@@ -5310,7 +5323,7 @@ export struct ChatPage {
             ListItem() {
               Column() {
                 Row() {
-                  Text(result.textSnippet.length > 0 ? result.textSnippet : '[Message]')
+                  Text(result.textSnippet.length > 0 ? result.textSnippet : this.t('[Message]'))
                     .fontSize(this.T.typography.body.fontSize)
                     .fontColor(this.T.colors.textPrimary)
                     .maxLines(2)
@@ -5326,7 +5339,7 @@ export struct ChatPage {
                 .alignItems(VerticalAlign.Center)
 
                 if (!result.jumpable) {
-                  Text('Tap to load')
+                  Text(this.t('Tap to load'))
                     .fontSize(this.T.typography.footnote.fontSize)
                     .fontColor(this.T.colors.accent)
                 }

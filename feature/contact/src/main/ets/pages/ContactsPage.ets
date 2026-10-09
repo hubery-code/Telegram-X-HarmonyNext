@@ -482,7 +482,7 @@ export struct ContactsPage {
         .alignItems(HorizontalAlign.Center)
       } else if (this.uiState.items.length === 0) {
         Column() {
-          Text('No contacts')
+          Text(this.t('No contacts'))
             .fontSize(this.T.typography.body.fontSize)
             .fontColor(this.T.colors.textSecondary)
         }

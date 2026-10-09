@@ -581,7 +581,9 @@ export class SettingsCoordinator {
 
       case 'showToast': {
         const toastEffect: ShowToastEffect = effect as ShowToastEffect;
-        this.logger.info(TAG, 'toast', toastEffect.message);
+        // I18N-LITERAL-104：effect 只带 Lang key 与槽位实参，成品串在这个出口现算。
+        this.logger.info(TAG, 'toast',
+          Lang.getInstance().getString(toastEffect.messageKey, ...toastEffect.args));
         break;
       }
 

@@ -166,7 +166,7 @@ export struct SearchPage {
             this.onBack();
           })
 
-        Search({ value: this.uiState.query, placeholder: 'Search chats, messages...' })
+        Search({ value: this.uiState.query, placeholder: this.t('Search chats, messages...') })
           .searchButton(this.t('Search'))
           .layoutWeight(1)
           .height(40)
@@ -241,7 +241,7 @@ export struct SearchPage {
         .width(36)
         .height(36)
         .color(this.T.colors.accent)
-      Text('Searching...')
+      Text(this.t('Searching...'))
         .fontSize(this.T.typography.subheadline.fontSize)
         .fontColor(this.T.colors.textSecondary)
         .margin({ top: this.T.spacing.sm })
@@ -255,7 +255,7 @@ export struct SearchPage {
   @Builder
   private ErrorView(message: string) {
     Column() {
-      Text('Search Error')
+      Text(this.t('Search Error'))
         .fontSize(this.T.typography.headline.fontSize)
         .fontWeight(FontWeight.Bold)
         .fontColor(this.T.colors.destructive)
@@ -293,11 +293,11 @@ export struct SearchPage {
         .height(48)
         .fillColor(this.T.colors.textTertiary)
         .margin({ bottom: this.T.spacing.md })
-      Text('No Results')
+      Text(this.t('No Results'))
         .fontSize(this.T.typography.headline.fontSize)
         .fontWeight(FontWeight.Bold)
         .fontColor(this.T.colors.textPrimary)
-      Text(`No results found for "${this.uiState.query}"`)
+      Text(this.t('No results found for "{0}"', this.uiState.query))
         .fontSize(this.T.typography.subheadline.fontSize)
         .fontColor(this.T.colors.textSecondary)
         .margin({ top: this.T.spacing.xs })
@@ -314,14 +314,14 @@ export struct SearchPage {
     Column() {
       if (this.uiState.recentSearches.length > 0) {
         Row() {
-          Text('Recent Searches')
+          Text(this.t('Recent Searches'))
             .fontSize(this.T.typography.subheadline.fontSize)
             .fontWeight(FontWeight.Bold)
             .fontColor(this.T.colors.textPrimary)
 
           Blank()
 
-          Text('Clear All')
+          Text(this.t('Clear All'))
             .fontSize(this.T.typography.caption.fontSize)
             .fontColor(this.T.colors.accent)
             .onClick(() => {
@@ -368,11 +368,11 @@ export struct SearchPage {
             .height(56)
             .fillColor(this.T.colors.textTertiary)
             .margin({ bottom: this.T.spacing.md })
-          Text('Search Telegram')
+          Text(this.t('Search Telegram'))
             .fontSize(this.T.typography.headline.fontSize)
             .fontWeight(FontWeight.Bold)
             .fontColor(this.T.colors.textSecondary)
-          Text('Search for chats, channels, and messages')
+          Text(this.t('Search for chats, channels, and messages'))
             .fontSize(this.T.typography.subheadline.fontSize)
             .fontColor(this.T.colors.textTertiary)
             .margin({ top: this.T.spacing.xs })
@@ -397,7 +397,7 @@ export struct SearchPage {
         this.uiState.chatResults.length > 0
       ) {
         ListItem() {
-          Text(`CHATS (${this.uiState.chatResults.length})`)
+          Text(this.t('CHATS ({0})', this.uiState.chatResults.length))
             .fontSize(this.T.typography.caption.fontSize)
             .fontWeight(FontWeight.Bold)
             .fontColor(this.T.colors.textSecondary)
@@ -425,7 +425,7 @@ export struct SearchPage {
         this.uiState.messageResults.length > 0
       ) {
         ListItem() {
-          Text(`MESSAGES (${this.uiState.messageResults.length})`)
+          Text(this.t('MESSAGES ({0})', this.uiState.messageResults.length))
             .fontSize(this.T.typography.caption.fontSize)
             .fontWeight(FontWeight.Bold)
             .fontColor(this.T.colors.textSecondary)

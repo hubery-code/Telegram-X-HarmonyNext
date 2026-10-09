@@ -45,19 +45,19 @@ export struct CodePage {
 
   build() {
     Column() {
-      Text('Enter Code')
+      Text(this.t('Enter Code'))
         .fontSize(this.T.typography.largeTitle.fontSize)
         .fontWeight(this.T.typography.largeTitle.fontWeight)
         .fontColor(this.T.colors.textPrimary)
         .margin({ top: this.T.spacing.huge, bottom: this.T.spacing.sm })
 
-      Text(`We sent an SMS with the code to ${this.formattedPhone}`)
+      Text(this.t('We sent an SMS with the code to {0}', this.formattedPhone))
         .fontSize(this.T.typography.subheadline.fontSize)
         .fontColor(this.T.colors.textSecondary)
         .textAlign(TextAlign.Center)
         .margin({ bottom: this.T.spacing.sm, left: this.T.spacing.lg, right: this.T.spacing.lg })
 
-      Text('Wrong number?')
+      Text(this.t('Wrong number?'))
         .fontSize(this.T.typography.subheadline.fontSize)
         .fontColor(this.T.colors.accent)
         .fontWeight(this.T.typography.headline.fontWeight)
@@ -68,7 +68,7 @@ export struct CodePage {
 
       TextInput({
         text: this.code,
-        placeholder: `Enter ${this.codeLength}-digit code`
+        placeholder: this.t('Enter {0}-digit code', this.codeLength)
       })
         .type(InputType.Number)
         .maxLength(this.codeLength)
@@ -96,7 +96,7 @@ export struct CodePage {
       }
 
       if (this.canResendCode) {
-        Text('Resend code')
+        Text(this.t('Resend code'))
           .fontSize(this.T.typography.subheadline.fontSize)
           .fontColor(this.T.colors.accent)
           .fontWeight(this.T.typography.headline.fontWeight)
@@ -105,7 +105,7 @@ export struct CodePage {
             this.onResend();
           })
       } else {
-        Text(`Resend code in ${this.formatCountdown(this.resendTimeoutSeconds)}`)
+        Text(this.t('Resend code in {0}', this.formatCountdown(this.resendTimeoutSeconds)))
           .fontSize(this.T.typography.subheadline.fontSize)
           .fontColor(this.T.colors.textTertiary)
           .margin({ top: this.T.spacing.xxl })

@@ -354,6 +354,125 @@ export default function langTest(): void {
       expect(Lang.getInstance().t('{0} Sticker', '😀')).assertEqual('😀 贴纸');
     });
 
+    it('viewLayerCopy_i18nLiteral104_hasBothLanguages', 0, () => {
+      // I18N-LITERAL-104 建词条并接线的这批：第五十三轮设备取证里它们在屏幕上就是英文原文，
+      // 因为词典压根没有这一项（旧 R4 只认「词典已知的英文」，对「压根没建词条」完全放行）。
+      // 这一条把 92 个 key 双向钉住：中文必须是汉字、英文必须原样出这句。
+      // 带槽位的 key 在这里只查译文语言，槽位替换由下一条用例逐条钉。
+      const convertedKeys: string[] = [
+        'Authorization Failed', 'An unexpected error occurred.',
+        'Try Again', 'Enter Code',
+        'We sent an SMS with the code to {0}', 'Wrong number?',
+        'Enter {0}-digit code', 'Resend code',
+        'Resend code in {0}', 'Two-Step Verification',
+        'Your account is protected with an additional password.', 'Enter your password',
+        'Hint: {0}', 'Your Phone',
+        'Please confirm your country code and enter your phone number.', 'Phone number',
+        'Log in with QR code',
+        'Open Telegram on another device, then go to Settings > Devices > Link Desktop Device and scan this code.',
+        'Preparing a secure QR code...', 'The code refreshes automatically. Keep this screen open while scanning.',
+        'Log in with QR code instead', 'Your Name',
+        'Enter your name to complete registration.', 'First name (required)',
+        'Last name (optional)', 'Registering...',
+        'Complete', 'You',
+        'edited', '{0} selected',
+        'Failed · Tap to retry', 'Edit Message',
+        'Reply to {0}', 'Resend',
+        'Copy Link', 'Attach',
+        'Create Poll', 'Question',
+        'Option {0}', '＋ Add Option',
+        'Anonymous Poll', 'Multiple Answers',
+        'Create', 'Add a question and 2 options',
+        'Download Video', 'Download GIF',
+        'Loading messages...', 'No messages yet',
+        'Failed to load messages', 'Search in chat...',
+        '[Message]', 'Tap to load',
+        'Recent', 'No Recent Emojis',
+        'Emojis you send will appear here', 'Search GIFs',
+        'Search results ({0})', 'Recent GIFs',
+        '{0} GIFs', 'No Recent GIFs',
+        'GIFs you send will appear here', 'Forward to…',
+        'Send as copy', 'No chats found',
+        'Archived Chats', '{0} chats',
+        'Mark as read', 'Mark as unread',
+        'Unarchive', 'Archive',
+        'Draft: ', 'Loading chats...',
+        'Failed to load chats', 'Search chats, messages...',
+        'Searching...', 'Search Error',
+        'No Results', 'No results found for "{0}"',
+        'Recent Searches', 'Clear All',
+        'Search Telegram', 'Search for chats, channels, and messages',
+        'CHATS ({0})', 'MESSAGES ({0})',
+        'Channel Info', 'Group Info',
+        'User Info', 'Description',
+        'Invite Link', 'Members ({0})',
+        'No contacts', 'Bootstrap Error'
+      ];
+
+      Lang.getInstance().reset();
+      Lang.getInstance().setLanguage('zh');
+      for (let i = 0; i < convertedKeys.length; i++) {
+        const key: string = convertedKeys[i];
+        const value: string = Lang.getInstance().t(key);
+        expect(value !== key).assertTrue();
+        expect(hasHan(value)).assertTrue();
+      }
+
+      Lang.getInstance().setLanguage('en');
+      for (let i = 0; i < convertedKeys.length; i++) {
+        expect(Lang.getInstance().t(convertedKeys[i])).assertEqual(convertedKeys[i]);
+      }
+    });
+
+    it('viewLayerCopy_i18nLiteral104_substitutesSlots', 0, () => {
+      // 这批 key 里带 `{0}` 的是 14 条，槽位写在译文中间（不是尾部拼串），
+      // 所以 {0} 换错位置在屏幕上一眼就能看出来 —— 逐条钉住两档语言。
+      Lang.getInstance().reset();
+      Lang.getInstance().setLanguage('en');
+      expect(Lang.getInstance().t('We sent an SMS with the code to {0}', '+1 425')).assertEqual('We sent an SMS with the code to +1 425');
+      expect(Lang.getInstance().t('Enter {0}-digit code', 5)).assertEqual('Enter 5-digit code');
+      expect(Lang.getInstance().t('Resend code in {0}', '5s')).assertEqual('Resend code in 5s');
+      expect(Lang.getInstance().t('Hint: {0}', 'abc')).assertEqual('Hint: abc');
+      expect(Lang.getInstance().t('{0} selected', 2)).assertEqual('2 selected');
+      expect(Lang.getInstance().t('Reply to {0}', 'Alice')).assertEqual('Reply to Alice');
+      expect(Lang.getInstance().t('Option {0}', 3)).assertEqual('Option 3');
+      expect(Lang.getInstance().t('Search results ({0})', 7)).assertEqual('Search results (7)');
+      expect(Lang.getInstance().t('{0} GIFs', 4)).assertEqual('4 GIFs');
+      expect(Lang.getInstance().t('{0} chats', 9)).assertEqual('9 chats');
+      expect(Lang.getInstance().t('No results found for "{0}"', 'qw')).assertEqual('No results found for "qw"');
+      expect(Lang.getInstance().t('CHATS ({0})', 1)).assertEqual('CHATS (1)');
+      expect(Lang.getInstance().t('MESSAGES ({0})', 1)).assertEqual('MESSAGES (1)');
+      expect(Lang.getInstance().t('Members ({0})', 33)).assertEqual('Members (33)');
+
+      Lang.getInstance().setLanguage('zh');
+      expect(Lang.getInstance().t('We sent an SMS with the code to {0}', '+1 425')).assertEqual('我们已通过短信把验证码发送到 +1 425');
+      expect(Lang.getInstance().t('Enter {0}-digit code', 5)).assertEqual('输入 5 位验证码');
+      expect(Lang.getInstance().t('Resend code in {0}', '5s')).assertEqual('5s 后可重新发送验证码');
+      expect(Lang.getInstance().t('Hint: {0}', 'abc')).assertEqual('提示：abc');
+      expect(Lang.getInstance().t('{0} selected', 2)).assertEqual('已选择 2 条');
+      expect(Lang.getInstance().t('Reply to {0}', 'Alice')).assertEqual('回复 Alice');
+      expect(Lang.getInstance().t('Option {0}', 3)).assertEqual('选项 3');
+      expect(Lang.getInstance().t('Search results ({0})', 7)).assertEqual('搜索结果（7）');
+      expect(Lang.getInstance().t('{0} GIFs', 4)).assertEqual('4 个 GIF');
+      expect(Lang.getInstance().t('{0} chats', 9)).assertEqual('9 个聊天');
+      expect(Lang.getInstance().t('No results found for "{0}"', 'qw')).assertEqual('未找到与“qw”相关的结果');
+      expect(Lang.getInstance().t('CHATS ({0})', 1)).assertEqual('聊天（1）');
+      expect(Lang.getInstance().t('MESSAGES ({0})', 1)).assertEqual('消息（1）');
+      expect(Lang.getInstance().t('Members ({0})', 33)).assertEqual('成员（33）');
+    });
+
+    it('viewLayerCopy_i18nLiteral104_outgoingAuthorIsYou', 0, () => {
+      // 104 撞到的措辞分裂就在这里：'You' 此前不在词典里，所以旧守卫一条都不报（R4 只认词典
+      // 已知的英文），于是中文界面里自己发的消息回复条出 `Reply to You`。
+      Lang.getInstance().reset();
+      Lang.getInstance().setLanguage('zh');
+      expect(Lang.getInstance().t('You')).assertEqual('你');
+      expect(Lang.getInstance().t('Reply to {0}', Lang.getInstance().t('You')))
+        .assertEqual('回复 你');
+      Lang.getInstance().setLanguage('en');
+      expect(Lang.getInstance().t('You')).assertEqual('You');
+    });
+
     it('getString_fallsBackToKeyWhenUntranslated', 0, () => {
       Lang.getInstance().reset();
       Lang.getInstance().setLanguage('zh');

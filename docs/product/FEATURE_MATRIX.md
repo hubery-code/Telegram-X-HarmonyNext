@@ -128,7 +128,7 @@
 |---|---|---|---|---|---|---|---|---|
 | FEAT-UI-001 | 深色/浅色主题 | P1 | `theme/ThemeManager.java:48`（DEFAULT_DARK_THEME = NIGHT_BLUE）, `theme/Theme.java` | —（平台侧） | 跟随系统/手动切换，关键页面（列表/聊天/设置）色值正确 | — | Accepted | 迁移组 |
 | FEAT-UI-002 | 大字体（聊天字号调节） | P1 | `unsorted/Settings.java:791`（CHAT_FONT_SIZES）, `ui/SettingsController.java:218`（getChatFontSize） | —（平台侧） | 大字号模式下气泡/列表不截断不重叠 | 字体缩放 | Accepted | SET-105 |
-| FEAT-UI-003 | 中/英文案资源 | P1 | `core/Lang.java`, `ui/SettingsLanguageController.java` | — | 关键路径文案中英齐全，无硬编码遗漏（视图层与 coordinator/model 数据层的写死文案、词典缺项由 `check_i18n_literals.py` 五条规则强制） | — | Accepted | I18N-LITERAL-101/102/103 |
+| FEAT-UI-003 | 中/英文案资源 | P1 | `core/Lang.java`, `ui/SettingsLanguageController.java` | — | 关键路径文案中英齐全，无硬编码遗漏（视图层与 coordinator/model 数据层的写死文案、词典缺项由 `check_i18n_literals.py` 六条规则强制） | — | Accepted | I18N-LITERAL-101/102/103/104 |
 | FEAT-UI-004 | 抽屉主导航（≡ 账号头 + 联系人/通话/我的收藏/设置/邀请朋友/帮助 + 夜间模式开关） | P1 | `navigation/DrawerController.java`, `MainActivity.java` | —（平台侧） | 会话列表抽屉导航，账号头展示在线状态，入口路由正确 | — | Accepted | DRAWER-101 |
 
 ---
@@ -2085,6 +2085,128 @@
 > **后续**：R5 的英文盲区（中间变量、构造器实参）与 102 遗留的未建词条写死英文合并成
 > **I18N-LITERAL-104**；日期形态串（`2026年9月`、`N分钟前`、生日）全部挂在 **I18N-DATE**；
 > 语言选择不跨进程持久是 **LANG-PERSIST-101**。
+
+### FEAT-UI-003 / I18N-LITERAL-104 未建词条的写死英文 + 守卫 R4' 收紧、R5b 补位、新增 R6（2026-10-09）
+
+> **题面**：103 结尾那条「四条规则一起放行」的残留是这一轮的活 ——
+> `SearchPage` 的 `Search Telegram`、`ChatProfilePage` 的 `Channel Info` / `Description`、
+> `ChatPage` 的 `edited` 那一批。它们能同时躲开四条规则，成因很具体：**R4 只认「词典里已有的英文」**，
+> 而「压根没建词条」这个状态本身是漏洞，且是 R2 唯一管不到的写法 —— key 从没进过 `t()`，
+> R2 无从判断。另一半是 103 自己承认的两条射程外类别（中间变量赋值、构造器实参）。
+> 本包一次做四件事：补词条、接线、把 R4 从「词典已知」收紧成「看着像文案」、给 R5b 补位置并新增 R6。
+>
+> **R4' 的判据是形状而不是词典**：含空格、或首字母大写、或命中词典，任一成立即算文案。
+> 这条形状判据把技术 token 挡在射程外（`'zh'` / `'mtproto'` / `'app.media.ic_help'` /
+> `'proxy.example.com'` 都是小写、无空格、不在词典里），而 `All` / `Trending` / `Draft: ` 全部落网；
+> `${…}` 插值段先剥掉再判（并支持一层嵌套花括号），于是 `@${username}`、`${n} ms`、
+> `` `${cat} · ${this.t('{0} GIFs', n)}` `` 不误伤；剥完不足两字符（头像兜底的 `'A'`）不算文案。
+> **仍然只认文案槽位** —— 槽位外的英文不归本规则管，这是它不至于变成几十条误伤的前提。
+>
+> **R5b 从两个位置扩到四个**：①`return` 直接操作数、②`showToast(` / `showHintToast(` 实参（原有），
+> 加 ③**赋值右侧**（`const summary: string = 'Photo'`、`export const SAVED_MESSAGES_TITLE = 'Saved Messages'`、
+> `x = y ? 'A' : 'B'`）、④**构造器实参**（`new ProxyStatus('Connected', …)`、
+> `new DrawerMenuRow('saved', icon, 'Saved Messages', true)`）。
+> ④ 要认参数名，所以脚本先对全仓 `src/main/ets` 建一遍「class → constructor 参数表」索引（跨文件也查得到）；
+> 参数名以 `key` 结尾视为 key 载体而豁免，**参数表查不到时不臆断、直接跳过**。
+> 103 记为「构造点、规则管不到」的 `new DrawerMenuRow(...)` 那一类，从此由 ④ 与 R6 一起接管。
+>
+> **R6 是新漏洞的补丁，不是新愿望**：R4/R5b 为了「传 key 不传串」开了豁免，豁免自己就成了洞 ——
+> `new ShowToastEffect('Cache cleared')` 被 `messageKey` 接走之后，**没有任何一条规则检查这个 key 真在词典里**，
+> 而 SET-103 那次事故（`'Sticker set: %s'` 两本词典都没有，Toast 上屏就是 key 原文）正是这个形状。
+> R6 只认**文案语义**的载体：取词根（camelCase 或 SCREAMING_SNAKE 尾段）落在
+> label / title / subtitle / message / text / placeholder / hint / reason / summary / name / description /
+> desc / error / prompt / content / snippet / cancel / confirm / button / category / section 之内才要求双词典命中。
+> `accountKey` / `chatKey` / `setKey` / `fileKey` / `cacheKey` 收的本来就是标识符，不进射程。
+> 本轮实测覆盖 **26 个 key 载体字面量**。
+>
+> **收紧的成本没有变成豁免练习**：R4' 首轮 19 处 + R6 首轮 1 处命中，处理方式分两种且**零新增豁免** ——
+> ① `EmojiBoard.ets` 里 18 处 `title:` 命中全部来自**死掉的演示数据**
+> （`SAMPLE_STICKERS` 12 行 `Cool…Strong`、`SAMPLE_GIFS` 6 行 `Thumbs Up…Applause` 及其两个 interface，
+> 贴纸线在 STICKER-BOARD-101 起已改真实数据，这批常量和 interface 再没有引用点）→ 直接删，
+> 不建 18 个假词条、不写 18 个理由；② 两处是**规则自身的假阳性** → 改规则：
+> 插值段不支持嵌套花括号（`{0} GIFs` 那种）、`const nameKey: string = …` 的冒号被当成对象字段名
+> （现按「前面是 `const|let|var`」或「后面是类型」识别为类型注解）。
+> 就地豁免仍是 **15 处、全部写死中文（日期/相对时间形态），写死英文 0 处**。
+>
+> **落地量**：28 个文件、814 增 / 220 删；`Lang` 新增 **92 条 key**，EN/ZH 由 445 → **537/537 保持对等**；
+> 新增词典调用 **102 处**（`this.t(...)` + `getString(...)`），字面量 key 调用点覆盖 260 → **352**；
+> 接线面覆盖登录线七页（`AuthRootPage` / `PhonePage` / `CodePage` / `PasswordPage` / `QrCodePage` /
+> `RecaptchaPage` / `RegistrationPage`）、聊天页（气泡脚注、回复/编辑条、投票创建器、下载与空态）、
+> 表情板与转发选择器、会话列表（归档、菜单、草稿、前后台状态、`Saved Messages` 标题）、
+> 搜索页、资料页与联系人、装配层兜底面。
+>
+> **措辞分裂这一轮收口了两处**：`SAVED_MESSAGES_TITLE` → **`SAVED_MESSAGES_TITLE_KEY`**
+> （常量本身不再是一句已解析的英文，R5b③ 从此只放行 key 载体）；
+> `ShowToastEffect.message` → **`messageKey` + `args`**（effect 带 key 与实参，
+> 由 `SettingsCoordinator` 单点查词典后才出 Toast 端口，于是 R6 管得到、参数化也留到最后一刻）。
+> 出站消息作者标签统一走 `Lang.getString('You')`：`Reply to {0}` 与 `You` 在中文下叠成 `回复 你`，
+> 英文下 `Reply to You`，同一屏不再一半中文一半英文。
+>
+> **负向对照**（证明新规则会咬人，探针文件跑完即删并复核守卫 exit 0）：
+> 视图层 `Text('Trending Now')` / `Button('Send Message')` / `TextInput({ placeholder: 'Type something' })`
+> → 三条 `[i18n] ENGLISH-SLOT`；数据层 `export const PROBE_TITLE = 'Saved Messages'`（位置③）、
+> `summary = 'Files'` / `summary = 'Voice'`（位置③ 的 `let` + 重赋值）、`return 'Photos'`（位置①）
+> → 四条 `[i18n] DATA-ENGLISH`；`new ZProbeRow('Totally Untranslated Copy')` 被 `labelKey` 接走后
+> R5b④ 按约定豁免，而 **R6 报 `[i18n] KEY-CARRIER … 缺 EN 与 ZH 词条`** ——
+> 豁免与补丁各管一半，正好是设计意图。合计 `写死英文 7 / key 载体缺项 1`。
+>
+> **测试**：受影响 9 个模块（`core_common core_domain feature_chat feature_chat_list feature_contact
+> feature_auth feature_search feature_settings entry` 等）全绿，合计 **1286** 用例
+> （取数口径不变：`test_result.txt` 末行，不看 `tail -4`）。
+> `Lang.test.ets` 新增 3 条：本批 92 个 key 在 ZH 必须出汉字、EN 必须与 key 同形（R4'/R5b 只认形状，
+> 「漏建词条」它自己看不见，靠这条兜）；14 个带槽位的 key × 两本词典的实参替换
+> （`Enter {0}-digit code` → `输入 5 位验证码`、`Reply to {0}` → `回复 Alice`、
+> `No results found for "{0}"` → `未找到与“qw”相关的结果`、`Members ({0})` → `成员（33）`）；
+> 以及 `You` 的嵌套解析。`feature/settings` 两个测试改断 `messageKey` + `args`（8 处），
+> `ChatReducer.test` 的 `previewTitle` 断言随空串占位收口。五守卫（架构/代码生成/token/无障碍/i18n）全 OK。
+>
+> **设备双 locale 证据**（127.0.0.1:5555，装的是含本包全部改动的 `entry-default-unsigned.hap`，
+> 推送到独立子目录后 `bm install -p <dir>` 原地替换；全程只读页面 —— 未发消息、未改账号状态、
+> 未卸载、未清数据；取证完把语言切回 English 并 `aa force-stop` 干净退出）：
+> 英文侧基线 —— 会话列表 `Chats / Search` + `All / Personal / Groups / Channels / Unread` + `Saved Messages`、
+> 搜索页 `Search Telegram` / `Search for chats, channels, and messages`、
+> 聊天页 `last seen recently` / `Pinned Message`、
+> 资料页 `Calls / Videos / Username / Phone / Notifications / Media / Files / Links / Music / Voice / Groups / Message`；
+> 中文侧（同一次会话内 `tg://settings` → 语言 → 简体中文）—— 同一批面逐条翻成
+> 搜索页 `搜索` + 页签 `全部 / 聊天 / 消息` + `搜索 Telegram` / `搜索聊天、频道与消息`
+> （**103 点名的这两行写死英文本轮第一次真正上屏为中文**）、
+> 会话列表 `聊天 / 搜索` + `全部 / 个人 / 群组 / 频道 / 未读` + `[语音消息] / [照片] / 🐱 贴纸 / 😂 贴纸` +
+> `收藏夹`（`SAVED_MESSAGES_TITLE_KEY` 的中文侧）、
+> 群聊页头部 `5778 位成员, 139 在线`（`{0} members` + `{0}, {1} online` 两个数据层 key）与 `新消息`、
+> 输入栏占位 `消息`、
+> 资料页 `群组信息` / `简介` / `成员（4）` / `媒体 · 文件 · 链接 · 音乐 · 语音` + 日期分组头 `今天 / 星期二 / 上周`、
+> 设置页 `设置` / `代理, 点按设置` / `主题模式, 跟随系统 (浅色)` / `聊天字号` / `语言, 简体中文` /
+> `应用版本, v1.0.0` / `退出登录`、联系人页 `联系人` + 空态 `暂无联系人` / `从通讯录导入` + 底部页签
+> `聊天 / 联系人 / 设置`。**两侧零 raw key 上屏**，且中文侧每一条都是本包接进 `Lang` 的串。
+>
+> **七条盲区，如实记**：
+> ① **`@Builder` 按值参不刷新这一轮拿到了设备正向证据**：中文 locale 下设置页五个分节标题
+> `NOTIFICATIONS / STICKERS AND EMOJI / APPEARANCE / LANGUAGE / ABOUT` 仍是英文，
+> 而**同一页**里重建过的行（`语言` / `主题模式`）已出中文 —— 词典里 ZH 是有 `通知 / 外观 / 语言` 的，
+> 所以这不是缺词条，是 `SectionTitle(this.t('LANGUAGE'))` 把已解析的串按值传进了 `@Builder`。
+> 103 只能从「切回英文后中文标题残留」反推，本轮是第一次在同一屏正面观察到，**I18N-HOTSWITCH-101** 的题面据此坐实。
+> ② **数据层「已解析串落进状态」的时机盲区**：群资料页头部副标题仍是 `5778 members`，
+> 而会话列表同一个群已是 `5778 位成员` —— 同一个 key 两条解析路径，列表侧在切语言后重算，
+> 资料页侧读的是切语言前算好并存进状态的串（`ChatCoordinator.ets:3243`）。
+> 本包保证「取数时用当前语言」，不保证「换语言后重取数」，同属 ①。
+> ③ **登录线七页无设备证据**：账号已登录，走不进 auth 流程；那 92 条里的登录线条目只有
+> `Lang.test` 的 ZH 汉字断言 + R2/R6 兜着。要么等一次真登出（会丢 TDLib 会话，不做），要么留给单测口径。
+> ④ **`GIF_CATEGORIES` 那批演示英文类目名**（`feature/chat/model/GifItem.ets:20` 起
+> `'🕒 Recent' / '🔥 Trending' / '😂 Funny' …`）仍不在射程：页面写的是 `Text(cat)`，
+> R4' 只看**字面量**实参，传变量看不见；R5b③ 只认**命中词典**的英文，这批没建词条。
+> 它同时是 GIF 线的假数据面（`DEFAULT_GIF_PACKS` 按英文类目名索引），要接线得先让 GIF 类目进真实数据，
+> 拆给 **GIF 发送链路**那一包，不在这里单独造词条。
+> ⑤ **守卫自身的口径盲区（103 已记，本轮仍未收）**：脚本按**行**建模调用栈，`(` 换行就不进栈，
+> 所以本轮负向对照里同一行的 `TextInput({ placeholder: '…' })` 抓得到、
+> `TextInput({`↵`  placeholder: '…'` 抓不到。收口要改成整文件括号栈。
+> ⑥ 日期形态串（资料页 `1986年3月24日 (40 岁)` 在英文界面下出中文、分组头 `今天 / 星期二 / 上周`）
+> 是 R1/R5a 的合法豁免面，归 **I18N-DATE**。
+> ⑦ 语言选择仍不跨进程持久（`AppStorage.setOrCreate('appLanguage', …)` 全仓**只有写、没有读**，
+> 进程重启即回 Follow System → English）→ **LANG-PERSIST-101**。
+>
+> **后续**：R4'/R5b/R6 已把 102/103 点名的写死英文盲区收成 0 处存量；剩下的按根因分三包 ——
+> 换语言不重算（①②）→ **I18N-HOTSWITCH-101**，语言不持久（⑦）→ **LANG-PERSIST-101**，
+> 日期形态（⑥）→ **I18N-DATE**；守卫跨行调用（⑤）与 GIF 类目（④）各记在对应线上。
 
 
 | 功能 ID | 功能名 |

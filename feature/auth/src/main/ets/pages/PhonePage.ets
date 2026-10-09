@@ -39,13 +39,13 @@ export struct PhonePage {
 
   build() {
     Column() {
-      Text('Your Phone')
+      Text(this.t('Your Phone'))
         .fontSize(this.T.typography.largeTitle.fontSize)
         .fontWeight(this.T.typography.largeTitle.fontWeight)
         .fontColor(this.T.colors.textPrimary)
         .margin({ top: this.T.spacing.huge, bottom: this.T.spacing.sm })
 
-      Text('Please confirm your country code and enter your phone number.')
+      Text(this.t('Please confirm your country code and enter your phone number.'))
         .fontSize(this.T.typography.subheadline.fontSize)
         .fontColor(this.T.colors.textSecondary)
         .textAlign(TextAlign.Center)
@@ -114,7 +114,7 @@ export struct PhonePage {
           .fontColor(this.T.colors.textPrimary)
           .margin({ right: this.T.spacing.sm })
 
-        TextInput({ text: this.rawPhone, placeholder: 'Phone number' })
+        TextInput({ text: this.rawPhone, placeholder: this.t('Phone number') })
           .type(InputType.PhoneNumber)
           .fontSize(this.T.typography.body.fontSize)
           .layoutWeight(1)
@@ -143,7 +143,7 @@ export struct PhonePage {
 
       Blank()
 
-      Button('Log in with QR code')
+      Button(this.t('Log in with QR code'))
         .width('90%')
         .height(44)
         .fontColor(this.T.colors.accent)

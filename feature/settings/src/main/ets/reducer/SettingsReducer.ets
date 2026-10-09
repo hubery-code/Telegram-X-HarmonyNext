@@ -360,8 +360,8 @@ export const settingsReducer: Reducer<SettingsUiState, SettingsIntent, SettingsE
         updatingNotificationScope: null,
         errorMessage: null
       };
-      const message: string = updatedIntent.enabled ? 'Notifications enabled' : 'Notifications disabled';
-      const effects: readonly SettingsEffect[] = [new ShowToastEffect(message)];
+      const messageKey: string = updatedIntent.enabled ? 'Notifications enabled' : 'Notifications disabled';
+      const effects: readonly SettingsEffect[] = [new ShowToastEffect(messageKey)];
       return reduced(state.copyWith(options), effects);
     }
 
@@ -428,7 +428,7 @@ export const settingsReducer: Reducer<SettingsUiState, SettingsIntent, SettingsE
       };
       const nextState: SettingsUiState = state.copyWith(options);
       const effects: readonly SettingsEffect[] = [
-        new ShowToastEffect(`Theme mode set to ${themeIntent.themeMode}`)
+        new ShowToastEffect('Theme mode set to {0}', themeIntent.themeMode)
       ];
       return reduced(nextState, effects);
     }
@@ -460,7 +460,7 @@ export const settingsReducer: Reducer<SettingsUiState, SettingsIntent, SettingsE
       };
       const nextState: SettingsUiState = state.copyWith(options);
       const effects: readonly SettingsEffect[] = [
-        new ShowToastEffect(`Chat text size set to ${applied}`)
+        new ShowToastEffect('Chat text size set to {0}', applied)
       ];
       return reduced(nextState, effects);
     }
@@ -490,7 +490,7 @@ export const settingsReducer: Reducer<SettingsUiState, SettingsIntent, SettingsE
       };
       const nextState: SettingsUiState = state.copyWith(options);
       const effects: readonly SettingsEffect[] = [
-        new ShowToastEffect(`Language set to ${pref}`)
+        new ShowToastEffect('Language set to {0}', pref)
       ];
       return reduced(nextState, effects);
     }

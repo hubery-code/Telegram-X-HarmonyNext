@@ -1,6 +1,7 @@
 /** feature/auth — TDLib 原生二维码登录页（AUTH-QR-001）。 */
 
 import { LightTheme, Theme } from '@tgx/core-design-system';
+import { Lang } from '@tgx/core-common';
 
 
 @Component
@@ -17,16 +18,20 @@ export struct QrCodePage {
   @Prop errorMessage: string | null = null;
   onRetry: () => void = () => {};
 
+  private t(key: string, ...args: (string | number)[]): string {
+    return Lang.getInstance().getString(key, ...args);
+  }
+
   build() {
     Column() {
-      Text('Log in with QR code')
+      Text(this.t('Log in with QR code'))
         .fontSize(this.T.typography.largeTitle.fontSize)
         .fontWeight(this.T.typography.largeTitle.fontWeight)
         .fontColor(this.T.colors.textPrimary)
         .textAlign(TextAlign.Center)
         .margin({ top: this.T.spacing.huge, bottom: this.T.spacing.sm })
 
-      Text('Open Telegram on another device, then go to Settings > Devices > Link Desktop Device and scan this code.')
+      Text(this.t('Open Telegram on another device, then go to Settings > Devices > Link Desktop Device and scan this code.'))
         .fontSize(this.T.typography.subheadline.fontSize)
         .fontColor(this.T.colors.textSecondary)
         .textAlign(TextAlign.Center)
@@ -71,7 +76,7 @@ export struct QrCodePage {
               .color(this.T.colors.accent)
               .margin({ bottom: this.T.spacing.md })
 
-            Text('Preparing a secure QR code...')
+            Text(this.t('Preparing a secure QR code...'))
               .fontSize(this.T.typography.body.fontSize)
               .fontColor(this.T.colors.textSecondary)
           } else {
@@ -81,7 +86,7 @@ export struct QrCodePage {
               .textAlign(TextAlign.Center)
               .margin({ left: this.T.spacing.md, right: this.T.spacing.md, bottom: this.T.spacing.md })
 
-            Button('Try again')
+            Button(this.t('Try Again'))
               .fontColor(this.T.colors.textOnAccent)
               .backgroundColor(this.T.colors.accent)
               .onClick(() => {
@@ -94,7 +99,7 @@ export struct QrCodePage {
         .justifyContent(FlexAlign.Center)
       }
 
-      Text('The code refreshes automatically. Keep this screen open while scanning.')
+      Text(this.t('The code refreshes automatically. Keep this screen open while scanning.'))
         .fontSize(this.T.typography.footnote.fontSize)
         .fontColor(this.T.colors.textSecondary)
         .textAlign(TextAlign.Center)

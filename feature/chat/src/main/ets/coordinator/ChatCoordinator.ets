@@ -2316,7 +2316,7 @@ export class ChatCoordinator {
     let senderName: string = '';
     let senderColorIndex: number = -1;
     if (message.is_outgoing) {
-      senderName = 'You';
+      senderName = Lang.getInstance().getString('You');
       senderColorIndex = -1;
     } else {
       const senderInfo: SenderInfo = resolveSenderInfo(

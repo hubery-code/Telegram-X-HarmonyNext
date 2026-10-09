@@ -164,7 +164,7 @@ export struct ProfilePage {
           this.onBack();
         })
 
-      Text(this.uiState.displayName.length > 0 ? this.uiState.displayName : 'User Info')
+      Text(this.uiState.displayName.length > 0 ? this.uiState.displayName : this.t('User Info'))
         .fontSize(this.T.typography.title.fontSize)
         .fontWeight(this.T.typography.title.fontWeight)
         .fontColor(this.T.colors.textPrimary)

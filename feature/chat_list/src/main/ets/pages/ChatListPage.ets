@@ -262,7 +262,7 @@ export struct ChatListPage {
                 this.onDispatch(new CloseArchivedChats());
               })
 
-            Text('Archived Chats')
+            Text(this.t('Archived Chats'))
               .fontSize(this.T.typography.largeTitle.fontSize)
               .fontWeight(this.T.typography.largeTitle.fontWeight)
               .fontColor(this.T.colors.textPrimary)
@@ -529,7 +529,7 @@ export struct ChatListPage {
 
       Column() {
         Row() {
-          Text('Archived Chats')
+          Text(this.t('Archived Chats'))
             .fontSize(this.T.typography.headline.fontSize)
             .fontWeight(this.T.typography.headline.fontWeight)
             .fontColor(this.T.colors.textPrimary)
@@ -553,7 +553,7 @@ export struct ChatListPage {
         .margin({ bottom: this.T.spacing.xs })
 
         Row() {
-          Text(this.uiState.archiveChatCount > 0 ? `${this.uiState.archiveChatCount} chats` : 'Archived chats')
+          Text(this.uiState.archiveChatCount > 0 ? this.t('{0} chats', this.uiState.archiveChatCount) : this.t('Archived Chats'))
             .fontSize(this.T.typography.subheadline.fontSize)
             .fontColor(this.T.colors.textSecondary)
             .maxLines(1)
@@ -621,7 +621,7 @@ export struct ChatListPage {
             this.onDispatch(new ToggleChatPinned());
           })
 
-        Text(menu.canMarkAsRead ? 'Mark as read' : 'Mark as unread')
+        Text(menu.canMarkAsRead ? this.t('Mark as read') : this.t('Mark as unread'))
           .fontSize(this.T.typography.body.fontSize)
           .fontColor(this.T.colors.textPrimary)
           .width('100%')
@@ -635,7 +635,7 @@ export struct ChatListPage {
             this.onDispatch(new ToggleChatMarkedUnread());
           })
 
-        Text(menu.isArchived ? 'Unarchive' : 'Archive')
+        Text(menu.isArchived ? this.t('Unarchive') : this.t('Archive'))
           .fontSize(this.T.typography.body.fontSize)
           .fontColor(this.T.colors.textPrimary)
           .width('100%')
@@ -722,7 +722,7 @@ export struct ChatListPage {
 
         Row() {
           if (item.draftText !== null && item.draftText.length > 0) {
-            Text('Draft: ')
+            Text(this.t('Draft: '))
               .fontSize(this.T.typography.subheadline.fontSize)
               .fontWeight(this.T.typography.headline.fontWeight)
               .fontColor(this.T.colors.destructive)
@@ -801,7 +801,7 @@ export struct ChatListPage {
         .color(this.T.colors.accent)
         .margin({ bottom: this.T.spacing.lg })
 
-      Text('Loading chats...')
+      Text(this.t('Loading chats...'))
         .fontSize(this.T.typography.body.fontSize)
         .fontColor(this.T.colors.textSecondary)
     }
@@ -966,7 +966,7 @@ export struct ChatListPage {
   @Builder
   ErrorView(errorMessage: string) {
     Column() {
-      Text('Failed to load chats')
+      Text(this.t('Failed to load chats'))
         .fontSize(this.T.typography.title.fontSize)
         .fontWeight(this.T.typography.title.fontWeight)
         .fontColor(this.T.colors.destructive)
@@ -982,7 +982,7 @@ export struct ChatListPage {
           right: this.T.spacing.xxl
         })
 
-      Button('Try Again')
+      Button(this.t('Try Again'))
         .width('60%')
         .height(44)
         .backgroundColor(this.T.colors.accent)

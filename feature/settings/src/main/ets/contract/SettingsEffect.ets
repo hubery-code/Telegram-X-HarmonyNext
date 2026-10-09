@@ -61,12 +61,20 @@ export class LoadStorageStatsEffect implements Effect {
   readonly kind: 'loadStorageStats' = 'loadStorageStats';
 }
 
+/**
+ * I18N-LITERAL-104：这一条带的是 **Lang key + 槽位实参**，不是成品串。
+ * 此前字段叫 `message`、reducer 里拼好英文整句再递过来，于是显示端无论怎么查词典
+ * 都只会拿到已经定型的英文 —— 与 `*Key` 命名约定（收 key 不收串）相反。
+ * 现在键与实参分开带，取数时用当前语言现算。
+ */
 export class ShowToastEffect implements Effect {
   readonly kind: 'showToast' = 'showToast';
-  readonly message: string;
+  readonly messageKey: string;
+  readonly args: (string | number)[];
 
-  constructor(message: string) {
-    this.message = message;
+  constructor(messageKey: string, ...args: (string | number)[]) {
+    this.messageKey = messageKey;
+    this.args = args;
   }
 }
 

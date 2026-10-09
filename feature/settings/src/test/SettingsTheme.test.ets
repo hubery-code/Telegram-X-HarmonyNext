@@ -47,7 +47,9 @@ export default function settingsThemeTest(): void {
       expect(ThemeManager.getInstance().getPreference()).assertEqual('dark');
       expect(ThemeManager.getInstance().getEffectiveTheme()).assertEqual(DarkTheme);
       expect(result.effects.length).assertEqual(1);
-      expect((result.effects[0] as ShowToastEffect).message).assertEqual('Theme mode set to dark');
+      const toast: ShowToastEffect = result.effects[0] as ShowToastEffect;
+      expect(toast.messageKey).assertEqual('Theme mode set to {0}');
+      expect(String(toast.args[0])).assertEqual('dark');
     });
 
     it('reducer_changeThemeMode_toLight_syncsGlobalThemeManager', 0, () => {
@@ -60,7 +62,9 @@ export default function settingsThemeTest(): void {
       expect(ThemeManager.getInstance().getPreference()).assertEqual('light');
       expect(ThemeManager.getInstance().getEffectiveTheme()).assertEqual(LightTheme);
       expect(result.effects.length).assertEqual(1);
-      expect((result.effects[0] as ShowToastEffect).message).assertEqual('Theme mode set to light');
+      const toast: ShowToastEffect = result.effects[0] as ShowToastEffect;
+      expect(toast.messageKey).assertEqual('Theme mode set to {0}');
+      expect(String(toast.args[0])).assertEqual('light');
     });
 
     it('reducer_changeThemeMode_toSystem_syncsGlobalThemeManager', 0, () => {
@@ -72,7 +76,9 @@ export default function settingsThemeTest(): void {
       expect(result.state.themeMode).assertEqual('system');
       expect(ThemeManager.getInstance().getPreference()).assertEqual('system');
       expect(result.effects.length).assertEqual(1);
-      expect((result.effects[0] as ShowToastEffect).message).assertEqual('Theme mode set to system');
+      const toast: ShowToastEffect = result.effects[0] as ShowToastEffect;
+      expect(toast.messageKey).assertEqual('Theme mode set to {0}');
+      expect(String(toast.args[0])).assertEqual('system');
     });
 
     it('reducer_changeThemeMode_sameMode_isNoOpAndEmitsZeroEffects', 0, () => {

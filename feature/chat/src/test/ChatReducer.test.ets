@@ -1013,7 +1013,7 @@ export default function chatReducerTest() {
       expect(replyMode.previewText).assertEqual('reply target message');
     });
 
-    it('restoreDraft_fallbackAuthor_whenReplyTargetNotInMemory', 0, () => {
+    it('restoreDraft_leavesEmptyAuthorPlaceholder_whenReplyTargetNotInMemory', 0, () => {
       const state: ChatUiState = makeState('');
 
       const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
@@ -1026,7 +1026,10 @@ export default function chatReducerTest() {
       expect(result.state.composerMode !== null).assertTrue();
       const replyMode: ComposerReplyMode = result.state.composerMode as ComposerReplyMode;
       expect(replyMode.targetMessageId).assertEqual(999);
-      expect(replyMode.previewTitle).assertEqual('Reply');
+      // I18N-LITERAL-104：占位态留空串。此前这里是写死的 'Reply'，而视图层把它当
+      // 作者名塞进 `Reply to {0}` —— 中文界面就成「回复给 Reply」。空串由视图层
+      // （ChatPage.composerPreviewTitle）单独出 this.t('Reply')。
+      expect(replyMode.previewTitle).assertEqual('');
     });
 
     it('restoreDraft_doesNotOverwrite_whenComposerAlreadyHasText', 0, () => {

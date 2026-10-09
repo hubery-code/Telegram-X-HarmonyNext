@@ -6,6 +6,7 @@
  */
 
 import { LightTheme, Theme } from '@tgx/core-design-system';
+import { Lang } from '@tgx/core-common';
 
 
 @Component
@@ -27,15 +28,19 @@ export struct RegistrationPage {
   onLastNameChanged: (ln: string) => void = () => {};
   onSubmit: () => void = () => {};
 
+  private t(key: string, ...args: (string | number)[]): string {
+    return Lang.getInstance().getString(key, ...args);
+  }
+
   build() {
     Column() {
-      Text('Your Name')
+      Text(this.t('Your Name'))
         .fontSize(this.T.typography.largeTitle.fontSize)
         .fontWeight(this.T.typography.largeTitle.fontWeight)
         .fontColor(this.T.colors.textPrimary)
         .margin({ top: this.T.spacing.huge, bottom: this.T.spacing.sm })
 
-      Text('Enter your name to complete registration.')
+      Text(this.t('Enter your name to complete registration.'))
         .fontSize(this.T.typography.subheadline.fontSize)
         .fontColor(this.T.colors.textSecondary)
         .textAlign(TextAlign.Center)
@@ -43,7 +48,7 @@ export struct RegistrationPage {
 
       TextInput({
         text: this.firstName,
-        placeholder: 'First name (required)'
+        placeholder: this.t('First name (required)')
       })
         .fontSize(this.T.typography.body.fontSize)
         .width('90%')
@@ -61,7 +66,7 @@ export struct RegistrationPage {
 
       TextInput({
         text: this.lastName,
-        placeholder: 'Last name (optional)'
+        placeholder: this.t('Last name (optional)')
       })
         .fontSize(this.T.typography.body.fontSize)
         .width('90%')
@@ -95,7 +100,7 @@ export struct RegistrationPage {
               .color(this.T.colors.textOnAccent)
               .margin({ right: this.T.spacing.sm })
           }
-          Text(this.isSubmitting ? 'Registering...' : 'Complete')
+          Text(this.isSubmitting ? this.t('Registering...') : this.t('Complete'))
             .fontSize(this.T.typography.callout.fontSize)
             .fontWeight(this.T.typography.largeTitle.fontWeight)
             .fontColor(this.T.colors.textOnAccent)

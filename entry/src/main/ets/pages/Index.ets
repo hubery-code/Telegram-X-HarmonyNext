@@ -1556,7 +1556,7 @@ struct Index {
       Column() {
         if (this.bootstrapError !== null) {
           Column() {
-            Text('Bootstrap Error')
+            Text(this.t('Bootstrap Error'))
               .fontSize(this.T.typography.title.fontSize)
               .fontWeight(this.T.typography.title.fontWeight)
               .fontColor(this.T.colors.destructive)

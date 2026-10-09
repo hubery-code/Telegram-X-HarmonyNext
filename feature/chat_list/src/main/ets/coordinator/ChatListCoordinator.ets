@@ -93,8 +93,11 @@ const DRAWER_AVATAR_PRIORITY: number = 2;
 /**
  * DRAWER-101："我的收藏"在 TDLib 里就是与自己的私聊，chat.title 是自己的名字。
  * TGX/官方客户端都在本地把这条会话改称 Saved Messages，这里对齐同一行为。
+ * I18N-LITERAL-104：存 Lang key 而不是成品标题 —— 此前这里是写死的英文常量，
+ * 于是中文界面下抽屉行出「收藏夹」（DrawerMenu 走 labelKey）、列表行出
+ * `Saved Messages`，同一概念两套措辞。取数时现算，切语言也不用重进列表。
  */
-export const SAVED_MESSAGES_TITLE: string = 'Saved Messages';
+export const SAVED_MESSAGES_TITLE_KEY: string = 'Saved Messages';
 
 export type ChatListUiStateListener = (state: ChatListUiState) => void;
 
@@ -224,7 +227,8 @@ export class ChatListCoordinator {
     if (chat === undefined) {
       return null;
     }
-    return this.isSavedMessagesChat(chat) ? SAVED_MESSAGES_TITLE : chat.title;
+    return this.isSavedMessagesChat(chat)
+      ? Lang.getInstance().getString(SAVED_MESSAGES_TITLE_KEY) : chat.title;
   }
 
   /**
@@ -445,7 +449,8 @@ export class ChatListCoordinator {
       }
       items.push(new ChatListItem(
         chat.id,
-        this.isSavedMessagesChat(chat) ? SAVED_MESSAGES_TITLE : chat.title,
+        this.isSavedMessagesChat(chat)
+          ? Lang.getInstance().getString(SAVED_MESSAGES_TITLE_KEY) : chat.title,
         messagePreview(chat.last_message),
         chat.last_message !== null ? chat.last_message.date * 1000 : 0,
         chat.unread_count,
