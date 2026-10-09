@@ -419,22 +419,26 @@ export function stickerBoardPackKey(pack: StickerBoardPack): string {
 /**
  * 按 setId 在几组 `StickerSetInfo` 里找包名（TDLib 的短名 `name`）；找不到返回 ''。
  *
- * 为什么预览弹层需要短名：`getStickerSet(set_id)` 命中本地时是零网络查表，但**从未加载过**
- * 这一包时它会拿 `inputStickerSetID(id, access_hash)` 实发一次 `messages.getStickerSet`
- * （`StickersManager.cpp:4961-4979` → `:5392-5423`），而列表接口给到的那一层缓存并不保证带
- * 可用的 access_hash。`searchStickerSet(name)` 走 `inputStickerSetShortName`，与 Telegram X 的
- * `TdlibUi.showStickerSet(name)`（`:1683`）同一条路，回的同样是完整 `StickerSet`；而它在
- * **短名已在本地映射里**时可以一个网络请求都不发就返回本地那一包 —— 这是整包预览唯一一条
- * 不依赖服务端点头的路。
+ * 为什么预览弹层需要短名：整包预览最终打到服务端的 `messages.getStickerSet` 有两种输入体，
+ * 而**只有本地不认识这一包时**才会发短名那一种（`StickersManager.cpp:5005-5010`）。
+ * 短名已在本地映射里时 —— 热门榜列过的包都算 —— `searchStickerSet(name, ignore_cache=false)`
+ * 会退化成 `inputStickerSetID(id, access_hash)`（`:5013` → `update_sticker_set_cache`
+ * → `load_sticker_sets` `:5419` → `get_input_sticker_set` `:3246-3249`），
+ * 和 `getStickerSet(set_id)` 发的是**同一条查询**、带的是列表接口给的那份会过期的 access_hash。
+ * 所以短名的用处有两层：拿到它才知道该用 `ignore_cache=true` 把查询逼回短名那一种；
+ * 而 `getStickerSet` 只能按 id 问，消息气泡那种只有 `stickerSetId` 的入口没有名字可用。
  *
  * 只在**本地已经见过**这一包时才拿得到短名（板卡 / 榜单的 DTO 缓存），所以调用方仍要
- * 保留按 id 的兜底：消息气泡那种只有 `stickerSetId` 的入口没有名字可用。
+ * 保留按 id 的兜底。
  *
- * 更正一条前轮结论（2026-09-26 第十五轮曾据此判「服务端否决，ArkTS 修不了」）：当时测的是
- * `ignore_cache=true` 那一条，而 `Requests.cpp:1533` 的 `ignore_cache_ && get_tries() >= 3`
- * 在首次尝试就让 true 真的生效 —— 也就是说那一次实测**恰好绕开了**上面那条零网络分支，
- * 并没有量到 Android 一直在用的配置。STICKER-FETCH-102 改回 `false` 并把顺序反过来，
- * 剩下的那一次网络否决才真正是 native/服务端层的事实（406 的来源分类见 `StickerSetFetch.ets`）。
+ * 更正两条前轮结论：
+ *  - 2026-09-26 第十五轮据「406」判「服务端否决，ArkTS 修不了」—— 那次实测只发过 `getStickerSet`
+ *    （见 commit 843688b9 的 `handleFetchStickerSet`），短名那一条压根没上过线；
+ *  - 2026-09-28 STICKER-FETCH-102 反过来批评 `ignore_cache=true`「绕开了零网络分支」也不成立：
+ *    `Requests.cpp:1534` 的 `ignore_cache_ && get_tries() >= 3` 配构造时的 `set_tries(3)`，
+ *    true 在**首次尝试**生效、失败后重试自动落回本地读，正是强制发短名的那一档；
+ *    而 false 对本地板卡与已装包仍走缓存，两种配置各有用处，于是取数链改成
+ *    名字（允许缓存）→ 名字（强制查服务端）→ id。
  */
 export function stickerSetShortNameOf(
   groups: readonly (readonly StickerSetInfo[])[],

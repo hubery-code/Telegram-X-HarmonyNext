@@ -21,13 +21,15 @@
  *   否则屏上留下一个「看着清空了、下次打开又全在」的假象；
  * - `updateRecentStickers` 到货后这一行要自己活过来，但**没开过贴纸页签时不许后台重读**。
  *
- * STICKER-FETCH-102 守整包取数那条链（此前零覆盖，也正是第十五轮把配置问题误判成服务端问题的地方）：
- * - 本地已经见过这一包（盘/榜的 DTO 里有短名）时**第一条**请求是 `searchStickerSet`，
- *   且 `ignore_cache=false` —— true 会让 TDLib 跳过 `StickersManager.cpp:5005-5018` 那条
- *   零网络的缓存分支，量到的就不是 Android 一直在用的配置；
+ * STICKER-FETCH-102/103 守整包取数那条链（此前零覆盖，也正是第十五轮把配置问题误判成服务端问题的地方）：
+ * - 本地已经见过这一包（盘/榜的 DTO 里有短名）时**第一条**请求是 `searchStickerSet` 且
+ *   `ignore_cache=false`（Android 的默认配置，命中本地就是零网络）；
+ * - 那条被拒后要**强制**再问一次名字（`ignore_cache=true` 才会让 TDLib 把
+ *   `inputStickerSetShortName` 真发出去，见 `StickersManager.cpp:5005-5010`）—— 榜上那种
+ *   没装过的包，false 与按 id 发的是同一条 `inputStickerSetID`，光换 id 永远量不到短名那一种；
+ * - 强制那条也被拒才落到按 id 的兜底；
  * - 没见过短名的 id 才直接 `getStickerSet`，不先发一次注定失败的短名查询；
- * - 短名那条失败要按 id 兜底重发，两条**都**失败只记一次失败态（不能盖成两条错误）；
- * - 短名那条成功就出整包，此时 `getStickerSet` 一条都不许发。
+ * - 全链失败只记一次失败态（不能盖成几条错误），中途成功则后面的请求一条都不许多发。
  *
  * STICKER-BOARD-103 守已装盘的自愈那半边：
  * - 冷启动读到 0 行后，`updateInstalledStickerSets` 到货要重读并把真列表装上盘
@@ -1345,13 +1347,13 @@ export default function stickerBoardFetchTest(): void {
       coordinator.dispatch(new OpenStickerSet('21'));
       await settle();
 
-      // 本地见过这一包的短名：第一条请求必须是 `searchStickerSet`，且不再补一条按 id 的查询。
+      // 本地见过这一包的短名：第一条请求必须是 `searchStickerSet`，且此时还没有第二条、也没有按 id 的查询。
       expect(countRequestsOfType(bridge, 'searchStickerSet')).assertEqual(1);
       expect(countRequestsOfType(bridge, 'getStickerSet')).assertEqual(0);
       const req: Record<string, TdWireValue> = requestsOfType(bridge, 'searchStickerSet')[0];
       expect(String(req['name'])).assertEqual('pandamonium_by_tgx');
-      // ignore_cache=true 会让 TDLib 跳过 `StickersManager.cpp:5005-5018` 那条零网络的缓存分支 ——
-      // 上一轮就是拿 true 实测，才把配置问题定案成了服务端否决。
+      // 第一条用 false 是 Android 的默认配置（`TdlibUi.java:1687`）：短名已在本地映射里时 TDLib
+      // 可以一个网络请求都不发就把本地那一包回给你。被拒了才升级到 true（见下一条用例）。
       expect(req['ignore_cache'] as boolean).assertFalse();
 
       expect(recorder.last().stickerSetPreview?.isLoading).assertTrue();
@@ -1384,7 +1386,7 @@ export default function stickerBoardFetchTest(): void {
       coordinator.destroy();
     });
 
-    it('shortNameFailure_fallsBackToIdAndFailsOnce', 0, async (): Promise<void> => {
+    it('shortNameFailure_forcesTheShortNameQueryBeforeById', 0, async (): Promise<void> => {
       const bridge: TestNativeBridge = new TestNativeBridge();
       const scope: AccountScope = createScope(bridge);
       const coordinator: ChatCoordinator = new ChatCoordinator(scope, 42, 'Test Chat');
@@ -1398,7 +1400,23 @@ export default function stickerBoardFetchTest(): void {
 
       coordinator.dispatch(new OpenStickerSet('21'));
       await settle();
-      // 短名这条失败（406 的真实服务端来源）：换 id 再问一次，此时还不算整包读失败。
+      // 短名那条被拒（406 的真实服务端来源）：还不算整包读失败。此时按 id 重发是**没用的** ——
+      // 短名已在 TDLib 的本地映射里，false 那条退化成 `inputStickerSetID(id, access_hash)`
+      // （`StickersManager.cpp:5005-5013` → `:5419` → `:3246`），按 id 再问一次拿到的是同一份过期 hash。
+      bridge.respondTo(lastRequestIdOfType(bridge, 'searchStickerSet'),
+        errorFieldsWith(406, 'STICKERSET_INVALID'));
+      await settle();
+
+      // 要升级到 ignore_cache=true：`Requests.cpp:1534` 的 `ignore_cache_ && get_tries() >= 3`
+      // 配构造时的 `set_tries(3)` 让 true 在首次尝试就生效，于是发出去的才是 `inputStickerSetShortName`。
+      const searches: Record<string, TdWireValue>[] = requestsOfType(bridge, 'searchStickerSet');
+      expect(searches.length).assertEqual(2);
+      expect(String(searches[1]['name'])).assertEqual('pandamonium_by_tgx');
+      expect(searches[1]['ignore_cache'] as boolean).assertTrue();
+      expect(countRequestsOfType(bridge, 'getStickerSet')).assertEqual(0);
+      expect(recorder.last().stickerSetPreview?.errorMessage).assertNull();
+
+      // 强制那条也被拒（包真被删了）才换 id 兜底。
       bridge.respondTo(lastRequestIdOfType(bridge, 'searchStickerSet'),
         errorFieldsWith(406, 'STICKERSET_INVALID'));
       await settle();
@@ -1409,8 +1427,8 @@ export default function stickerBoardFetchTest(): void {
         errorFieldsWith(406, 'STICKERSET_INVALID'));
       await settle();
 
-      // 两条都失败：请求各一条（不递归回短名），失败态只落一次。
-      expect(countRequestsOfType(bridge, 'searchStickerSet')).assertEqual(1);
+      // 三条都失败：名字各一次（false / true）、id 一条，不再递归回名字；失败态只落一次。
+      expect(countRequestsOfType(bridge, 'searchStickerSet')).assertEqual(2);
       expect(countRequestsOfType(bridge, 'getStickerSet')).assertEqual(1);
       let failedFrames: number = 0;
       for (let i = 0; i < recorder.seen.length; i++) {
@@ -1421,6 +1439,41 @@ export default function stickerBoardFetchTest(): void {
       }
       expect(failedFrames).assertEqual(1);
       expect(recorder.last().stickerSetPreview?.isLoading).assertFalse();
+
+      unsubscribe();
+      coordinator.destroy();
+    });
+
+    it('forcedShortNameSuccess_populatesPreviewAndStopsTheChain', 0, async (): Promise<void> => {
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const scope: AccountScope = createScope(bridge);
+      const coordinator: ChatCoordinator = new ChatCoordinator(scope, 42, 'Test Chat');
+
+      const recorder: StateRecorder = new StateRecorder();
+      const unsubscribe: () => void = coordinator.subscribe((state: ChatUiState): void => {
+        recorder.seen.push(state);
+      });
+
+      await loadBoardWithKnownSet(bridge, coordinator);
+
+      coordinator.dispatch(new OpenStickerSet('21'));
+      await settle();
+      bridge.respondTo(lastRequestIdOfType(bridge, 'searchStickerSet'),
+        errorFieldsWith(406, 'STICKERSET_INVALID'));
+      await settle();
+      // 强制那一条（短名输入体）成功：整包出图，按 id 的兜底一条都不许多发。
+      bridge.respondTo(lastRequestIdOfType(bridge, 'searchStickerSet'), stickerSetFields([
+        coverFields(1001, 3001, '🐼'),
+        coverFields(1002, 3002, '🎋')
+      ]));
+      await settle();
+
+      const preview: StickerSetPreviewState | null = recorder.last().stickerSetPreview;
+      expect(preview !== null).assertTrue();
+      expect(preview?.stickers.length).assertEqual(2);
+      expect(preview?.errorMessage).assertNull();
+      expect(countRequestsOfType(bridge, 'searchStickerSet')).assertEqual(2);
+      expect(countRequestsOfType(bridge, 'getStickerSet')).assertEqual(0);
 
       unsubscribe();
       coordinator.destroy();

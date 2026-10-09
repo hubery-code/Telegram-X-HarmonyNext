@@ -1405,6 +1405,41 @@
 > （+1：`favoriteWriteErrorLineCarriesMethodAndRequestId` —— 断言 `addFavoriteSticker` 失败行里有 `method=…,requestId=…`，且 `FLOOD_WAIT_77` 一个字都不出现），
 > 四守卫 0 违规。
 
+> **2026-10-09（STICKER-FETCH-103，第四十七轮，FEAT-P2-004 整包取数 406 的 ArkTS 半边结案）**：第三十一轮（STICKER-FETCH-102）把 406 定案成
+> 「服务端否决」，并留下一句「`ignore_cache` 的 true 与 false 都实测过、都 406，所以缓存开关不是成因」。**结论对，理由当时不成立** ——
+> `ignore_cache=false` 那条路压根不会把短名发到线上（见下第二条），所以那一次「名字路 406」测的其实是另一条 `inputStickerSetID` 请求。
+> 本轮把三条路各测一次，测完 ArkTS 侧可以结案。
+> **一、取数链本身改成 Android 的形状**：`handleFetchStickerSet` 有短名先问名字；名字那条失败进
+> `onStickerSetNameRouteFailed` —— **先重发一次 `ignore_cache=true`（强制查服务端）**，仍失败且 `setId` 是数字才 `requestStickerSetById` 兜底，
+> 三条路都不通才 dispatch 失败帧。一次打开最多三条请求、只出一帧失败（名字那两条都不 dispatch）。
+> **二、`ignore_cache=true` 到底发了什么（读码与实测对上）**：`Requests.cpp:1532-1533` 的条件是 `ignore_cache_ && get_tries() >= 3`，
+> `get_tries()` 是**剩余**重试次数（构造 `set_tries(3)`）→ 首次尝试 true 真生效 → `StickersManager.cpp:5002-5011` `search_sticker_set`
+> 跳过「短名已在本地映射里」那条分支，进 `do_reload_sticker_set(StickerSetId(), inputStickerSetShortName(short_name), 0, …)`
+> （`:5540-5575`）→ `GetStickerSetQuery::send`（`:728-736`）。**也就是说三条路里只有这一条把 `inputStickerSetShortName` 真的发到线上**，
+> `path=name`（允许缓存）与 `path=id` 发出去的都是 `inputStickerSetID(id, access_hash)` —— 这就是第三十一轮那句「都 406」为什么不算测过名字路。
+> **三、短名本身是对的，且有外部核对**：`logStickerSetFailure` 现在把名字落进日志（`name=` 字段；短名是公开标识，就是
+> `t.me/addstickers/` 后面那一段，不是凭据）。实测三段逐条落下
+> `path=name` → `path=name-forced` → `path=id`，同一条 `sticker_set_fetch_failed path=…,setId=…,name=MiladyNoir,code=406 reason=stickerSetInvalid`；
+> 而 `t.me/addstickers/MiladyNoir` 是活链接、og:title 为「Add sticker set Lady Noir on Telegram」，与盘面上那一包同名 → **不是问错了人**。
+> 再加第三十一轮那条：TDLib 全仓只**比较**、从不**合成** `STICKERSET_INVALID`（`StickersManager.cpp:3970`、`:4377`）→ 406 出自服务器。
+> **四、把残余逼到 native 的那一格读数**：取证期间对**同一个** `inputStickerSetID(id, access_hash)` 走 `changeStickerSet`（装包）**成功**
+> （`sticker_installed_update rows=1`、盘 `rows=1,total=1`），装完立刻再开整包预览 → **三条路仍然全 406**。
+> 装与取的入参差异只剩 `messages.getStickerSet#c8a0ec74 stickerset:InputStickerSet hash:int`
+> （`td/generate/scheme/telegram_api.tl:2552`）上多出来的那个 `hash:int`（TDLib 对这条路传 `hash_ = 0`）→ **ArkTS 侧已无可动变量**。
+> **native 侧的落点也一并量出来了**：`native/tdcore/napibridge/src/tdcore_napi.cpp` 没有注册 TDLib 日志回调（全仓零
+> `SetLogMessageCallback` / `OH_LOG_Print`），所以 `LOG(INFO)` 里那两句「Reload … from search_sticker_set」
+> 「Receive error for GetStickerSetQuery: …」现在是**看不见**的；而本仓 TDLib 是源码构建（`tools/native/build-tdlib.sh`，
+> 1.8.67 / d1085f9c，见 `native/tdcore/BUILD-EVIDENCE.md`），补一座日志桥就能把真实请求体与服务器原文读出来 —— 这是下一步，不是本包。
+> 测试：`feature_chat` **462/462**（`shortNameFailure_forcesTheShortNameQueryBeforeById`：断言第二条 `searchStickerSet` 的
+> `ignore_cache===true`、名字 `pandamonium_by_tgx`、**此刻 0 条 `getStickerSet`**，随后才 id 兜底且整链只出 1 帧失败；
+> `forcedShortNameSuccess_populatesPreviewAndStopsTheChain`：强制名字那条成功时不再发 id、不上失败帧），四守卫 0 违规。
+> 设备取证（127.0.0.1:10555，Pura 90 Pro HVD，`bm install -p` 覆盖不清数据，`.hvigor/outputs/sticker-fetch-103/`：
+> `hilog-escalation.txt`、`hilog-with-name.txt`、`hilog-installed-still-fails.txt`）：取证期间装的 Lady Noir **未持久留存** ——
+> 应用重启后热门行全部读回「添加」、盘面空，**账号回到取证前的形状**，全程未向任何群/频道发送内容。
+> 遗留：① **整包预览、`tg://addstickers` 与 `internalLinkTypeStickerSet` 的取数仍被这同一个 406 挡着**，且现已定案为
+> **native/服务端入参问题**，不是候选 ⑧ 里说的 ArkTS 缺口；② 取数失败时弹层 `isInstalled` 恒 false（第三十一轮已记，未变）；
+> ③ TDLib native 日志桥未建，`hash` 那条差异目前只能靠读码、拿不到线上请求体。
+
 
 > **2026-09-26（CHAT-HIST-101，上一行遗留 ②「冷启动首屏历史空窗」）**：结掉 TGS-102 顺带发现的那条 —— 进程刚起来时进会话可能一行消息都没有，且**永远不自愈**。
 > **一、根因是两个各自独立的缺陷叠成死局，「TDLib 只回 1 条」只是引信**：

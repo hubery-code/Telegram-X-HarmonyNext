@@ -4765,26 +4765,24 @@ export class ChatCoordinator {
   }
 
   private handleFetchStickerSet(setId: string): void {
-    // 整包预览要的是完整 StickerSet，TDLib 两条路的覆盖面不一样（读 vendored 源码定案）：
-    //  - `searchStickerSet(短名, ignore_cache=false)`：短名在本地映射里命中时
-    //    `StickersManager.cpp:5005-5018` 可以**一个网络请求都不发**就把本地那一包回给你 ——
-    //    `update_sticker_set_cache` 对已安装、以及已过期但本地加载过的包都是 fire-and-forget 重读，
-    //    promise 当场成功（只有从未加载过的包才真的要等网络）；
-    //  - `getStickerSet(set_id)`：命中本地时同样零网络（`:4943-4955`），但从没见过这一包时它拿
-    //    `inputStickerSetID(id, access_hash)` 实发查询，而列表接口缓存的那一层 access_hash 未必可用。
-    // 所以顺序是**缓存友好的一条先走**：本地见过短名（板卡 / 热门榜缓存过）先问名字，失败再按 id 兜底；
-    // 本地只见过 id 时直接按 id。
-    //
-    // 上一轮把这里定案成「服务端否决，ArkTS 修不了」，但当时传的是 `ignore_cache=true`：
-    // `Requests.cpp:1533` 的 `ignore_cache_ && get_tries() >= 3` 在首次尝试（`tries_left_` 是剩余次数，
-    // 构造时 `set_tries(3)`）就让 true **真的生效**，等于主动放弃上面那个零网络分支；
-    // Android 传的始终是 false（`TdlibUi.java:1683`）。本轮改回 false，并把失败原因分类进日志 ——
-    // 数字码 406 有两个来源（服务端 STICKERSET_INVALID / TDLib 本地把 420 FROZEN_METHOD_INVALID
-    // 重映射成 406），分不开就会把配置问题当服务端问题，见 `model/StickerSetFetch.ets`。
+    // 整包预览要的是完整 StickerSet。TDLib 的 `messages.getStickerSet` 有两种输入体，能不能成事取决于
+    // **本地认不认识这一包**（vendored 源码逐段读出来的口径）：
+    //  - `inputStickerSetShortName(短名)`：Telegram 系客户端处理 `t.me/addstickers/<名>` 用的就是这一种，
+    //    服务端只认名字、不查 access_hash —— 这是唯一一条不依赖服务端点头的路；
+    //  - `inputStickerSetID(id, access_hash)`：`getStickerSet(set_id)` 发的是这一种；而
+    //    `searchStickerSet(名字)` 在**短名已在本地映射里**时也会退化成这一种
+    //    （`StickersManager.cpp:5005-5013` → `update_sticker_set_cache` → `load_sticker_sets` `:5419`
+    //    → `get_input_sticker_set` `:3246-3249`）。热门榜上没装过的包走的正是这条路，
+    //    榜给的那份 access_hash 会过期，服务端回 STICKERSET_INVALID（数字码 406），
+    //    TDLib 的自愈只是 `:3947-3951` 把短名映射删掉。
+    // 所以顺序：先按 Android 的默认配置问名字（命中本地就是零网络）；被拒了再**强制**问一次名字 ——
+    // `ignore_cache=true` 在首次尝试就真的生效（`Requests.cpp:1534` 的 `ignore_cache_ && get_tries() >= 3`
+    // 配构造时的 `set_tries(3)`），它让 `:5007` 的条件成立，于是发出去的就是 `inputStickerSetShortName`。
+    // 那一条也被拒（包真被删了）才落到按 id 的兜底；本地只见过 id 的入口（消息气泡）直接按 id。
     const setName: string = stickerSetShortNameOf([this.stickerBoardSets, this.trendingSets], setId);
     const targetName: string = setName.length > 0 ? setName : (!/^-?\d+$/.test(setId) ? setId : '');
     if (targetName.length > 0) {
-      this.requestStickerSetByName(setId, targetName);
+      this.requestStickerSetByName(setId, targetName, false);
     } else {
       this.requestStickerSetById(setId);
     }
@@ -4816,17 +4814,23 @@ export class ChatCoordinator {
     }
   }
 
-  private requestStickerSetByName(setId: string, setName: string): void {
+  /**
+   * 按短名问整包。`forceServer=true` 才会让 TDLib 真的把 `inputStickerSetShortName` 发出去
+   * （口径见 `handleFetchStickerSet`），所以失败链是 名字 → 强制名字 → id。
+   */
+  private requestStickerSetByName(setId: string, setName: string, forceServer: boolean): void {
     if (this.destroyed) {
       return;
     }
     const search: SearchStickerSet = new SearchStickerSet();
     search.name = setName;
-    search.ignore_cache = false;
+    search.ignore_cache = forceServer;
+    // 日志里的 path 分成两种：同一条名字路在强制前后打到服务端的是两种输入体，混记就看不出是哪一条被拒。
+    const path: string = forceServer ? 'name-forced' : 'name';
     const result: Result<TdPendingRequest, AppError> =
       this.scope.request('searchStickerSet', encodeSearchStickerSet(search) as TdWireObject);
     if (result.err) {
-      this.logStickerSetFailure('name', setId, result.error, 'method=searchStickerSet');
+      this.logStickerSetFailure(path, setId, result.error, 'method=searchStickerSet', setName);
       this.dispatch(new OnStickerSetLoadFailed(setId, result.error.message));
     }
     if (result.ok) {
@@ -4836,15 +4840,10 @@ export class ChatCoordinator {
           this.onStickerSetPreviewResponse(setId, res.value);
         }
         if (res.err) {
-          this.logStickerSetFailure('name', setId, res.error,
-            tdRequestAttribution('searchStickerSet', pending.requestId));
+          this.logStickerSetFailure(path, setId, res.error,
+            tdRequestAttribution('searchStickerSet', pending.requestId), setName);
           if (!this.destroyed) {
-            if (/^-?\d+$/.test(setId)) {
-              // 名字这条走不通就换 id；id 那条自己会收尾，不会再递归回名字。
-              this.requestStickerSetById(setId);
-            } else {
-              this.dispatch(new OnStickerSetLoadFailed(setId, res.error.message));
-            }
+            this.onStickerSetNameRouteFailed(setId, setName, forceServer, res.error.message);
           }
         }
       }).catch(() => {
@@ -4852,11 +4851,28 @@ export class ChatCoordinator {
     }
   }
 
+  /** 两条名字路（允许缓存、强制查服务端）都被拒才换 id； setId 本身就是名字的入口没有 id 可换。 */
+  private onStickerSetNameRouteFailed(setId: string, setName: string, forceServer: boolean,
+                                       message: string): void {
+    if (!forceServer) {
+      this.requestStickerSetByName(setId, setName, true);
+      return;
+    }
+    if (/^-?\d+$/.test(setId)) {
+      this.requestStickerSetById(setId);
+      return;
+    }
+    this.dispatch(new OnStickerSetLoadFailed(setId, message));
+  }
+
   /** 原文只进 `AppError.cause`，日志落的是数字码 + 稳定分类（406 的两个来源分得开）。 */
-  private logStickerSetFailure(path: string, setId: string, error: AppError, attribution?: string): void {
+  private logStickerSetFailure(path: string, setId: string, error: AppError, attribution?: string,
+                               setName?: string): void {
     this.logger.logError(TAG, error, attribution);
+    // 短名是公开标识（就是 t.me/addstickers/ 后面那一段），落日志是为了能对着服务端核对名字路到底问的是谁。
+    const nameKey: string = setName !== undefined && setName.length > 0 ? `,name=${setName}` : '';
     this.logger.info(TAG, 'sticker_set_fetch_failed',
-      `path=${path},setId=${setId},${stickerSetFetchFailureLogKey(error)}`);
+      `path=${path},setId=${setId}${nameKey},${stickerSetFetchFailureLogKey(error)}`);
   }
 
   private onStickerSetPreviewResponse(setId: string, value: TdWireObject): void {
