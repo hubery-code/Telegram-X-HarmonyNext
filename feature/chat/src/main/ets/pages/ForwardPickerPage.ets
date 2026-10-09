@@ -19,7 +19,7 @@
  */
 
 import { LightTheme, Theme } from '@tgx/core-design-system';
-import { A11y, a11y } from '@tgx/core-common';
+import { A11y, a11y, Lang } from '@tgx/core-common';
 import { ForwardTarget, matchesForwardQuery } from '../model/ForwardTarget';
 
 
@@ -56,6 +56,10 @@ export struct ForwardPickerPage {
 
   @State private query: string = '';
   @State private sendCopy: boolean = false;
+
+  private t(key: string, ...args: (string | number)[]): string {
+    return Lang.getInstance().getString(key, ...args);
+  }
 
   private filteredTargets(): ForwardTarget[] {
     const out: ForwardTarget[] = [];
@@ -109,7 +113,7 @@ export struct ForwardPickerPage {
       .borderColor(this.T.colors.divider)
 
       // 搜索框：按标题过滤目标会话
-      TextInput({ text: this.query, placeholder: 'Search' })
+      TextInput({ text: this.query, placeholder: this.t('Search') })
         .width('100%')
         .height(40)
         .fontSize(this.T.typography.body.fontSize)

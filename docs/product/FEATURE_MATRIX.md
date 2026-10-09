@@ -128,7 +128,7 @@
 |---|---|---|---|---|---|---|---|---|
 | FEAT-UI-001 | 深色/浅色主题 | P1 | `theme/ThemeManager.java:48`（DEFAULT_DARK_THEME = NIGHT_BLUE）, `theme/Theme.java` | —（平台侧） | 跟随系统/手动切换，关键页面（列表/聊天/设置）色值正确 | — | Accepted | 迁移组 |
 | FEAT-UI-002 | 大字体（聊天字号调节） | P1 | `unsorted/Settings.java:791`（CHAT_FONT_SIZES）, `ui/SettingsController.java:218`（getChatFontSize） | —（平台侧） | 大字号模式下气泡/列表不截断不重叠 | 字体缩放 | Accepted | SET-105 |
-| FEAT-UI-003 | 中/英文案资源 | P1 | `core/Lang.java`, `ui/SettingsLanguageController.java` | — | 关键路径文案中英齐全，无硬编码遗漏（视图层写死文案与词典缺项由 `check_i18n_literals.py` 强制） | — | Accepted | I18N-LITERAL-101 |
+| FEAT-UI-003 | 中/英文案资源 | P1 | `core/Lang.java`, `ui/SettingsLanguageController.java` | — | 关键路径文案中英齐全，无硬编码遗漏（视图层写死文案与词典缺项由 `check_i18n_literals.py` 强制） | — | Accepted | I18N-LITERAL-101/102 |
 | FEAT-UI-004 | 抽屉主导航（≡ 账号头 + 联系人/通话/我的收藏/设置/邀请朋友/帮助 + 夜间模式开关） | P1 | `navigation/DrawerController.java`, `MainActivity.java` | —（平台侧） | 会话列表抽屉导航，账号头展示在线状态，入口路由正确 | — | Accepted | DRAWER-101 |
 
 ---
@@ -1888,7 +1888,9 @@
 > ② **视图层写死英文**同样不在覆盖面（规则只禁 CJK）：会话列表 `Chats / Search / All / Personal / Groups / Channels / Saved Messages`、
 > 输入栏 placeholder `Message`（`ProfilePage.ets:485`、`ChatPage.ets:4744`）、资料页 `last seen recently`
 > （`ProfileCoordinator.ets:194`、`ChatProfileCoordinator.ets:465`）、
-> `DrawerMenu.ets:79`、`ChatListCoordinator.ets:97/369` —— 中文 locale 下原样英文；
+> `DrawerMenu.ets:79`、`ChatListCoordinator.ets:97/369` —— 中文 locale 下原样英文
+> （**视图层那半边已由 I18N-LITERAL-102 关闭**；`ProfileCoordinator.ets:194`、`ChatProfileCoordinator.ets:465`、
+> `ChatListCoordinator.ets:97/369` 属 coordinator，转 **I18N-LITERAL-103**）；
 > ③ **model 侧拼好的英文数量短语**混进中文行：`9 active sessions`、`323 files`
 > （屏上形如 `存储与缓存, 缓存大小：41.8 MB · 323 files`，同一行两种语言）。
 > 另：日期形态（`21.09.2026` 与 `10月9日 10:24` 各自跟随 locale）属 **I18N-DATE**，不在本包范围。
@@ -1896,6 +1898,85 @@
 > **未取到的一格（如实记）**：表情板贴纸格子的长按菜单（`Send Sticker / Add to Favorites / View Sticker Set`）
 > 在设备上没点开 —— 热门榜行始终在格子下方吞掉点按，几次都落进预览弹层；
 > 该面的文案正确性目前只有守卫 R1/R2 与 ② 那条词典用例保证，**无设备证据**。
+
+### FEAT-UI-003 / I18N-LITERAL-102 视图层写死英文接回 Lang + 守卫 R4（2026-10-09）
+
+> **题面**：101 关掉的是「写死中文」，而它的 ② 号残留（**视图层写死英文**）性质更隐蔽 ——
+> 英文 locale 下完全看不出问题，切到中文才露馅，且 R1 只禁 CJK、字面量又不是 key，
+> 两条规则都够不着。本包把这一类做成 **R4**：**词典里已经认识的英文字面量，不许落在文案槽位里**。
+>
+> **R4 的判定核心是「槽位」而不是「字符串」**，否则会误杀海量合法英文（埋点名、色值、正则、
+> 资源 id、类名）。三类槽位：
+> ① 组件/方法名在 `DISPLAY_CALL_NAMES`（`Text` `Button` `Label` `Toggle` `MenuItem` `TextInput`
+> `TextEditor` `searchButton` `showToast` `setTitle` `setSubtitle`）；
+> ② 属性名在 `DISPLAY_FIELDS`（`placeholder` `title` `content` `label` `text` `message` `description`
+> `promptText` `cancelText` `confirmText` `buttonText`）；
+> ③ `this.` 调用且首字母大写的 callee —— 按本仓约定视为 `@Builder`。
+> 另有两条**结构豁免**，不需要写 marker：字面量已在 key 调用里（`this.t('Message')`）；
+> 接收方/属性名以 `Key` 结尾（`KEY_CARRIER_SUFFIX`）。后者决定了本包的命名约定 ——
+> **凡把文案 key 当参数往下传的 helper / 数据行 / builder，第一个参数一律叫 `*Key`**，
+> 于是「这里传的是 key 不是文案」变成编译器之外唯一且守卫强制的自说明，
+> 而不是靠一堆 `// i18n-allow`。`ProxySubPage` 的 `FieldLabelKey`、`SettingsPage` 的
+> `NotificationScopeRowKey`、`SearchPage` 的 `getTabLabelKey`、`DrawerMenu` 的 `labelKey` 都由此而来。
+> 唯一例外是 `LanguageOption` 的首参：它是技术枚举（语言码），所以标签走 `this.t('English')` 而非改名。
+>
+> **R4 的射程等于词典的内容**，这有两个方向的后果，都记下来：
+> 正向 **链式效应**：新加一条 key 会立刻点名新的写死点 —— 为 `'Verifying...'` 建 key 时
+> 顺带暴露了 `CodePage.ets:120`，把它接线后 `'Submit'` 又落进 R2 需要补词条；
+> 反向 **盲区**：词典里**没有** key 的写死英文，R4 完全看不见 —— 所以
+> **「R4 全绿」不等于「视图层零写死英文」**，只等于「凡词典认识的都接回来了」。
+> 据此从本包拆出 **I18N-LITERAL-104**：先补词条、再接线的下一批
+> （`Search chats, messages...`、`Search in chat...`、`Question`、`Search Telegram`、
+> `No Results`、`Recent Searches`、`Clear All` 等）。
+> 另记一条结构性盲区：数据载体构造器不算槽位
+> （`new DrawerMenuRow('calls', icon, 'Contacts', true)` 这类要靠 `*Key` 约定和用例覆盖，不是靠规则）。
+>
+> **同时补上 R2 的一个覆盖洞**：`entry/src/main/ets/pages/Index.ets` 用的是本地 `tr(...)` 包装，
+> R2 只认 `t/getString/formatByKey` 这几个名字，于是该文件里的字面量 key 从没进过词典校验。
+> 5 处 `tr` 统一改成 `t`（docstring 说明了为什么），这批 key 才第一次真正被 R2/R4 管起来。
+>
+> **落地量**：17 个视图文件、**41 个新接线点**、插入 10 个 per-page `t()` helper；
+> `Lang` 新增 **13 条 key**，EN/ZH 由 347 → **360/360 保持对等**；
+> 守卫报告的 key 调用点覆盖 170 → **183**；R4 首轮点名 **31 处**，已全部清零；
+> 就地豁免仍只有 8 处，且**全是写死中文**（日期/相对时间形态、语言自称 `简体中文`、R4 源语言标签），
+> 写死英文豁免 **0** 处。
+> 中文侧的语义拆分：`Message`（输入栏名词）与 `Message User`（按钮动词，翻成 `发消息`）**必须两个 key**，
+> 合成一条就会有一侧上错文案；`'Bot @%s selected'` 沿用本仓 printf 风格而非 `{0}`，与既有 toast 一致。
+>
+> **负向对照**（证明 R4 真的会咬人，而不是永远绿）：临时文件里各造一类槽位 ——
+> `Text('Reply')`、`Button('Retry')`、`TextInput({ placeholder: 'Search' })`，
+> 守卫 exit 1 并逐条点名（`[i18n] ENGLISH-SLOT <file>:<line>: 文案槽位 Text( 里写死了词典已知的英文 -> Reply（…）`），
+> 随后删除该文件，删除排在 `entry` 编译之后，不影响构建。
+>
+> **测试与守卫**：9 个模块 **1281 项用例，0 Failure / 0 Error**，`BUILD SUCCESSFUL`
+> （`core_common 58 = 55 + 3`、`feature_chat 469`、`feature_chat_list 37`、`feature_contact 45`、
+> `feature_auth 47`、`feature_search 27`、`feature_profile 107`、`feature_settings 345`、`entry 146`）。
+> 计数方式记一笔，因为这是个踩过的坑：hvigor 的 `test` 即使**用例失败也会以 `BUILD SUCCESSFUL` 收尾**，
+> 失败行是 `hvigor ERROR: Error in <case>`，只看 `tail -4` 会把失败全丢掉 ——
+> 必须落全量 stdout 再 `grep -c 'hvigor ERROR'`，并用
+> `<module>/.test/default/intermediates/test/coverage_data/test_result.txt`
+> 末行 `Tests run: N, Failure: N, Error: N, Pass: N, Ignore: N` 取数（与 `tools/ci/test_all_modules.py:121` 同源）。
+> 五守卫 + `check_i18n_literals` 全 OK。`Lang.test.ets` 新增 3 条用例：
+> 抽屉登录态与输入栏那一组 key 不许回吐 key、`Message` 名词与 `Message User` 动词在两个 locale 下必须不同值、
+> `'Bot @%s selected'` 的 printf 实参必须被替换。`'Message User'` **故意不进**通用 `t(key) === key` 白名单 ——
+> 它的 EN 值就是 `Message`，钉成「等于 key」会掩盖真正的拆分意图。
+>
+> **设备双 locale 证据**（127.0.0.1:5555，装含本包全部改动的 debug HAP；只读页面、
+> 未卸载/未清数据、未向任何真实会话发送内容，取证后应用语言已还原 English 并干净重启）：
+> 英文侧 —— 会话列表 `Chats / Search` 与筛选条 `All / Personal / Groups / Channels`、
+> 抽屉 `Contacts / Calls / Settings / Invite Friends / Help / Night Mode`、
+> 联系人页标题 `Contacts`、搜索页 `Search` + `All / Chats / Messages`、
+> 资料页按钮 `Message`、设置通知作用域 `All Notifications / Private Chats / Group Chats / Channels`；
+> 中文侧（**同一次会话内**切语言）—— `设置`、`全部通知 / 私聊 / 群组 / 频道`、`代理`、`联系人`。
+>
+> **三条取证盲区，如实记**：① `placeholder` 属性**不进 `dumpLayout`**，输入栏占位文案的中文侧
+> 只有守卫 R4 与词典用例保证，无屏幕证据；② **应用内语言选择不跨进程持久**
+> （`aa force-stop` 后回到 Follow System → English），所以中文证据只能在同一次会话内采，
+> 采完无法二次复核同一界面 —— 已另拆 **LANG-PERSIST-101**；
+> ③ 抽屉 → 联系人这条路由**不响应系统返回键**（连按 3 次仍在原页），属既有导航缺口，本包未追。
+>
+> **依赖与后续**：`@Builder` 按值参热切换不刷新已由 101 定位根因，接线成 **I18N-HOTSWITCH-101**；
+> coordinator/model 侧的写死文案（101 残留 ①③ 加上 ② 里那三条 coordinator）转 **I18N-LITERAL-103**。
 
 
 | 功能 ID | 功能名 |

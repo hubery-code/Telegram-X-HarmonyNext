@@ -6,7 +6,7 @@
  */
 
 import { LightTheme, Theme } from '@tgx/core-design-system';
-import { A11y, a11y } from '@tgx/core-common';
+import { A11y, a11y, Lang } from '@tgx/core-common';
 
 
 @Component
@@ -29,6 +29,10 @@ export struct PasswordPage {
   onToggleVisibility: () => void = () => {};
   onSubmit: () => void = () => {};
   onBackToPhone: () => void = () => {};
+
+  private t(key: string, ...args: (string | number)[]): string {
+    return Lang.getInstance().getString(key, ...args);
+  }
 
   build() {
     Column() {
@@ -103,7 +107,7 @@ export struct PasswordPage {
               .color(this.T.colors.textOnAccent)
               .margin({ right: this.T.spacing.sm })
           }
-          Text(this.isSubmitting ? 'Verifying...' : 'Continue')
+          Text(this.t(this.isSubmitting ? 'Verifying...' : 'Continue'))
             .fontSize(this.T.typography.callout.fontSize)
             .fontWeight(this.T.typography.largeTitle.fontWeight)
             .fontColor(this.T.colors.textOnAccent)

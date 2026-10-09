@@ -6,6 +6,7 @@
  */
 
 import { LightTheme, Theme } from '@tgx/core-design-system';
+import { Lang } from '@tgx/core-common';
 
 
 @Component
@@ -36,6 +37,10 @@ export struct CodePage {
     const secs: number = seconds % 60;
     const secStr: string = secs < 10 ? `0${secs}` : `${secs}`;
     return `${mins}:${secStr}`;
+  }
+
+  private t(key: string, ...args: (string | number)[]): string {
+    return Lang.getInstance().getString(key, ...args);
   }
 
   build() {
@@ -117,7 +122,7 @@ export struct CodePage {
               .color(this.T.colors.textOnAccent)
               .margin({ right: this.T.spacing.sm })
           }
-          Text(this.isSubmitting ? 'Verifying...' : 'Submit')
+          Text(this.t(this.isSubmitting ? 'Verifying...' : 'Submit'))
             .fontSize(this.T.typography.callout.fontSize)
             .fontWeight(this.T.typography.largeTitle.fontWeight)
             .fontColor(this.T.colors.textOnAccent)

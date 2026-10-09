@@ -23,7 +23,7 @@
  */
 
 import { LightTheme, Theme } from '@tgx/core-design-system';
-import { A11y, a11y } from '@tgx/core-common';
+import { A11y, a11y, Lang } from '@tgx/core-common';
 import { fileUri } from '@kit.CoreFileKit';
 import { vibrator } from '@kit.SensorServiceKit';
 import { ContactsItem, ContactsSection, ContactsUiState } from '../contract/ContactsUiState';
@@ -259,7 +259,7 @@ export struct ContactsPage {
             this.onBack();
           })
 
-        Text('Contacts')
+        Text(this.t('Contacts'))
           .fontSize(this.T.typography.title.fontSize)
           .fontWeight(this.T.typography.title.fontWeight)
           .fontColor(this.T.colors.textPrimary)
@@ -286,7 +286,7 @@ export struct ContactsPage {
           .fillColor(this.T.colors.textSecondary)
           .margin({ left: this.T.spacing.md, right: this.T.spacing.xs })
 
-        TextInput({ placeholder: 'Search', text: this.uiState.query })
+        TextInput({ placeholder: this.t('Search'), text: this.uiState.query })
           .layoutWeight(1)
           .height(38)
           .fontSize(this.T.typography.body.fontSize)
@@ -423,7 +423,7 @@ export struct ContactsPage {
       }
 
       Column() {
-        Text(item.displayName.length > 0 ? item.displayName : 'Unknown')
+        Text(item.displayName.length > 0 ? item.displayName : this.t('Unknown'))
           .fontSize(this.T.typography.body.fontSize)
           .fontColor(this.T.colors.textPrimary)
           .maxLines(1)
@@ -449,6 +449,10 @@ export struct ContactsPage {
     .onClick(() => {
       this.handleContactTapped(item.userId);
     })
+  }
+
+  private t(key: string, ...args: (string | number)[]): string {
+    return Lang.getInstance().getString(key, ...args);
   }
 
   build() {

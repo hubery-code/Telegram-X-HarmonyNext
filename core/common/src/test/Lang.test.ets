@@ -247,6 +247,53 @@ export default function langTest(): void {
       expect(Lang.getInstance().t('{0} stickers · {1}', 40, '已安装')).assertEqual('40 个贴纸 · 已安装');
     });
 
+    it('viewLayerCopy_i18nLiteral102_drawerLoginAndComposer_neverFallBackToKey', 0, () => {
+      // I18N-LITERAL-102 接回的这批：抽屉菜单行、登录流程按钮/状态、输入栏占位。
+      // 守卫 R4 只认「词典已有的英文」，所以这批 key 一旦漏词条，R4 反而看不见 ——
+      // 靠这里兜住：中文界面必须出汉字，英文界面必须原样出这句英文。
+      const convertedKeys: string[] = [
+        'Contacts', 'Saved Messages', 'Invite Friends', 'Help', 'Night Mode',
+        'Continue', 'Signing in...', 'Message', 'Verifying...', 'Submit', 'All'
+      ];
+      // 'Message User' 不在这批：它的英文 value（Message）与 key 不同形，EN 侧的
+      // `t(key) === key` 断言对它天然不成立，由下面那条名词/动词用例逐值钉。
+
+      Lang.getInstance().reset();
+      Lang.getInstance().setLanguage('zh');
+      for (let i = 0; i < convertedKeys.length; i++) {
+        const key: string = convertedKeys[i];
+        const value: string = Lang.getInstance().t(key);
+        expect(value !== key).assertTrue();
+        expect(hasHan(value)).assertTrue();
+      }
+
+      Lang.getInstance().setLanguage('en');
+      for (let i = 0; i < convertedKeys.length; i++) {
+        expect(Lang.getInstance().t(convertedKeys[i])).assertEqual(convertedKeys[i]);
+      }
+    });
+
+    it('viewLayerCopy_i18nLiteral102_messageNounAndVerbStayApart', 0, () => {
+      // 'Message'（输入栏占位/回复摘要兜底，名词）与 'Message User'（资料页那颗按钮，
+      // 动词）英文同形、中文不同形；共用一条 key 只会让其中一侧翻得别扭。
+      Lang.getInstance().reset();
+      Lang.getInstance().setLanguage('en');
+      expect(Lang.getInstance().t('Message')).assertEqual('Message');
+      expect(Lang.getInstance().t('Message User')).assertEqual('Message');
+
+      Lang.getInstance().setLanguage('zh');
+      expect(Lang.getInstance().t('Message')).assertEqual('消息');
+      expect(Lang.getInstance().t('Message User')).assertEqual('发消息');
+    });
+
+    it('viewLayerCopy_i18nLiteral102_botToastSubstitutesPrintfArg', 0, () => {
+      Lang.getInstance().reset();
+      Lang.getInstance().setLanguage('en');
+      expect(Lang.getInstance().t('Bot @%s selected', 'telegram')).assertEqual('Bot @telegram selected');
+      Lang.getInstance().setLanguage('zh');
+      expect(Lang.getInstance().t('Bot @%s selected', 'telegram')).assertEqual('已选择机器人 @telegram');
+    });
+
     it('getString_fallsBackToKeyWhenUntranslated', 0, () => {
       Lang.getInstance().reset();
       Lang.getInstance().setLanguage('zh');

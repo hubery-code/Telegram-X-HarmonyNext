@@ -633,15 +633,15 @@ export struct ProxySubPage {
           .width('100%')
           .margin({ bottom: this.getTheme().spacing.md })
 
-          this.FieldLabel('Server Address')
+          this.FieldLabelKey('Server Address')
           this.ServerInput()
-          this.FieldLabel('Port')
+          this.FieldLabelKey('Port')
           this.PortInput()
 
           if (proxyFormHasCredentials(this.formKind)) {
-            this.FieldLabel('Username')
+            this.FieldLabelKey('Username')
             this.UsernameInput()
-            this.FieldLabel('Password')
+            this.FieldLabelKey('Password')
             this.PasswordInput()
           }
 
@@ -650,11 +650,11 @@ export struct ProxySubPage {
           }
 
           if (this.formKind === 'mtproto') {
-            this.FieldLabel('Secret (hex)')
+            this.FieldLabelKey('Secret (hex)')
             this.SecretInput()
           }
 
-          this.FieldLabel('Comment')
+          this.FieldLabelKey('Comment')
           this.CommentInput()
 
           this.EnableNowRow()
@@ -737,7 +737,7 @@ export struct ProxySubPage {
   }
 
   @Builder
-  FieldLabel(labelKey: string) {
+  FieldLabelKey(labelKey: string) {
     Text(this.t(labelKey))
       .fontSize(this.getTheme().typography.footnote.fontSize)
       .fontColor(this.getTheme().colors.textSecondary)

@@ -723,7 +723,7 @@ export struct PrivacyKeySubPage {
         // 两个分区：Android 压的是 ContactsController，它本身就有「我的联系人 / 群聊」
         // 两段；例外名单允许填会话，所以只有联系人一段是功能缺失，不是简化。
         if (this.pickerContacts().length > 0) {
-          ListItemGroup({ header: this.PickerSectionHeaderView('contacts', 'My Contacts') }) {
+          ListItemGroup({ header: this.PickerSectionHeaderViewKey('contacts', 'My Contacts') }) {
             ForEach(this.pickerContacts(), (row: PrivacyContactRow) => {
               ListItem() {
                 Row() {
@@ -767,7 +767,7 @@ export struct PrivacyKeySubPage {
         }
 
         if (this.pickerChats().length > 0) {
-          ListItemGroup({ header: this.PickerSectionHeaderView('chats', 'Group Chats') }) {
+          ListItemGroup({ header: this.PickerSectionHeaderViewKey('chats', 'Group Chats') }) {
             ForEach(this.pickerChats(), (row: PrivacyChatRow) => {
               ListItem() {
                 Row() {
@@ -832,8 +832,8 @@ export struct PrivacyKeySubPage {
   }
 
   @Builder
-  PickerSectionHeaderView(slug: string, label: string) {
-    Text(this.t(label))
+  PickerSectionHeaderViewKey(slug: string, labelKey: string) {
+    Text(this.t(labelKey))
       .fontSize(this.getTheme().typography.caption.fontSize)
       .fontColor(this.getTheme().colors.textSecondary)
       .width('100%')

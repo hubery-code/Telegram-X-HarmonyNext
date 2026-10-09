@@ -16,7 +16,7 @@
  */
 
 import { LightTheme, Theme } from '@tgx/core-design-system';
-import { A11y, a11y } from '@tgx/core-common';
+import { A11y, a11y, Lang } from '@tgx/core-common';
 import { ChatListItem } from '../model/ChatListItem';
 import { ChatListUiState, ChatActionMenuState, ChatFolderTab, filterChatsByFolder } from '../contract/ChatListUiState';
 import { DrawerItemKey } from '../contract/DrawerState';
@@ -242,6 +242,10 @@ export struct ChatListPage {
     this.onDispatch(new DrawerAccountClicked());
   }
 
+  private t(key: string, ...args: (string | number)[]): string {
+    return Lang.getInstance().getString(key, ...args);
+  }
+
   build() {
     Stack({ alignContent: Alignment.BottomEnd }) {
       Column() {
@@ -296,7 +300,7 @@ export struct ChatListPage {
                 this.onDispatch(new DrawerAccountRequested());
               })
 
-            Text('Chats')
+            Text(this.t('Chats'))
               .fontSize(this.T.typography.largeTitle.fontSize)
               .fontWeight(this.T.typography.largeTitle.fontWeight)
               .fontColor(this.T.colors.textPrimary)
@@ -329,7 +333,7 @@ export struct ChatListPage {
               .fillColor(this.T.colors.textSecondary)
               .margin({ right: this.T.spacing.xs })
 
-            Text('Search')
+            Text(this.t('Search'))
               .fontSize(this.T.typography.body.fontSize)
               .fontColor(this.T.colors.textSecondary)
               .layoutWeight(1)
@@ -603,7 +607,7 @@ export struct ChatListPage {
             bottom: this.T.spacing.xs
           })
 
-        Text(menu.isPinned ? 'Unpin' : 'Pin')
+        Text(this.t(menu.isPinned ? 'Unpin' : 'Pin'))
           .fontSize(this.T.typography.body.fontSize)
           .fontColor(this.T.colors.textPrimary)
           .width('100%')

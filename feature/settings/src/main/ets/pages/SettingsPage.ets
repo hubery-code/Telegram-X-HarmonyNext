@@ -556,9 +556,9 @@ export struct SettingsPage {
         .color(this.getTheme().colors.divider)
         .margin({ top: this.getTheme().spacing.sm, bottom: this.getTheme().spacing.xs })
 
-      this.NotificationScopeRow('Private Chats', 'private')
-      this.NotificationScopeRow('Group Chats', 'group')
-      this.NotificationScopeRow('Channels', 'channel')
+      this.NotificationScopeRowKey('Private Chats', 'private')
+      this.NotificationScopeRowKey('Group Chats', 'group')
+      this.NotificationScopeRowKey('Channels', 'channel')
     }
     .width('100%')
     .padding(this.getTheme().spacing.md)
@@ -582,7 +582,7 @@ export struct SettingsPage {
   }
 
   @Builder
-  NotificationScopeRow(labelKey: string, scope: NotificationScopeKey) {
+  NotificationScopeRowKey(labelKey: string, scope: NotificationScopeKey) {
     Row() {
       Text(this.t(labelKey))
         .fontSize(this.getTheme().typography.subheadline.fontSize)
@@ -1094,7 +1094,7 @@ export struct SettingsPage {
 
       Row() {
         this.LanguageOption('system', this.t('System'))
-        this.LanguageOption('en', 'English')
+        this.LanguageOption('en', this.t('English'))
         this.LanguageOption('zh', '简体中文') // i18n-allow 本族名
       }
       .width('100%')

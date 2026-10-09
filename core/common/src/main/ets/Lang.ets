@@ -458,6 +458,24 @@ const EN_DICTIONARY: Record<string, string> = {
   'A11yDelete': 'Delete',
   'A11yAddContact': 'Add contact',
   // A11Y-101 END EN
+  // I18N-LITERAL-102：视图层写死英文接回词典（抽屉菜单行、登录流程、输入栏占位）。
+  // 'Message' 与 'Message User' 英文同形、中文不同形：前者是名词（输入栏占位与回复摘要
+  // 兜底），后者是资料页那颗「发消息」按钮的动词，共用一条 key 只会让其中一侧翻得别扭。
+  'Contacts': 'Contacts',
+  'Saved Messages': 'Saved Messages',
+  'Invite Friends': 'Invite Friends',
+  'Help': 'Help',
+  'Night Mode': 'Night Mode',
+  'Continue': 'Continue',
+  'Signing in...': 'Signing in...',
+  'Message': 'Message',
+  'Message User': 'Message',
+  // Index 的 toast 助手改名 tr -> t 后才进入 R2 射程，暴露出这条 key 从来没进词典。
+  'Bot @%s selected': 'Bot @%s selected',
+  'Verifying...': 'Verifying...',
+  'Submit': 'Submit',
+  'All': 'All',
+  // I18N-LITERAL-102 END EN
 };
 
 const ZH_DICTIONARY: Record<string, string> = {
@@ -850,6 +868,21 @@ const ZH_DICTIONARY: Record<string, string> = {
   'A11yDelete': '删除',
   'A11yAddContact': '添加联系人',
   // A11Y-101 END ZH
+  // I18N-LITERAL-102：与上方 EN 块同序、同 key。
+  'Contacts': '联系人',
+  'Saved Messages': '收藏夹',
+  'Invite Friends': '邀请好友',
+  'Help': '帮助',
+  'Night Mode': '夜间模式',
+  'Continue': '继续',
+  'Signing in...': '正在登录...',
+  'Message': '消息',
+  'Message User': '发消息',
+  'Bot @%s selected': '已选择机器人 @%s',
+  'Verifying...': '校验中...',
+  'Submit': '提交',
+  'All': '全部',
+  // I18N-LITERAL-102 END ZH
 };
 
 export class Lang {

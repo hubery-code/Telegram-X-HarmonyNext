@@ -533,7 +533,7 @@ export struct EmojiBoard {
 
               Blank()
 
-              Text('Clear')
+              Text(this.t('Clear'))
                 .fontSize(this.T.typography.caption.fontSize)
                 .fontWeight(FontWeight.Medium)
                 .fontColor(this.T.colors.accent)
@@ -1103,7 +1103,7 @@ export struct EmojiBoard {
         Blank()
 
         if (this.currentGifCategoryIndex === 0 && this.recentGifs.length > 0 && this.gifSearchQuery.trim().length === 0) {
-          Text('Clear')
+          Text(this.t('Clear'))
             .fontSize(this.T.typography.caption.fontSize)
             .fontWeight(FontWeight.Medium)
             .fontColor(this.T.colors.accent)

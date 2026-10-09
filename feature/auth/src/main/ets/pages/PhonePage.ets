@@ -6,6 +6,7 @@
  */
 
 import { LightTheme, Theme } from '@tgx/core-design-system';
+import { Lang } from '@tgx/core-common';
 import { CountryInfo, DEFAULT_COUNTRY, SUPPORTED_COUNTRIES } from '../model/CountryCode';
 
 
@@ -31,6 +32,10 @@ export struct PhonePage {
   onUseQrCode: () => void = () => {};
 
   @State showCountryPicker: boolean = false;
+
+  private t(key: string, ...args: (string | number)[]): string {
+    return Lang.getInstance().getString(key, ...args);
+  }
 
   build() {
     Column() {
@@ -158,7 +163,7 @@ export struct PhonePage {
               .color(this.T.colors.textOnAccent)
               .margin({ right: this.T.spacing.sm })
           }
-          Text(this.isSubmitting ? 'Connecting...' : 'Continue')
+          Text(this.t(this.isSubmitting ? 'Connecting...' : 'Continue'))
             .fontSize(this.T.typography.callout.fontSize)
             .fontWeight(this.T.typography.largeTitle.fontWeight)
             .fontColor(this.T.colors.textOnAccent)

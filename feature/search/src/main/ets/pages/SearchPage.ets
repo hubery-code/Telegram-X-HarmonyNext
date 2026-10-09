@@ -11,7 +11,7 @@
  */
 
 import { LightTheme, Theme } from '@tgx/core-design-system';
-import { A11y, a11y } from '@tgx/core-common';
+import { A11y, a11y, Lang } from '@tgx/core-common';
 import { SearchChatItem } from '../contract/SearchChatItem';
 import { SearchMessageItem } from '../contract/SearchMessageItem';
 import { SearchTab, SearchUiState } from '../contract/SearchUiState';
@@ -68,7 +68,7 @@ export struct SearchPage {
 
   private readonly tabs: SearchTab[] = ['all', 'chats', 'messages'];
 
-  private getTabLabel(tab: SearchTab): string {
+  private getTabLabelKey(tab: SearchTab): string {
     switch (tab) {
       case 'all':
         return 'All';
@@ -148,6 +148,10 @@ export struct SearchPage {
     this.onNavigateToChat(chatId, messageId);
   }
 
+  private t(key: string, ...args: (string | number)[]): string {
+    return Lang.getInstance().getString(key, ...args);
+  }
+
   build() {
     Column() {
       // 1. 搜索栏
@@ -163,7 +167,7 @@ export struct SearchPage {
           })
 
         Search({ value: this.uiState.query, placeholder: 'Search chats, messages...' })
-          .searchButton('Search')
+          .searchButton(this.t('Search'))
           .layoutWeight(1)
           .height(40)
           .backgroundColor(this.T.colors.surfaceVariant)
@@ -188,7 +192,7 @@ export struct SearchPage {
       Row() {
         ForEach(this.tabs, (tab: SearchTab) => {
           Column() {
-            Text(this.getTabLabel(tab))
+            Text(this.t(this.getTabLabelKey(tab)))
               .fontSize(this.T.typography.subheadline.fontSize)
               .fontWeight(this.uiState.activeTab === tab ? FontWeight.Bold : FontWeight.Normal)
               .fontColor(this.uiState.activeTab === tab ? this.T.colors.accent : this.T.colors.textSecondary)
@@ -261,7 +265,7 @@ export struct SearchPage {
         .fontColor(this.T.colors.destructive)
         .textAlign(TextAlign.Center)
         .margin({ top: this.T.spacing.xs })
-      Button('Retry')
+      Button(this.t('Retry'))
         .fontSize(this.T.typography.subheadline.fontSize)
         .fontColor(this.T.colors.textOnAccent)
         .backgroundColor(this.T.colors.accent)

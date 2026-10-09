@@ -16,7 +16,7 @@
  */
 
 import { LightTheme, Theme } from '@tgx/core-design-system';
-import { A11y, a11y } from '@tgx/core-common';
+import { A11y, a11y, Lang } from '@tgx/core-common';
 import { DrawerState, DrawerItemKey } from '../contract/DrawerState';
 
 
@@ -27,17 +27,21 @@ const DRAWER_ICON_WIDTH: number = 32;
 /** ⌄ 账号切换点击区尺寸（vp）。 */
 const DRAWER_CHEVRON_SIZE: number = 40;
 
-/** 菜单行描述（类构造，避开对象字面量显式类型问题）。 */
+/**
+ * 菜单行描述（类构造，避开对象字面量显式类型问题）。
+ * labelKey 存 Lang key 而不是成品文案：这一行在 coordinator/reducer 之外，
+ * 但仍在**构造时**求值过 locale —— 换成 key、渲染点现算，切语言才不用重进抽屉。
+ */
 class DrawerMenuRow {
   readonly key: DrawerItemKey;
   readonly icon: Resource;
-  readonly label: string;
+  readonly labelKey: string;
   readonly enabled: boolean;
 
-  constructor(key: DrawerItemKey, icon: Resource, label: string, enabled: boolean) {
+  constructor(key: DrawerItemKey, icon: Resource, labelKey: string, enabled: boolean) {
     this.key = key;
     this.icon = icon;
-    this.label = label;
+    this.labelKey = labelKey;
     this.enabled = enabled;
   }
 }
@@ -73,6 +77,10 @@ export struct DrawerMenu {
   onAccountClicked: () => void = () => {};
 
   /** 菜单项与顺序对齐 TGX DrawerController（enabled=false 先按 disabled 色展示）。 */
+  private t(key: string, ...args: (string | number)[]): string {
+    return Lang.getInstance().getString(key, ...args);
+  }
+
   private menuRows: DrawerMenuRow[] = [
     new DrawerMenuRow('contacts', $r('app.media.ic_contacts'), 'Contacts', true),
     new DrawerMenuRow('calls', $r('app.media.ic_call'), 'Calls', false),
@@ -172,7 +180,7 @@ export struct DrawerMenu {
             .width(DRAWER_ICON_WIDTH)
             .justifyContent(FlexAlign.Start)
 
-            Text(row.label)
+            Text(this.t(row.labelKey))
               .fontSize(this.T.typography.body.fontSize)
               .fontColor(row.enabled ? this.T.colors.textPrimary : this.T.colors.disabled)
               .maxLines(1)
@@ -211,7 +219,7 @@ export struct DrawerMenu {
         .width(DRAWER_ICON_WIDTH)
         .justifyContent(FlexAlign.Start)
 
-        Text('Night Mode')
+        Text(this.t('Night Mode'))
           .fontSize(this.T.typography.body.fontSize)
           .fontColor(this.T.colors.textPrimary)
           .layoutWeight(1)

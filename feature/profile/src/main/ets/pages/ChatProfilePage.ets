@@ -10,7 +10,7 @@
  */
 
 import { LightTheme, Theme } from '@tgx/core-design-system';
-import { A11y, a11y } from '@tgx/core-common';
+import { A11y, a11y, Lang } from '@tgx/core-common';
 import { ChatProfileUiState, ChatMemberUiItem } from '../contract/ChatProfileUiState';
 import {
   ChatProfileIntent,
@@ -119,7 +119,7 @@ export struct ChatProfilePage {
           .textAlign(TextAlign.Center)
       }
 
-      Text(this.uiState.title.length > 0 ? this.uiState.title : 'Loading...')
+      Text(this.uiState.title.length > 0 ? this.uiState.title : this.t('Loading...'))
         .fontSize(this.T.typography.headline.fontSize)
         .fontWeight(FontWeight.Bold)
         .fontColor(this.T.colors.textPrimary)
@@ -189,7 +189,7 @@ export struct ChatProfilePage {
               .width(16)
               .height(16)
               .fillColor(this.T.colors.accent)
-            Text('Copy')
+            Text(this.t('Copy'))
               .fontSize(this.T.typography.caption.fontSize)
               .fontColor(this.T.colors.accent)
               .fontWeight(FontWeight.Bold)
@@ -308,6 +308,10 @@ export struct ChatProfilePage {
     .width('100%')
     .backgroundColor(this.T.colors.background)
     .margin({ top: this.T.spacing.xs })
+  }
+
+  private t(key: string, ...args: (string | number)[]): string {
+    return Lang.getInstance().getString(key, ...args);
   }
 
   build() {

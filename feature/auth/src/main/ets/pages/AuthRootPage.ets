@@ -6,6 +6,7 @@
  */
 
 import { LightTheme, Theme } from '@tgx/core-design-system';
+import { Lang } from '@tgx/core-common';
 import { AuthUiState } from '../contract/AuthUiState';
 import {
   BackToPhone,
@@ -47,6 +48,10 @@ export struct AuthRootPage {
   @Prop uiState: AuthUiState = AuthUiState.initial();
 
   onDispatch: (intent: Object) => void = () => {};
+
+  private t(key: string, ...args: (string | number)[]): string {
+    return Lang.getInstance().getString(key, ...args);
+  }
 
   build() {
     Column() {
@@ -183,7 +188,7 @@ export struct AuthRootPage {
             .color(this.T.colors.accent)
             .margin({ top: 120, bottom: this.T.spacing.lg })
 
-          Text(this.uiState.step === 'ready' ? 'Signing in...' : 'Connecting...')
+          Text(this.t(this.uiState.step === 'ready' ? 'Signing in...' : 'Connecting...'))
             .fontSize(this.T.typography.body.fontSize)
             .fontColor(this.T.colors.textSecondary)
         }

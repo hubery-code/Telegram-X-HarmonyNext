@@ -237,7 +237,7 @@ export struct ProfilePage {
       }
 
       Column() {
-        Text(this.uiState.displayName.length > 0 ? this.uiState.displayName : 'Unknown')
+        Text(this.uiState.displayName.length > 0 ? this.uiState.displayName : this.t('Unknown'))
           .fontSize(this.T.typography.largeTitle.fontSize)
           .fontWeight(FontWeight.Medium)
           .fontColor(this.T.colors.textOnScrim)
@@ -482,7 +482,7 @@ export struct ProfilePage {
                 .fillColor(this.T.colors.textOnAccent)
                 .margin({ right: this.T.spacing.xs })
 
-              Text('Message')
+              Text(this.t('Message User'))
                 .fontSize(this.T.typography.body.fontSize)
                 .fontWeight(FontWeight.Medium)
                 .fontColor(this.T.colors.textOnAccent)

@@ -455,7 +455,7 @@ struct Index {
         },
         onBotStartInGroup: (botUsername: string, _startParameter: string, chatId: number): void => {
           if (this.chatCoordinator !== null) {
-            this.toastAdapter.showToast(this.tr('Bot @%s selected', botUsername));
+            this.toastAdapter.showToast(this.t('Bot @%s selected', botUsername));
           } else {
             this.navController.navigateTo({ name: 'chat', chatId: chatId });
           }
@@ -475,11 +475,16 @@ struct Index {
       this.chatCoordinator.dispatch(new OpenStickerSet(stickerSetName));
       return;
     }
-    this.toastAdapter.showToast(this.tr('Sticker set: %s', stickerSetName));
+    this.toastAdapter.showToast(this.t('Sticker set: %s', stickerSetName));
   }
 
-  /** 翻译入口：弹窗构卡要的是当前语言的句子，而 Lang 是全局单例。 */
-  private tr(key: string, ...args: (string | number)[]): string {
+  /**
+   * 翻译入口：弹窗构卡要的是当前语言的句子，而 Lang 是全局单例。
+   * 方法名从 `tr` 改成 `t`（I18N-LITERAL-102）：本仓每个页面/组件的翻译助手都叫 `t`，
+   * 而守卫 R2 只认 `t()` / `getString()` / `formatByKey()` 三种写法 —— 叫 `tr` 时这里的
+   * key 根本没进 R2 的射程，词典缺项要等到上屏才看得见。
+   */
+  private t(key: string, ...args: (string | number)[]): string {
     const lang: Lang = Lang.getInstance();
     return args.length === 0 ? lang.getString(key) : lang.getString(key, ...args);
   }
@@ -495,7 +500,7 @@ struct Index {
     return new Promise<boolean>((resolve: (accepted: boolean) => void): void => {
       this.pendingInvite = resolve;
       this.promptKind = 'invite';
-      this.promptCard = invitePromptCard(data, (key: string, ...args: (string | number)[]): string => this.tr(key, ...args));
+      this.promptCard = invitePromptCard(data, (key: string, ...args: (string | number)[]): string => this.t(key, ...args));
       this.promptVisible = true;
     });
   }
@@ -505,7 +510,7 @@ struct Index {
     return new Promise<ProxyPromptChoice>((resolve: (choice: ProxyPromptChoice) => void): void => {
       this.pendingProxy = resolve;
       this.promptKind = 'proxy';
-      this.promptCard = proxyPromptCard(data, (key: string, ...args: (string | number)[]): string => this.tr(key, ...args));
+      this.promptCard = proxyPromptCard(data, (key: string, ...args: (string | number)[]): string => this.t(key, ...args));
       this.promptVisible = true;
     });
   }
@@ -596,7 +601,7 @@ struct Index {
       }
       if (res.outcome === 'notified') {
         // 动作完成但没有页面可去（代理已存/已启用、加入申请已发出）。
-        this.toastAdapter.showToast(this.tr(appLinkReasonKey(res.reason)));
+        this.toastAdapter.showToast(this.t(appLinkReasonKey(res.reason)));
         return;
       }
       if (res.outcome === 'unsupported') {
