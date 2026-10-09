@@ -1405,6 +1405,40 @@
 > （+1：`favoriteWriteErrorLineCarriesMethodAndRequestId` —— 断言 `addFavoriteSticker` 失败行里有 `method=…,requestId=…`，且 `FLOOD_WAIT_77` 一个字都不出现），
 > 四守卫 0 违规。
 
+> **2026-10-09（DEEPLINK-STICKER-102，FEAT-P2-004/DEEPLINK 交叉：深链短名入口的装包地址错配修掉，整包第一次真出图）**
+> **零、先更正两条已经写进本矩阵的假结论**（都在下方两行里）：
+> ① 上一行遗留 ① 说 `onOpenStickerSet` 生产端至今未接线 —— **不成立**。接线自 `cdb4b3a1`（DEEPLINK-STICKER-101）起就在 `Index.ets:442-467 / :473-479`；
+> 那一轮取证用的是 `MiladyNoir`，那一包恰好被服务端 406 否决，弹层只剩错误态，于是被读成「什么都不做」。
+> ② 第四十七轮「三条路里只有 `ignore_cache=true` 才把 `inputStickerSetShortName` 发到线上」—— **条件读窄了**：`StickersManager.cpp:5005` 是
+> `sticker_set == nullptr || ignore_cache`，短名不在 TDLib 本地映射里时 `ignore_cache=false` 同样发短名。本轮线上第一条成功的就是 `ignore_cache=false` 那条。
+> 于是「整包取数恒 406」也要跟着改口径：**406 是分包的**（详见下方第四条），静态包 + 短名 = 成功。
+> **一、本轮真正修的是「地址错配」**：`changeStickerSet` 在 TDLib 只有一个入参 `set_id:int64`（生成的编码器 `TdTypes_C.ets` 里就 `set_id/is_installed/is_archived` 三个字段），
+> 而深链是全仓**唯一以短名当 `setId`** 的入口（`OpenStickerSet(name)`）→ 弹层的「添加/移除」把 `durov` 送进 int64 的位置，注定 400。
+> 数字 id 一直在回包里（`stickerSet.id`），只是 `onStickerSetPreviewResponse` 把它丢了。
+> **二、落点（四处置）**：`StickerSetPreviewState` 加 `tdlibSetId`（第 11 个构造参与 `copyWith` 末位可选参）；
+> `onStickerSetPreviewResponse` 存下 `set.id`；`model/StickerSetFetch.ets` 加两条纯函数 `isNumericStickerSetId`、`stickerSetChangeTargetId(setId, resolvedSetId)`
+> （入口本身是数字用入口，否则用回包 id，两者都不是数字返回空串）；`handleChangeStickerSet` **fail-closed**：解析不出数字 id 就一条请求都不发，
+> 只落 `sticker_set_change_skipped setId=…,reason=no_numeric_id` 并 dispatch 失败帧把 `isChanging` / `stickerBoard.installingSetId` 结算掉 ——
+> 宁可少一次动作，也不能把名字发到 int64 的位置上。回灌仍按弹层原来的 key（短名）走，reducer 那一层不认识数字 id。
+> **三、设备读数**（`127.0.0.1:10555` Pura 90 Pro，`.hvigor/outputs/deeplink-sticker-102/`，`tdlib.log` 40,983 行；安装走 `bm install -p` 覆盖，未清数据）：
+> 会话内 `aa start -U https://t.me/addstickers/durov` →
+> `L38503 Receive request 23: searchStickerSet { name = "durov", ignore_cache = false }` →
+> `L38508 Create query messages.getStickerSet { stickerset = inputStickerSetShortName { short_name = "durov" } hash = 0 }` →
+> `L38544 Receive sticker set messages.stickerSet { id = 166976182300966916, short_name = "durov", count = 3 }` →
+> `L38722 Sending result for request 23: stickerSet { stickers = vector[3], is_installed = false }`。
+> **整包出图**：弹层 `✋, 3 个贴纸 · 未安装` + `添加 3 个贴纸`（`layout-deeplink.json`）—— 这是本仓第一次在真机上看到整包预览有内容。
+> 点添加 → `L42103 changeStickerSet { set_id = 166976182300966916, is_installed = true }` → `L42112 messages.installStickerSet { inputStickerSetID { id = 166976182300966916, … } }`
+> → `L42383 ok`，弹层翻「已安装 / 移除贴纸包」；再点移除还原 → `tdlib-restore.log L318 changeStickerSet { set_id = …, is_installed = false }` → `uninstallStickerSet` → `L588 ok`，
+> 弹层回到「未安装 / 添加 3 个贴纸」。**账号回到取证前的形状**（`durov` 取证前就未安装），全程未向任何群/频道发内容。
+> 全份日志 `set_id = "`（名字被塞进 int64 位置）出现 **0 次**。
+> **四、406 还剩哪两格（不再叫「恒 406」）**：① 用本地存的那份 `access_hash` 走 `inputStickerSetID(id, access_hash)` → 406（板卡/热门行点进去的那条，本轮同一份日志第 4296 / 12817 / 19386 行仍是 `id = 1258816259751983` 那一条在 406）；
+> ② `inputStickerSetTonGifts {}` / `inputStickerSetPremiumGifts {}` → 406，配合 `updateServiceNotification API_ANIMATED_STICKERS_OUTDATED_*` ×14 → 这两类的确是 schema/layer 侧，落点在 native。
+> 测试：`feature_chat` **469/469**（+7：`StickerSetFetch.test.ets` 4 例钉 `stickerSetChangeTargetId` 的三格与数字谓词拒名字；`StickerBoardFetch.test.ets` 3 例钉短名 key 的弹层带 `tdlibSetId=21`、
+> 装包发的是 21 而不是名字、解析不出数字 id 时 0 条 `changeStickerSet` 且 in-flight 结算、入口本身是数字时优先入口），四守卫 0 违规。
+> i18n 补 `Sticker set: %s` 中英两条（`Index.ets:478` 一直在用这个 key，两份字典里都没有 → 会话外点深链会原样把 key 印在 toast 上）。
+> 遗留：① 板卡/热门行**名字已知**时可否改走短名那条（避开过期 `access_hash`）—— 本轮没测，需要拿一个静态包从热门行点进去才测得出来；
+> ② 无会话时深链只 toast，`StickerSetPreviewSheet` 缺一个不依赖会话的宿主（弹层本身是纯展示件，接得住；但今天能从那条路取到数的只有静态包，收益先记着不做）。
+
 > **2026-10-09（TDLOG-BRIDGE-101，上一行遗留 ③：TDLib 内部日志桥建成 —— 406 的服务器原文与线上请求体第一次成了读数）**
 > **一、桥走的是哪条路（零 native 改动）**：`setLogStream` / `setLogVerbosityLevel` 在 schema 里标了 "Can be called synchronously"
 > （`td_api.tl:16232-16249`），本仓的同步口 `bridge.execute` 直连 `td_execute(request)`（`native/tdcore/napibridge/src/tdcore_napi.cpp:443`），
@@ -1439,9 +1473,10 @@
 > verbosity 与轮转大小可覆盖），四守卫 0 违规。产物 `.hvigor/outputs/tdlog-bridge-101/`
 > （`hilog-startup.txt`、`tdlib-probe.log`、`tdlib-after-packdetail.log`、`baseline-lines.txt`、三份 `layout-*.json`）。
 > **设备状态**：取证只做「打开会话 → 点贴纸 → 开整包弹层 → 返回」，全程未装包、未发送、未改任何账号设置。
-> 遗留：① **`internalLinkTypeStickerSet` 的 `onOpenStickerSet` 生产端至今未接线**（`AppLinkRouter.ets:160,177,190,555-564` 只在测试里挂过）——
-> 实测 `aa start -U https://t.me/addstickers/MiladyNoir` 落一条 `outcome=routed linkType=internalLinkTypeStickerSet,setName=MiladyNoir` 之后什么都不做；
-> 这条恰恰是**唯一带短名**的入口，接上才有 `inputStickerSetShortName` 那条请求；② schema / layer 版本那一侧（native）。
+> 遗留：① **~~`internalLinkTypeStickerSet` 的 `onOpenStickerSet` 生产端至今未接线`~~ —— 本条已作废，见上方第四十九轮更正**：接线自 `cdb4b3a1`（DEEPLINK-STICKER-101）起就在生产装配里
+> （`Index.ets:442-467` 注入回调、`:473-479` 会话内 dispatch `OpenStickerSet(name)`、会话外 toast）；本轮之所以看到 `routed` 之后「什么都不做」，是那一包的取数被服务端 406 否决、
+> 弹层只剩错误态，看起来就像没接（静态包 + 短名那条路本轮实测成功并出整包，见上）；
+> 这条恰恰是**唯一带短名**的入口，接上才有 `inputStickerSetShortName` 那条请求 —— 本轮已实测到；② schema / layer 版本那一侧（native）。
 
 > **2026-10-09（STICKER-FETCH-103，第四十七轮，FEAT-P2-004 整包取数 406 的 ArkTS 半边结案）**：第三十一轮（STICKER-FETCH-102）把 406 定案成
 > 「服务端否决」，并留下一句「`ignore_cache` 的 true 与 false 都实测过、都 406，所以缓存开关不是成因」。**结论对，理由当时不成立** ——
@@ -1450,7 +1485,9 @@
 > **一、取数链本身改成 Android 的形状**：`handleFetchStickerSet` 有短名先问名字；名字那条失败进
 > `onStickerSetNameRouteFailed` —— **先重发一次 `ignore_cache=true`（强制查服务端）**，仍失败且 `setId` 是数字才 `requestStickerSetById` 兜底，
 > 三条路都不通才 dispatch 失败帧。一次打开最多三条请求、只出一帧失败（名字那两条都不 dispatch）。
-> **二、`ignore_cache=true` 到底发了什么（读码与实测对上）**：`Requests.cpp:1532-1533` 的条件是 `ignore_cache_ && get_tries() >= 3`，
+> **二、`ignore_cache=true` 到底发了什么（读码与实测对上）**〔⚠ 49 轮更正：条件不止「强制」一条 —— `StickersManager.cpp:5005` 是 `sticker_set == nullptr || ignore_cache`，
+> 短名**不在 TDLib 本地映射里**时 `ignore_cache=false` 同样发 `inputStickerSetShortName`，且实测成功；那一轮之所以只测到 id 那条，是因为那一包的名字恰好在本地映射里〕：
+> `Requests.cpp:1532-1533` 的条件是 `ignore_cache_ && get_tries() >= 3`，
 > `get_tries()` 是**剩余**重试次数（构造 `set_tries(3)`）→ 首次尝试 true 真生效 → `StickersManager.cpp:5002-5011` `search_sticker_set`
 > 跳过「短名已在本地映射里」那条分支，进 `do_reload_sticker_set(StickerSetId(), inputStickerSetShortName(short_name), 0, …)`
 > （`:5540-5575`）→ `GetStickerSetQuery::send`（`:728-736`）。**也就是说三条路里只有这一条把 `inputStickerSetShortName` 真的发到线上**，
@@ -1474,8 +1511,9 @@
 > 设备取证（127.0.0.1:10555，Pura 90 Pro HVD，`bm install -p` 覆盖不清数据，`.hvigor/outputs/sticker-fetch-103/`：
 > `hilog-escalation.txt`、`hilog-with-name.txt`、`hilog-installed-still-fails.txt`）：取证期间装的 Lady Noir **未持久留存** ——
 > 应用重启后热门行全部读回「添加」、盘面空，**账号回到取证前的形状**，全程未向任何群/频道发送内容。
-> 遗留：① **整包预览、`tg://addstickers` 与 `internalLinkTypeStickerSet` 的取数仍被这同一个 406 挡着**，且现已定案为
-> **native/服务端入参问题**，不是候选 ⑧ 里说的 ArkTS 缺口；② 取数失败时弹层 `isInstalled` 恒 false（第三十一轮已记，未变）；
+> 遗留：① **~~整包预览、`tg://addstickers` 与 `internalLinkTypeStickerSet` 的取数仍被这同一个 406 挡着~~ —— 49 轮更正：不是「挡着」，是**分包**：静态包 + 短名实测成功出整包，
+> 406 只落在（a）用本地存的 `access_hash` 走 `inputStickerSetID` 那一条、（b）动画包与 gifts 特殊包**；且 `onOpenStickerSet` 早已接线（`cdb4b3a1`）。
+> 已定案为 native/服务端入参问题的那一格只剩 (a)(b) 两条，不是候选 ⑧ 里说的 ArkTS 缺口；② 取数失败时弹层 `isInstalled` 恒 false（第三十一轮已记，未变）；
 > ③ TDLib native 日志桥未建，`hash` 那条差异目前只能靠读码、拿不到线上请求体。
 
 

@@ -49,6 +49,12 @@
  * `changeStickerSet` 的 promise 隔 77~166 ms 才回），所以门塌不掉第二次读盘。这里钉住
  * 「权威那条已经读到 → 兜底省掉」，以及两条负向对照：订阅从未响过、权威那条读失败时，
  * 兜底都必须照旧发出。
+ *
+ * DEEPLINK-STICKER-102 守装包地址那半边：深链 `t.me/addstickers/<名>` 是**唯一带短名**的入口，
+ * 弹层的键也就是短名，而 TDLib 1.8.67 的 `changeStickerSet` 只有 `set_id: int64` ——
+ * 于是要求「整包回包里的数字 id 进 `tdlibSetId`、装/卸发它」，拿不到数字 id 时**一条都不许多发**
+ * （把名字塞进 int64 只是一个注定的 400），且不发请求也要把 `isChanging`/`installingSetId` 收干净；
+ * 数字入口保持按入口那一格发，不被回包 id 顶掉。
  */
 
 import { describe, it, expect } from '@ohos/hypium';
@@ -1509,6 +1515,113 @@ export default function stickerBoardFetchTest(): void {
       expect(preview?.errorMessage).assertNull();
       // 短名那条成功就出整包：兜底的 id 查询一条都不许发。
       expect(countRequestsOfType(bridge, 'getStickerSet')).assertEqual(0);
+
+      unsubscribe();
+      coordinator.destroy();
+    });
+
+    it('shortNameKeyPreview_carriesNumericId_andInstallUsesIt', 0, async (): Promise<void> => {
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const scope: AccountScope = createScope(bridge);
+      const coordinator: ChatCoordinator = new ChatCoordinator(scope, 42, 'Test Chat');
+
+      const recorder: StateRecorder = new StateRecorder();
+      const unsubscribe: () => void = coordinator.subscribe((state: ChatUiState): void => {
+        recorder.seen.push(state);
+      });
+
+      // DEEPLINK-STICKER-102：`t.me/addstickers/pandamonium_by_tgx` —— 弹层的键就是短名，
+      // 而 TDLib 的 `changeStickerSet` 只收 `set_id: int64`（1.8.67 没有按短名装包的入参）。
+      coordinator.dispatch(new OpenStickerSet('pandamonium_by_tgx'));
+      await settle();
+      expect(countRequestsOfType(bridge, 'searchStickerSet')).assertEqual(1);
+      bridge.respondTo(lastRequestIdOfType(bridge, 'searchStickerSet'), stickerSetFields([
+        coverFields(1001, 3001, '🐼')
+      ]));
+      await settle();
+
+      const loaded: StickerSetPreviewState | null = recorder.last().stickerSetPreview;
+      expect(loaded !== null).assertTrue();
+      expect(loaded?.setId).assertEqual('pandamonium_by_tgx');
+      expect(loaded?.tdlibSetId).assertEqual('21');
+
+      coordinator.dispatch(new InstallStickerSet('pandamonium_by_tgx'));
+      await settle();
+      const changes: Record<string, TdWireValue>[] = requestsOfType(bridge, 'changeStickerSet');
+      expect(changes.length).assertEqual(1);
+      expect(String(changes[0]['set_id'])).assertEqual('21');
+      expect(changes[0]['is_installed']).assertTrue();
+
+      bridge.respondTo(lastRequestIdOfType(bridge, 'changeStickerSet'), okFields());
+      await settle();
+      // 回灌仍按弹层原本的键：换键的话 reducer 认不出是哪一层，`isChanging` 永远挂着。
+      const after: StickerSetPreviewState | null = recorder.last().stickerSetPreview;
+      expect(after !== null).assertTrue();
+      expect(after?.setId).assertEqual('pandamonium_by_tgx');
+      expect(after?.tdlibSetId).assertEqual('21');
+      expect(after?.isChanging).assertFalse();
+      expect(after?.isInstalled).assertTrue();
+      expect(recorder.last().stickerBoard.installingSetId === null).assertTrue();
+
+      unsubscribe();
+      coordinator.destroy();
+    });
+
+    it('shortNameKeyWithoutNumericId_installSendsNothingAndSettles', 0, async (): Promise<void> => {
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const scope: AccountScope = createScope(bridge);
+      const coordinator: ChatCoordinator = new ChatCoordinator(scope, 42, 'Test Chat');
+
+      const recorder: StateRecorder = new StateRecorder();
+      const unsubscribe: () => void = coordinator.subscribe((state: ChatUiState): void => {
+        recorder.seen.push(state);
+      });
+
+      // 取数全链被拒（三条名字路都没有回包里的 id）：这时按装包是**发不出**正确地址的。
+      coordinator.dispatch(new OpenStickerSet('milady_noir'));
+      await settle();
+      bridge.respondTo(lastRequestIdOfType(bridge, 'searchStickerSet'), errorFieldsWith(406, 'STICKERSET_INVALID'));
+      await settle();
+      bridge.respondTo(lastRequestIdOfType(bridge, 'searchStickerSet'), errorFieldsWith(406, 'STICKERSET_INVALID'));
+      await settle();
+      expect(recorder.last().stickerSetPreview?.tdlibSetId).assertEqual('');
+
+      coordinator.dispatch(new InstallStickerSet('milady_noir'));
+      await settle();
+      // 把短名当 int64 发过去只是一个注定的 400：宁可不发，也不发一条必然失败的请求。
+      expect(countRequestsOfType(bridge, 'changeStickerSet')).assertEqual(0);
+      // 但不发也得把在途态收干净，否则弹层与热门行永远停在「添加中」。
+      expect(recorder.last().stickerSetPreview?.isChanging).assertFalse();
+      expect(recorder.last().stickerBoard.installingSetId === null).assertTrue();
+
+      unsubscribe();
+      coordinator.destroy();
+    });
+
+    it('numericKeyInstall_prefersTheEntryOverTheResponseId', 0, async (): Promise<void> => {
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const scope: AccountScope = createScope(bridge);
+      const coordinator: ChatCoordinator = new ChatCoordinator(scope, 42, 'Test Chat');
+
+      const recorder: StateRecorder = new StateRecorder();
+      const unsubscribe: () => void = coordinator.subscribe((state: ChatUiState): void => {
+        recorder.seen.push(state);
+      });
+
+      // 数字入口（气泡、板卡、热门行）：回包 id 只服务短名入口，不许顶掉入口自己那一格。
+      coordinator.dispatch(new OpenStickerSet('77'));
+      await settle();
+      bridge.respondTo(lastRequestIdOfType(bridge, 'getStickerSet'), stickerSetFields([
+        coverFields(1001, 3001, '🐼')
+      ]));
+      await settle();
+      expect(recorder.last().stickerSetPreview?.tdlibSetId).assertEqual('21');
+
+      coordinator.dispatch(new InstallStickerSet('77'));
+      await settle();
+      const changes: Record<string, TdWireValue>[] = requestsOfType(bridge, 'changeStickerSet');
+      expect(changes.length).assertEqual(1);
+      expect(String(changes[0]['set_id'])).assertEqual('77');
 
       unsubscribe();
       coordinator.destroy();

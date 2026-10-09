@@ -6,6 +6,10 @@
  * 前者是「这一包解析不出来」，后者是「这个 api_id/会话不被允许调这个方法」——
  * 分不开就会把配置问题当服务端问题定案（本仓第十五轮正是这么错的）。
  * 取数链路本身（先短名后 id、`ignore_cache=false`）由 StickerBoardFetch.test.ets 守。
+ *
+ * DEEPLINK-STICKER-102 另守装包地址那半边：`changeStickerSet` 在 TDLib 1.8.67 里只有
+ * `set_id: int64` 一种入参，而深链 `t.me/addstickers/<名>` 那一进的弹层键是**短名** ——
+ * 装/卸必须换成整包回包里带回来的数字 id，两条都拿不到就不发请求。
  */
 
 import { describe, it, expect } from '@ohos/hypium';
@@ -13,6 +17,8 @@ import { AppError, AppErrors } from '@tgx/core-common';
 import {
   classifyStickerSetFetchFailure,
   stickerSetFetchFailureLogKey,
+  isNumericStickerSetId,
+  stickerSetChangeTargetId,
   StickerSetFetchFailure
 } from '../main/ets/model/StickerSetFetch';
 
@@ -62,6 +68,33 @@ export default function stickerSetFetchTest(): void {
       // 兜底路径：没有 cause 时读 message，分类仍要给出（不能因为字段缺失崩在日志里）。
       const error: AppError = AppErrors.tdlib('unknown', 'STICKERSET_INVALID', false);
       expect(classifyStickerSetFetchFailure(error)).assertEqual('stickerSetInvalid' as StickerSetFetchFailure);
+    });
+
+    it('numericEntry_addressesItself', 0, () => {
+      // 气泡/板卡/热门行入口自带数字 id：装包就发这一格，不该被回包里的别的 id 顶掉。
+      expect(stickerSetChangeTargetId('21', '99')).assertEqual('21');
+      expect(stickerSetChangeTargetId('21', '')).assertEqual('21');
+    });
+
+    it('shortNameEntry_addressesTheIdFromTheResponse', 0, () => {
+      // DEEPLINK-STICKER-102：`t.me/addstickers/<名>` 的键是短名，而 TDLib 的
+      // `changeStickerSet` 只有 `set_id: int64` —— 只能发整包回包里带回来的数字 id。
+      expect(stickerSetChangeTargetId('pandamonium_by_tgx', '21')).assertEqual('21');
+    });
+
+    it('shortNameEntryWithoutResolvedIdSendsNothing', 0, () => {
+      // 短名 + 还没拿到 id：返回空串让调用方**不发请求**。把名字塞进 int64 的位置上
+      // 只会换来一个注定的 400，那比「这次动作没发生」更难查。
+      expect(stickerSetChangeTargetId('pandamonium_by_tgx', '')).assertEqual('');
+      expect(stickerSetChangeTargetId('pandamonium_by_tgx', 'pandamonium_by_tgx')).assertEqual('');
+    });
+
+    it('numericIdPredicateRejectsNames', 0, () => {
+      expect(isNumericStickerSetId('21')).assertTrue();
+      expect(isNumericStickerSetId('-21')).assertTrue();
+      expect(isNumericStickerSetId('pandamonium_by_tgx')).assertFalse();
+      expect(isNumericStickerSetId('21x')).assertFalse();
+      expect(isNumericStickerSetId('')).assertFalse();
     });
   });
 }

@@ -65,3 +65,30 @@ export function classifyStickerSetFetchFailure(error: AppError): StickerSetFetch
 export function stickerSetFetchFailureLogKey(error: AppError): string {
   return `code=${tdlibCodeOf(error)} reason=${classifyStickerSetFetchFailure(error)}`;
 }
+
+/** TDLib 的 int64 入参只吃得下十进制串；短名不是 id。 */
+export function isNumericStickerSetId(value: string): boolean {
+  return /^-?\d+$/.test(value);
+}
+
+/**
+ * 装/卸一包该发哪个地址（DEEPLINK-STICKER-102）。
+ *
+ * `changeStickerSet` 在 TDLib 1.8.67 里只有 `set_id: int64` 一种入参
+ * （`td_api.tl`；按短名的 `add_sticker_set(inputStickerSetShortName)` 那条分支在
+ * `StickersManager.cpp:3132` 是**取数**侧的入口，装包侧 `change_sticker_set` `:5134`
+ * 拿的是已解析出来的 `StickerSetId`），所以把短名当 set_id 发过去只会是一个必然失败的 400。
+ *
+ * 于是：入口自带数字 id（气泡、板卡、热门行）就用它；深链 `t.me/addstickers/<名>` 这一路
+ * 只有整包回包里带回来的 `stickerSet.id` 可用；两条都没有就返回空串，让调用方**不发请求** ——
+ * 宁可少一次动作，也不能把名字发到 int64 的位置上。
+ */
+export function stickerSetChangeTargetId(setId: string, resolvedSetId: string): string {
+  if (isNumericStickerSetId(setId)) {
+    return setId.trim();
+  }
+  if (isNumericStickerSetId(resolvedSetId)) {
+    return resolvedSetId.trim();
+  }
+  return '';
+}

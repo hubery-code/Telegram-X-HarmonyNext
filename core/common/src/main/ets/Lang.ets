@@ -272,6 +272,7 @@ const EN_DICTIONARY: Record<string, string> = {
   // Internal links (DEEPLINK-101)
   'This link type is not supported yet': 'This link type is not supported yet',
   'Failed to open link': 'Failed to open link',
+  'Sticker set: %s': 'Sticker set: %s',
 
   // Link confirmations (DEEPLINK-102)
   'Join': 'Join',
@@ -570,6 +571,7 @@ const ZH_DICTIONARY: Record<string, string> = {
   // Internal links (DEEPLINK-101)
   'This link type is not supported yet': '暂不支持这种链接',
   'Failed to open link': '无法打开链接',
+  'Sticker set: %s': '贴纸包：%s',
 
   // Link confirmations (DEEPLINK-102)
   'Join': '加入',

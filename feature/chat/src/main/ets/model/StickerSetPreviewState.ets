@@ -30,6 +30,11 @@ export class StickerSetPreviewState {
   readonly isLoading: boolean;
   readonly isChanging: boolean;
   readonly errorMessage: string | null;
+  /**
+   * DEEPLINK-STICKER-102：整包回包里 TDLib 给的真实 `stickerSet.id`（数字串）。
+   * `setId` 是**这一层的键**，深链入口填的是短名；装/卸必须用这一格，见 `stickerSetChangeTargetId`。
+   */
+  readonly tdlibSetId: string;
 
   constructor(
     setId: string = '',
@@ -41,7 +46,8 @@ export class StickerSetPreviewState {
     stickers: StickerSetItem[] = [],
     isLoading: boolean = false,
     isChanging: boolean = false,
-    errorMessage: string | null = null
+    errorMessage: string | null = null,
+    tdlibSetId: string = ''
   ) {
     this.setId = setId;
     this.title = title;
@@ -53,6 +59,7 @@ export class StickerSetPreviewState {
     this.isLoading = isLoading;
     this.isChanging = isChanging;
     this.errorMessage = errorMessage;
+    this.tdlibSetId = tdlibSetId;
   }
 
   copyWith(
@@ -64,7 +71,8 @@ export class StickerSetPreviewState {
     stickers?: StickerSetItem[],
     isLoading?: boolean,
     isChanging?: boolean,
-    errorMessage?: string | null
+    errorMessage?: string | null,
+    tdlibSetId?: string
   ): StickerSetPreviewState {
     return new StickerSetPreviewState(
       this.setId,
@@ -76,7 +84,8 @@ export class StickerSetPreviewState {
       stickers !== undefined ? stickers : this.stickers,
       isLoading !== undefined ? isLoading : this.isLoading,
       isChanging !== undefined ? isChanging : this.isChanging,
-      errorMessage !== undefined ? errorMessage : this.errorMessage
+      errorMessage !== undefined ? errorMessage : this.errorMessage,
+      tdlibSetId !== undefined ? tdlibSetId : this.tdlibSetId
     );
   }
 }

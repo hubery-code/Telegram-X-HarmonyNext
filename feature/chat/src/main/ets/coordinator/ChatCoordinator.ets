@@ -319,7 +319,7 @@ import {
   SetPollAnswerEffect
 } from '../contract/ChatEffect';
 import { StickerSetPreviewState, StickerSetItem, isUnicodeEmojiSticker } from '../model/StickerSetPreviewState';
-import { stickerSetFetchFailureLogKey } from '../model/StickerSetFetch';
+import { stickerSetChangeTargetId, stickerSetFetchFailureLogKey } from '../model/StickerSetFetch';
 import {
   StickerBoardDeps,
   StickerBoardPack,
@@ -4924,14 +4924,26 @@ export class ChatCoordinator {
       items,
       false,
       false,
-      null
+      null,
+      set.id !== null && set.id !== undefined ? set.id : ''
     );
     this.dispatch(new OnStickerSetLoaded(preview));
   }
 
   private handleChangeStickerSet(setId: string, isInstalled: boolean): void {
+    // DEEPLINK-STICKER-102：`t.me/addstickers/<名>` 那一进出的弹层，键（`setId`）就是短名，而 TDLib 的
+    // `changeStickerSet` 只有 `set_id: int64` 一种入参 —— 所以请求发整包回包里带回来的数字 id，
+    // 回灌仍按弹层原本的键（否则 reducer 认不出这是哪一层，`isChanging` 永远挂着）。
+    const preview: StickerSetPreviewState | null = this.currentState.stickerSetPreview;
+    const resolvedId: string = preview !== null && preview.setId === setId ? preview.tdlibSetId : '';
+    const targetId: string = stickerSetChangeTargetId(setId, resolvedId);
+    if (targetId.length === 0) {
+      this.logger.info(TAG, 'sticker_set_change_skipped', `setId=${setId},reason=no_numeric_id`);
+      this.dispatch(new OnStickerSetActionFailed(setId, 'Sticker set id not resolved'));
+      return;
+    }
     const req: ChangeStickerSet = new ChangeStickerSet();
-    req.set_id = setId;
+    req.set_id = targetId;
     req.is_installed = isInstalled;
     req.is_archived = false;
     const result: Result<TdPendingRequest, AppError> =
