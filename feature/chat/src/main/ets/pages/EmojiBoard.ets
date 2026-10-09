@@ -212,6 +212,12 @@ export struct EmojiBoard {
   @Prop recentStickers: StickerSetItem[] = [];
   /** STICKER-FAV-101：由父层回灌的收藏贴纸（`getFavoriteStickers`；空 = 没有 index 0 那一行）。 */
   @Prop favoriteStickers: StickerSetItem[] = [];
+  /**
+   * STICKER-FAV-102：收藏的**成员位**（`updateFavoriteStickers` 推送自带的 id 串）。
+   * 格子里那句「添加/移出收藏」查这一串而不是查 `favoriteStickers`：两处入口（板卡格与
+   * 消息长按菜单）必须同一个口径，否则同一颗贴纸在板卡里显示「移出」、在菜单里显示「添加」。
+   */
+  @Prop favoriteStickerIds: number[] = [];
   /** GIF-101：由父层回灌的最近使用动图列表 */
   @Prop recentGifs: GifItem[] = [];
 
@@ -397,9 +403,7 @@ export struct EmojiBoard {
 
         // 添加/移出收藏
         Row() {
-          Text(this.favoriteStickers.some((s: StickerSetItem): boolean => s.fileId === item.fileId)
-            ? '移出收藏'
-            : '添加至收藏')
+          Text(this.isFavoriteCell(item.fileId) ? '移出收藏' : '添加至收藏')
             .fontSize(this.T.typography.body.fontSize)
             .fontColor(this.T.colors.textPrimary)
             .layoutWeight(1)
@@ -408,7 +412,7 @@ export struct EmojiBoard {
         .width('100%')
         .height(44)
         .onClick(() => {
-          const isFav: boolean = this.favoriteStickers.some((s: StickerSetItem): boolean => s.fileId === item.fileId);
+          const isFav: boolean = this.isFavoriteCell(item.fileId);
           this.activeStickerMenu = null;
           if (this.onToggleFavoriteSticker) {
             this.onToggleFavoriteSticker(item.fileId, !isFav);
@@ -881,6 +885,14 @@ export struct EmojiBoard {
       }, (row: StickerTrendingPack) => stickerTrendingKey(row))
     }
     .width('100%')
+  }
+
+  /**
+   * STICKER-FAV-102：这一格是否已在收藏列表 —— 查推送带回来的成员位，不查格子行。
+   * 与消息长按菜单（`ChatReducer` 的 `isFavoriteSticker`）同一个口径，两处入口不会各说各话。
+   */
+  private isFavoriteCell(fileId: number): boolean {
+    return this.favoriteStickerIds.indexOf(fileId) >= 0;
   }
 
   /**

@@ -212,6 +212,8 @@ export interface ChatUiStateOptions {
   readonly recentStickers?: readonly StickerSetItem[];
   /** STICKER-FAV-101：收藏的贴纸列表（顺序照 TDLib）。 */
   readonly favoriteStickers?: readonly StickerSetItem[];
+  /** STICKER-FAV-102：收藏成员位（推送自带，零请求）。 */
+  readonly favoriteStickerIds?: readonly number[];
   /** GIF-101：最近使用的动图列表（最新在先）。 */
   readonly recentGifs?: readonly GifItem[];
   /** GIF-101：动图搜索关键词。 */
@@ -312,6 +314,15 @@ export class ChatUiState implements UiState {
    * 中间插一位会把后面所有字段的默认值错位（既有调用点只传前若干个）。
    */
   readonly favoriteStickers: readonly StickerSetItem[];
+  /**
+   * STICKER-FAV-102：收藏的**文件 id 成员位**（`updateFavoriteStickers` 推送自带的整串）。
+   *
+   * 与 `favoriteStickers` 分开存是刻意的：后者是格子，只有走过一次 `getFavoriteStickers`
+   * （开贴纸页签，或刚写完收藏）才有内容；前者任何一次推送都能免费拿到。
+   * 长按菜单那句 Add/Remove from Favorites 只查这一串 —— 否则「没开过贴纸页签」的会话里
+   * 一颗早已收藏的贴纸会一直显示「Add to Favorites」，点下去什么也不变。
+   */
+  readonly favoriteStickerIds: readonly number[];
 
   constructor(
     chatId: number,
@@ -359,7 +370,8 @@ export class ChatUiState implements UiState {
     pendingMenuAction: string = '',
     pollComposer: PollComposerState | null = null,
     isMuted: boolean = false,
-    favoriteStickers: readonly StickerSetItem[] = []
+    favoriteStickers: readonly StickerSetItem[] = [],
+    favoriteStickerIds: readonly number[] = []
   ) {
     this.chatId = chatId;
     this.chatTitle = chatTitle;
@@ -405,6 +417,7 @@ export class ChatUiState implements UiState {
     this.pollComposer = pollComposer;
     this.isMuted = isMuted;
     this.favoriteStickers = favoriteStickers;
+    this.favoriteStickerIds = favoriteStickerIds;
   }
 
   static initial(): ChatUiState {
@@ -456,7 +469,8 @@ export class ChatUiState implements UiState {
       options.pendingMenuAction !== undefined ? options.pendingMenuAction : this.pendingMenuAction,
       options.pollComposer !== undefined ? options.pollComposer : this.pollComposer,
       options.isMuted !== undefined ? options.isMuted : this.isMuted,
-      options.favoriteStickers !== undefined ? options.favoriteStickers : this.favoriteStickers
+      options.favoriteStickers !== undefined ? options.favoriteStickers : this.favoriteStickers,
+      options.favoriteStickerIds !== undefined ? options.favoriteStickerIds : this.favoriteStickerIds
     );
   }
 }

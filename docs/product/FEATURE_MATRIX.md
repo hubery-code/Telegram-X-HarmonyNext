@@ -1288,6 +1288,60 @@
 > **没有拿到的那一格如实记**：「收藏行真的上屏、且排在最近使用之前、且不带标题行」在设备上**无法取证** ——
 > 该账号 `getFavoriteStickers` 回 0 条，而本端还没有把贴纸加入收藏的入口。这一格目前只有单测覆盖，
 > 解法在写路径那一包（贴纸长按菜单 + `addFavoriteSticker`），届时可以造出真实收藏再补正向 A/B。
+> **（2026-10-09 STICKER-FAV-102 更正：这一格已经拿到，见下面那条注。）**
+
+
+> **2026-10-09（STICKER-FAV-102，FEAT-P2-004 收藏的「成员位」改从推送取，并把上一行欠的那格取证补上）**：
+> **先把自己的题面证伪**：这一包立项时写的是「收藏只有读链、没有写入口，做完写路径再补正向 A/B」——
+> 但写路径早就在 HEAD 上了（STICKER-WRITE-101，2026-09-30：`AddFavoriteSticker` / `RemoveFavoriteSticker`
+> 的意图与 Effect、协调器两条 handler、ChatPage 长按菜单项、EmojiBoard 格子长按菜单，连 `removeRecentSticker` 一起做了）。
+> **真的缺陷在那句标签读的是哪一份数据**：`ChatReducer` 装配长按菜单时判的是
+> `state.favoriteStickers.some(s => s.fileId === stickerFileId)`，而那一串格子是**开过贴纸页签才会去读**的显示行
+> （门控在 `favoriteRequested`）—— 于是一颗早就被收藏的贴纸，在从没打开过贴纸板卡的会话里，菜单永远写着
+> 「Add to Favorites」，再点一次还是一次重复写。
+> **Android 不这么办**：`updateFavoriteStickers` 的处理器把 `sticker_ids` 直接存成字段
+> （`telegram/Tdlib.java:497` 声明、`:9721` 赋值），菜单标签走纯本地查表 `isStickerFavorite(int)`（`:6434-6436`），
+> **一次网络都不发**。而我们把这条推送身上本来就带着的答案扔掉了 —— vendored
+> `StickersManager.cpp:9676-9680` 的 `get_update_favorite_stickers_object()` 返回的就是
+> `get_file_ids_object(favorite_sticker_ids_)`，生成侧 `TdTypes_U.ets` 也照样解出了 `sticker_ids`，只是全仓没人读它。
+> **修法是把「成员位」和「格子」分成两件事**：新增 `OnFavoriteStickerIdsChanged` 意图与
+> `ChatUiState.favoriteStickerIds`（按约定追加在构造参数与 `copyWith` 末位），订阅侧**无条件**收下推送里的 id 串并回灌，
+> 显示行的重读仍留在 `favoriteRequested` 门后（推送给不了 emoji 与尺寸，而没人开过页签时后台补读一次就是白打网络）；
+> reducer 侧菜单标签改问 `favoriteStickerIds.indexOf(stickerFileId) >= 0`，`onFavoriteStickersLoaded` 从同一串
+> `fileId` 推出成员位（谁后到谁说话，不留两份真相），`removeFavoriteSticker` 两份一起撤。
+> **id 对得上不是巧合**：格子侧 `StickerBoard.ets:135-145` 与菜单侧 `ChatCoordinator.ets` 的 `messageSticker`
+> 取的是同一个 TDLib 文件句柄（`sticker.sticker.id`），所以 `indexOf` 比的是一套 id，不是两个命名空间。
+> **覆盖补齐**：写路径此前**只有 reducer 用例、协调器层零覆盖**（发出去的 TDLib 参数长什么样没人钉）。
+> `StickerBoardFetch.test.ets` 新增两条协调器用例 —— add 必须以 `sticker: InputFileId` 发出且成功后回读那一行、
+> remove 写失败必须回读真实列表（不留「看着没了、下次又冒出来」）；`ChatReducer.test.ets` 新增两条钉本轮语义 ——
+> `onFavoriteStickerIdsChanged` 只换成员位不许动格子、菜单标签来自推送的 id 而不是板卡行（后者为空恰是改前那个形状）。
+> 推送那条用例顺带把 `sticker_ids` 的解码路径也过了（此前测试里这条推送是裸的 `{}`）。
+> 测试：`feature_chat` **459/459 全绿**；`check_architecture` / `check_codegen` / `check_design_tokens` /
+> `check_accessibility_labels` 0 违规。
+> **设备取证（127.0.0.1:10555，Pura 90 Pro HVD，重建并 `bm install -p` 覆盖，`.hvigor/outputs/sticker-fav-102/`；
+> 上一行那句「无法取证」的那一格到此结掉）**：
+> ① 基线 `10:27:57.046 sticker_favorite_update ids=0`（本账号确实一颗收藏都没有）；
+> ② `10:31:37 m1.json` 长按菜单读 **`Add to Favorites`** → 点下去 → **`10:31:45.524 sticker_favorite_update ids=1`**，
+> 而第一条 `getFavoriteStickers` 回包要到 `10:32:45.467 sticker_favorite_loaded rows=1`（60 s 后打开贴纸页签才发）——
+> **成员位在没有显示行的那 60 s 里已经是真值**，这正是改前结构上拿不到的那一段；`10:33:23 m2.json` 菜单读
+> **`Remove from Favorites`**（`fav102-menu-after-add.png`）；
+> ③ `10:36:16 b5.json` 收藏行**真的上屏**：List 里 `[0,2256][1256,2508]` 那一个块只有**一颗**格子
+> `[0,2256][246,2494]`，且**上面没有整宽标题行**（`fav102-row.png`）—— 与 `MediaStickersAdapter.java:800` 的
+> `headerItemCount = stickerSet.isFavorite() ? 0 : 1` 逐字对上；同一颗格子长按 `10:36:49 b6.json` 出「发送贴纸 / 移出收藏」，
+> 那句「移出收藏」读的正是推送来的成员位；
+> ④ 还原 `10:37:04.374 ids=0` → `.407 rows=0`，`10:38:00 m3.json` 菜单翻回 `Add to Favorites`（`fav102-restored.png`）；
+> 全程未向任何群 / 频道发送，收藏数从 0 起、回到 0。
+> **诚实标注两处取证边界**：那 60 s 窗口内没有留菜单 dump，所以「标签在窗口里就翻了」这一句由 reducer 用例
+> （`menuFavoriteLabelComesFromPushedIds_notFromTheBoardRow`）保证，设备侧证到的是「成员位先于显示行到达」；
+> 「收藏排在最近使用之前」本轮没有重验（本轮那一屏里最近使用是空的），仍只有单测覆盖。
+> **两条新遗留（都在同一屏里看见，不在本包范围）**：① **写请求的 promise 不结算** —— TDLib 侧写确实生效
+> （`10:31:45.524 ids=1`），但 `10:32:05.517` 与 `10:32:45.441` 各有一条 `ERROR ChatCoordinator error network/timeout/retryable=true`，
+> 屏上挂着「TDLib request timed out」（`m2.json` 与 `b1/b5/b6/b7` 同框），而成功日志 `sticker_favorite_added` 全程零条；
+> UI 观感之所以正常，恰恰是因为成员位改由推送驱动 —— 这是那个设计的理由，也是它的代价。归因还差一步：那条错误行**不带 request id**，
+> 下一包要么补日志、要么在网关侧查 `addFavoriteSticker` 的回包为什么没上来。
+> ② **包条点按滚不到位**（`EmojiBoard.ets:679`）：`stickerScroller.scrollToIndex(index)` 传的是 pack 在
+> `stickerBlocks()` 里的下标，而 List 的 **index 0 是热门区那个 ListItem**（STICKER-BOARD-102 把热门排在已装包之前），
+> 有热门区时永远差一位；本轮为把收藏行滚进画面改用了 `uiInput swipe`，所以那条点按路径至今没有设备证据。
 
 
 > **2026-09-26（CHAT-HIST-101，上一行遗留 ②「冷启动首屏历史空窗」）**：结掉 TGS-102 顺带发现的那条 —— 进程刚起来时进会话可能一行消息都没有，且**永远不自愈**。

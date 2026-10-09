@@ -82,6 +82,7 @@ import {
   OnRecentStickersLoaded,
   OnRecentStickersFailed,
   OnFavoriteStickersLoaded,
+  OnFavoriteStickerIdsChanged,
   OnFavoriteStickersFailed,
   OnStickerSetLoaded,
   OnStickerSetLoadFailed,
@@ -2479,6 +2480,35 @@ export default function chatReducerTest() {
       expect(result.state.favoriteStickers[0].id).assertEqual(2);
       expect(result.state.recentStickers.length).assertEqual(0);
       expect(result.effects.length).assertEqual(0);
+      // STICKER-FAV-102：读回来的那一行同时喂成员位 —— 两处入口共用一串 id，不留两份真相
+      expect(result.state.favoriteStickerIds.length).assertEqual(1);
+      expect(result.state.favoriteStickerIds[0]).assertEqual(2);
+    });
+
+    it('onFavoriteStickerIdsChanged_replacesIdsAndKeepsCells', 0, () => {
+      const kept: StickerSetItem = {
+        id: 11,
+        fileId: 11,
+        emoji: '🦎',
+        width: 512,
+        height: 512,
+        localPath: null,
+        thumbnailPath: null,
+        isDownloaded: true,
+        isDownloading: false
+      };
+      const initial: ChatUiState = makeState('').copyWith({
+        favoriteStickers: [kept],
+        favoriteStickerIds: [11]
+      });
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        initial, new OnFavoriteStickerIdsChanged([91, 92, 93]), makeEnv()
+      );
+
+      // 推送只给 id：成员位整串替换，格子那一行原样留着（emoji/尺寸是推送给不了的）
+      expect(result.state.favoriteStickerIds.length).assertEqual(3);
+      expect(result.state.favoriteStickers.length).assertEqual(1);
+      expect(result.effects.length).assertEqual(0);
     });
 
     it('onFavoriteStickersFailed_keepsListAndStaysSilent', 0, () => {
@@ -3334,13 +3364,17 @@ export default function chatReducerTest() {
       const item1: StickerSetItem = makeStickerItem(501, '😂');
       const item2: StickerSetItem = makeStickerItem(502, '❤️');
       const state: ChatUiState = makeStateWith([]).copyWith({
-        favoriteStickers: [item1, item2]
+        favoriteStickers: [item1, item2],
+        favoriteStickerIds: [501, 502]
       });
       const res: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
         state, new RemoveFavoriteSticker(501), makeEnv()
       );
       expect(res.state.favoriteStickers.length).assertEqual(1);
       expect(res.state.favoriteStickers[0].fileId).assertEqual(502);
+      // STICKER-FAV-102：成员位一起撤 —— 菜单标签看的是这一串，只清格子的话菜单还停在「Remove」
+      expect(res.state.favoriteStickerIds.length).assertEqual(1);
+      expect(res.state.favoriteStickerIds[0]).assertEqual(502);
       expect(res.effects.length).assertEqual(1);
       const effect: RemoveFavoriteStickerInTdlib = res.effects[0] as RemoveFavoriteStickerInTdlib;
       expect(effect.kind).assertEqual('removeFavoriteStickerInTdlib');
@@ -3364,11 +3398,32 @@ export default function chatReducerTest() {
       expect(effect.fileId).assertEqual(601);
     });
 
+    // STICKER-FAV-102：这条钉住本轮真正修掉的东西 —— 从没开过贴纸页签（`favoriteStickers` 全空）
+    // 也该读出「已收藏」，因为 updateFavoriteStickers 的推送自带 sticker_ids，Android 就是查这一串
+    // （`Tdlib.java:6434` isStickerFavorite）。此前这里读的是显示行，于是标签永远停在 Add to Favorites。
+    it('menuFavoriteLabelComesFromPushedIds_notFromTheBoardRow', 0, () => {
+      const stickerMsg: MessageItem = makeStickerMessage(11, 888, 'pack-777');
+      const state: ChatUiState = makeStateWith([stickerMsg]).copyWith({
+        favoriteStickers: [],
+        favoriteStickerIds: [888, 889]
+      });
+      const res: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        state,
+        new OnMessageActionMenuLoaded(11, false, false, false),
+        makeEnv()
+      );
+      const menu: MessageActionMenuState = res.state.actionMenu as MessageActionMenuState;
+      expect(menu.showFavoriteSticker).assertTrue();
+      expect(menu.isFavoriteSticker).assertTrue();
+      expect(res.effects.length).assertEqual(0);
+    });
+
     it('onMessageActionMenuLoaded_forStickerMessage_populatesStickerActionOptions', 0, () => {
       const stickerMsg: MessageItem = makeStickerMessage(10, 777, 'pack-999');
       const favItem: StickerSetItem = makeStickerItem(777, '😂');
       const state: ChatUiState = makeStateWith([stickerMsg]).copyWith({
-        favoriteStickers: [favItem]
+        favoriteStickers: [favItem],
+        favoriteStickerIds: [777]
       });
       const res: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
         state,
@@ -3383,9 +3438,11 @@ export default function chatReducerTest() {
       expect(menu.showViewStickerSet).assertTrue();
       expect(menu.stickerSetId).assertEqual('pack-999');
 
-      // 当不在收藏列表中时 isFavoriteSticker 为 false
+      // 负向对照：格子里有这一颗、成员位里没有 —— 标签跟的是成员位（`favoriteStickers` 是显示行，
+      // 只有走过一次 getFavoriteStickers 才有内容；标签不该受它摆布，见下面那条用例）。
       const stateNotFav: ChatUiState = makeStateWith([stickerMsg]).copyWith({
-        favoriteStickers: []
+        favoriteStickers: [favItem],
+        favoriteStickerIds: []
       });
       const resNotFav: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
         stateNotFav,

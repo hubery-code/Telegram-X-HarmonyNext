@@ -103,6 +103,7 @@ import {
   OnRecentStickersLoaded,
   OnRecentStickersFailed,
   OnFavoriteStickersLoaded,
+  OnFavoriteStickerIdsChanged,
   OnFavoriteStickersFailed,
   OnTrendingLoaded,
   OnTrendingFailed,
@@ -704,7 +705,10 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
       if (item.media !== null && item.media.kind === 'sticker') {
         stickerFileId = item.media.fileId;
         showFavoriteSticker = stickerFileId > 0;
-        isFavoriteSticker = state.favoriteStickers.some((s: StickerSetItem): boolean => s.fileId === stickerFileId);
+        // STICKER-FAV-102：查成员位而不是格子行 —— 后者只有开过贴纸页签才有内容，
+        // 于是「一颗早就收藏的贴纸」在从没开过板卡的会话里会一直显示「Add to Favorites」。
+        // Android 同样是纯本地查表（`Tdlib.java:6434` `isStickerFavorite`），不发请求。
+        isFavoriteSticker = state.favoriteStickerIds.indexOf(stickerFileId) >= 0;
         stickerSetId = item.media.stickerSetId !== null ? item.media.stickerSetId : '';
         showViewStickerSet = stickerSetId.length > 0 && stickerSetId !== '0';
       }
@@ -1378,7 +1382,18 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
 
     case 'onFavoriteStickersLoaded': {
       const loadedFavorites: OnFavoriteStickersLoaded = intent as OnFavoriteStickersLoaded;
-      return reduced(state.copyWith({ favoriteStickers: loadedFavorites.items }));
+      // 成员位与格子同源：这一串 id 与推送那条走同一个字段，谁后到谁说话，不会两份真相。
+      const ids: number[] = loadedFavorites.items.map((item: StickerSetItem): number => item.fileId);
+      return reduced(state.copyWith({
+        favoriteStickers: loadedFavorites.items,
+        favoriteStickerIds: ids
+      }));
+    }
+
+    case 'onFavoriteStickerIdsChanged': {
+      const changedIds: OnFavoriteStickerIdsChanged = intent as OnFavoriteStickerIdsChanged;
+      // 只换成员位，不动那一行的格子：推送带不了 emoji/尺寸，格子等 `getFavoriteStickers`。
+      return reduced(state.copyWith({ favoriteStickerIds: changedIds.stickerIds }));
     }
 
     case 'onFavoriteStickersFailed': {
@@ -1657,8 +1672,12 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
       const nextFavorites: StickerSetItem[] = state.favoriteStickers.filter(
         (s: StickerSetItem): boolean => s.fileId !== remFav.stickerFileId
       );
+      // 成员位一起撤：菜单标签看的是这一串，只清格子的话菜单还停在「Remove from Favorites」。
+      const nextIds: number[] = state.favoriteStickerIds.filter(
+        (id: number): boolean => id !== remFav.stickerFileId
+      );
       return reduced(
-        state.copyWith({ favoriteStickers: nextFavorites }),
+        state.copyWith({ favoriteStickers: nextFavorites, favoriteStickerIds: nextIds }),
         [new RemoveFavoriteStickerInTdlib(remFav.stickerFileId)]
       );
     }

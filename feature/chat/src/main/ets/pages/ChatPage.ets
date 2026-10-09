@@ -956,6 +956,8 @@ export struct ChatPage {
             recentStickers: this.uiState.recentStickers.slice(),
             // STICKER-FAV-101：收藏那一颗伪包（getFavoriteStickers）
             favoriteStickers: this.uiState.favoriteStickers.slice(),
+            // STICKER-FAV-102：收藏成员位（updateFavoriteStickers 自带，零请求）
+            favoriteStickerIds: this.uiState.favoriteStickerIds.slice(),
             recentGifs: this.uiState.recentGifs.slice(),
             // STICKER-BOARD-101：真实贴纸包（getInstalledStickerSets 装盘结果）
             stickerPacks: this.uiState.stickerBoard.packs.slice(),

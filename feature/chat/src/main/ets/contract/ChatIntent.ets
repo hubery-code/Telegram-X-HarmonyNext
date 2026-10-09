@@ -779,6 +779,7 @@ export type ChatIntent =
   | OnRecentStickersLoaded
   | OnRecentStickersFailed
   | OnFavoriteStickersLoaded
+  | OnFavoriteStickerIdsChanged
   | OnFavoriteStickersFailed
   | OnTrendingLoaded
   | OnTrendingFailed
@@ -974,6 +975,23 @@ export class OnFavoriteStickersLoaded implements Intent {
 
   constructor(items: StickerSetItem[]) {
     this.items = items;
+  }
+}
+
+/**
+ * STICKER-FAV-102：`updateFavoriteStickers` 直接带回来的收藏文件 id 串。
+ *
+ * TDLib 这条推送**不是**「收藏变了，自己去读」—— 它把新的 `sticker_ids` 整串放在身上
+ * （`StickersManager.cpp:9676-9680` 的 `get_update_favorite_stickers_object()`），
+ * Android 因此把它存成 `Tdlib.favoriteStickerIds` 供长按菜单查（`Tdlib.java:6434`），一次网络都不发。
+ * 格子（emoji/尺寸）这条推送给不了，所以只更新成员位，显示那一行仍走 `getFavoriteStickers`。
+ */
+export class OnFavoriteStickerIdsChanged implements Intent {
+  readonly kind: 'onFavoriteStickerIdsChanged' = 'onFavoriteStickerIdsChanged';
+  readonly stickerIds: number[];
+
+  constructor(stickerIds: number[]) {
+    this.stickerIds = stickerIds;
   }
 }
 

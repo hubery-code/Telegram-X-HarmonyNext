@@ -37,6 +37,12 @@
  * STICKER-BOARD-104 守那条订阅带来的副作用：装/卸一包同时有两条失效（reducer 那条 + TDLib
  * 推送那条），两条都要留、但不许并发读盘 —— 在途期间只登记「结算后补读一次」。
  *
+ * STICKER-FAV-102 守收藏那半边的两条：`updateFavoriteStickers` 身上就带新的 `sticker_ids`
+ * （`StickersManager.cpp:9676-9680`），所以成员位**无条件**收下、一次网络都不发（长按菜单的
+ * Add/Remove 标签只看这一串），而格子仍按「开过板卡」门控重读；外加写路径的 wire 形状
+ * （`sticker` 必须是 `inputFileId`、成功要重读、写失败要回到真实列表）—— 那两条此前只有
+ * reducer 层的测试，协调器层零覆盖。
+ *
  * STICKER-BOARD-105 守剩下那半边：设备实测两条失效并不总是同刻（推送先到、读盘先结算，
  * `changeStickerSet` 的 promise 隔 77~166 ms 才回），所以门塌不掉第二次读盘。这里钉住
  * 「权威那条已经读到 → 兜底省掉」，以及两条负向对照：订阅从未响过、权威那条读失败时，
@@ -62,7 +68,14 @@ import {
 import { Result, AppError } from '@tgx/core-common';
 import { ChatCoordinator } from '../main/ets/coordinator/ChatCoordinator';
 import { ChatUiState } from '../main/ets/contract/ChatUiState';
-import { ClearRecentStickers, InstallStickerSet, OpenStickerBoard, OpenStickerSet } from '../main/ets/contract/ChatIntent';
+import {
+  AddFavoriteSticker,
+  ClearRecentStickers,
+  InstallStickerSet,
+  OpenStickerBoard,
+  OpenStickerSet,
+  RemoveFavoriteSticker
+} from '../main/ets/contract/ChatIntent';
 import { StickerBoardPack, StickerTrendingPack } from '../main/ets/model/StickerBoard';
 import { StickerSetItem, StickerSetPreviewState } from '../main/ets/model/StickerSetPreviewState';
 
@@ -398,10 +411,16 @@ function recentUpdateFields(isAttached: boolean, stickerIds: number[]): Record<s
   return fields;
 }
 
-/** `updateFavoriteStickers` 一个字段都不带：TDLib 只说「收藏变了」，列表得自己重读。 */
-function favoriteUpdateFields(): Record<string, TdWireValue> {
+/**
+ * `updateFavoriteStickers` 把**新的整串 id 放在身上**（`StickersManager.cpp:9676-9680`
+ * → `get_update_favorite_stickers_object()`）。STICKER-FAV-102 之前这里写成「一个字段都不带」，
+ * 于是本端把 payload 整个丢掉、只会重读 —— 长按菜单那句 Add/Remove from Favorites 因此
+ * 取决于「这个会话有没有开过贴纸页签」，而不是取决于收藏的真实状态。
+ */
+function favoriteUpdateFields(stickerIds: number[]): Record<string, TdWireValue> {
   const fields: Record<string, TdWireValue> = {};
   fields['@type'] = 'updateFavoriteStickers';
+  fields['sticker_ids'] = stickerIds;
   return fields;
 }
 
@@ -1032,23 +1051,112 @@ export default function stickerBoardFetchTest(): void {
       // 订阅在 `start()` 里注册（和真机一样）：不 start 就没有 `updateFavoriteStickers` 这一路。
       coordinator.start();
 
-      const unsubscribe: () => void = coordinator.subscribe((_state: ChatUiState): void => {});
+      const recorder: StateRecorder = new StateRecorder();
+      const unsubscribe: () => void = coordinator.subscribe((state: ChatUiState): void => {
+        recorder.seen.push(state);
+      });
 
-      // 没开过贴纸页签：没人在看这一行，后台重读只是白打一次网络
-      bridge.pushUpdate(favoriteUpdateFields());
+      // 没开过贴纸页签：没人在看那一行，所以不该为重读它打网络；
+      // 但推送身上的 sticker_ids 必须无条件收下 —— 长按菜单的标签只认这一串（STICKER-FAV-102）。
+      bridge.pushUpdate(favoriteUpdateFields([7001]));
       await settle();
+      expect(recorder.last().favoriteStickerIds.length).assertEqual(1);
+      expect(recorder.last().favoriteStickerIds[0]).assertEqual(7001);
+      expect(recorder.last().favoriteStickers.length).assertEqual(0);
       expect(countRequestsOfType(bridge, 'getFavoriteStickers')).assertEqual(0);
 
       coordinator.dispatch(new OpenStickerBoard());
       await settle();
       expect(countRequestsOfType(bridge, 'getFavoriteStickers')).assertEqual(1);
 
-      bridge.pushUpdate(favoriteUpdateFields());
+      bridge.pushUpdate(favoriteUpdateFields([7001, 7002]));
       await settle();
       // 一次推送一条重读（Android 的 onFavoriteStickersUpdated 同理）
       expect(countRequestsOfType(bridge, 'getFavoriteStickers')).assertEqual(2);
+      expect(recorder.last().favoriteStickerIds.length).assertEqual(2);
       // 收藏的重读不该带动最近使用那条链
       expect(countRequestsOfType(bridge, 'getRecentStickers')).assertEqual(1);
+
+      unsubscribe();
+      coordinator.destroy();
+    });
+
+    // ---------- STICKER-FAV-102：收藏写路径的 wire 形状（此前只有 reducer 那半边有测试）----------
+
+    it('addFavoriteSticker_sendsInputFileId_andRefetchesTheRowOnSuccess', 0, async (): Promise<void> => {
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const scope: AccountScope = createScope(bridge);
+      const coordinator: ChatCoordinator = new ChatCoordinator(scope, 42, 'Test Chat');
+
+      const recorder: StateRecorder = new StateRecorder();
+      const unsubscribe: () => void = coordinator.subscribe((state: ChatUiState): void => {
+        recorder.seen.push(state);
+      });
+
+      coordinator.dispatch(new AddFavoriteSticker(7001));
+      await settle();
+      const adds: Record<string, TdWireValue>[] = requestsOfType(bridge, 'addFavoriteSticker');
+      expect(adds.length).assertEqual(1);
+      // TDLib 要的是 `inputFileId`（那颗贴纸自己的文件句柄，不是缩略图）：
+      // 传错句柄类型服务端会 400「Can add to favorites only sent stickers」（StickersManager.cpp:9627-9640）
+      const sticker: Record<string, TdWireValue> = adds[0]['sticker'] as Record<string, TdWireValue>;
+      expect(sticker['@type']).assertEqual('inputFileId');
+      expect(sticker['id']).assertEqual(7001);
+
+      bridge.respondTo(lastRequestIdOfType(bridge, 'addFavoriteSticker'), okFields());
+      await settle();
+      // 成功后重读那一行：格子（emoji/尺寸）只有 getFavoriteStickers 给得了
+      expect(countRequestsOfType(bridge, 'getFavoriteStickers')).assertEqual(1);
+      bridge.respondTo(lastRequestIdOfType(bridge, 'getFavoriteStickers'), recentStickersFields([
+        recentStickerFields(7001, 7101, '🐼')
+      ]));
+      await settle();
+      expect(recorder.last().favoriteStickers.length).assertEqual(1);
+      expect(recorder.last().favoriteStickerIds.length).assertEqual(1);
+
+      unsubscribe();
+      coordinator.destroy();
+    });
+
+    it('removeFavoriteSticker_writeFailureRefetchesTheRealList', 0, async (): Promise<void> => {
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const scope: AccountScope = createScope(bridge);
+      const coordinator: ChatCoordinator = new ChatCoordinator(scope, 42, 'Test Chat');
+
+      const recorder: StateRecorder = new StateRecorder();
+      const unsubscribe: () => void = coordinator.subscribe((state: ChatUiState): void => {
+        recorder.seen.push(state);
+      });
+
+      // 先让本地那一行有内容，才看得出「写失败必须回到真实列表」
+      coordinator.dispatch(new OpenStickerBoard());
+      await settle();
+      bridge.respondTo(lastRequestIdOfType(bridge, 'getFavoriteStickers'), recentStickersFields([
+        recentStickerFields(7001, 7101, '🐼')
+      ]));
+      await settle();
+      expect(recorder.last().favoriteStickers.length).assertEqual(1);
+
+      coordinator.dispatch(new RemoveFavoriteSticker(7001));
+      await settle();
+      // reducer 已把那一格本地撤掉（Android 同序：先撤屏上的，再写服务端）
+      expect(recorder.last().favoriteStickers.length).assertEqual(0);
+      const removes: Record<string, TdWireValue>[] = requestsOfType(bridge, 'removeFavoriteSticker');
+      expect(removes.length).assertEqual(1);
+      const handle: Record<string, TdWireValue> = removes[0]['sticker'] as Record<string, TdWireValue>;
+      expect(handle['@type']).assertEqual('inputFileId');
+      expect(handle['id']).assertEqual(7001);
+
+      const reads: number = countRequestsOfType(bridge, 'getFavoriteStickers');
+      bridge.respondError(lastRequestIdOfType(bridge, 'removeFavoriteSticker'), 'REQUEST_TIMEOUT');
+      await settle();
+      // 写失败要重读：否则留下「看着移出了、下次打开还在」的假象
+      expect(countRequestsOfType(bridge, 'getFavoriteStickers')).assertEqual(reads + 1);
+      bridge.respondTo(lastRequestIdOfType(bridge, 'getFavoriteStickers'), recentStickersFields([
+        recentStickerFields(7001, 7101, '🐼')
+      ]));
+      await settle();
+      expect(recorder.last().favoriteStickers.length).assertEqual(1);
 
       unsubscribe();
       coordinator.destroy();

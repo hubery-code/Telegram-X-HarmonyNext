@@ -149,6 +149,7 @@ import {
   RemoveRecentSticker as TdRemoveRecentSticker,
   encodeRemoveRecentSticker,
   UpdateRecentStickers,
+  UpdateFavoriteStickers,
   UpdateInstalledStickerSets,
   StickerSetInfo,
   StickerTypeRegular,
@@ -261,6 +262,7 @@ import {
   OnRecentStickersLoaded,
   OnRecentStickersFailed,
   OnFavoriteStickersLoaded,
+  OnFavoriteStickerIdsChanged,
   OnFavoriteStickersFailed,
   StartVoiceRecord,
   StopAndSendVoiceRecord,
@@ -4657,6 +4659,19 @@ export class ChatCoordinator {
    * 后台重读只是白打一次网络。Android 那个守卫是 `!loadingStickers && !loadingFavoriteStickers`
    * （`:1055-1060`，「别再发一条重叠的请求」），本端靠 `recentRequested` 这一位表达同一件事。
    */
+  /**
+   * STICKER-FAV-101：订阅 `updateFavoriteStickers`（Android 的 `onFavoriteStickersUpdated`，
+   * `ui/EmojiMediaListController.java:1262-1276`）。在其它端加/删一颗收藏后，index 0 那一行要自己活过来。
+   *
+   * STICKER-FAV-102 把这条推送拆成**两件事**，因为它身上带着答案：
+   * TDLib 的 `updateFavoriteStickers` 带 `sticker_ids`（`StickersManager.cpp:9676-9680`
+   * 的 `get_update_favorite_stickers_object()` 直接把 `favorite_sticker_ids_` 换成文件 id 串），
+   * 于是：
+   *  - **成员位无条件回灌** —— 长按菜单那句 Add/Remove from Favorites 只要 id，Android 也是
+   *    纯本地查表（`Tdlib.java:6434`），一次网络都不发；
+   *  - **格子（emoji/尺寸）仍按门控重读** —— 推送给不了这些，只有 `getFavoriteStickers` 有；
+   *    没开过贴纸页签就没人在看那一行，后台重读是白打一次网络（同最近使用的口径）。
+   */
   private subscribeFavoriteStickers(): void {
     if (this.destroyed || this.favoriteStickersSubscription !== null) {
       return;
@@ -4672,7 +4687,9 @@ export class ChatCoordinator {
         if (update === null || update.type !== 'updateFavoriteStickers') {
           return;
         }
-        this.logger.info(TAG, 'sticker_favorite_update', 'pushed');
+        const favoriteUpdate: UpdateFavoriteStickers = update as UpdateFavoriteStickers;
+        this.logger.info(TAG, 'sticker_favorite_update', `ids=${favoriteUpdate.sticker_ids.length}`);
+        this.dispatch(new OnFavoriteStickerIdsChanged(favoriteUpdate.sticker_ids));
         if (!this.currentState.stickerBoard.favoriteRequested) {
           return;
         }
