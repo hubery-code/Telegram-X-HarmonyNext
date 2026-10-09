@@ -369,6 +369,17 @@ export function stickerBoardBlocks(
   return blocks;
 }
 
+/**
+ * 包条点按要滚到的 List 下标。
+ *
+ * 热门区排在已装盘**之前**并自己占 List 的 index 0（STICKER-BOARD-102），而包条那排 chip 只有
+ * `stickerBlocks()`，两边下标不同源：直接把 blocks 下标喂给 `scrollToIndex` 会永远滚到前一包，
+ * 第一包还会停在热门区上。
+ */
+export function stickerBlockListIndex(blockIndex: number, hasTrendingRow: boolean): number {
+  return blockIndex + (hasTrendingRow ? 1 : 0);
+}
+
 function firstRenderablePath(item: StickerSetItem): string | null {
   if (item.thumbnailPath !== null && stickerPathIsRenderable(item.thumbnailPath)) {
     return item.thumbnailPath;

@@ -56,6 +56,7 @@ import {
   stickerBoardPacksFromSetInfos,
   stickerBoardRecentPack,
   stickerBoardThumbnailPath,
+  stickerBlockListIndex,
   stickerCellImagePath,
   stickerCellKey,
   stickerItemFromSticker,
@@ -343,6 +344,20 @@ export default function stickerBoardTest(): void {
 
       // 收藏为空时不留空行（同最近使用那一条口径）
       expect(stickerBoardBlocks(packs, [], recent).length).assertEqual(2);
+    });
+
+    it('stickerBlockListIndex_shiftsEveryBlockPastTheTrendingRow', 0, () => {
+      // 热门区自己占 List 的 index 0，所以第一包要在 1 —— 直接把 blocks 下标喂给
+      // `scrollToIndex` 会永远滚到前一包（第一包则停在热门区上）。
+      expect(stickerBlockListIndex(0, true)).assertEqual(1);
+      expect(stickerBlockListIndex(2, true)).assertEqual(3);
+      // 榜是装饰：没有热门区时下标就是 blocks 下标本身
+      expect(stickerBlockListIndex(0, false)).assertEqual(0);
+      expect(stickerBlockListIndex(2, false)).assertEqual(2);
+
+      // 对照真实那一屏：3 块 + 热门区 → List 有 4 项，最后一块要落在 3（不是 2、也不是 4）
+      const lastBlockIndex: number = 3 - 1;
+      expect(stickerBlockListIndex(lastBlockIndex, true)).assertEqual(3);
     });
 
     it('favoritePack_keepsEveryStickerBecauseTdlibAlreadyCapsTheList', 0, () => {

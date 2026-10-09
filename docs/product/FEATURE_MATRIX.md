@@ -1342,6 +1342,37 @@
 > ② **包条点按滚不到位**（`EmojiBoard.ets:679`）：`stickerScroller.scrollToIndex(index)` 传的是 pack 在
 > `stickerBlocks()` 里的下标，而 List 的 **index 0 是热门区那个 ListItem**（STICKER-BOARD-102 把热门排在已装包之前），
 > 有热门区时永远差一位；本轮为把收藏行滚进画面改用了 `uiInput swipe`，所以那条点按路径至今没有设备证据。
+> **（✅ 遗留 ② 已于同日 EMOJISCROLL-101 结掉，含那条点按路径的设备证据，见下面那条注。）**
+
+> **2026-10-09（EMOJISCROLL-101，上一行遗留 ②「包条点按滚不到位」）**：`EmojiBoard` 贴纸页顶部那排包缩略图 chip 的点按路径到此有设备证据了。
+> **一、成因是两套下标不同源**：chip 条 `ForEach` 的是 `stickerBoardBlocks()`（收藏伪包 → 最近使用伪包 → 已装包），
+> 而承载内容的 `List` 在 blocks 之前**自己插了一个热门区 `ListItem`**（STICKER-BOARD-102：账号一个包都没装时热门区是唯一装包入口，
+> 排在下面等于让用户滚过一片空白去找它），于是 `List` 的 index 0 恒是热门区，`scrollToIndex(blockIndex)` **永远滚到前一包**，
+> 点第一包时停在热门区上、List 一动不动。
+> **二、修法收成一个纯函数**：`StickerBoard.ets` 新增 `stickerBlockListIndex(blockIndex, hasTrendingRow)`
+> （`blockIndex + (hasTrendingRow ? 1 : 0)`），调用点把 `this.stickerTrending.length > 0` 作为第二参传入 ——
+> 与 `List` 里那个 `if (this.stickerTrending.length > 0)` 是同一个条件，两边不会各说各话；
+> **没有热门区时下标原样**（这是关键：不能无条件 `+1`，否则 BOARD-102 之前那个形态会反向错一位）。
+> 高亮位 `currentStickerPackIndex` 仍用 blocks 下标（它和 chip 条是同一个 `ForEach`，不涉及 List 下标）。
+> **三、设备取证**（127.0.0.1:10555，Pura 90 Pro HVD，`bm install -p` 覆盖不清数据，`.hvigor/outputs/emojiscroll-101/`；
+> 取证需要「有已装包 + 有热门区」同框，而账号当时 `sticker_board_loaded rows=0,total=0`，
+> 所以**临时装了两包再卸掉还原**，与 BOARD-102 同一口径）：
+> ① `b0.json` 基线：0 包，chip 条 `Scroll [0,1682][1256,1836]` 里是空的，List 只有热门区一个 `ListItem`；
+> ② `11:14:02.464 sticker_board_loaded rows=1` → `b1.json`：chip 条多出 1 颗 `[565,1695][691,1821]`，热门区那一行标签翻成「已添加」，
+> 此时 List 视口（1836–2508）**仍全是热门区**，那一包在画面外；
+> ③ 点那颗 chip → `b3.json`：包块 `ListItem [0,2172][1256,2508]` 上屏（标题行 + 「查看其余 24 张」+ 封面格），热门区被滚走只剩尾巴 ——
+> **改前这一指是 `scrollToIndex(0)`，List 会原地不动**；
+> ④ 再装一包凑两颗 chip（`11:16:07.514 rows=2`）→ `b5.json` chip 条 `[502,1695][628,1821]` + `[628,1695][754,1821]`；
+> 点**右边**那颗（blocks index 1）→ `b6.json`：List 里 index 1 = 后装的那一包**顶到视口上沿 1836**、index 2 那一包整块在 2172 以下可见，
+> 热门区**一行不剩**（`scrollToIndex(2)`；改前的 `scrollToIndex(1)` 会停在 index 1 那一包，即「点第二包落到第一包」）；
+> 点**左边**那颗（blocks index 0）→ `b7.json`：index 1 那一包（= blocks 第 0 包）顶到 `[0,1836]`，热门区同样滚出画面 —— 两次点按落到**不同**的包，
+> 说明偏移是随 chip 走的，不是随手滚了一下；
+> ⑤ 还原 `11:17:30.474 rows=1` → `11:17:54.259 rows=0,total=0`，`c2.json` chip 条重新变空、热门区那两行回到「添加」，
+> 装的两包全部卸载、账号回到取证前的形状。
+> **边界**：`b6.json` 里最后一包不是严格「顶到上沿」而是被 List 的滚动上限夹住（那一包比视口短，再往后滚就是空白），
+> 这是 ArkUI `List` 的既有行为、不是本包的偏移量问题 —— 判定依据是热门区是否已离开画面与落到的是哪一块，两条都成立。
+> 测试：新增 `stickerBlockListIndex_shiftsEveryBlockPastTheTrendingRow`（有/无热门区两侧各有中间块与最后一块），
+> `feature_chat` **460/460 全绿**，`check_architecture` / `check_codegen` / `check_design_tokens` / `check_accessibility_labels` 0 违规。
 
 
 > **2026-09-26（CHAT-HIST-101，上一行遗留 ②「冷启动首屏历史空窗」）**：结掉 TGS-102 顺带发现的那条 —— 进程刚起来时进会话可能一行消息都没有，且**永远不自愈**。

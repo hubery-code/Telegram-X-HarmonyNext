@@ -24,6 +24,7 @@ import {
   STICKER_BOARD_FAVORITE_SET_ID,
   stickerBoardPackHasNoWholeSet,
   stickerBoardBlocks,
+  stickerBlockListIndex,
   stickerBoardPackKey,
   stickerCellImagePath,
   stickerCellKey,
@@ -676,7 +677,9 @@ export struct EmojiBoard {
             .accessibilityText(a11y(A11y.BOARD_PACK, pack.title))
             .onClick(() => {
               this.currentStickerPackIndex = index;
-              this.stickerScroller.scrollToIndex(index, true);
+              // 热门区自己占 List 的 index 0，所以这里要问「那一包在 List 里排第几」而不是第几块。
+              this.stickerScroller.scrollToIndex(
+                stickerBlockListIndex(index, this.stickerTrending.length > 0), true);
             })
           }, (pack: StickerBoardPack, index: number) => `${index}_${pack.setId}_${pack.thumbnailPath ?? ''}`)
         }
