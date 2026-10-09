@@ -1405,6 +1405,44 @@
 > （+1：`favoriteWriteErrorLineCarriesMethodAndRequestId` —— 断言 `addFavoriteSticker` 失败行里有 `method=…,requestId=…`，且 `FLOOD_WAIT_77` 一个字都不出现），
 > 四守卫 0 违规。
 
+> **2026-10-09（TDLOG-BRIDGE-101，上一行遗留 ③：TDLib 内部日志桥建成 —— 406 的服务器原文与线上请求体第一次成了读数）**
+> **一、桥走的是哪条路（零 native 改动）**：`setLogStream` / `setLogVerbosityLevel` 在 schema 里标了 "Can be called synchronously"
+> （`td_api.tl:16232-16249`），本仓的同步口 `bridge.execute` 直连 `td_execute(request)`（`native/tdcore/napibridge/src/tdcore_napi.cpp:443`），
+> 而 `td_execute` 是**全局、不绑 client** 的入口 —— 于是不动 native、不重编 `.so`、不加 TSFN 回调。
+> 落点：`entry/src/main/ets/tdlog/TdLibLogSink.ets`（Kit-free 纯函数）+ `EntryAbility.onCreate` 在 `bootstrap()` 之后、
+> `coordinator.start()` 之前装（此后全部请求都能落盘，只漏 client 创建那一小段）。
+> **拒掉的那条**：`td_set_log_message_callback`（`libtdjson.so` 确实导出了）会把 TDLib 原文逐行推进 hilog，
+> 与本仓「TDLib 原文不进普通日志」的既有口径直接冲突。
+> **二、门与隐私**：只有 debug 包装（`bundleManager.getBundleInfoForSelfSync(GET_BUNDLE_INFO_WITH_APPLICATION).appInfo.debug`；
+> 本机 `bm dump -n org.telegram.x.harmony` 实测 `"debug": true`。没用编译期 `BuildProfile.DEBUG` —— 那个文件被 `.gitignore` 排除、全仓零引用）。
+> hilog 只落 `status/step/path/verbosity` 四个字段；一条回归用例钉死 sink 的返回值里不出现 TDLib 的应答原文。
+> **三、读数**：`<filesDir>/tdlib.log`，4 MB 自动轮转。改前一次全量 `hilog -x` 里 TDLib 内部行是 **0 条**（默认流是 stderr，本端没人接，等于丢弃）；
+> 改后启动即 16,399 行真实内部日志，整份可 `hdc file recv -b <bundle> data/storage/el2/base/haps/entry/files/tdlib.log` 取出
+> （普通 `file recv` 走不通：shell 是 uid 2000、无 `su`、文件 0600 应用属主）。
+> **四、把上一行的 406 读到底 —— 三条新事实**：
+> ① **本端整包取数在真机上从来只发过一条请求，且是 id 那一条**。日志第 26185 行 `Receive request 20: getStickerSet { set_id = 1451390786439479303 }`
+> → 第 26191 行 `Create query messages.getStickerSet { stickerset = inputStickerSetID { id = …, access_hash = 4886474579818301984 } hash = 0 }`
+> → 第 26229 行 `Sending error for request 20: error { code = 406 message = "STICKERSET_INVALID" }`。
+> 全份 26,442 行里 `inputStickerSetShortName` **出现 0 次**，`searchStickerSet` **一条都没进过 TDLib**。读代码对上：
+> `FetchStickerSet` 全仓只有一个 dispatch 点（`ChatReducer.ets:1476`，来自 `openStickerSet` 这唯一入口，只带 `setId`），
+> 而短名要到板卡/热门两组缓存里查（`stickerSetShortNameOf`）——**未装的那一包不在缓存里 → `targetName` 为空 → 直接 `requestStickerSetById`**。
+> 也就是说上一轮那条 name → name-forced → id 升级链，只在「从热门行点进去、缓存里恰好有这一包」时才跑得满；**消息气泡那个入口结构上就没有名字可用**。
+> ② **406 不是本端入参问题**：同一次启动里 TDLib 自己的三条特殊包加载 —— `inputStickerSetPremiumGifts {}`、`inputStickerSetTonGifts {}`、
+> `inputStickerSetID{1258816259751983, …}` —— **同样全部 406 STICKERSET_INVALID**（第 10882 / 11015 / 11057 行）。
+> 前两条压根不带 id 与 access_hash，「榜给的那份 access_hash 会过期」解释不了它们。全份日志里 7 条不同的 `messages.getStickerSet` 查询**无一成功**。
+> ③ **服务端自己给了话**：同一台模拟器同一份日志里 `updateServiceNotification type = "API_ANIMATED_STICKERS_OUTDATED_*"` 出现 **14 次**，
+> 正文 "Unfortunately animated stickers are not supported in your app. Please update your app to view this set."
+> → 指向**本 build 的 TL schema / layer 版本被服务端按「太旧」否决**（TDLib 1.8.67 / d1085f9c），与上一轮猜的 `hash:int` 差异同源；
+> 下一步该量的是 schema 版本，落点在 native，不再是 ArkTS。（附带把 TDLib 的自愈也读到了：406 之后紧跟 `StickersManager.cpp:3949 Remove information about deleted sticker set`。）
+> 测试：`entry` **146/146**（新 `tdlog/TdLibLogSink.test.ets` 10 例：`setLogStream` 的线上字节逐字符钉死、release 零请求、
+> 两条请求的失败各自归到 `setLogStream` / `setLogVerbosityLevel` 步、null / 不可解析 / `error` 应答 / 桥抛错四类都收敛成状态码不外泄、
+> verbosity 与轮转大小可覆盖），四守卫 0 违规。产物 `.hvigor/outputs/tdlog-bridge-101/`
+> （`hilog-startup.txt`、`tdlib-probe.log`、`tdlib-after-packdetail.log`、`baseline-lines.txt`、三份 `layout-*.json`）。
+> **设备状态**：取证只做「打开会话 → 点贴纸 → 开整包弹层 → 返回」，全程未装包、未发送、未改任何账号设置。
+> 遗留：① **`internalLinkTypeStickerSet` 的 `onOpenStickerSet` 生产端至今未接线**（`AppLinkRouter.ets:160,177,190,555-564` 只在测试里挂过）——
+> 实测 `aa start -U https://t.me/addstickers/MiladyNoir` 落一条 `outcome=routed linkType=internalLinkTypeStickerSet,setName=MiladyNoir` 之后什么都不做；
+> 这条恰恰是**唯一带短名**的入口，接上才有 `inputStickerSetShortName` 那条请求；② schema / layer 版本那一侧（native）。
+
 > **2026-10-09（STICKER-FETCH-103，第四十七轮，FEAT-P2-004 整包取数 406 的 ArkTS 半边结案）**：第三十一轮（STICKER-FETCH-102）把 406 定案成
 > 「服务端否决」，并留下一句「`ignore_cache` 的 true 与 false 都实测过、都 406，所以缓存开关不是成因」。**结论对，理由当时不成立** ——
 > `ignore_cache=false` 那条路压根不会把短名发到线上（见下第二条），所以那一次「名字路 406」测的其实是另一条 `inputStickerSetID` 请求。

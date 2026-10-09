@@ -1,4 +1,4 @@
-import { AbilityConstant, UIAbility, Want } from '@kit.AbilityKit';
+import { AbilityConstant, bundleManager, UIAbility, Want } from '@kit.AbilityKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { window } from '@kit.ArkUI';
 import { bootstrap, BootstrapResult } from '../Bootstrap';
@@ -8,6 +8,12 @@ import { TELEGRAM_CREDENTIALS } from '../config/AppCredentials';
 import { initSettingsStore, loadChatFontSize, KEY_CHAT_FONT_SIZE } from '../store/SettingsStore';
 import { AppLockGate } from '../applock/AppLockGate';
 import { appLockGate, installAppLock } from '../applock/AppLockWiring';
+import {
+  enableTdLibLogFileSink,
+  TdLibLogSinkOutcome,
+  TdLibLogSinkRequest,
+  TdSyncExecuteFn
+} from '../tdlog/TdLibLogSink';
 
 const DOMAIN: number = 0x0000;
 const TAG: string = 'EntryAbility';
@@ -36,11 +42,55 @@ export default class EntryAbility extends UIAbility {
 
     try {
       const result: BootstrapResult = bootstrap(filesDir, cacheDir, tdlibParams);
+
+      // TDLOG-BRIDGE-101：把 TDLib 的内部日志从 stderr（本端没人接，等于丢弃）
+      // 改道到应用沙盒文件，整包取数 406 的服务器原文才有读数。
+      //
+      // 放在 bootstrap 之后、coordinator.start() 之前：这一步之后发出的请求
+      // （setTdlibParameters 及其后全部）都能落盘；只漏掉 client 创建那一小段。
+      // 不改 bootstrap 的签名——它是按位置收平台端口的装配函数，一个 debug 位
+      // 不该挤进去变成第 9 个 `undefined`。
+      this.installTdLibLogSink(result);
+
       result.coordinator.start();
       AppStorage.setOrCreate<BootstrapResult>('bootstrapResult', result);
       hilog.info(DOMAIN, TAG, 'bootstrap succeeded — coordinator started');
     } catch (e) {
       hilog.error(DOMAIN, TAG, 'bootstrap failed: %{public}s', String(e));
+    }
+  }
+
+  /**
+   * 只有 debug 包才装日志落盘。
+   *
+   * 读的是 `appInfo.debug`（本机实测 `bm dump -n <bundle>` 里 `"debug": true`），
+   * 不是编译期的 `BuildProfile.DEBUG`：后者由 hvigor 生成到各模块根的
+   * `BuildProfile.ets`，而这条路径被 `.gitignore` 第 12 行排除、全仓零处引用，
+   * 不该为了一个开关首次引入未验证的构建产物依赖。
+   * Kit 调用失败按 false 收（宁可不写日志文件）。
+   */
+  private installTdLibLogSink(result: BootstrapResult): void {
+    // 只把 execute 这一个动作交给日志模块：ArkTS 不做结构类型匹配，
+    // 所以这里包闭包，而不是把整个 TdNativeBridgeLike 传下去。
+    const execute: TdSyncExecuteFn = (requestUtf8: string): string | null => result.bridge.execute(requestUtf8);
+    const request: TdLibLogSinkRequest = {
+      filesDir: result.filesDir !== undefined ? result.filesDir : this.context.filesDir,
+      debugBuild: this.isDebugBuild()
+    };
+    const outcome: TdLibLogSinkOutcome = enableTdLibLogFileSink(execute, request);
+    // 只记状态、步骤与文件路径：TDLib 的应答原文不进 hilog（本仓既有隐私口径）。
+    hilog.info(DOMAIN, TAG, 'tdlib log sink status=%{public}s step=%{public}s path=%{public}s verbosity=%{public}d',
+      outcome.status, outcome.step, outcome.path, outcome.verbosity);
+  }
+
+  private isDebugBuild(): boolean {
+    try {
+      const info: bundleManager.BundleInfo = bundleManager.getBundleInfoForSelfSync(
+        bundleManager.BundleFlag.GET_BUNDLE_INFO_WITH_APPLICATION);
+      return info.appInfo.debug;
+    } catch (e) {
+      hilog.warn(DOMAIN, TAG, 'debug flag unreadable, treating as release');
+      return false;
     }
   }
 
