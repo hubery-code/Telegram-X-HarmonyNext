@@ -1405,6 +1405,25 @@
 > （+1：`favoriteWriteErrorLineCarriesMethodAndRequestId` —— 断言 `addFavoriteSticker` 失败行里有 `method=…,requestId=…`，且 `FLOOD_WAIT_77` 一个字都不出现），
 > 四守卫 0 违规。
 
+> **2026-10-09（STICKER-FETCH-104，FEAT-P2-004 交叉：整包取数的三种本地状态实测齐了，候选①按「链路自愈」收口，本轮零改码）**
+> **一、热门行 = 本地不认识的包**：点 `Lady Noir` 行（`EmojiBoard.ets:886` → `ChatPage.ets:1017`）→
+> 板卡给这一行的 `setId` 是**数字** `336920350212227105`，短名由 `stickerSetShortNameOf([stickerBoardSets, trendingSets], setId)` 从榜里查回来 = `MiladyNoir`
+> （注意：榜的 `name` 才是短名，行标题 `Lady Noir` 只是显示名）。三条路 `path=name` → `name-forced` → `id` 全 406，弹层只剩「贴纸包加载失败」。
+> **二、对未知包，`name` 与 `name-forced` 是同一条线上请求**（这条把上一轮 ② 的更正补完）：`deeplink-sticker-102/tdlib-trending.log:28318-28325` 是
+> request 82 `searchStickerSet{ ignore_cache=false }` → 紧接 `Create query messages.getStickerSet{ stickerset = inputStickerSetShortName{ short_name="concernedfroge" } }`；
+> `:28378-28385` 的 request 83（`ignore_cache=true`）发出去的是**同一个 body**。也就是 `:5005` 的 `sticker_set == nullptr` 那一支已经替我们把短名送上线，
+> 强制那次只是把同一条路重走一遍 —— 它只在「本地认识这一包」时才有区分度。这一格留着一个可选优化：未知包时省掉重复的第二次往返；本轮不动。
+> **三、板卡行 = 本地已装的静态包**：先经深链装 `durov`（`sticker_installed_update rows=1`），再从板卡包块的「查看其余 2 张」（`EmojiBoard.ets:742`）进弹层。
+> `sticker-fetch-104/tdlib-block.log:23527-23540`：request 206 `searchStickerSet{ name="durov", ignore_cache=false }` 后面**没有 Create query 行**，
+> 1 ms 直接 `Sending result ... stickerSet{ id=166976182300966916, is_installed=true, stickers=vector[3] }` —— 零网络本地命中。
+> 弹层标题「✋ 3 个贴纸 · 已安装」+「移除贴纸包」，本轮**没有**任何 `sticker_set_fetch_failed`，同屏 `media_download_completed fileId=93/95/96/97/98` 出图。
+> 顺带一条 UI 事实：包块上方那条 chip（本轮 `Scroll[0,1682][1256,1836]` 里唯一的 `Row[565,1695][691,1821]`）点按只做滚动定位（EMOJISCROLL-101 的行为），不弹预览。
+> **四、所以候选①不用改码**：三种本地状态各有各的正确答案 —— 未知静态包走短名 200（上一轮 `durov`）、已装包零网络出图（本轮）、
+> 未知动画包三条路一起被服务端按客户端 layer 否决（`API_ANIMATED_STICKERS_OUTDATED_104/105`）。剩下的那一格仍是 native 的 TL schema / layer，不在 ArkTS 侧。
+> **五、取证账**：`durov` 装完即卸（`rows=1` → `rows=0`，弹层按钮文案随之从「添加 3 个贴纸」变回「移除贴纸包」再消失），账号回到取证前状态；
+> 未发送任何消息、未改动任何会话内容。中途有一次 30 s 息屏（`ScreenOffTime: Timeout=30000ms`）导致的空点，`power-shell wakeup` 后重测，非应用问题。
+> 本轮无代码改动，故无测试增量（上一轮 `feature_chat` 469/469 仍为最新基线）。
+
 > **2026-10-09（DEEPLINK-STICKER-102，FEAT-P2-004/DEEPLINK 交叉：深链短名入口的装包地址错配修掉，整包第一次真出图）**
 > **零、先更正两条已经写进本矩阵的假结论**（都在下方两行里）：
 > ① 上一行遗留 ① 说 `onOpenStickerSet` 生产端至今未接线 —— **不成立**。接线自 `cdb4b3a1`（DEEPLINK-STICKER-101）起就在 `Index.ets:442-467 / :473-479`；
