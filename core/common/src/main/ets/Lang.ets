@@ -28,6 +28,35 @@ export function resolveLanguage(
 }
 
 /**
+ * Pure function: 系统 locale（`i18n.System.getSystemLanguage()` 的 `'zh-Hans'` /
+ * `'en-US'` / `'fr-FR'` 这类 BCP-47 串）→ 本端支持的语言档。
+ *
+ * 只按**语言子标签**判定，不看地区：`zh` / `zh-Hans` / `zh-Hant-HK` / `ZH-CN` 都归 `zh`
+ * （词典只有两本，地区差异本端还没建模）；其余与缺失值一律 `en`，与「读不到系统语言时
+ * 不许让界面变成半中半英」的回落方向一致。
+ */
+export function systemLanguageFromLocale(locale: string | null | undefined): SupportedLanguage {
+  if (locale === null || locale === undefined) {
+    return 'en';
+  }
+  return locale.toLowerCase().startsWith('zh') ? 'zh' : 'en';
+}
+
+/**
+ * Pure function: 盘上读回的**偏好**串 → 合法 `LanguagePreference`。
+ *
+ * 区分「没存过」与「存了脏值」两种情况都回落 `system` —— 那正是 Android 首装的默认档。
+ * 绝不能把脏值当 `'en'` 处理：`'en'` 是一条**显式**偏好，会把「跟随系统」这条
+ * 语义永久压掉，用户下次换系统语言就不再跟随了。
+ */
+export function languagePreferenceFromStored(stored: string | null | undefined): LanguagePreference {
+  if (stored === 'system' || stored === 'en' || stored === 'zh') {
+    return stored;
+  }
+  return 'system';
+}
+
+/**
  * Pure function: replace placeholders in template string with args.
  * Supports positional tokens like {0}, {1} as well as printf tokens like %s and %d.
  */

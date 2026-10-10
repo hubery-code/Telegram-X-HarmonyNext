@@ -44,6 +44,15 @@ const STORE_NAME: string = 'tgx_settings';
 /** 已经落盘的设置项 key。 */
 export const KEY_CHAT_FONT_SIZE: string = 'chatFontSize';
 
+/**
+ * LANG-PERSIST-101：语言**偏好**的落盘键（`'system' | 'en' | 'zh'`，不是有效语言）。
+ *
+ * 键名与 `SettingsReducer` 写进 AppStorage 的那个完全一致，是两个存储系统里的
+ * 同名键：AppStorage 那一份回答「用户此刻选了什么」，盘上这一份回答
+ * 「下次冷启动该恢复成什么」。回灌与落盘都只在装配层（entry）发生，业务层零 Kit 依赖。
+ */
+export const KEY_APP_LANGUAGE: string = 'appLanguage';
+
 let store: preferences.Preferences | undefined = undefined;
 
 /**
@@ -138,6 +147,47 @@ export function writeSettingsNumber(key: string, value: number): boolean {
     return true;
   } catch (e) {
     hilog.error(DOMAIN, TAG, 'settings number write failed: %{public}s', `${key} ${JSON.stringify(e)}`);
+    return false;
+  }
+}
+
+/**
+ * 通用字符串读取（LANG-PERSIST-101 的语言偏好落盘用）。
+ *
+ * 与 `readSettingsNumber` 同一条口径：**区分「没存过」与「存了值」**，把回落
+ * 哪个档位交给调用方按业务默认档决定——本 store 只管读盘，不该知道「语言偏好
+ * 缺值等于跟随系统」这件事。空串同样按「没存过」返回 null。
+ */
+export function readSettingsString(key: string): string | null {
+  if (store === undefined) {
+    return null;
+  }
+  try {
+    if (!store.hasSync(key)) {
+      return null;
+    }
+    const raw: preferences.ValueType = store.getSync(key, '');
+    if (typeof raw === 'string') {
+      return raw.length === 0 ? null : raw;
+    }
+    return null;
+  } catch (e) {
+    hilog.error(DOMAIN, TAG, 'settings string read failed: %{public}s', `${key} ${JSON.stringify(e)}`);
+    return null;
+  }
+}
+
+/** 通用字符串写入；返回是否落盘成功，与数值版一致用 flush 立即落盘。 */
+export function writeSettingsString(key: string, value: string): boolean {
+  if (store === undefined) {
+    return false;
+  }
+  try {
+    store.putSync(key, value);
+    store.flush();
+    return true;
+  } catch (e) {
+    hilog.error(DOMAIN, TAG, 'settings string write failed: %{public}s', `${key} ${JSON.stringify(e)}`);
     return false;
   }
 }

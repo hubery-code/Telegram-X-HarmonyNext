@@ -128,7 +128,7 @@
 |---|---|---|---|---|---|---|---|---|
 | FEAT-UI-001 | 深色/浅色主题 | P1 | `theme/ThemeManager.java:48`（DEFAULT_DARK_THEME = NIGHT_BLUE）, `theme/Theme.java` | —（平台侧） | 跟随系统/手动切换，关键页面（列表/聊天/设置）色值正确 | — | Accepted | 迁移组 |
 | FEAT-UI-002 | 大字体（聊天字号调节） | P1 | `unsorted/Settings.java:791`（CHAT_FONT_SIZES）, `ui/SettingsController.java:218`（getChatFontSize） | —（平台侧） | 大字号模式下气泡/列表不截断不重叠 | 字体缩放 | Accepted | SET-105 |
-| FEAT-UI-003 | 中/英文案资源 | P1 | `core/Lang.java`, `ui/SettingsLanguageController.java` | — | 关键路径文案中英齐全，无硬编码遗漏（视图层与 coordinator/model 数据层的写死文案、词典缺项由 `check_i18n_literals.py` 六条规则强制） | — | Accepted | I18N-LITERAL-101/102/103/104 |
+| FEAT-UI-003 | 中/英文案资源 | P1 | `core/Lang.java`, `ui/SettingsLanguageController.java` | — | 关键路径文案中英齐全，无硬编码遗漏（视图层与 coordinator/model 数据层的写死文案、词典缺项由 `check_i18n_literals.py` 六条规则强制）；语言偏好跨进程持久且系统语言参与解析 | — | Accepted | I18N-LITERAL-101/102/103/104, I18N-HOTSWITCH-101, LANG-PERSIST-101 |
 | FEAT-UI-004 | 抽屉主导航（≡ 账号头 + 联系人/通话/我的收藏/设置/邀请朋友/帮助 + 夜间模式开关） | P1 | `navigation/DrawerController.java`, `MainActivity.java` | —（平台侧） | 会话列表抽屉导航，账号头展示在线状态，入口路由正确 | — | Accepted | DRAWER-101 |
 
 ---
@@ -2287,6 +2287,70 @@
 >
 > **后续**：本包把「换语言不重算」这一类关到 0 处已知存量；剩余的按根因挂 **LANG-PERSIST-101**（③）、
 > **I18N-DATE**（④）、守卫跨行与间接传参收口（⑤）。
+
+### FEAT-UI-003 / LANG-PERSIST-101 语言偏好跨进程持久 + 系统语言第一次真正参与解析（2026-10-10）
+
+> **题面**：前三个包各自都把「选完语言 `aa force-stop` 后回到 Follow System」记成盲区。本轮读码定案，
+> 缺口是**两个彼此独立、且都不报错**的失效：
+> ① `AppStorage.setOrCreate('appLanguage', pref)` 全仓**只有这一个写、零个读** —— AppStorage 是进程内存，
+> 冷启动什么都没有，用户的显式选择在第一次重启时全丢；
+> ② **生产代码里没有任何一处调过 `Lang.setSystemLanguage`**（同样零调用点），`systemLanguage` 一直是构造器默认 `'en'`，
+> 于是「跟随系统」在这台 `persist.global.locale = zh-Hans` 的模拟器上算出来的是英文。
+> ② 比 ① 存在得更早，却被 ① 掩盖着：重启回落的是 `'system'`，而 `'system'` 又解析成 `'en'`，
+> 两个 bug 串成一条看起来完全合理的「重启变英文」。**只修 ① 的话，跟随系统仍然是错的**，只是错得稳定。
+>
+> **链路怎么搭（三个方向都要有主）**：
+> 写：`SettingsReducer` 继续只写 `AppStorage('appLanguage')`（业务层零 Kit 依赖这条不破）
+> → `entry/pages/Index.ets` 以 `@StorageProp('appLanguage') @Watch('onAppLanguageChanged')` 观察
+> → `writeSettingsString(KEY_APP_LANGUAGE, …)` 落 `preferences`；
+> 读：`EntryAbility.onWindowStageCreate` 在 `initSettingsStore` 之后、`loadContent` 之前跑 `hydrateLanguage()`
+> → `i18n.System.getSystemLanguage()` 经 `systemLanguageFromLocale` 灌 `setSystemLanguage`
+> → 盘上的偏好经 `languagePreferenceFromStored` 灌 `setLanguage` → 再把同一个值种回 `AppStorage`，让 UI 与盘一致。
+> 顺手把 reducer 里那个同样只有写没有读的兄弟键 `languagePreference` 删掉（全仓单点、无读者、无测试断言）。
+>
+> **两个纯函数为什么进 core/common**：`check_architecture.py` 禁 `core/*` 与 `feature/*/reducer|coordinator` 引 `@kit`，
+> 而「locale → 三档」这个映射必须有人做，于是做成 Kit-free 纯函数，entry 只负责取数和灌值。
+> 落点按实测而不是按直觉：`entry/src/main/ets/Bootstrap.ets` 里 `getString` / `Lang.` 命中 **0** 处，
+> 说明 `coordinator.start()` 阶段不产出任何展示串，`onWindowStageCreate` 里 `loadContent` 前灌就够了，
+> 不必把 `initSettingsStore` 提前到 `onCreate`（那会打乱已记录的顺序约束：`installAppLock` 必须在 store 打开之后）。
+>
+> **兜底语义是刻意选的**：locale 读不到 → `'en'`；盘上缺失或脏值 → `'system'`，**绝不兜成 `'en'`**。
+> 因为 `'en'` 带着「用户显式选了英文」的语义，兜成 `'en'` 会把「跟随系统」永久改写掉；而 `'system'` 恰好是 Android 侧的首装默认。
+> `languagePreferenceFromStored` 只认 `'system'|'en'|'zh'` 三个字面量，`'zh-CN'`、`'EN'`、`''`、null 全部拒收；
+> `systemLanguageFromLocale` 只看语言子标签，`zh` / `zh-Hans` / `zh-Hant-HK` / `ZH-CN` 都算 `'zh'`。
+>
+> **测试**：core_common **67/67**（新增 4 例：locale 仅按语言子标签匹配、脏值拒收、
+> 冷启动公式 `resolveLanguage(存盘偏好, systemLanguageFromLocale(locale))` 的四组组合、
+> hydrate 顺序「先系统语言后存偏好」并在 `finally` 里还原单例）；
+> entry **150/150**（新套件 `SettingsStoreLanguage.test.ets` 4 例，其中
+> `appLanguageKey_matchesWhatTheReducerWrites` 断言 `KEY_APP_LANGUAGE === 'appLanguage'`，
+> 把跨层键名契约钉进测试；宿主单测环境从不调 `initSettingsStore`，这四例正好覆盖「store 没打开」这条真机也会走到的分支）；
+> feature_settings **347/347**。七守卫（架构 / 代码生成 / token / 无障碍 / i18n / secret_scan）全 OK。
+>
+> **设备 A/B**（127.0.0.1:5555，只读页面与改语言，未发消息、未动账号状态、**未卸载未清数据**）：
+> 改前（上一轮 hap）：locale 是 `zh-Hans`，界面却是 `Language, Follow System (English)`，
+> 首页 `Chats / Search / All / Personal / Groups / Channels`、`[Voice message]`、`Theme Mode, System (Light)`；
+> 改后 ① 冷启动一行 `EntryAbility: language restored: locale=zh-Hans preference=system effective=zh`
+> —— 本仓第一次有证据表明「跟随系统」真的跟到了系统；
+> ② 首页 `聊天 / 搜索 / 全部 / 个人 / 群组 / 频道 / 未读`、`[语音消息]`，设置行 `语言, 跟随系统 (简体中文)`；
+> ③ 显式点「简体中文」→ force-stop → 冷启动 `preference=zh effective=zh`，
+> 且重启后设置行仍读作 `语言, 简体中文`（这一行取的是 `Lang.getPreference()`，不是瞬态 UI 态）；
+> ④ 再显式点 English → force-stop → 冷启动 `locale=zh-Hans preference=en effective=en`，首页回到 `Chats / Search / All / Personal / Groups`。
+> **第二次写入才算排除「恰好一次性残留」**，同时证明显式偏好压过系统语言（locale 为 `zh-Hans`、effective 为 `en`）；
+> ⑤ 盘上直接可读：`…/haps/entry/preferences/tgx_settings` 里是 `<string key="appLanguage">en</string>`。
+> **设备交付现状**：按 ④ 留在英文界面与 `appLanguage=en`（本包取证前的显示状态本来就是英文），未做还原。
+>
+> **盲区，如实记**：
+> ① **运行中改系统语言观察不到** —— 没有订阅 `COMMON_EVENT_LOCALE_CHANGED`，`hydrateLanguage()` 只在冷启动跑一次；
+> ② **TDLib 的 `system_language_code` 仍写死 `'en'`**（`entry/…/EntryAbility.ets:45` 与 `pages/Index.ets:1242` 两处），
+> 而 TDLib 侧 `StickersManager` 会拿这个 tag 挑本地化贴纸包 —— 也就是说这条不只是元数据，影响的是取数，本包没碰；
+> ③ `themeMode` / `themePreference` 看着是同一类「只有写、没人读」的 AppStorage 键，
+> 按本包的判据（每个键字面量必须有读者）应该整体拉一遍；
+> ④ **静态防线仍是人工**：没有守卫拦「`AppStorage.setOrCreate` 的键只有写没有读」，
+> 而这正是 ① 类缺口能连着活过四个包的原因 → 拆 **APPStorage-PAIR-101**（键读写配对守卫）。
+>
+> **后续**：候选 ① 结掉。剩余按根因挂 **I18N-DATE**（两套日期形态并存）、
+> 群头部两条解析路径字段集对齐、守卫跨行调用与间接传参收口、APPStorage-PAIR-101（③④）。
 
 
 | 功能 ID | 功能名 |

@@ -476,10 +476,13 @@ export const settingsReducer: Reducer<SettingsUiState, SettingsIntent, SettingsE
       Lang.getInstance().setLanguage(pref);
       const effectiveLang: string = Lang.getInstance().getLanguage();
 
-      // 2. 同步持久化到 AppStorage（若在 UI 运行环境中）
+      // 2. 写进 AppStorage —— 这是 entry 的落盘触发点：pages/Index 以
+      //    `@StorageProp('appLanguage') @Watch` 观察这个键并写盘，冷启动由 EntryAbility
+      //    把盘上的值灌回 Lang。业务层依旧不碰 Kit。
+      //    存的是**偏好**而不是有效语言：有效语言是偏好与系统 locale 的函数，
+      //    落盘它会把「跟随系统」在第一次写盘时永久改写成某一种语言。
       try {
         AppStorage.setOrCreate<string>('appLanguage', pref);
-        AppStorage.setOrCreate<string>('languagePreference', pref);
       } catch (_e) {
         // 无 AppStorage 运行环境（如纯逻辑单测）容错
       }

@@ -26,7 +26,7 @@
  */
 
 import { LightTheme, Theme, ThemeManager, parseChatFontSize, CHAT_FONT_SIZE_DEFAULT } from '@tgx/core-design-system';
-import { saveChatFontSize } from '../store/SettingsStore';
+import { saveChatFontSize, writeSettingsString, KEY_APP_LANGUAGE } from '../store/SettingsStore';
 import { PreferencesAutoDownloadPolicyStore } from '../store/AutoDownloadStore';
 import { AppLockGate } from '../applock/AppLockGate';
 import { appLockGate, appLockStore } from '../applock/AppLockWiring';
@@ -270,6 +270,16 @@ struct Index {
   @StorageProp('chatFontSize') @Watch('onChatFontSizeChanged') chatFontSizeRaw: string =
     `${CHAT_FONT_SIZE_DEFAULT}`;
   private chatFontSizeReady: boolean = false;
+  /**
+   * LANG-PERSIST-101：语言偏好的落盘通道，形状与上面的字号完全一致。
+   *
+   * 存的是**偏好**（'system' | 'en' | 'zh'），不是有效语言 —— 有效语言是偏好与系统
+   * locale 的函数，落盘它会把「跟随系统」这个语义在第一次写盘时就永久改写成
+   * 「英文」。键由 `SettingsReducer` 在 `changeLanguage` 时写，由 EntryAbility 在
+   * 冷启动时从盘上种回来。
+   */
+  @StorageProp('appLanguage') @Watch('onAppLanguageChanged') appLanguageRaw: string = 'system';
+  private appLanguageReady: boolean = false;
   private unsubscribeThemeFn: (() => void) | null = null;
   /**
    * I18N-HOTSWITCH-101：把 Lang 的有效语言（'en' | 'zh'，不是偏好 'system'）镜像进
@@ -361,6 +371,10 @@ struct Index {
     this.unsubscribeLangFn = Lang.getInstance().subscribe((lang: SupportedLanguage): void => {
       AppStorage.setOrCreate<string>('activeLanguage', lang);
     });
+    // LANG-PERSIST-101：'appLanguage' 已由 EntryAbility 从盘上种好，本页首帧读到的就是
+    // 回灌值；从这里起才允许把用户的选择写回磁盘（与字号同一条口径，免得启动回灌
+    // 本身触发一次无意义的写）。
+    this.appLanguageReady = true;
 
     this.unsubscribeNavFn = this.navController.subscribe((route: AppRoute, prev: AppRoute | null) => {
       this.currentRoute = route;
@@ -382,6 +396,19 @@ struct Index {
       return;
     }
     saveChatFontSize(this.chatFontSizeRaw);
+  }
+
+  /**
+   * LANG-PERSIST-101：`appLanguage` 变化 → 落盘。
+   *
+   * 存的是偏好串本身，不做二次判断：读盘侧 `languagePreferenceFromStored` 已经把
+   * 脏值与缺值收敛回 'system'，这里再加一层只会让「写进去的」和「读回来的」两套口径。
+   */
+  private onAppLanguageChanged(): void {
+    if (!this.appLanguageReady) {
+      return;
+    }
+    writeSettingsString(KEY_APP_LANGUAGE, this.appLanguageRaw);
   }
 
   aboutToDisappear(): void {

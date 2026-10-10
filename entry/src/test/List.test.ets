@@ -10,6 +10,7 @@ import appLinkPromptTest from './deeplink/AppLinkPrompt.test';
 import deepLinkQueueTest from './deeplink/DeepLinkQueue.test';
 import appLockGateTest from './applock/AppLockGate.test';
 import tdLibLogSinkTest from './tdlog/TdLibLogSink.test';
+import settingsStoreLanguageTest from './store/SettingsStoreLanguage.test';
 
 const DOMAIN: number = 0x0000;
 const TAG: string = 'ListTest';
@@ -35,4 +36,5 @@ export default function listTest() {
   deepLinkQueueTest();
   appLockGateTest();
   tdLibLogSinkTest();
+  settingsStoreLanguageTest();
 }

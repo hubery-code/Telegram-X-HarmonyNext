@@ -5,7 +5,9 @@ import {
   SupportedLanguage,
   formatString,
   lang,
-  resolveLanguage
+  languagePreferenceFromStored,
+  resolveLanguage,
+  systemLanguageFromLocale
 } from '../main/ets/Lang';
 
 function hasHan(text: string): boolean {
@@ -571,6 +573,66 @@ export default function langTest(): void {
       // Previous listeners cleared
       Lang.getInstance().setLanguage('zh');
       expect(called).assertFalse();
+    });
+
+    it('systemLanguageFromLocale_matchesOnLanguageSubtagOnly', 0, () => {
+      expect(systemLanguageFromLocale('zh')).assertEqual('zh');
+      expect(systemLanguageFromLocale('zh-Hans')).assertEqual('zh');
+      expect(systemLanguageFromLocale('zh-Hant-HK')).assertEqual('zh');
+      expect(systemLanguageFromLocale('ZH-CN')).assertEqual('zh');
+      expect(systemLanguageFromLocale('en-US')).assertEqual('en');
+      expect(systemLanguageFromLocale('fr')).assertEqual('en');
+      expect(systemLanguageFromLocale('')).assertEqual('en');
+      expect(systemLanguageFromLocale(null)).assertEqual('en');
+      expect(systemLanguageFromLocale(undefined)).assertEqual('en');
+    });
+
+    it('languagePreferenceFromStored_rejectsAnythingButTheThreeBuckets', 0, () => {
+      expect(languagePreferenceFromStored('system')).assertEqual('system');
+      expect(languagePreferenceFromStored('en')).assertEqual('en');
+      expect(languagePreferenceFromStored('zh')).assertEqual('zh');
+      // 脏值与缺值一律回落 'system'（Android 首装档）。刻意不回落成显式的 'en'：
+      // 'en' 是一条**用户选过**的偏好，用它兜脏值会把「跟随系统」永久压掉。
+      expect(languagePreferenceFromStored('zh-CN')).assertEqual('system');
+      expect(languagePreferenceFromStored('EN')).assertEqual('system');
+      expect(languagePreferenceFromStored('')).assertEqual('system');
+      expect(languagePreferenceFromStored(null)).assertEqual('system');
+      expect(languagePreferenceFromStored(undefined)).assertEqual('system');
+    });
+
+    it('hydrationFormula_resolvesStoredPreferenceAgainstSystemLocale', 0, () => {
+      // EntryAbility 冷启动灌的就是这条公式（LANG-PERSIST-101）。
+      expect(resolveLanguage(
+        languagePreferenceFromStored(null), systemLanguageFromLocale('zh-Hans'))).assertEqual('zh');
+      expect(resolveLanguage(
+        languagePreferenceFromStored('system'), systemLanguageFromLocale('en-US'))).assertEqual('en');
+      expect(resolveLanguage(
+        languagePreferenceFromStored('en'), systemLanguageFromLocale('zh-Hans'))).assertEqual('en');
+      expect(resolveLanguage(
+        languagePreferenceFromStored('zh'), systemLanguageFromLocale('en-US'))).assertEqual('zh');
+    });
+
+    it('hydrate_appliesSystemLocaleThenStoredPreference', 0, () => {
+      const instance: Lang = Lang.getInstance();
+      const savedPreference: LanguagePreference = instance.getPreference();
+      const savedSystemLanguage: SupportedLanguage = instance.getSystemLanguage();
+      try {
+        // 先钉住「跟随系统」，本用例断言的每一位都由这里显式决定，不依赖用例顺序。
+        instance.setLanguage('system');
+        instance.setSystemLanguage(systemLanguageFromLocale('zh-Hans'));
+        expect(instance.getSystemLanguage()).assertEqual('zh');
+        expect(instance.getLanguage()).assertEqual('zh');
+
+        // 盘上是显式偏好时，系统档让位。
+        instance.setLanguage(languagePreferenceFromStored('en'));
+        expect(instance.getLanguage()).assertEqual('en');
+
+        instance.setLanguage(languagePreferenceFromStored('system'));
+        expect(instance.getLanguage()).assertEqual('zh');
+      } finally {
+        instance.setSystemLanguage(savedSystemLanguage);
+        instance.setLanguage(savedPreference);
+      }
     });
   });
 }

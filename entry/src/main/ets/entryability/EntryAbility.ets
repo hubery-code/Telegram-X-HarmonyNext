@@ -1,11 +1,19 @@
 import { AbilityConstant, bundleManager, UIAbility, Want } from '@kit.AbilityKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { window } from '@kit.ArkUI';
+import { i18n } from '@kit.LocalizationKit';
+import { LanguagePreference, Lang, languagePreferenceFromStored, systemLanguageFromLocale } from '@tgx/core-common';
 import { bootstrap, BootstrapResult } from '../Bootstrap';
 import { appDeepLinkQueue } from '../deeplink/DeepLinkQueue';
 import { TdlibParametersConfig } from '@tgx/feature-auth';
 import { TELEGRAM_CREDENTIALS } from '../config/AppCredentials';
-import { initSettingsStore, loadChatFontSize, KEY_CHAT_FONT_SIZE } from '../store/SettingsStore';
+import {
+  initSettingsStore,
+  loadChatFontSize,
+  readSettingsString,
+  KEY_APP_LANGUAGE,
+  KEY_CHAT_FONT_SIZE
+} from '../store/SettingsStore';
 import { AppLockGate } from '../applock/AppLockGate';
 import { appLockGate, installAppLock } from '../applock/AppLockWiring';
 import {
@@ -138,6 +146,15 @@ export default class EntryAbility extends UIAbility {
     AppStorage.setOrCreate<string>(KEY_CHAT_FONT_SIZE, `${restoredChatFontSize}`);
     hilog.info(DOMAIN, TAG, 'chatFontSize restored: %{public}s', `${restoredChatFontSize}`);
 
+    // LANG-PERSIST-101：把语言接回系统 locale 与磁盘。此前有两条静默失效：
+    //   ① 设置页选的偏好只写进 AppStorage（进程级内存），冷启动即回到「跟随系统」；
+    //   ② 全仓没有任何地方把系统语言灌进 Lang，`systemLanguage` 恒为构造默认的 'en'，
+    //      于是「跟随系统」在 zh-Hans 的机器上一直说英文——显式选 en/zh 反而能生效，
+    //      因为它不走这一位。
+    // 顺序：先灌系统语言档（它只影响 'system' 偏好下的有效语言），再灌盘上的显式偏好。
+    // 两步都排在 loadContent 之前，首帧即为正确语言，不需要二次重渲。
+    this.hydrateLanguage();
+
     // 应用锁（APPLOCK-101）：自动锁定档位存在上面那条 preferences 盘上，
     // 所以装配必须排在 initSettingsStore 之后；bootstrap() 决定「这次起来要不要锁」，
     // 必须排在 loadContent 之前，否则解锁前会闪一帧主界面。
@@ -159,6 +176,42 @@ export default class EntryAbility extends UIAbility {
 
   onWindowStageDestroy(): void {
     hilog.info(DOMAIN, TAG, 'onWindowStageDestroy');
+  }
+
+  /**
+   * LANG-PERSIST-101：启动时的语言回灌，两条写入方向都在这里。
+   *
+   * 「读盘 + 回落」与「写盘」刻意分开：这一位只有 entry 知道磁盘，业务层
+   * （`feature_settings` 的 reducer）继续只管写 AppStorage，由 pages/Index 的
+   * `@Watch` 落盘。所以偏好改动不需要任何新通道：reducer 写键 → entry 观察 → 落盘。
+   */
+  private hydrateLanguage(): void {
+    const locale: string | null = this.systemLocale();
+    const effectivePreference: LanguagePreference =
+      languagePreferenceFromStored(readSettingsString(KEY_APP_LANGUAGE));
+    Lang.getInstance().setSystemLanguage(systemLanguageFromLocale(locale));
+    Lang.getInstance().setLanguage(effectivePreference);
+    // reducer 只在用户选择时写这个键；冷启动先种一次，`@StorageProp('appLanguage')`
+    // 首帧与「用户从没动过语言」这条路径才都有值可读。
+    AppStorage.setOrCreate<string>(KEY_APP_LANGUAGE, effectivePreference);
+    // 只记语言档，不记任何账号信息。
+    hilog.info(DOMAIN, TAG, 'language restored: locale=%{public}s preference=%{public}s effective=%{public}s',
+      locale === null ? 'unreadable' : locale, effectivePreference, Lang.getInstance().getLanguage());
+  }
+
+  /**
+   * 系统语言 locale（`'zh-Hans'` / `'en-US'` 这类 BCP-47 串）。
+   *
+   * 包 try 而不是直取：读不到时回落 null → `systemLanguageFromLocale` 收为 'en'，
+   * 与既有默认档一致。设置读不出来不该把启动带崩。
+   */
+  private systemLocale(): string | null {
+    try {
+      return i18n.System.getSystemLanguage();
+    } catch (e) {
+      hilog.warn(DOMAIN, TAG, 'system language unreadable: %{public}s', String(e));
+      return null;
+    }
   }
 
   onForeground(): void {
