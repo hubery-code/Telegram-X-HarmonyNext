@@ -20,24 +20,24 @@ const ZH: SupportedLanguage = 'zh';
 export default function devicesSubPageTest(): void {
   describe('DevicesSubPageTest', () => {
     it('formatSessionDate_onlineWhenZeroOrNegative', 0, () => {
-      expect(formatSessionDate(0, EN)).assertEqual('Online');
-      expect(formatSessionDate(0, ZH)).assertEqual('在线');
-      expect(formatSessionDate(-100, EN)).assertEqual('Online');
-      expect(formatSessionDate(-100, ZH)).assertEqual('在线');
+      expect(formatSessionDate(0, EN, '24h')).assertEqual('Online');
+      expect(formatSessionDate(0, ZH, '24h')).assertEqual('在线');
+      expect(formatSessionDate(-100, EN, '24h')).assertEqual('Online');
+      expect(formatSessionDate(-100, ZH, '12h')).assertEqual('在线');
     });
 
     it('formatSessionDate_justNowUnderSixtySeconds', 0, () => {
       const nowSec = Math.floor(Date.now() / 1000);
       const recentSec = nowSec - 15;
-      expect(formatSessionDate(recentSec, EN)).assertEqual('Just now');
-      expect(formatSessionDate(recentSec, ZH)).assertEqual('刚刚');
+      expect(formatSessionDate(recentSec, EN, '24h')).assertEqual('Just now');
+      expect(formatSessionDate(recentSec, ZH, '24h')).assertEqual('刚刚');
     });
 
     it('formatSessionDate_minutesAgoUnderOneHour', 0, () => {
       const nowSec = Math.floor(Date.now() / 1000);
       const tenMinsAgoSec = nowSec - 600;
-      expect(formatSessionDate(tenMinsAgoSec, EN)).assertEqual('10 min ago');
-      expect(formatSessionDate(tenMinsAgoSec, ZH)).assertEqual('10 分钟前');
+      expect(formatSessionDate(tenMinsAgoSec, EN, '24h')).assertEqual('10 min ago');
+      expect(formatSessionDate(tenMinsAgoSec, ZH, '12h')).assertEqual('10 分钟前');
     });
 
     it('formatSessionDate_pastDateFormatting', 0, () => {
@@ -45,12 +45,16 @@ export default function devicesSubPageTest(): void {
       const date2020 = new Date(2020, 4, 15, 12, 30, 0);
       const timestamp2020 = Math.floor(date2020.getTime() / 1000);
 
-      const zhFormatted = formatSessionDate(timestamp2020, ZH);
-      const enFormatted = formatSessionDate(timestamp2020, EN);
+      const zhFormatted = formatSessionDate(timestamp2020, ZH, '24h');
+      const enFormatted = formatSessionDate(timestamp2020, EN, '24h');
 
       expect(zhFormatted).assertEqual('2020年5月15日 12:30');
       // 英文日期本身带逗号，时刻用 `at` 连接而不是第三个逗号。
       expect(enFormatted).assertEqual('May 15, 2020 at 12:30');
+
+      // I18N-DATE-102：整行形态都跟着时制档走（12 点是 12 而不是 0 或 24）。
+      expect(formatSessionDate(timestamp2020, EN, '12h')).assertEqual('May 15, 2020 at 12:30 PM');
+      expect(formatSessionDate(timestamp2020, ZH, '12h')).assertEqual('2020年5月15日 下午12:30');
     });
 
     it('activeSessionItem_fieldsIntegrity', 0, () => {

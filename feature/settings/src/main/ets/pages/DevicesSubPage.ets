@@ -30,6 +30,7 @@ import {
   a11y,
   datePartsFrom,
   formatDateTimeCompact,
+  HourClock,
   Lang,
   SupportedLanguage
 } from '@tgx/core-common';
@@ -51,7 +52,9 @@ function sessionText(key: string, lang: SupportedLanguage, args: (string | numbe
  * 会话活跃时间：非正数时间戳 → 在线；一分钟内 → 刚刚；一小时内 → N 分钟前；
  * 更早给「日期 + 时刻」，年份只在跨年时出现（形态统一由 `DateFormat` 决定）。
  */
-export function formatSessionDate(timestampSeconds: number, lang: SupportedLanguage): string {
+export function formatSessionDate(
+  timestampSeconds: number, lang: SupportedLanguage, clock: HourClock
+): string {
   if (timestampSeconds <= 0) {
     return sessionText('Online', lang, []);
   }
@@ -65,7 +68,8 @@ export function formatSessionDate(timestampSeconds: number, lang: SupportedLangu
   return formatDateTimeCompact(
     lang,
     datePartsFrom(timestampSeconds * 1000),
-    datePartsFrom(Date.now())
+    datePartsFrom(Date.now()),
+    clock
   );
 }
 
@@ -77,6 +81,8 @@ export struct DevicesSubPage {
 
   @State private effectiveTheme: Theme = LightTheme;
   @State private effectiveLang: SupportedLanguage = 'en';
+  /** I18N-DATE-102：时制档挂在同一条 Lang 订阅上（`setHourClock` 也走 notifyListeners）。 */
+  @State private effectiveClock: HourClock = '24h';
   @State private terminateTarget: ActiveSessionItem | null = null;
   @State private showTerminateAllConfirm: boolean = false;
 
@@ -86,12 +92,16 @@ export struct DevicesSubPage {
   aboutToAppear(): void {
     this.updateEffectiveTheme();
     this.effectiveLang = Lang.getInstance().getLanguage();
+    this.effectiveClock = Lang.getInstance().getHourClock();
     const self: DevicesSubPage = this;
     this.unsubscribeTheme = ThemeManager.getInstance().subscribe((_theme: Theme): void => {
       self.updateEffectiveTheme();
     });
+    // 时制与语言挂在同一个订阅上（`setHourClock` 也走 `notifyListeners`），
+    // 换时制时入参 lang 不变，档位要现取。
     this.unsubscribeLang = Lang.getInstance().subscribe((lang: SupportedLanguage): void => {
       self.effectiveLang = lang;
+      self.effectiveClock = Lang.getInstance().getHourClock();
     });
     this.onDispatch(new LoadActiveSessions());
   }
@@ -110,6 +120,7 @@ export struct DevicesSubPage {
   onUiStateChanged(): void {
     this.updateEffectiveTheme();
     this.effectiveLang = Lang.getInstance().getLanguage();
+    this.effectiveClock = Lang.getInstance().getHourClock();
   }
 
   private updateEffectiveTheme(): void {
@@ -126,6 +137,11 @@ export struct DevicesSubPage {
 
   private sessionLanguage(): SupportedLanguage {
     return this.uiState.languageCode === 'zh' || this.effectiveLang === 'zh' ? 'zh' : 'en';
+  }
+
+  /** I18N-DATE-102：档位在 `Lang` 上，页面只负责把它读成可观察状态。 */
+  private sessionClock(): HourClock {
+    return this.effectiveClock;
   }
 
   private getCurrentSession(): ActiveSessionItem {
@@ -445,7 +461,7 @@ export struct DevicesSubPage {
                   .maxLines(1)
                   .textOverflow({ overflow: TextOverflow.Ellipsis })
 
-                Text(`${item.location} · ${formatSessionDate(item.lastActiveDate, this.sessionLanguage())} · ${item.ipAddress}`)
+                Text(`${item.location} · ${formatSessionDate(item.lastActiveDate, this.sessionLanguage(), this.sessionClock())} · ${item.ipAddress}`)
                   .fontSize(this.getTheme().typography.caption.fontSize)
                   .fontColor(this.getTheme().colors.textSecondary)
                   .margin({ top: this.getTheme().spacing.hairline })

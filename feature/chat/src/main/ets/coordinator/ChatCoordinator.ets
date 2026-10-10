@@ -56,6 +56,7 @@ import {
   formatDateCompact,
   formatDateHeader as formatLocalizedDateHeader,
   formatTimeOfDay,
+  HourClock,
   isSameDayParts,
   Lang,
   ManualClock,
@@ -438,7 +439,7 @@ function formatSearchResultDate(unixSeconds: number): string {
   const at: DateParts = datePartsFrom(unixSeconds * 1000);
   const now: DateParts = datePartsFrom(Date.now());
   if (isSameDayParts(at, now)) {
-    return formatTimeOfDay(at);
+    return formatTimeOfDay(at, lang, Lang.getInstance().getHourClock());
   }
   return formatDateCompact(lang, at, now);
 }
@@ -635,6 +636,11 @@ export class ChatCoordinator {
    */
   private unsubscribeLang: (() => void) | null = null;
   private lastProjectedLanguage: SupportedLanguage = 'en';
+  /**
+   * I18N-DATE-102：时制档与语言是两个独立的变更源（系统改 12/24 小时制不动语言），
+   * 所以重投影的守卫必须是**两者合成的键** —— 只比语言时，切时制后气泡时间不刷新。
+   */
+  private lastProjectedClock: HourClock = '24h';
   /**
    * MSG-108 / I18N-HOTSWITCH-101：置顶条的标题与摘要同样是解析后存进
    * PinnedMessageInfo 的已解析串，留存原始消息才能让换语言纯本地重投。
@@ -898,12 +904,17 @@ export class ChatCoordinator {
    */
   private subscribeLanguage(): void {
     this.lastProjectedLanguage = Lang.getInstance().getLanguage();
+    this.lastProjectedClock = Lang.getInstance().getHourClock();
     const self: ChatCoordinator = this;
     this.unsubscribeLang = Lang.getInstance().subscribe((lang: SupportedLanguage): void => {
-      if (self.destroyed || lang === self.lastProjectedLanguage) {
+      // 入参只有语言；时制是 `Lang` 上的另一位，得现取。同值即返回，绝不重投。
+      const clock: HourClock = Lang.getInstance().getHourClock();
+      if (self.destroyed ||
+        (lang === self.lastProjectedLanguage && clock === self.lastProjectedClock)) {
         return;
       }
       self.lastProjectedLanguage = lang;
+      self.lastProjectedClock = clock;
       self.scheduleSyncFromProjection();
       self.refreshHeaderSubtitle();
       // 置顶条用留存的原文重投；不允许在这条路上补发 getUser（换语言必须是纯本地）。

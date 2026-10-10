@@ -4,6 +4,7 @@ import {
   LanguagePreference,
   SupportedLanguage,
   formatString,
+  hourClockFromFlag,
   lang,
   languagePreferenceFromStored,
   resolveLanguage,
@@ -32,6 +33,40 @@ export default function langTest(): void {
 
     it('formatString_replacesPrintfPlaceholders', 0, () => {
       expect(formatString('User %s has %d points', ['Bob', 42])).assertEqual('User Bob has 42 points');
+    });
+
+    it('hourClockFromFlag_onlyExplicitFalseIsTwelve', 0, () => {
+      // 只有明确读到 false 才切 12 小时制；缺失值回落 24h（zh locale 的默认档，也是本仓此前行为）。
+      expect(hourClockFromFlag(true)).assertEqual('24h');
+      expect(hourClockFromFlag(false)).assertEqual('12h');
+      expect(hourClockFromFlag(null)).assertEqual('24h');
+      expect(hourClockFromFlag(undefined)).assertEqual('24h');
+    });
+
+    it('hourClock_setNotifiesAndSameValueStaysQuiet', 0, () => {
+      const mgr: Lang = Lang.getInstance();
+      mgr.reset();
+      expect(mgr.getHourClock()).assertEqual('24h');
+
+      let notified: number = 0;
+      const unsubscribe: () => void = mgr.subscribe(
+        (_language: SupportedLanguage, _preference: LanguagePreference): void => {
+          notified = notified + 1;
+        });
+      try {
+        mgr.setHourClock('12h');
+        expect(mgr.getHourClock()).assertEqual('12h');
+        expect(notified).assertEqual(1);
+
+        // 同值直接返回：冷启动每次 onForeground 都会补取一次档位，重复通知会让会话列表整表重投影。
+        mgr.setHourClock('12h');
+        expect(notified).assertEqual(1);
+
+        mgr.setHourClock('24h');
+        expect(notified).assertEqual(2);
+      } finally {
+        unsubscribe();
+      }
     });
 
     it('formatString_handlesMissingOrExtraArgsGracefully', 0, () => {

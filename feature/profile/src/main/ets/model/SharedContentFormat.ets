@@ -84,7 +84,7 @@ export function formatSharedDate(unixSeconds: number): string {
   const at: DateParts = datePartsFrom(unixSeconds * 1000);
   const now: DateParts = datePartsFrom(Date.now());
   if (isSameDayParts(at, now)) {
-    return formatTimeOfDay(at);
+    return formatTimeOfDay(at, lang, Lang.getInstance().getHourClock());
   }
   return formatDateCompact(lang, at, now);
 }

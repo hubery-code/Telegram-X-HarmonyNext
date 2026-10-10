@@ -23,7 +23,7 @@
  * 页面把响应式语言位当 `lang` 传进来即可（I18N-HOTSWITCH-101 已铺好那条 tick）。
  */
 
-import { SupportedLanguage } from './Lang';
+import { SupportedLanguage, HourClock } from './Lang';
 
 const MS_PER_DAY: number = 24 * 60 * 60 * 1000;
 
@@ -49,6 +49,14 @@ const WEEKDAYS_ABBR_EN: string[] = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'S
  * 与 `Date.getDay()` 对齐，不是 ISO 的周一为一周起点。
  */
 const WEEKDAYS_ABBR_ZH: string[] = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+
+/**
+ * 12 小时制的上下午标记（CLDR 的 `a`，system 时钟显示用的就是这两档）。
+ * 中文侧不做「凌晨/中午/傍晚/晚上」的四档细分 —— 那是 CLDR 的 *wide format* 规则，
+ * 系统时间与即时通讯里的时刻显示都不用它，跟着它走反而和状态栏对不上。
+ */
+const DAY_PERIOD_EN: string[] = ['AM', 'PM'];
+const DAY_PERIOD_ZH: string[] = ['上午', '下午'];
 
 /**
  * 日期的本地字段。`month` 用 1-12（人读的习惯），`weekday` 用 0-6 且 0 = 周日
@@ -121,12 +129,22 @@ function monthFullOf(month: number): string {
 }
 
 /**
- * 时间。恒 24 小时制：Android 那边是 `UI.needAmPm()` 读系统 `is24HourFormat`，
- * 本端要拿到同一个信号得从装配层灌（`i18n.is24HourFormat()` 是 Kit 调用，
- * feature 层碰不到）。这条按实测的口径记成 I18N-DATE-102 的题面，不在本包赌半套。
+ * 时间。档位由调用方给（`HourClock`，装配层从系统 `i18n.System.is24HourClock()` 取）——
+ * 这一档此前是**写死的 24 小时制**：系统设成 12 小时制时，中文界面出 `14:30`、
+ * 英文界面也该出 `2:30 PM`，而本端两处都不跟着变。
+ * 12 小时制的上下午标记属于 locale 槽位而不是文案（CLDR 的 `a` 形），所以留在本文件。
  */
-export function formatTimeOfDay(p: DateParts): string {
-  return `${pad2(p.hour)}:${pad2(p.minute)}`;
+export function formatTimeOfDay(p: DateParts, lang: SupportedLanguage, clock: HourClock): string {
+  if (clock === '24h') {
+    return `${pad2(p.hour)}:${pad2(p.minute)}`;
+  }
+  // h12 规矩：0 点显示 12、12 点显示 12，其余取模。
+  const h12: number = p.hour % 12 === 0 ? 12 : p.hour % 12;
+  const minute: string = `:${pad2(p.minute)}`;
+  if (lang === 'zh') {
+    return `${p.hour < 12 ? DAY_PERIOD_ZH[0] : DAY_PERIOD_ZH[1]}${h12}${minute}`;
+  }
+  return `${h12}${minute} ${p.hour < 12 ? DAY_PERIOD_EN[0] : DAY_PERIOD_EN[1]}`;
 }
 
 /** 星期缩写（一周内的会话列表那一档）。 */
@@ -193,9 +211,11 @@ export function formatDateHeader(lang: SupportedLanguage, p: DateParts, now: Dat
  * （`Sep 21, 2025`），再接 `, 14:30` 就成了三段逗号堆叠。`at` 和「年月日」
  * 一样是 locale 的连接词，不是文案，所以留在本文件（守卫 R8）。
  */
-export function formatDateTimeCompact(lang: SupportedLanguage, p: DateParts, now: DateParts): string {
+export function formatDateTimeCompact(
+  lang: SupportedLanguage, p: DateParts, now: DateParts, clock: HourClock
+): string {
   const date: string = formatDateCompact(lang, p, now);
-  const time: string = formatTimeOfDay(p);
+  const time: string = formatTimeOfDay(p, lang, clock);
   return lang === 'zh' ? `${date} ${time}` : `${date} at ${time}`;
 }
 
@@ -227,16 +247,17 @@ export function formatBirthday(
 }
 
 /**
- * 会话列表行的时间戳：当天 → `HH:mm`；一周内 → 星期；更早 → 按当年/跨年给日期。
+ * 会话列表行的时间戳：当天 → 时刻（按 `clock` 档给 24 或 12 小时制）；一周内 → 星期；
+ * 更早 → 按当年/跨年给日期。
  * 档位判据与 Android `Lang.timeOrDateShort` 一致，形态由 `lang` 决定。
  */
 export function formatListTimestamp(
-  lang: SupportedLanguage, atMs: number, nowMs: number
+  lang: SupportedLanguage, atMs: number, nowMs: number, clock: HourClock
 ): string {
   const at: DateParts = datePartsFrom(atMs);
   const now: DateParts = datePartsFrom(nowMs);
   if (isSameDayParts(at, now)) {
-    return formatTimeOfDay(at);
+    return formatTimeOfDay(at, lang, clock);
   }
   const days: number = daysBetween(atMs, nowMs);
   if (days > 0 && days < 7) {

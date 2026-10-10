@@ -103,7 +103,11 @@
        ② 点分数字日期 —— `${…}.${…}`（旧会话列表的 `dd.MM.yyyy` 正是这个形状）；
        ③ 英文月份名/星期名 —— 字面量命中 `MONTH_WEEKDAY_NAMES` 且**不是**词典 key
           （`'Sunday'` 作为 `SHARED_WEEKDAY_KEYS` 的 key 是对的，`'Sep'` 不是任何 key）；
-       ④ 旧的 `// i18n-allow 日期形态` 就地豁免 —— 这一类豁免自本包起作废，标了就报。
+       ④ 旧的 `// i18n-allow 日期形态` 就地豁免 —— 这一类豁免自本包起作废，标了就报；
+       ⑤ 手取时间字段 —— 调用 `getHours()` / `getMinutes()`（I18N-DATE-102 补）。前四类只
+          拦**字符串形状**，而 `HH:mm` 是 `${pad2(date.getHours())}` 拼出来的：落盘后长得和
+          任何数字串一样，抓不到。时制的差异只在「取完字段之后怎么排版」，所以把取字段这一
+          步本身就收紧 —— 只有形态表本体能读时钟，业务层一律交 `DateParts` 进去。
      唯一放行的是 `core/common/src/main/ets/DateFormat.ets`（形态表本体）与 `Lang.ets`（词典）。
 
 用法：python3 tools/ci/check_i18n_literals.py [--quiet]
@@ -142,6 +146,9 @@ CN_DATE_SHAPE_RE = re.compile(r'\$\{[^{}]*\}\s*[年月日岁]')
 DOT_DATE_SHAPE_RE = re.compile(r'\$\{[^{}]*\}\.\\\$\{[^{}]*\}|\$\{[^{}]*\}\.\$\{[^{}]*\}')
 # 「日期形态」这一类就地豁免已作废：改走 DateFormat，标了就报。
 DATE_ALLOW_REASON_RE = re.compile(r'日期|时间形态|相对时间')
+# R8⑤：手写时钟取值。`HH:mm` 这类形态是 `${pad2(d.getHours())}` 拼出来的，字符串形状抓不到，
+# 于是把「读时钟字段」这一步本身收紧：只有形态表本体能取值，业务层交 `DateParts` 进去。
+CLOCK_FIELD_RE = re.compile(r'\.get(Hours|Minutes)\s*\(\s*\)')
 
 # 汉字段（CJK Unified Ideographs）。emoji（😀 ★ ✋）与假名/谚文都不在此段，故意只拦汉字：
 # 本仓的界面文案只有中英两档，拦假名只会误伤测试里的样例数据。
@@ -273,6 +280,8 @@ def scan_date_forms(files, dicts):
     所以口径按形状而不是按语言：中文排布（`${…}年/月/日/岁`）、点分数字日期（`${…}.${…}`）、
     以及英文月份/星期名表，全部只许在那一个文件里。词典里的 `'Sunday': '星期日'` 是词条，
     业务层按 key 取它是对的，所以 `Lang.ets` 与「双词典都命中的 key」不进射程。
+    ⑤ 是同一射程上的第二道：`d.getHours()` 拼出的 `HH:mm` 没有可识别的字符串形状，只能把
+    「读时钟字段」这一步本身锁到形态表里 —— 业务层拿到的是 `DateParts`，档位由调用方传入。
     """
     problems = []
     for rel, path in files:
@@ -291,6 +300,11 @@ def scan_date_forms(files, dicts):
             if dot is not None:
                 problems.append(f'{rel}:{idx + 1}: 就地拼点分数字日期 {dot.group(0)!r} —— '
                                 f'旧会话列表的 `dd.MM` 正是这个形状，改调 DateFormat')
+            clock = CLOCK_FIELD_RE.search(line)
+            if clock is not None:
+                problems.append(f'{rel}:{idx + 1}: 就地读时钟字段 {clock.group(0).lstrip(".")!r} —— '
+                                f'12/24 小时的档位只在 {DATE_FORM_SOURCE} 生效，'
+                                f'改调 formatTimeOfDay(datePartsFrom(ms), lang, clock)')
             for lit in LITERAL_RE.finditer(line):
                 value = lit.group(2)
                 if value in MONTH_WEEKDAY_NAMES and value not in dicts['EN']:

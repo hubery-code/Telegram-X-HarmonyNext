@@ -8,7 +8,15 @@
  * 3. sendComment()：向讨论群以 message_thread_id 为 replyTo 派发 SendMessage，并支持本地即时乐观回显。
  */
 
-import { Lang, Result, AppError } from '@tgx/core-common';
+import {
+  datePartsFrom,
+  formatTimeOfDay,
+  HourClock,
+  Lang,
+  Result,
+  AppError,
+  SupportedLanguage
+} from '@tgx/core-common';
 import { AccountScope } from '@tgx/core-account';
 import {
   Chat,
@@ -74,16 +82,17 @@ function pickAvatarColor(id: number): string {
   return AVATAR_PALETTE[abs % AVATAR_PALETTE.length];
 }
 
+/**
+ * 评论行的时间。I18N-DATE-102：这一位此前手写 `HH:mm`（`getHours()`/`getMinutes()` 拼串），
+ * 既不跟界面语言也不跟系统时制；档位与语言在投影时现取，形态只在 `DateFormat`。
+ */
 function formatUnixTime(unixSec: number): string {
   if (unixSec <= 0) {
     return '';
   }
-  const date: Date = new Date(unixSec * 1000);
-  const h: number = date.getHours();
-  const m: number = date.getMinutes();
-  const hStr: string = h < 10 ? `0${h}` : `${h}`;
-  const mStr: string = m < 10 ? `0${m}` : `${m}`;
-  return `${hStr}:${mStr}`;
+  const lang: SupportedLanguage = Lang.getInstance().getLanguage();
+  const clock: HourClock = Lang.getInstance().getHourClock();
+  return formatTimeOfDay(datePartsFrom(unixSec * 1000), lang, clock);
 }
 
 export class CommentsCoordinator {

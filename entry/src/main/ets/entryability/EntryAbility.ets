@@ -2,7 +2,14 @@ import { AbilityConstant, bundleManager, Configuration, UIAbility, Want } from '
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { window } from '@kit.ArkUI';
 import { i18n } from '@kit.LocalizationKit';
-import { LanguagePreference, Lang, languagePreferenceFromStored, systemLanguageFromLocale } from '@tgx/core-common';
+import {
+  HourClock,
+  LanguagePreference,
+  Lang,
+  hourClockFromFlag,
+  languagePreferenceFromStored,
+  systemLanguageFromLocale
+} from '@tgx/core-common';
 import {
   ThemeManager,
   ThemePreference,
@@ -168,6 +175,10 @@ export default class EntryAbility extends UIAbility {
     // 在任何机器上都恒解析为浅色。两条都在这里接上，同样排在 loadContent 之前。
     this.hydrateTheme();
 
+    // I18N-DATE-102：时制与语言/主题同形状——档位从系统取、形态只在 DateFormat。
+    // 同样排在 loadContent 之前，首帧的气泡时间就是系统时制而不是写死的 24 小时。
+    this.hydrateHourClock();
+
     // 应用锁（APPLOCK-101）：自动锁定档位存在上面那条 preferences 盘上，
     // 所以装配必须排在 initSettingsStore 之后；bootstrap() 决定「这次起来要不要锁」，
     // 必须排在 loadContent 之前，否则解锁前会闪一帧主界面。
@@ -228,6 +239,38 @@ export default class EntryAbility extends UIAbility {
   }
 
   /**
+   * I18N-DATE-102：时制（24/12 小时）档位的回灌。
+   *
+   * 与语言的形状一致：**档位是运行态**，由 entry 从系统取一次灌进 `Lang`，形态
+   * （`14:05` / `2:05 PM` / `下午2:05`）只在 `DateFormat`。这里刻意不写 AppStorage：
+   * `is24HourClock` 那个键由 pages/Index 的 Lang 订阅回调镜像（与 `activeLanguage`
+   * 同一个 tick），所以只有 `Lang.setHourClock` 一处入口，不会有两个写者算出两个值。
+   *
+   * 时机取三处而非配置事件一处：Huawei 的文档把时制变更归到
+   * `COMMON_EVENT_TIME_CHANGED`（应用被挂起时收不到），所以冷启动、
+   * `onConfigurationUpdate`、`onForeground` 都重取一次；同值时 `setHourClock` 直接返回，
+   * 多调不会推出多余的刷新。
+   */
+  private hydrateHourClock(): void {
+    const clock: HourClock = hourClockFromFlag(this.system24HourClock());
+    Lang.getInstance().setHourClock(clock);
+    hilog.info(DOMAIN, TAG, 'hour clock restored: %{public}s', clock);
+  }
+
+  /**
+   * 系统是否 24 小时制。读不到按 null 交给 `hourClockFromFlag` 收为 24 小时——
+   * 与本仓既有默认档（`HH:mm`）一致，绝不能把「读不到」写成 12 小时。
+   */
+  private system24HourClock(): boolean | null {
+    try {
+      return i18n.System.is24HourClock();
+    } catch (e) {
+      hilog.warn(DOMAIN, TAG, 'system hour clock unreadable: %{public}s', String(e));
+      return null;
+    }
+  }
+
+  /**
    * APPSTORAGE-PAIR-101：启动时的主题回灌，两条写入方向都在这里。
    *
    * 与 `hydrateLanguage()` 同形状，同样只写**偏好**不写解析结果：`'system'` 这一
@@ -279,6 +322,7 @@ export default class EntryAbility extends UIAbility {
       ThemeManager.getInstance().setSystemMode(themeModeFromColorMode(colorMode));
     }
     Lang.getInstance().setSystemLanguage(systemLanguageFromLocale(this.systemLocale()));
+    this.hydrateHourClock();
   }
 
   onForeground(): void {
@@ -287,6 +331,9 @@ export default class EntryAbility extends UIAbility {
     if (result !== undefined && result !== null) {
       result.lifecycle.onForeground();
     }
+    // I18N-DATE-102：时制变更系统发的是 COMMON_EVENT_TIME_CHANGED，挂起中的应用收不到，
+    // 回前台补取一次。同值时 setHourClock 直接返回，不会推多余刷新。
+    this.hydrateHourClock();
     // 应用锁：回到前台先问一次「该锁吗」，判定用的是后台时长，不是这里的调用时机。
     const appLock: AppLockGate | null = appLockGate();
     if (appLock !== null) {

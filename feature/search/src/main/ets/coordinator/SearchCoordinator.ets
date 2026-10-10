@@ -11,6 +11,9 @@ import { Logger } from '@tgx/observability';
 import {
   AppError,
   AppErrors,
+  datePartsFrom,
+  formatTimeOfDay,
+  Lang,
   Result,
   SequentialIdGenerator,
   SystemClock,
@@ -56,11 +59,18 @@ import { searchReducer } from '../reducer/SearchReducer';
 
 const TAG: string = 'SearchCoordinator';
 
+/**
+ * 搜索结果行的时间。I18N-DATE-102：这一位此前手写 `HH:mm`（`getHours()` / `getMinutes()`
+ * 直接拼串），既不跟语言也不跟系统时制走 —— 系统切 12 小时制后仍出 `14:05`。
+ * 形态改由 `DateFormat` 给，档位与语言在投影时现取（投影出的是已解析串，
+ * 换语言/换时制必须由协调器重投影，与 HOTSWITCH-101 同一条路子）。
+ */
 function formatMessageDate(unixSeconds: number): string {
-  const date: Date = new Date(unixSeconds * 1000);
-  const hours: string = date.getHours() < 10 ? `0${date.getHours()}` : `${date.getHours()}`;
-  const minutes: string = date.getMinutes() < 10 ? `0${date.getMinutes()}` : `${date.getMinutes()}`;
-  return `${hours}:${minutes}`;
+  return formatTimeOfDay(
+    datePartsFrom(unixSeconds * 1000),
+    Lang.getInstance().getLanguage(),
+    Lang.getInstance().getHourClock()
+  );
 }
 
 export interface SearchQueryProvider {

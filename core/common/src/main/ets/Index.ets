@@ -23,10 +23,12 @@ export {
   lang,
   LanguagePreference,
   SupportedLanguage,
+  HourClock,
   LanguageListener,
   resolveLanguage,
   systemLanguageFromLocale,
   languagePreferenceFromStored,
+  hourClockFromFlag,
   formatString
 } from './Lang';
 export { A11y, A11Y_SLOTS, a11y } from './A11y';

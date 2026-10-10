@@ -16,7 +16,15 @@
  */
 
 import { LightTheme, Theme } from '@tgx/core-design-system';
-import { A11y, a11y, formatListTimestamp, Lang, SupportedLanguage } from '@tgx/core-common';
+import {
+  A11y,
+  a11y,
+  formatListTimestamp,
+  hourClockFromFlag,
+  HourClock,
+  Lang,
+  SupportedLanguage
+} from '@tgx/core-common';
 import { ChatListItem } from '../model/ChatListItem';
 import { ChatListUiState, ChatActionMenuState, ChatFolderTab, filterChatsByFolder } from '../contract/ChatListUiState';
 import { DrawerItemKey } from '../contract/DrawerState';
@@ -55,8 +63,10 @@ const FAB_SIZE: number = 56;
  * 这一位以前是本仓唯一一处「把 locale 数据写死成英文」的地方：
  * 一张私有 `['Sun','Mon',…]` 表加无条件带 4 位年份的 `dd.MM.yyyy`。
  */
-function formatChatTimestamp(timestampMs: number, lang: SupportedLanguage): string {
-  return formatListTimestamp(lang, timestampMs, Date.now());
+function formatChatTimestamp(
+  timestampMs: number, lang: SupportedLanguage, clock: HourClock
+): string {
+  return formatListTimestamp(lang, timestampMs, Date.now(), clock);
 }
 
 /**
@@ -86,11 +96,15 @@ function toSandboxUri(path: string | null): string {
 /**
  * 会话行的 LazyForEach key：chatId + 展示相关内容散列
  * （标题/预览/未读数/时间戳/置顶态/手动未读标记/头像路径/类别）。
+ *
+ * `localeKey`（`语言|时制`）必须在键里：行上的时间是**视图侧**现算的形态串
+ * （`formatChatTimestamp`），换语言只切 12/24 小时制时 `item` 一个字段都没变，
+ * key 不变 → LazyForEach 复用旧行 → 时间停在旧形态。语言同理（预览恰好没变的会话）。
  */
-function chatRowKey(item: ChatListItem): string {
+function chatRowKey(item: ChatListItem, localeKey: string): string {
   const signature: string =
     `${item.title}|${item.lastMessagePreview}|${item.unreadCount}|${item.timestampMs}|` +
-    `${item.isPinned}|${item.isMuted}|${item.isMarkedAsUnread}|${item.category}|${item.avatarPath !== null ? item.avatarPath : ''}|${item.draftText !== null ? item.draftText : ''}`;
+    `${item.isPinned}|${item.isMuted}|${item.isMarkedAsUnread}|${item.category}|${item.avatarPath !== null ? item.avatarPath : ''}|${item.draftText !== null ? item.draftText : ''}|${localeKey}`;
   return `${item.chatId}:${fnv1a32(signature)}`;
 }
 
@@ -150,6 +164,11 @@ export struct ChatListPage {
    * 的字面量联合类型没有保证，而 t() 里反正要过一次收敛。
    */
   @StorageProp('activeLanguage') effectiveLanguage: string = 'en';
+  /**
+   * I18N-DATE-102：时制档与语言走同一条 tick（都由 entry 灌），默认 true 对齐
+   * `zh-Hans` / 本仓此前的 24 小时行为 —— 键还没种上时不能先跳成 12 小时制。
+   */
+  @StorageProp('is24HourClock') is24HourClock: boolean = true;
   @Prop @Watch('onUiStateChanged') uiState: ChatListUiState = ChatListUiState.initial();
 
   onDispatch: (intent: Object) => void = () => {};
@@ -248,6 +267,16 @@ export struct ChatListPage {
    */
   private listLanguage(): SupportedLanguage {
     return this.effectiveLanguage === 'zh' ? 'zh' : 'en';
+  }
+
+  /** I18N-DATE-102：与 `listLanguage()` 同一条口径 —— 档位从响应式键取，形态只在 DateFormat。 */
+  private listClock(): HourClock {
+    return hourClockFromFlag(this.is24HourClock);
+  }
+
+  /** 行 key 的语言/时制指纹：见 `chatRowKey`。 */
+  private localeTickKey(): string {
+    return `${this.effectiveLanguage}|${this.is24HourClock}`;
   }
 
   private t(key: string, ...args: (string | number)[]): string {
@@ -404,7 +433,7 @@ export struct ChatListPage {
                 ListItem() {
                   this.ChatRow(item)
                 }
-              }, (item: ChatListItem) => chatRowKey(item))
+              }, (item: ChatListItem) => chatRowKey(item, this.localeTickKey()))
             }
             .width('100%')
             .height('100%')
@@ -720,7 +749,7 @@ export struct ChatListPage {
               .margin({ left: this.T.spacing.sm })
           }
 
-          Text(formatChatTimestamp(item.timestampMs, this.listLanguage()))
+          Text(formatChatTimestamp(item.timestampMs, this.listLanguage(), this.listClock()))
             .fontSize(this.T.typography.footnote.fontSize)
             .fontColor(this.T.colors.textSecondary)
             .margin({ left: this.T.spacing.sm })

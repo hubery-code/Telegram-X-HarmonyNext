@@ -11,6 +11,11 @@
 
 export type LanguagePreference = 'system' | 'en' | 'zh';
 export type SupportedLanguage = 'en' | 'zh';
+/**
+ * 时制档（I18N-DATE-102）。和 `SupportedLanguage` / `LanguagePreference` 放在一起，
+ * 是因为它是**运行态档位**而不是日期形态：档位由装配层从系统取，形态只在 `DateFormat`。
+ */
+export type HourClock = '24h' | '12h';
 
 export type LanguageListener = (language: SupportedLanguage, preference: LanguagePreference) => void;
 
@@ -54,6 +59,17 @@ export function languagePreferenceFromStored(stored: string | null | undefined):
     return stored;
   }
   return 'system';
+}
+
+/**
+ * Pure function: 系统的 24 小时制开关（`i18n.System.is24HourClock()` 的布尔）→ 本端时制档。
+ *
+ * **只有明确读到 `false` 才给 12 小时制**：`undefined` / `null`（Kit 调用抛错被上层收敛成
+ * 缺失）一律回落 `'24h'` —— 那既是本仓此前的行为，也是 `zh-Hans` locale 的默认档，
+ * 一次读取失败不该把界面切成 12 小时制。
+ */
+export function hourClockFromFlag(is24Hour: boolean | null | undefined): HourClock {
+  return is24Hour === false ? '12h' : '24h';
 }
 
 /**
@@ -1315,6 +1331,7 @@ export class Lang {
 
   private preference: LanguagePreference = 'system';
   private systemLanguage: SupportedLanguage = 'en';
+  private hourClock: HourClock = '24h';
   private readonly listeners: LanguageListener[] = [];
   private dictionaries: Record<SupportedLanguage, Record<string, string>>;
 
@@ -1394,6 +1411,24 @@ export class Lang {
     }
   }
 
+  /**
+   * 时制档（I18N-DATE-102）：与 `systemLanguage` 同一条路子 —— 值由装配层从系统取
+   * （`i18n.System.is24HourClock()` 是 Kit 调用，`core` 与各 coordinator 都碰不到），
+   * 取到后灌进这里，coordinator 在投影时读，页面走 AppStorage 的响应式键。
+   * 默认 `'24h'`：没灌值时（单测、更早的启动时序）保持本仓此前的行为。
+   */
+  getHourClock(): HourClock {
+    return this.hourClock;
+  }
+
+  setHourClock(clock: HourClock): void {
+    if (this.hourClock === clock) {
+      return;
+    }
+    this.hourClock = clock;
+    this.notifyListeners();
+  }
+
   formatByKey(key: string, lang: SupportedLanguage, args: (string | number)[]): string {
     const dict = this.dictionaries[lang];
     let template: string | undefined = dict !== undefined ? dict[key] : undefined;
@@ -1448,6 +1483,7 @@ export class Lang {
   reset(): void {
     this.preference = 'system';
     this.systemLanguage = 'en';
+    this.hourClock = '24h';
     this.listeners.length = 0;
     this.dictionaries = this.createDefaultDictionaries();
   }

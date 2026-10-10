@@ -39,8 +39,9 @@ const LANGUAGES: SupportedLanguage[] = ['en', 'zh'];
 /** 2026-09-21 是**周一**（weekday=1），设备实测那天的会话列表正好落在这条上。 */
 const MON: number = new Date(2026, 8, 21, 14, 30, 0).getTime();
 
-function parts(year: number, month: number, day: number): DateParts {
-  return new DateParts(year, month, day, 0, 0, 0);
+/** `DateParts` 的第 4 个槽位是**星期**而不是小时，这里固定给 0（周日）并保持时刻可读。 */
+function parts(year: number, month: number, day: number, hour: number = 0, minute: number = 0): DateParts {
+  return new DateParts(year, month, day, 0, hour, minute);
 }
 
 export default function dateFormatTest(): void {
@@ -77,15 +78,35 @@ export default function dateFormatTest(): void {
 
     it('dateTimeCompact_joinsDateAndTimePerLanguage', 0, () => {
       const now: DateParts = datePartsFrom(MON);
-      expect(formatDateTimeCompact('en', datePartsFrom(MON), now)).assertEqual('Sep 21 at 14:30');
-      expect(formatDateTimeCompact('zh', datePartsFrom(MON), now)).assertEqual('9月21日 14:30');
+      expect(formatDateTimeCompact('en', datePartsFrom(MON), now, '24h')).assertEqual('Sep 21 at 14:30');
+      expect(formatDateTimeCompact('zh', datePartsFrom(MON), now, '24h')).assertEqual('9月21日 14:30');
       // 跨年时英文日期自带逗号，靠 `at` 而不是再加一个逗号。
-      expect(formatDateTimeCompact('en', parts(2020, 5, 15), now)).assertEqual('May 15, 2020 at 00:00');
+      expect(formatDateTimeCompact('en', parts(2020, 5, 15, 6, 0), now, '24h')).assertEqual('May 15, 2020 at 06:00');
+      // 12 小时制档：日期部分不变，只有时刻换形。
+      expect(formatDateTimeCompact('en', datePartsFrom(MON), now, '12h')).assertEqual('Sep 21 at 2:30 PM');
+      expect(formatDateTimeCompact('zh', datePartsFrom(MON), now, '12h')).assertEqual('9月21日 下午2:30');
     });
 
     it('timeOfDay_padsToTwoDigits', 0, () => {
-      expect(formatTimeOfDay(new DateParts(2026, 9, 21, 1, 9, 5))).assertEqual('09:05');
-      expect(formatTimeOfDay(new DateParts(2026, 9, 21, 1, 23, 59))).assertEqual('23:59');
+      expect(formatTimeOfDay(new DateParts(2026, 9, 21, 1, 9, 5), 'en', '24h')).assertEqual('09:05');
+      expect(formatTimeOfDay(new DateParts(2026, 9, 21, 1, 23, 59), 'en', '24h')).assertEqual('23:59');
+      expect(formatTimeOfDay(new DateParts(2026, 9, 21, 1, 0, 0), 'en', '24h')).assertEqual('00:00');
+    });
+
+    it('timeOfDay_clockGears', 0, () => {
+      // 0 点与 12 点是 12 小时制的两个边界：都显示 12，靠上下午标记区分（不是 0，也不是 24）。
+      expect(formatTimeOfDay(new DateParts(2026, 9, 21, 1, 0, 30), 'en', '12h')).assertEqual('12:30 AM');
+      expect(formatTimeOfDay(new DateParts(2026, 9, 21, 1, 12, 5), 'en', '12h')).assertEqual('12:05 PM');
+      expect(formatTimeOfDay(new DateParts(2026, 9, 21, 1, 13, 0), 'en', '12h')).assertEqual('1:00 PM');
+      expect(formatTimeOfDay(new DateParts(2026, 9, 21, 1, 23, 59), 'en', '12h')).assertEqual('11:59 PM');
+      // 小时数不补零（`2:30` 而不是 `02:30`），分钟始终补零。
+      expect(formatTimeOfDay(new DateParts(2026, 9, 21, 1, 9, 5), 'en', '12h')).assertEqual('9:05 AM');
+      // 中文档：上下午是前缀，且不带空格。
+      expect(formatTimeOfDay(new DateParts(2026, 9, 21, 1, 0, 30), 'zh', '12h')).assertEqual('上午12:30');
+      expect(formatTimeOfDay(new DateParts(2026, 9, 21, 1, 12, 5), 'zh', '12h')).assertEqual('下午12:05');
+      expect(formatTimeOfDay(new DateParts(2026, 9, 21, 1, 13, 0), 'zh', '12h')).assertEqual('下午1:00');
+      // 24 小时制下两语言同形（zh 不额外加「点」）。
+      expect(formatTimeOfDay(new DateParts(2026, 9, 21, 1, 14, 30), 'zh', '24h')).assertEqual('14:30');
     });
 
     it('weekdayShort_indexesFromSunday', 0, () => {
@@ -106,17 +127,22 @@ export default function dateFormatTest(): void {
       const sevenDaysAgo: number = new Date(2026, 8, 14, 8, 0, 0).getTime();
       const lastYear: number = new Date(2025, 0, 15, 8, 0, 0).getTime();
 
-      expect(formatListTimestamp('en', sameDay, nowMs)).assertEqual('09:05');
-      expect(formatListTimestamp('zh', sameDay, nowMs)).assertEqual('09:05');
-      expect(formatListTimestamp('en', yesterday, nowMs)).assertEqual('Sun');
-      expect(formatListTimestamp('zh', yesterday, nowMs)).assertEqual('周日');
-      expect(formatListTimestamp('en', sixDaysAgo, nowMs)).assertEqual('Tue');
-      expect(formatListTimestamp('zh', sixDaysAgo, nowMs)).assertEqual('周二');
+      expect(formatListTimestamp('en', sameDay, nowMs, '24h')).assertEqual('09:05');
+      expect(formatListTimestamp('zh', sameDay, nowMs, '24h')).assertEqual('09:05');
+      // 当天那一档是唯一受时制影响的；星期与日期两档不受影响。
+      expect(formatListTimestamp('en', sameDay, nowMs, '12h')).assertEqual('9:05 AM');
+      expect(formatListTimestamp('zh', sameDay, nowMs, '12h')).assertEqual('上午9:05');
+      expect(formatListTimestamp('en', yesterday, nowMs, '12h')).assertEqual('Sun');
+      expect(formatListTimestamp('zh', yesterday, nowMs, '12h')).assertEqual('周日');
+      expect(formatListTimestamp('en', yesterday, nowMs, '24h')).assertEqual('Sun');
+      expect(formatListTimestamp('zh', yesterday, nowMs, '24h')).assertEqual('周日');
+      expect(formatListTimestamp('en', sixDaysAgo, nowMs, '24h')).assertEqual('Tue');
+      expect(formatListTimestamp('zh', sixDaysAgo, nowMs, '12h')).assertEqual('周二');
       // 第 7 天出窗，落到日期档（当年不补年份）。
-      expect(formatListTimestamp('en', sevenDaysAgo, nowMs)).assertEqual('Sep 14');
-      expect(formatListTimestamp('zh', sevenDaysAgo, nowMs)).assertEqual('9月14日');
-      expect(formatListTimestamp('en', lastYear, nowMs)).assertEqual('Jan 15, 2025');
-      expect(formatListTimestamp('zh', lastYear, nowMs)).assertEqual('2025年1月15日');
+      expect(formatListTimestamp('en', sevenDaysAgo, nowMs, '24h')).assertEqual('Sep 14');
+      expect(formatListTimestamp('zh', sevenDaysAgo, nowMs, '24h')).assertEqual('9月14日');
+      expect(formatListTimestamp('en', lastYear, nowMs, '24h')).assertEqual('Jan 15, 2025');
+      expect(formatListTimestamp('zh', lastYear, nowMs, '24h')).assertEqual('2025年1月15日');
     });
 
     it('dayHelpers', 0, () => {
@@ -173,12 +199,12 @@ export default function dateFormatTest(): void {
         const enOut: string[] = [
           formatMonthDay('en', p), formatMonthDayLong('en', p), formatMonthDayYear('en', p),
           formatDateCompact('en', p, now), formatDateHeader('en', p, now), formatMonthYear('en', p),
-          formatDateTimeCompact('en', p, now), formatWeekdayShort('en', p.weekday)
+          formatDateTimeCompact('en', p, now, '24h'), formatWeekdayShort('en', p.weekday)
         ];
         const zhOut: string[] = [
           formatMonthDay('zh', p), formatMonthDayLong('zh', p), formatMonthDayYear('zh', p),
           formatDateCompact('zh', p, now), formatDateHeader('zh', p, now), formatMonthYear('zh', p),
-          formatDateTimeCompact('zh', p, now), formatWeekdayShort('zh', p.weekday)
+          formatDateTimeCompact('zh', p, now, '24h'), formatWeekdayShort('zh', p.weekday)
         ];
         for (let j = 0; j < enOut.length; j++) {
           if (enOut[j].indexOf('年') >= 0 || enOut[j].indexOf('月') >= 0 || enOut[j].indexOf('日') >= 0) {

@@ -2533,6 +2533,101 @@
 > **后续**：候选 **I18N-DATE-101** 结掉。剩余按根因挂 **I18N-DATE-102**（12/24 小时制）、
 > 群头部两条解析路径字段集对齐、守卫跨行调用与间接传参收口、TDLib `system_language_code` 接真设备语言。
 
+### FEAT-UI-003 / I18N-DATE-102 时间形态接回系统时制：全仓只许一个文件读时钟（2026-10-10）
+
+> **题面**：DATE-101 把**日期**接回了语言，盲区 ① 自己就是这一包的题面 —— 时刻恒走 24 小时制。
+> 读码定案比「`formatTimeOfDay` 少一个档位」更糟：**三处时间根本没走 DateFormat**，是手写的
+> `pad2(getHours())` + `pad2(getMinutes())` 拼串（`ChatPage.formatMessageTime` 气泡时间、
+> `SearchCoordinator.formatMessageDate` 搜索结果行、`CommentsCoordinator.formatUnixTime` 评论行）。
+> 也就是说本仓的「时间」和 DATE-101 之前的「日期」一样，是**两套并存、都不跟系统走**：
+> 列表那一档至少还调形态函数，这三处连形态函数都没进。
+> 语义对标 Android `UI.needAmPm()`（读系统 `is24HourFormat`），本端等价信号是
+> **`i18n.System.is24HourClock()`**（`@since 9`；注意没有 `is24HourFormat` 这个方法，
+> 上一包文档里按 Android 的名字写了一次，本轮实测纠正）。
+>
+> **链路与分工：档位是运行态，形态只在 `DateFormat`**。这是与 `systemLanguage` 完全同形的第三条链
+> （Kit 取值 → `Lang` 存位 → 页面走 AppStorage 响应式键 / coordinator 现取 → DateFormat 收档位出串）：
+> ① `Lang` 上加 `HourClock = '24h' | '12h'` 与 `getHourClock()` / `setHourClock()`，
+> 后者**同值即 return**、变化时走同一条 `notifyListeners()` —— 所以语言和时制共用一个 tick，
+> 不会出现「语言新、时制旧」；② `entry/EntryAbility` 是**全仓唯一读系统时制的地方**
+> （`core/*` 与各 coordinator 禁引 Kit，分层守卫拦得住），`hydrateHourClock()` 排在
+> `loadContent()` **之前**，首帧气泡就是系统时制而不是写死的 24 小时；
+> ③ `entry/pages/Index.ets` 把 `is24HourClock` 镜像进 AppStorage，就挂在原语言 tick 的那个订阅回调里，
+> 且读的是 `getHourClock()` 而不是回调入参（入参只有语言，时制变了它不变）；
+> ④ `DateFormat.formatTimeOfDay(p, lang, clock)` 出四档形态：`14:30` / `2:30 PM` / `下午2:30`，
+> 12 点的规矩按 CLDR 走（0 点与 12 点都显示 `12`）。上下午标记留在形态文件而不是词典：
+> 它和月份名一样是 **locale 槽位**（CLDR 的 `a` 形），塞进 `Lang` 会凭空多出「只为拼时刻而存在」的 key。
+> **刷新时机是三处而不是一处**：Huawei 把时制变更归到 `COMMON_EVENT_TIME_CHANGED`，被挂起的应用收不到，
+> 所以冷启动 + `onConfigurationUpdate` + `onForeground` 各重取一次；同值时 `setHourClock` 直接返回，
+> 多调不推多余刷新。**fail-safe 方向是刻意的**：`hourClockFromFlag()` 只对**明确读到 `false`** 给 `'12h'`，
+> `null` / `undefined`（Kit 调用抛错被上层收敛成缺失）一律回落 `'24h'` —— 那既是本仓此前的行为也是
+> `zh-Hans` 的默认档，一次读取失败不该把界面切成 12 小时制。
+>
+> **两处刻意决定，如实记**：
+> ① 中文侧走**两档**「上午/下午」，不做「凌晨/中午/傍晚/晚上」的四档细分 —— 那是 CLDR 的 wide format，
+> 系统时间显示本身不用它，跟着它走反而和状态栏对不上；
+> ② 响应式行 key 里加的是 **`语言|时制` 合成指纹**（`chatRowKey` / `messageRowKey`），不是只加时制：
+> 列表与气泡的时刻是**视图侧**现算的，切时制时 `ChatListItem` / `MessageItem` 一个字段都没变，
+> key 不变则 LazyForEach 复用旧行、时间永远停在旧形态（MSG-104 那条口径的第 N 次命中）。
+> 语言必须一起进去，因为这一位同样能单独变。
+>
+> **守卫 R8 第五类（`check_i18n_literals.py`）**：前四类拦的都是**字符串形状**，而 `HH:mm` 是
+> `${pad2(date.getHours())}` 拼出来的 —— 落盘后长得和任何数字串一样，抓不到。所以第五类换成
+> **能力判据**：`.getHours()` / `.getMinutes()` 只许出现在形态表本体（全仓实测只有 `DateFormat.ets:97-98`
+> 一处调用），业务层拿到的是 `DateParts`，档位由调用方传入。白名单仍是 `DateFormat.ets` + `Lang.ets`
+> 两个文件，射程不变（344 文件）。**规则靠负向对照验证会拦**：临时造 `const h = d.getHours()`、
+> 临时造 `pad2(now.getMinutes())` 各一次，分别被 `DATE-FORM` 点名行号并给出改调
+> `formatTimeOfDay(datePartsFrom(ms), lang, clock)` 的指路，探针即时删除、工作区未残留。
+>
+> **测试**：core_common **83/83**（新例 `timeOfDay_clockGears` 九条断言钉住 0/12/13/23 点四个边界 ×
+> 中英 × 两档；`listTimestamp_threeTiers`、`dateTimeCompact_*`、`timeOfDay_padsToTwoDigits` 全部补档位入参；
+> `noCrossLanguageLeak` 扩到 12 小时档 —— zh 入参不许出 `AM/PM`、en 入参不许出 `上午/下午`；
+> `Lang.test` 新增 2 例：`hourClockFromFlag` 的 fail-safe 只认明确 `false`，
+> 以及 `setHourClock` 变化时通知一次、**同值时不许通知**）；
+> feature_chat **469/469**、feature_chat_list **37/37**、feature_settings **350/350**
+> （`DevicesSubPage` 用例补 12 小时档：`'May 15, 2020 at 12:30 PM'` / `'2020年5月15日 下午12:30'`）、
+> feature_search **27/27**、feature_profile **110/110**、feature_self **7/7**、entry **154/154**；
+> 七守卫全 OK（`[i18n] OK`，词典 EN 546 / ZH 546 对等）。
+> **本轮踩到的两个坑值得留档**：① `DateParts` 构造器第 4 个槽位是**星期**不是小时
+> （`(year, month, day, weekday, hour, minute)`），按位置传错会得到「日期对、时刻差 6 小时」的读数，
+> 新套件里那个 `parts()` 助手已把这行注释钉住；② 在 `/** */` 块注释里写形如 `feature` 与 `coordinator`
+> 之间的通配路径会**当场终止注释**（`*/`），报出来是 134 个 ArkTS 错误 + Rollup `Unterminated template`，
+> 与真实原因毫无关系 —— 块注释里不要放含 `*/` 的 glob。
+>
+> **设备双时制 A/B**（127.0.0.1:5555，Debug HAP；只读页面与改系统时间格式，未发消息、未动账号状态、
+> **未卸载未清数据**；所有账号标识不入文档）。**改前基线是同一台机器上的现成读数**：上一包取证时这台
+> 设备的系统时制就是 12 小时档（`Setting.date_and_time` 的 24 小时制项 `checked=false`），
+> 而当时屏上出的是 `12:21`、`11:35`、`02:54` —— 应用完全没跟系统走。本轮同一站点重打：
+> ① **默认态（系统 12 小时，不改任何东西）**：会话列表三行出 `1:29 PM`、`11:35 AM`、`2:54 AM`，
+> 气泡出 `10:04 AM` —— **与上一包那份读数只差「跟着系统走」这一件事**；
+> ② 把系统项翻成 24 小时档：同一屏立刻换回 `11:35`、`02:54` 这类不带 AM/PM 的形、气泡 `10:04`
+> （首行时刻本身在往前走，所以逐行只比形态不比数值）—— 这一组形态与改前那份基线**逐字相同**，
+> 正是「改前恒 24 小时」的直接对照面；
+> 中文侧的 `下午2:54` 形本轮**只有单测证据**（设备界面停在 `en`，为取证再切语言会把上一包的
+> 交付状态搅动），形态由 `timeOfDay_clockGears` 的 3 条 zh 断言钉住；
+> ③ **回前台重取有效**：翻档时**没有重装 HAP**，只把应用切后台再回前台，列表与气泡即按新档重绘 ——
+> 这一条同时证明 `onForeground` 的补取与行 key 里的时制指纹都在起作用（少了后者，`MessageItem`
+> 字段没变、行不会重建，档位取到了也上不了屏）。
+> 日志同框可读：`hour clock restored: 12h` 与既有的 `language restored` / `theme restored` 三条并列。
+> **设备交付现状**：取证后系统 24 小时制项**还原成开工前的 `checked=false`**（12 小时档），
+> 界面语言仍停在上一包留下的 `appLanguage=en`，本轮未改。
+>
+> **盲区，如实记**：
+> ① **`CommentsCoordinator` / `SearchCoordinator` 没有语言订阅** —— 它们的时刻是在投影时现取语言的，
+> 所以**改时制或改语言都不会让已经存进 UiState 的那批展示串重算**，要等下一次真实取数。
+> 这是 HOTSWITCH-101 遗留的同一类盲区，本轮只把「取那一刻的形态跟系统走」做实，没有顺手给这两个
+> coordinator 扩订阅（范围外，且扩订阅要连带定案重投影的字段集）；
+> ② 12 小时档的**分钟补零与秒位**没有实测样本可对标（本仓时刻一律不带秒），口径按 CLDR 的 `h:mm`；
+> ③ 时制变更**不走 AppStorage 之外的通知**：如果将来要在挂起状态下实时翻档，得订阅
+> `COMMON_EVENT_TIME_CHANGED`，本轮的三处重取时机是「够用但非即时」；
+> ④ TDLib `system_language_code` 仍写死 `'en'`（连续第四轮未动）；
+> ⑤ R8 第五类按**调用形状**拦，`const h = date['getHours']()` 这类间接写法扫不到
+> （与「守卫跨行调用与间接传参收口」同一包收）。
+>
+> **后续**：候选 **I18N-DATE-102** 结掉。剩余按根因挂 群头部两条解析路径字段集对齐、
+> 守卫跨行调用与间接传参收口、`CommentsCoordinator` / `SearchCoordinator` 的语言与时制订阅收口、
+> TDLib `system_language_code` 接真设备语言。
+
 
 | 功能 ID | 功能名 |
 |---|---|

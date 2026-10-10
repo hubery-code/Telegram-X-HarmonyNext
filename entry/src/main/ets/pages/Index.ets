@@ -377,9 +377,14 @@ struct Index {
 
     // I18N-HOTSWITCH-101：语言 tick。首帧先落当前有效语言，之后 Lang 每次通知
     // （含偏好改变与 system 偏好下的系统语言改变）都重写这个键。
+    // I18N-DATE-102：时制档挂在同一个 tick 上 —— `setHourClock` 走的也是
+    // `notifyListeners()`，所以两个键永远出自同一次读取，不会出现「语言新、时制旧」。
+    // 注意这里读的是 `getHourClock()` 而不是回调入参：入参只有语言，时制变了它不变。
     AppStorage.setOrCreate<string>('activeLanguage', Lang.getInstance().getLanguage());
+    AppStorage.setOrCreate<boolean>('is24HourClock', Lang.getInstance().getHourClock() === '24h');
     this.unsubscribeLangFn = Lang.getInstance().subscribe((lang: SupportedLanguage): void => {
       AppStorage.setOrCreate<string>('activeLanguage', lang);
+      AppStorage.setOrCreate<boolean>('is24HourClock', Lang.getInstance().getHourClock() === '24h');
     });
     // LANG-PERSIST-101：'appLanguage' 已由 EntryAbility 从盘上种好，本页首帧读到的就是
     // 回灌值；从这里起才允许把用户的选择写回磁盘（与字号同一条口径，免得启动回灌

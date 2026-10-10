@@ -44,7 +44,16 @@
  */
 
 import { LightTheme, Theme, chatTextSizeOf } from '@tgx/core-design-system';
-import { A11y, a11y, Lang, SupportedLanguage } from '@tgx/core-common';
+import {
+  A11y,
+  a11y,
+  datePartsFrom,
+  formatTimeOfDay,
+  hourClockFromFlag,
+  HourClock,
+  Lang,
+  SupportedLanguage
+} from '@tgx/core-common';
 import { isTelegramLinkCandidate } from '@tgx/core-navigation';
 import {
   AttachmentEntry,
@@ -235,14 +244,16 @@ const SEARCH_BUTTON_SIZE: number = 44;
  */
 const JUMP_HIGHLIGHT_MS: number = 4000;
 
-function pad2(value: number): string {
-  return value < 10 ? `0${value}` : `${value}`;
-}
-
-/** 消息气泡内时间戳：HH:mm。 */
-function formatMessageTime(timestampMs: number): string {
-  const date: Date = new Date(timestampMs);
-  return `${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
+/**
+ * 消息气泡内时间戳。I18N-DATE-102：此前这里是本仓唯一一处手写 `HH:mm`
+ * （`pad2(getHours())` + `pad2(getMinutes())`），系统设成 12 小时制时英文界面
+ * 仍出 `14:05`、中文界面也出 `14:05`，都不跟系统走。形态改由 `DateFormat` 给，
+ * 语言与档位由调用方从响应式键传入。
+ */
+function formatMessageTime(
+  timestampMs: number, lang: SupportedLanguage, clock: HourClock
+): string {
+  return formatTimeOfDay(datePartsFrom(timestampMs), lang, clock);
 }
 
 
@@ -283,7 +294,8 @@ function messageRowKey(
   item: MessageItem,
   selected: boolean,
   highlighted: boolean = false,
-  extraVoiceSig: string = ''
+  extraVoiceSig: string = '',
+  localeSig: string = ''
 ): string {
   let mediaSig: string = '';
   if (item.albumItems.length > 0) {
@@ -335,7 +347,9 @@ function messageRowKey(
     `${reactionSig}|${item.commentCount}|${item.isChannelPost}|${item.isPinned}|` +
     // SEARCH-102：高亮态参与 key，落位后该行才会局部重绘。
     // VOICE-101：语音播放态参与 key，进度推进时局部重绘波形条。
-    `${highlighted}|${extraVoiceSig}`;
+    // I18N-DATE-102：语言/时制参与 key —— 气泡时间是**视图侧**现算的形态串，
+    // 系统切 12/24 小时制时 MessageItem 一个字段都没变，key 不变行就永远不重绘。
+    `${highlighted}|${extraVoiceSig}|${localeSig}`;
   return `${item.messageId}:${fnv1a32(signature)}`;
 }
 
@@ -445,6 +459,11 @@ export struct ChatPage {
    * 的字面量联合类型没有保证，而 t() 里反正要过一次收敛。
    */
   @StorageProp('activeLanguage') effectiveLanguage: string = 'en';
+  /**
+   * I18N-DATE-102：时制档与语言走同一条 tick（都由 entry 灌进 AppStorage）。
+   * 默认 true 对齐本仓此前行为与 `zh-Hans` 默认档 —— 键还没种上时不能先跳成 12 小时制。
+   */
+  @StorageProp('is24HourClock') is24HourClock: boolean = true;
   @Prop @Watch('onUiStateChanged') uiState: ChatUiState = ChatUiState.initial();
 
   onDispatch: (intent: Object) => void = () => {};
@@ -598,8 +617,14 @@ export struct ChatPage {
       this.isSelected(item.messageId),
       this.highlightedMessageId === item.messageId,
       this.uiState.playingVoiceMessageId === item.messageId ?
-        `play:${Math.floor(this.uiState.voicePlaybackProgress * 28)}:${this.uiState.voicePlaybackTimeSec}` : ''
+        `play:${Math.floor(this.uiState.voicePlaybackProgress * 28)}:${this.uiState.voicePlaybackTimeSec}` : '',
+      this.localeTickKey()
     );
+  }
+
+  /** I18N-DATE-102：行 key 的语言/时制指纹，见 `messageRowKey`。 */
+  private localeTickKey(): string {
+    return `${this.effectiveLanguage}|${this.is24HourClock}`;
   }
 
   private buildRowKeys(messages: readonly MessageItem[]): string[] {
@@ -832,6 +857,15 @@ export struct ChatPage {
   private t(key: string, ...args: (string | number)[]): string {
     const langCode: SupportedLanguage = this.effectiveLanguage === 'zh' ? 'zh' : 'en';
     return Lang.getInstance().formatByKey(key, langCode, args);
+  }
+
+  /** I18N-DATE-102：时间形态的语言档同样只从响应式语言位取（`t()` 一条口径）。 */
+  private displayLanguage(): SupportedLanguage {
+    return this.effectiveLanguage === 'zh' ? 'zh' : 'en';
+  }
+
+  private displayClock(): HourClock {
+    return hourClockFromFlag(this.is24HourClock);
   }
 
   /**
@@ -1759,7 +1793,7 @@ export struct ChatPage {
       }
 
       if (item.timestampMs > 0) {
-        Text(formatMessageTime(item.timestampMs))
+        Text(formatMessageTime(item.timestampMs, this.displayLanguage(), this.displayClock()))
           .fontSize(isOverlay ? 10 : this.T.typography.caption.fontSize)
           .fontColor(isOverlay ? Color.White : (item.sendState === 'failed' ? this.T.colors.destructive : this.T.colors.textSecondary))
       }
@@ -4732,7 +4766,9 @@ export struct ChatPage {
       return '';
     }
     const item: MediaViewerItem = this.uiState.viewerItems[this.uiState.activeViewerIndex];
-    return item.timestampMs > 0 ? formatMessageTime(item.timestampMs) : '';
+    return item.timestampMs > 0
+      ? formatMessageTime(item.timestampMs, this.displayLanguage(), this.displayClock())
+      : '';
   }
 
   private getViewerCaption(): string {
