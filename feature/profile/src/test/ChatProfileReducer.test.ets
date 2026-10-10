@@ -4,7 +4,7 @@
 
 import { describe, it, expect } from '@ohos/hypium';
 import { ReducerEnv, ReducerResult } from '@tgx/feature-template';
-import { AppError, AppErrors, ManualClock, SequentialIdGenerator } from '@tgx/core-common';
+import { AppError, AppErrors, Lang, ManualClock, SequentialIdGenerator, SupportedLanguage } from '@tgx/core-common';
 import {
   Chat,
   BasicGroupFullInfo,
@@ -27,6 +27,7 @@ import {
   OnChatAvatarLoaded,
   OnChatProfileError,
   SelectChatMember,
+  LanguageChanged,
   CopyInviteLinkRequested,
   BackRequested
 } from '../main/ets/contract/ChatProfileIntent';
@@ -143,6 +144,38 @@ export default function chatProfileReducerTest(): void {
       expect(res.state.isLoading).assertFalse();
     });
 
+    it('languageChanged recomputes the cached member count subtitle', 0, (): void => {
+      // I18N-HOTSWITCH-101：换语言时成员数不重新取数，只按状态里已缓存的数字重算展示串。
+      const seeded: ChatProfileUiState = ChatProfileUiState.initial().copyWith({
+        memberCount: 7,
+        memberCountText: '7 members'
+      });
+      // Lang 是进程级单例：用例内改过系统语言必须原样还原，否则同批跑的
+      // SharedDateSections / SharedAudioRows（开头钉成 zh）会拿到 en 词典而全线失败。
+      const previous: SupportedLanguage = Lang.getInstance().getLanguage();
+      let zh: ReducerResult<ChatProfileUiState, ChatProfileEffect> =
+        chatProfileReducer(seeded, new LanguageChanged(), makeEnv());
+      let en: ReducerResult<ChatProfileUiState, ChatProfileEffect> = zh;
+      try {
+        Lang.getInstance().setSystemLanguage('zh');
+        zh = chatProfileReducer(seeded, new LanguageChanged(), makeEnv());
+        Lang.getInstance().setSystemLanguage('en');
+        en = chatProfileReducer(zh.state, new LanguageChanged(), makeEnv());
+      } finally {
+        Lang.getInstance().setSystemLanguage(previous);
+      }
+
+      expect(zh.state.memberCountText).assertEqual('7 位成员');
+      expect(en.state.memberCountText).assertEqual('7 members');
+      // 语言事件只改文案，一条副作用都不许发（否则换语言会引发重新取数）。
+      expect(en.effects.length).assertEqual(0);
+
+      // 还没回过 full info（memberCount=0）时不动：没有可重算的数字，也不该凭空出文案。
+      const untouched: ReducerResult<ChatProfileUiState, ChatProfileEffect> =
+        chatProfileReducer(ChatProfileUiState.initial(), new LanguageChanged(), makeEnv());
+      expect(untouched.state.memberCountText).assertEqual('');
+    });
+
     it('onSupergroupFullInfoLoaded updates member count and subtitle', 0, (): void => {
       const opt: ChatProfileUiStateOptions = { isChannel: false };
       const state: ChatProfileUiState = ChatProfileUiState.initial().copyWith(opt);
@@ -150,8 +183,13 @@ export default function chatProfileReducerTest(): void {
       info.description = 'Supergroup info';
       info.member_count = 150;
 
+      // 成员数文案自 I18N-HOTSWITCH-101 起经 Lang 取词典，而 Lang 是进程级单例：
+      // 用例内钉成 en 并还原，避免和同批文件（开头钉成 zh）互相污染全局语言位。
+      const previous: SupportedLanguage = Lang.getInstance().getLanguage();
+      Lang.getInstance().setSystemLanguage('en');
       const res: ReducerResult<ChatProfileUiState, ChatProfileEffect> =
         chatProfileReducer(state, new OnSupergroupFullInfoLoaded(info), makeEnv());
+      Lang.getInstance().setSystemLanguage(previous);
 
       expect(res.state.description).assertEqual('Supergroup info');
       expect(res.state.memberCount).assertEqual(150);

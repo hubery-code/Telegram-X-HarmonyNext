@@ -10,7 +10,7 @@
  */
 
 import { LightTheme, Theme } from '@tgx/core-design-system';
-import { A11y, a11y, Lang } from '@tgx/core-common';
+import { A11y, a11y, Lang, SupportedLanguage } from '@tgx/core-common';
 import { fileUri } from '@kit.CoreFileKit';
 import { SelfProfileUiState } from '../contract/SelfProfileUiState';
 import { SelfProfileIntent, EditTapped, SettingsSectionTapped } from '../contract/SelfProfileIntent';
@@ -72,6 +72,18 @@ export struct SelfProfilePage {
    * getter，写成 getter 会在渲染闭包里取到 undefined 并抛 TypeError。
    */
   @StorageProp('activeTheme') T: Theme = LightTheme;
+
+  /**
+   * I18N-HOTSWITCH-101：语言 tick。
+   *
+   * 装配层（entry/Index）订阅 Lang，把**有效语言**（'en' | 'zh'，不是偏好 'system'）镜像进
+   * AppStorage('activeLanguage')；本页把它接成自己的可观察属性，于是 t() 读到的永远是
+   * 当前语言，而**换语言会重渲染本页**——不再是「等下一次取数才有新字」（103/104 设备记录的头号
+   * 盲区）。键缺席时 @StorageProp 用本行默认值自举，且挂载时自动取 AppStorage 现值，所以首帧
+   * 就是对的，不需要再写一次手工同步。类型收在 string 而不是 SupportedLanguage：装饰器成员
+   * 的字面量联合类型没有保证，而 t() 里反正要过一次收敛。
+   */
+  @StorageProp('activeLanguage') effectiveLanguage: string = 'en';
   @Prop uiState: SelfProfileUiState = SelfProfileUiState.initial();
   onDispatch: (intent: SelfProfileIntent) => void = (): void => {};
   onBack: () => void = (): void => {};
@@ -152,8 +164,17 @@ export struct SelfProfilePage {
     }
   }
 
+  /**
+   * I18N-HOTSWITCH-101：形参收 **key** 而不是已解析的串。
+   *
+   * `@Builder` 按值传参在 ArkUI 里是一次性求值——参数被绑成builder 体内的普通局部量，
+   * 状态变量（这里是语言 tick）变了也不会重跑，于是 104 在设备上看到的「整页都翻成中文、
+   * 唯独分节标题还是英文」同一屏中英混排。改成传 key、在 builder 体内 `this.t(key)`，
+   * 解析就发生在该节点的渲染闭包里，跟着语言 tick 一起刷新。
+   * 空简介的兜底文案同理收进体内，不再由调用点算好塞进来。
+   */
   @Builder
-  InfoRow(icon: Resource, label: string, value: string) {
+  InfoRowKey(icon: Resource, labelKey: string, value: string) {
     Row() {
       Image(icon)
         .width(22)
@@ -162,10 +183,10 @@ export struct SelfProfilePage {
         .margin({ right: this.T.spacing.md })
 
       Column() {
-        Text(label)
+        Text(this.t(labelKey))
           .fontSize(this.T.typography.footnote.fontSize)
           .fontColor(this.T.colors.textSecondary)
-        Text(value)
+        Text(value.length > 0 ? value : this.t('EmptyValue'))
           .fontSize(this.T.typography.body.fontSize)
           .fontColor(this.T.colors.textPrimary)
           .margin({ top: this.T.spacing.hairline })
@@ -185,22 +206,22 @@ export struct SelfProfilePage {
   }
 
   private t(key: string, ...args: (string | number)[]): string {
-    return Lang.getInstance().getString(key, ...args);
+    const langCode: SupportedLanguage = this.effectiveLanguage === 'zh' ? 'zh' : 'en';
+    return Lang.getInstance().formatByKey(key, langCode, args);
   }
 
   @Builder
   InfoSection() {
     Column() {
       if (this.uiState.username.length > 0) {
-        this.InfoRow($r('app.media.ic_username'), this.t('Username'), `@${this.uiState.username}`)
+        this.InfoRowKey($r('app.media.ic_username'), 'Username', `@${this.uiState.username}`)
       }
       if (this.uiState.phone.length > 0) {
-        this.InfoRow($r('app.media.ic_call'), this.t('Phone'), this.uiState.phone)
+        this.InfoRowKey($r('app.media.ic_call'), 'Phone', this.uiState.phone)
       }
-      this.InfoRow($r('app.media.ic_info'), this.t('Bio'),
-        this.uiState.bio.length > 0 ? this.uiState.bio : this.t('EmptyValue'))
+      this.InfoRowKey($r('app.media.ic_info'), 'Bio', this.uiState.bio)
       if (this.uiState.birthdayText.length > 0) {
-        this.InfoRow($r('app.media.ic_cake'), this.t('Date of Birth'), this.uiState.birthdayText)
+        this.InfoRowKey($r('app.media.ic_cake'), 'Date of Birth', this.uiState.birthdayText)
       }
     }
     .width('100%')

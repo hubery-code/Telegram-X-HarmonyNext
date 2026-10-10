@@ -2208,6 +2208,86 @@
 > 换语言不重算（①②）→ **I18N-HOTSWITCH-101**，语言不持久（⑦）→ **LANG-PERSIST-101**，
 > 日期形态（⑥）→ **I18N-DATE**；守卫跨行调用（⑤）与 GIF 类目（④）各记在对应线上。
 
+### FEAT-UI-003 / I18N-HOTSWITCH-101 应用内换语言的即时刷新：数据进 state、文案在渲染时解析（2026-10-10）
+
+> **题面**：104 盲区 ①② 的合称 —— 词典里明明有 `通知 / 外观 / 语言`，中文界面下设置页五个分节标题
+> 仍是英文；会话列表同一个群已是 `5778 位成员`，群资料页头部还挂着切语言前算好的 `5778 members`。
+> 这三条专项（101/102/103/104）把「文案的真相只在 `Lang` 一处」做齐了，但**没有管「谁在什么时候再算一次」**。
+> 本包补的就是这一维：语言位一变，屏幕上的字要跟着变。
+>
+> **四类根因，逐个坐实**（前三类 104 从设备反推，第四类本包新查）：
+> ① **`@Builder` 按值参只在宿主 build 时求值一次并拷贝**。`SectionTitle(this.t('LANGUAGE'))` 把已解析的串
+> 塞进 `string` 形参，之后语言位变了 ArkUI 不重算 → 改「传 key、builder 体内 `this.t(key)`」
+> （沿用 `NotificationScopeRowKey` / `FieldLabelKey` / `PickerSectionHeaderViewKey` 的先例形状）。
+> ② **页面的 `t()` 不是响应式读取**。`Text(this.t(x))` 里没有任何东西让 ArkUI 认为这段 render 依赖语言位，
+> 于是切语言不重 build → 21 个页面/组件加 `@StorageProp('activeLanguage')`
+> （tick 由装配层 `entry/pages/Index.ets` 的 `Lang.subscribe` 写进 `AppStorage`），
+> 设置页另走 `@State effectiveLang`（它本来就在订阅 `Lang`）。
+> ③ **coordinator 把「取数那一刻的语言」算好的串存进了 UiState**（`lastPinnedMessage`、群头部副标题等）。
+> 7 个 coordinator（settings / chat / chat_list / contact / profile ×2 / self）补语言位重投影：
+> 换语言时**只从已有缓存重算展示串、不回源取数**（`publishPinnedMessage(allowSenderFetch)` 的
+> cache-only 分支），避免切一个语言打一轮 RPC。
+> ④ **reducer 在 `reduce` 里同步改 `Lang`，把订阅者写进去的状态覆盖掉**（本包查出的实锤，单测测不出）：
+> `SettingsReducer` 的 `changeLanguage` 分支直接调 `Lang.getInstance().setLanguage(pref)`，
+> 这一句**同步**触发 coordinator 的 `Lang` 订阅 → 订阅者在 `dispatch` 还没返回时就往 UiState 回灌重投影结果，
+> 而 `dispatch` 随后用 `reduce` 的返回值整体覆盖 state —— 重投影必然丢。所以「加订阅」这条路对本页是无效的，
+> 真正的修法在形状上：**`StorageStatsLoaded` / `CacheCleared` 改传原始 `size`/`count`，
+> `SettingsUiState` 存数字（`storageStatsBytes` / `storageStatsCount`），标签由 `SettingsPage`
+> 在 render 时 `formatStorageLabel(...)` 现算**。这条与 104 的「措辞分裂」收口同向：
+> **状态与 intent 只带数据与 key，不带已解析串** —— 后者一旦被存下来就固化了语言。
+> 附带修：`GroupRegistry` 的 `1 member` / `Owner` / `Admin` 等展示串接回 `Lang`（本包新增 7 组 key，
+> EN/ZH 由 537 → **544/544 对等**）。
+>
+> **守卫 R7（新一条，按形状拦）**：先收 `@Builder` 里**不收 `*Key`** 的 `string` 形参（按值文案位），
+> 再看调用点有没有 `this.t(...)` / `getString(...)` / `formatByKey(...)` 现取的串。
+> R4/R6 只看字面量本身，看不出「这一句是传进来的、所以不会跟着语言变」，R7 补的正是这个维度。
+> 负向对照（探针文件跑完即删并复核 exit 0）：`@Builder SectionTitleProbe(titleKey: string, title: string)`
+> 的调用点写 `this.SectionTitleProbe('LANGUAGE', this.t('LANGUAGE'))` → 出
+> `[i18n] BUILDER-VALUE … 按值参数 title 收到了现取的已解析串`；把按位删掉、只留 `titleKey` 后
+> **同一规则计数由 1 归 0**（真实形状 `this.SectionTitleKey('NOTIFICATIONS')` 在全仓零违规）。
+> **口径仍是行内**：跨行写的 `this.Some(`↵`  this.t(...)` 扫不到，与 ⑤ 同一个收口包。
+>
+> **设备 A/B 实测（模拟器 1256×2662，`tg://settings` 深链，中英各一遍；所有账号标识不入文档）**：
+>
+> | 观察点 | 英文侧 | 中文侧 | 结论 |
+> |---|---|---|---|
+> | 设置页分节标题 | `NOTIFICATIONS / STICKERS AND EMOJI / APPEARANCE` | `通知 / 贴纸与表情 / 外观` | ① 关闭：104 拍的正是这一屏 |
+> | 缓存占用行 | `Cache size: 43.1 MB · 383 files` | `缓存大小：43.1 MB · 383 个文件` | ④ 关闭：**不离开当前页**、同一组件实例内双向翻转 |
+> | 置顶条 | `El CLUB, [Document]` | `El CLUB, [文件]` | ③ cache-only 重投影生效 |
+> | 群头部副标题 | `El CLUB, 5779 members` | `El CLUB, 5779 位成员, 93 在线` | ②③ 生效，但两侧字段集不一致（见盲区） |
+> | 输入栏发送区 | `Message, Message` | `消息, 消息` | ② 生效 |
+>
+> **验证**：七守卫全绿（architecture / codegen / design_tokens / a11y_labels / i18n_literals + secret_scan），
+> `check_i18n_literals` 口径为视图层 30 文件 / 数据层 145 文件、字面量 key 调用点 324、key 载体 26、
+> 词典 **544/544**、写死英文 **0** 处、豁免仍 15 处（全部日期形态写死中文）；
+> 本包改动涉及的 10 个模块局部测试 **1343/1343**（feature_settings 347 含新增的
+> `changeLanguage_keepsRawStorageNumbers` 回归 —— 断言换语言只动语言位、原始数字原样留存；
+> feature_chat 469、core_domain 192、feature_profile 109、core_common 63、feature_auth 47、
+> feature_contact 45、feature_chat_list 37、feature_search 27、feature_self 7）；`assembleHap` 通过。
+> 落地量：代码 **44 文件、960 增 / 180 删**（连两份文档共 46 文件 / 1043 增）。
+>
+> **一条工具链假结论的更正（值得所有本地取证复用）**：上一轮把「设置页改动上了设备却没生效」
+> 归因于 hvigor 打包用了过期的 per-module har ——
+> `feature/settings/build/default/cache/…/default@PackageHar/src/**` 与 `feature_settings.har`
+> 确实是 09-13 的旧副本，但它们**不是 `entry` ArkTS 编译的输入**：
+> `entry/build/default/intermediates/loader_out/default/ets/modules.abc` 是从真实 `src` 编出来的。
+> 判据很简单：在 abc 里 grep 只存在于新代码的标识名（`storageStatsBytes` 命中、旧缓存副本 0 命中）。
+> 真因是**装完 hap 没重启进程**（`bm install -p` 不会杀掉在跑的老进程，跑的仍是老字节码）→
+> 以后取设备证据前一律先 `aa force-stop <bundle>` 再起，并把 abc 符号 grep 当成「改动是否真的进了包」的标准前置检查。
+>
+> **盲区，如实记**：
+> ① **群头部两侧字段集不一致**：英文侧 `5779 members` 不带在线数，中文侧重投影出 `… 位成员, 93 在线`。
+> 两条解析路径（首次取数 vs 语言位重投影）用的输入不同，本包只保证「会跟着语言变」，不保证「两条路径算出同一句」；
+> ② **登录线七页仍无设备证据**（账号已登录，走不进 auth 流程，同 104 ③）；
+> ③ **语言偏好不跨进程持久** —— `AppStorage.setOrCreate('appLanguage', …)` 全仓只有写没有读，
+> 重启即回 Follow System → **LANG-PERSIST-101**；
+> ④ 日期形态（英文界面下的 `Thu` / 中文界面的 `10月10日`）→ **I18N-DATE**；
+> ⑤ **R7 与「已解析串存进状态」都只按行拦**：`@Builder` 调用换行写、以及把 `t()` 的结果先存进
+> 局部变量再传参，形状上都躲得过；后者本轮靠人工把缓存行改成传数字，收口口径同「守卫跨行调用」一包。
+>
+> **后续**：本包把「换语言不重算」这一类关到 0 处已知存量；剩余的按根因挂 **LANG-PERSIST-101**（③）、
+> **I18N-DATE**（④）、守卫跨行与间接传参收口（⑤）。
+
 
 | 功能 ID | 功能名 |
 |---|---|

@@ -7,7 +7,7 @@
 `Lang` 缺译文时**原样回吐 key**，于是 Toast 上屏的是 `Sticker set: %s` 本身。也就是说
 「key 拼错」和「漏翻译」在屏幕上长得一模一样，没人会当场发现。
 
-本脚本守六条（R4' 与 R5a/R5b 是各自规则内的子条，不另计）：
+本脚本守七条（R4' 与 R5a/R5b 是各自规则内的子条，不另计）：
 
   R1 视图层字面量禁令：`entry` 与各 `feature/*` 的 **pages/ 与 components/** 下，任何 .ets 文件
      里都不允许出现含汉字的字符串字面量（emoji 不在 `一-鿿` 段内，不会被误伤）。
@@ -86,6 +86,15 @@
      category / section 之内，才要求该字面量 EN 与 ZH 双命中。
      `accountKey` / `chatKey` / `setKey` / `fileKey` / `cacheKey` 这些载体收的本来就是标识符，
      按词典要求会全是误伤，所以不进射程。
+  R7 `@Builder` 的按值文案参数不许收已解析串（I18N-HOTSWITCH-101 引入）：ArkUI 对 `@Builder`
+     的**按值参数**只在宿主 build 时求值一次并拷贝，之后语言位变了它也不重算 —— 第五十四轮设备
+     取证实测：同一屏里 `Text(this.t(key))` 的行翻成中文，`SectionTitle(this.t(key))` 的分节标题
+     仍是英文。R4/R6 都只看字面量本身，看不出「这一句是传进来的、所以不会跟着语言变」。
+     所以 R7 按形状拦：先收 `@Builder` 里**不收 `*Key`** 的 `string` 形参（按值文案位），
+     再看调用点有没有 `this.t(...)` / `getString(...)` / `formatByKey(...)` 现取的串。
+     正确形状 = 传 key、builder 体内 `this.t(key)`（`NotificationScopeRowKey` / `FieldLabelKey` /
+     `PickerSectionHeaderViewKey` 三个先例），或干脆内联进 build。
+     口径是行内的，跨行写的 `this.Some(` + 下一行的 `this.t(...)` 扫不到（同「守卫跨行调用收口」一包）。
 
 用法：python3 tools/ci/check_i18n_literals.py [--quiet]
 退出码：0 = 无违规；1 = 存在违规；2 = 前置条件坏了（词典解析不出来）
@@ -591,6 +600,64 @@ def scan_key_carriers(files, dicts, ctor_index):
     return problems, checked
 
 
+# R7：`@Builder` 的按值文案参数。
+BUILDER_DEF_RE = re.compile(r'^\s*(?:@Builder\s+)?([A-Za-z_$][\w$]*)\s*\(([^)]*)\)\s*\{?\s*$')
+BUILDER_CALL_RE = re.compile(r'this\.([A-Za-z_$][\w$]*)\s*\(([^;]*?)\)\s*;?\s*$')
+# 已解析串的三种写法：视图层 t()、Lang.getString()、Lang.formatByKey()。
+RESOLVED_CALL_RE = re.compile(r'(?:\bthis\.|\bLang\.getInstance\(\)|\blang\.)?\b(?:t|getString|formatByKey)\s*\(')
+KEY_PARAM_RE = re.compile(r'(\w+Key)\s*:\s*string')
+PLAIN_STRING_PARAM_RE = re.compile(r'(\w+)\s*:\s*string\b')
+
+
+def scan_builder_copy_params(files):
+    """R7：不许把已解析串（`this.t(...)` / `getString(...)`）传进 `@Builder` 的文案参数位。
+
+    ArkUI 对 `@Builder` 的**按值参数**只在宿主 build 时求值一次并拷贝，语言位变了它也不重算 ——
+    第五十四轮设备取证实测：同一屏里 `Text(this.t(key))` 的行翻成中文，`SectionTitle(this.t(key))`
+    的分节标题仍是英文。唯一稳的写法是「传 key，builder 体内自己 `this.t(key)`」
+    （`NotificationScopeRowKey` / `FieldLabelKey` / `PickerSectionHeaderViewKey` 就是这个先例）。
+
+    射程：只认 `@Builder` 方法里**不收 `*Key`** 的 `string` 形参（labelKey/valueKey 那类是
+    正确形状，`value: string` 这类收的是数据值，本规则只看调用点有没有现取现传）。
+    """
+    problems = []
+    for rel, path in files:
+        lines = path.read_text(encoding='utf-8').splitlines()
+        # builder 名 -> 它的按值文案参数名（没有按值文案参数则不入表）
+        copy_params = {}
+        for i, line in enumerate(lines):
+            if line.strip() != '@Builder':
+                continue
+            for j in range(i + 1, min(i + 4, len(lines))):
+                m = BUILDER_DEF_RE.match(lines[j])
+                if m is None:
+                    continue
+                name, raw = m.group(1), m.group(2)
+                # 去掉 *Key 形参后剩下的 string 形参才是按值文案位
+                left = KEY_PARAM_RE.sub('', raw)
+                plain = [n for n in PLAIN_STRING_PARAM_RE.findall(left)]
+                if plain:
+                    copy_params[name] = plain
+                break
+        if not copy_params:
+            continue
+        for idx, line, stripped in code_lines(path):
+            if ALLOW_RE.search(line):
+                continue
+            m = BUILDER_CALL_RE.search(stripped)
+            if m is None or m.group(1) not in copy_params:
+                continue
+            args = m.group(2)
+            if not RESOLVED_CALL_RE.search(args):
+                continue
+            problems.append(
+                f'{rel}:{idx + 1}: this.{m.group(1)}({args[:60]}) 的按值参数 '
+                f'{" / ".join(copy_params[m.group(1)])} 收到了现取的已解析串 —— @Builder 按值参数'
+                f'只求值一次，应用内换语言不会重算；改成传 key（形参改名 *Key，builder 体内 '
+                f'this.t(key)），或直接内联进 build')
+    return problems
+
+
 def load_dicts():
     if not LANG_FILE.is_file():
         print(f'[i18n] ERROR: 找不到词典 {LANG_FILE}', file=sys.stderr)
@@ -650,11 +717,14 @@ def main() -> int:
     key_problems, checked = scan_keys(files + data, dicts)
     # R6：R4/R5b 的「传 key 不传串」豁免本身就是洞，收进去的 key 必须成在。
     carrier_problems, carrier_checked = scan_key_carriers(files + data, dicts, ctor_index)
+    # R7：@Builder 按值文案参数只求值一次，收已解析串就是换语言不刷新的洞。
+    builder_problems = scan_builder_copy_params(files)
     parity_problems = scan_parity(dicts)
 
     allowed = allowed_literal + allowed_slot + allowed_data_literal + allowed_data_slot
     failed = bool(literal_problems or slot_problems or data_literal_problems
-                  or data_slot_problems or key_problems or carrier_problems or parity_problems)
+                  or data_slot_problems or key_problems or carrier_problems
+                  or builder_problems or parity_problems)
     if not args.quiet or failed:
         for msg in literal_problems:
             print(f'[i18n] LITERAL {msg}')
@@ -668,6 +738,8 @@ def main() -> int:
             print(f'[i18n] MISSING-KEY {msg}')
         for msg in carrier_problems:
             print(f'[i18n] KEY-CARRIER {msg}')
+        for msg in builder_problems:
+            print(f'[i18n] BUILDER-VALUE {msg}')
         for msg in parity_problems:
             print(f'[i18n] PARITY {msg}')
         if not args.quiet:
@@ -682,6 +754,7 @@ def main() -> int:
         print(f'[i18n] FAILED: 写死中文 {len(literal_problems) + len(data_literal_problems)} / '
               f'写死英文 {len(slot_problems) + len(data_slot_problems)} / '
               f'缺词条 {len(key_problems)} / key 载体缺项 {len(carrier_problems)} / '
+              f'builder 按值传串 {len(builder_problems)} / '
               f'词典不对称 {len(parity_problems)}', file=sys.stderr)
         return 1
     print('[i18n] OK')

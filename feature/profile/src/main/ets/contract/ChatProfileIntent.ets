@@ -147,6 +147,14 @@ export class OnSharedAudioPlaying {
   }
 }
 
+/**
+ * I18N-HOTSWITCH-101：应用内换语言后由 coordinator 发出，reducer 只按状态里
+ * 已缓存的数字/布尔重算展示串（memberCountText），不触发任何取数。
+ */
+export class LanguageChanged {
+  readonly type: 'languageChanged' = 'languageChanged';
+}
+
 export type ChatProfileIntent =
   | OpenChatProfile
   | OnChatLoaded
@@ -161,6 +169,7 @@ export type ChatProfileIntent =
   | OnSharedContentFailed
   | ToggleSharedAudio
   | OnSharedAudioPlaying
+  | LanguageChanged
   | SelectChatMember
   | CopyInviteLinkRequested
   | BackRequested;

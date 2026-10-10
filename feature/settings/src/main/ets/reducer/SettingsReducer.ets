@@ -545,7 +545,8 @@ export const settingsReducer: Reducer<SettingsUiState, SettingsIntent, SettingsE
     case 'storageStatsLoaded': {
       const statsIntent: StorageStatsLoaded = intent as StorageStatsLoaded;
       const options: SettingsUiStateOptions = {
-        storageCacheSize: statsIntent.label
+        storageStatsBytes: statsIntent.size,
+        storageStatsCount: statsIntent.count
       };
       return reduced(state.copyWith(options));
     }
@@ -553,7 +554,8 @@ export const settingsReducer: Reducer<SettingsUiState, SettingsIntent, SettingsE
     case 'cacheCleared': {
       const clearedIntent: CacheCleared = intent as CacheCleared;
       const options: SettingsUiStateOptions = {
-        storageCacheSize: clearedIntent.newCacheSize
+        storageStatsBytes: clearedIntent.size,
+        storageStatsCount: clearedIntent.count
       };
       const nextState: SettingsUiState = state.copyWith(options);
       const effects: readonly SettingsEffect[] = [

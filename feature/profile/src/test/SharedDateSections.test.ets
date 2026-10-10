@@ -41,6 +41,19 @@ export default function sharedDateSectionsTest(): void {
       expect(formatSharedDateHeader(at(2026, 9, 23), NOW_MS)).assertEqual('昨天');
     });
 
+    it('injectedLanguageCode_overridesAmbientLang', 0, () => {
+      // I18N-HOTSWITCH-101：分组头是写进 span.header 的已解析串，所以取数口径改成
+      // 由调用方注入语言位 —— 组件读自己的响应式语言传进来，换语言后重新切段才会跟着变。
+      // 环境里 preference 已钉成 zh，这里显式传 'en' 必须压过当前语言。
+      expect(formatSharedDateHeader(at(2026, 9, 24), NOW_MS, 'en')).assertEqual('Today');
+      expect(formatSharedDateHeader(at(2026, 9, 23), NOW_MS, 'zh')).assertEqual('昨天');
+      const enSpans: SharedDateSpan[] = splitSharedDateSpans([at(2026, 9, 23)], NOW_MS, 'en');
+      expect(enSpans.length).assertEqual(1);
+      expect(enSpans[0].header).assertEqual('Yesterday');
+      // 不传第三参 = 沿用进程当前语言（本文件开头钉的 zh），保持既有调用点行为不变。
+      expect(splitSharedDateSpans([at(2026, 9, 23)], NOW_MS)[0].header).assertEqual('昨天');
+    });
+
     it('withinSevenDays_groupsPerWeekday', 0, () => {
       // 09-22 周二、09-21 周一：仍在滚动 7 天内 → 每天一段，头是星期全名。
       expect(sharedDateAnchorKey(at(2026, 9, 22), NOW_MS)).assertEqual(3 + 2);

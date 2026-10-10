@@ -60,6 +60,7 @@ import {
   privacyRowLabelKey
 } from '../model/PrivacySettings';
 import { proxyRowSummaryKey } from '../model/ProxySettings';
+import { formatStorageLabel } from '../model/StorageSize';
 import { AutoDownloadScopeSummary, autoDownloadRowSummary } from '../model/AutoDownloadRows';
 import { SettingsCardKey, sectionShowsCard, settingsSectionTitleKey } from '../model/SettingsSection';
 import { DevicesSubPage } from './DevicesSubPage';
@@ -202,28 +203,28 @@ export struct SettingsPage {
 
             if (this.showsCard('notifications')) {
               if (this.showsSectionTitle()) {
-                this.SectionTitle(this.t('NOTIFICATIONS'))
+                this.SectionTitleKey('NOTIFICATIONS')
               }
               this.NotificationsCardView()
             }
 
             if (this.showsCard('devices')) {
               if (this.showsSectionTitle()) {
-                this.SectionTitle(this.t('DEVICES'))
+                this.SectionTitleKey('DEVICES')
               }
               this.DevicesCardView()
             }
 
             if (this.showsCard('privacy')) {
               if (this.showsSectionTitle()) {
-                this.SectionTitle(this.t('PRIVACY'))
+                this.SectionTitleKey('PRIVACY')
               }
               this.PrivacyCardView()
             }
 
             if (this.showsCard('storage') || this.showsCard('auto_download') || this.showsCard('proxy')) {
               if (this.showsSectionTitle()) {
-                this.SectionTitle(this.t('DATA AND STORAGE'))
+                this.SectionTitleKey('DATA AND STORAGE')
               }
               if (this.showsCard('storage')) {
                 this.StorageCardView()
@@ -244,24 +245,24 @@ export struct SettingsPage {
 
             if (this.showsCard('stickers')) {
               if (this.showsSectionTitle()) {
-                this.SectionTitle(this.t('STICKERS AND EMOJI'))
+                this.SectionTitleKey('STICKERS AND EMOJI')
               }
               this.StickersCardView()
             }
 
             if (this.showsCard('appearance')) {
-              this.SectionTitle(this.t('APPEARANCE'))
+              this.SectionTitleKey('APPEARANCE')
               this.ThemeCardView()
               this.ChatFontSizeCardView()
             }
 
             if (this.showsCard('language')) {
-              this.SectionTitle(this.t('LANGUAGE'))
+              this.SectionTitleKey('LANGUAGE')
               this.LanguageCardView()
             }
 
             if (this.showsCard('about')) {
-              this.SectionTitle(this.t('ABOUT'))
+              this.SectionTitleKey('ABOUT')
               this.AboutCardView()
             }
 
@@ -512,8 +513,8 @@ export struct SettingsPage {
   }
 
   @Builder
-  SectionTitle(title: string) {
-    Text(title)
+  SectionTitleKey(titleKey: string) {
+    Text(this.t(titleKey))
       .fontSize(this.getTheme().typography.caption.fontSize)
       .fontWeight(this.getTheme().typography.caption.fontWeight)
       .fontColor(this.getTheme().colors.textSecondary)
@@ -854,7 +855,10 @@ export struct SettingsPage {
           .fontSize(this.getTheme().typography.body.fontSize)
           .fontColor(this.getTheme().colors.textPrimary)
 
-        Text(this.t('Cache size: {0}', this.uiState.storageCacheSize))
+        // I18N-HOTSWITCH-101：渲染时按当前语言算，state 里只存原始字节数/文件数；
+        // 存已解析串会让这一行在应用内换语言后停在旧语言（设备实测）。
+        Text(this.t('Cache size: {0}',
+          formatStorageLabel(this.uiState.storageStatsBytes, this.uiState.storageStatsCount)))
           .fontSize(this.getTheme().typography.footnote.fontSize)
           .fontColor(this.getTheme().colors.textSecondary)
           .margin({ top: this.getTheme().spacing.xs })
@@ -915,9 +919,9 @@ export struct SettingsPage {
       .margin({ bottom: this.getTheme().spacing.sm })
 
       Row() {
-        this.ThemeOption('system', this.t('System'))
-        this.ThemeOption('light', this.t('Light'))
-        this.ThemeOption('dark', this.t('Dark'))
+        this.ThemeOptionKey('system', 'System')
+        this.ThemeOptionKey('light', 'Light')
+        this.ThemeOptionKey('dark', 'Dark')
       }
       .width('100%')
       .justifyContent(FlexAlign.SpaceBetween)
@@ -929,8 +933,8 @@ export struct SettingsPage {
   }
 
   @Builder
-  ThemeOption(mode: SettingsThemeMode, label: string) {
-    Button(label)
+  ThemeOptionKey(mode: SettingsThemeMode, labelKey: string) {
+    Button(this.t(labelKey))
       .layoutWeight(1)
       .height(36)
       .margin({
@@ -1093,9 +1097,9 @@ export struct SettingsPage {
       .margin({ bottom: this.getTheme().spacing.sm })
 
       Row() {
-        this.LanguageOption('system', this.t('System'))
-        this.LanguageOption('en', this.t('English'))
-        this.LanguageOption('zh', '简体中文') // i18n-allow 本族名
+        this.LanguageOption('system')
+        this.LanguageOption('en')
+        this.LanguageOption('zh')
       }
       .width('100%')
       .justifyContent(FlexAlign.SpaceBetween)
@@ -1106,9 +1110,17 @@ export struct SettingsPage {
     .borderRadius(this.getTheme().radius.md)
   }
 
+  /** 语言三档的按钮文字：本族名不建词条，词典 key 在 builder 体内解析。 */
+  private languageOptionLabel(mode: LanguagePreference): string {
+    if (mode === 'zh') {
+      return '简体中文'; // i18n-allow 本族名
+    }
+    return this.t(mode === 'en' ? 'English' : 'System');
+  }
+
   @Builder
-  LanguageOption(mode: LanguagePreference, label: string) {
-    Button(label)
+  LanguageOption(mode: LanguagePreference) {
+    Button(this.languageOptionLabel(mode))
       .layoutWeight(1)
       .height(36)
       .margin({

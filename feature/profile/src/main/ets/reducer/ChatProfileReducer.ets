@@ -167,6 +167,17 @@ export const chatProfileReducer: Reducer<ChatProfileUiState, ChatProfileIntent, 
       return reduced(next);
     }
 
+    case 'languageChanged': {
+      // I18N-HOTSWITCH-101：应用内换语言。成员数文案是回灌时解析好的已解析串，
+      // 只能按状态里已缓存的数字重算；还没回过 full info（0）时不动。
+      if (state.memberCount <= 0) {
+        return reduced(state);
+      }
+      return reduced(state.copyWith({
+        memberCountText: formatMemberCount(state.memberCount, state.isChannel)
+      }));
+    }
+
     case 'onChatMembersLoaded': {
       const loaded: OnChatMembersLoaded = intent as OnChatMembersLoaded;
       const next: ChatProfileUiState = state.copyWith({

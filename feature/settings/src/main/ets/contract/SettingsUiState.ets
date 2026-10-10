@@ -34,7 +34,9 @@ export interface SettingsUiStateOptions {
   readonly channelNotificationsEnabled?: boolean;
   readonly isUpdatingNotifications?: boolean;
   readonly updatingNotificationScope?: NotificationScopeKey | null;
-  readonly storageCacheSize?: string;
+  /** SET-104 / I18N-HOTSWITCH-101：原始占用数据，展示串由页面在渲染时算。 */
+  readonly storageStatsBytes?: number;
+  readonly storageStatsCount?: number;
   readonly languageCode?: string;
   readonly languagePreference?: LanguagePreference;
   readonly themeMode?: SettingsThemeMode;
@@ -139,7 +141,8 @@ export class SettingsUiState implements UiState {
   readonly channelNotificationsEnabled: boolean;
   readonly isUpdatingNotifications: boolean;
   readonly updatingNotificationScope: NotificationScopeKey | null;
-  readonly storageCacheSize: string;
+  readonly storageStatsBytes: number;
+  readonly storageStatsCount: number;
   readonly languageCode: string;
   readonly languagePreference: LanguagePreference;
   readonly themeMode: SettingsThemeMode;
@@ -225,7 +228,8 @@ export class SettingsUiState implements UiState {
     channelNotificationsEnabled: boolean,
     isUpdatingNotifications: boolean,
     updatingNotificationScope: NotificationScopeKey | null,
-    storageCacheSize: string,
+    storageStatsBytes: number,
+    storageStatsCount: number,
     languageCode: string,
     languagePreference: LanguagePreference,
     themeMode: SettingsThemeMode,
@@ -279,7 +283,8 @@ export class SettingsUiState implements UiState {
     this.channelNotificationsEnabled = channelNotificationsEnabled;
     this.isUpdatingNotifications = isUpdatingNotifications;
     this.updatingNotificationScope = updatingNotificationScope;
-    this.storageCacheSize = storageCacheSize;
+    this.storageStatsBytes = storageStatsBytes;
+    this.storageStatsCount = storageStatsCount;
     this.languageCode = languageCode;
     this.languagePreference = languagePreference;
     this.themeMode = themeMode;
@@ -343,7 +348,8 @@ export class SettingsUiState implements UiState {
       true,
       true,
       null,
-      '0 B',
+      0,
+      0,
       languageCode,
       languagePreference,
       themeMode,
@@ -386,7 +392,8 @@ export class SettingsUiState implements UiState {
       options.updatingNotificationScope !== undefined
         ? options.updatingNotificationScope
         : this.updatingNotificationScope,
-      options.storageCacheSize !== undefined ? options.storageCacheSize : this.storageCacheSize,
+      options.storageStatsBytes !== undefined ? options.storageStatsBytes : this.storageStatsBytes,
+      options.storageStatsCount !== undefined ? options.storageStatsCount : this.storageStatsCount,
       options.languageCode !== undefined ? options.languageCode : this.languageCode,
       options.languagePreference !== undefined ? options.languagePreference : this.languagePreference,
       options.themeMode !== undefined ? options.themeMode : this.themeMode,

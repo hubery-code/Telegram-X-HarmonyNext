@@ -1,6 +1,6 @@
 import { describe, it, expect } from '@ohos/hypium';
 import { ThemeManager, LightTheme, DarkTheme } from '@tgx/core-design-system';
-import { Lang, ManualClock, SequentialIdGenerator } from '@tgx/core-common';
+import { Lang, LanguagePreference, ManualClock, SequentialIdGenerator } from '@tgx/core-common';
 import { ReducerEnv } from '@tgx/feature-template';
 import { SettingsUiState, SettingsUiStateOptions } from '../main/ets/contract/SettingsUiState';
 import {
@@ -397,7 +397,8 @@ export default function settingsReducerTest(): void {
       expect(state.channelNotificationsEnabled).assertTrue();
       expect(state.isUpdatingNotifications).assertTrue();
       expect(state.updatingNotificationScope).assertNull();
-      expect(state.storageCacheSize).assertEqual('0 B');
+      expect(state.storageStatsBytes).assertEqual(0);
+      expect(state.storageStatsCount).assertEqual(0);
       expect(state.themeMode).assertEqual('system');
       expect(state.appVersion).assertEqual('1.0.0');
       expect(state.isLoading).assertFalse();
@@ -700,11 +701,12 @@ export default function settingsReducerTest(): void {
     });
 
     it('cacheCleared_updatesSizeAndShowsToast', 0, () => {
-      const options: SettingsUiStateOptions = { storageCacheSize: '150 MB' };
+      const options: SettingsUiStateOptions = { storageStatsBytes: 157286400, storageStatsCount: 10 };
       const state = SettingsUiState.initial().copyWith(options);
-      const result = settingsReducer(state, new CacheCleared('0 B'), makeEnv());
+      const result = settingsReducer(state, new CacheCleared(0, 0), makeEnv());
 
-      expect(result.state.storageCacheSize).assertEqual('0 B');
+      expect(result.state.storageStatsBytes).assertEqual(0);
+      expect(result.state.storageStatsCount).assertEqual(0);
       expect(result.effects.length).assertEqual(1);
       expect(result.effects[0].kind).assertEqual('showToast');
     });
@@ -760,36 +762,58 @@ export default function settingsReducerTest(): void {
       expect(result.effects[0].kind).assertEqual('loadStorageStats');
     });
 
-    it('storageStatsLoaded_writesFormattedLabel', 0, () => {
+    it('storageStatsLoaded_writesRawNumbers', 0, () => {
+      // HOTSWITCH-101：state 存原始字节数/文件数，不存已解析串——
+      // 已解析串是"取数那一刻的语言"，应用内换语言后再也不会更新。
       const state = SettingsUiState.initial();
       const result = settingsReducer(
         state,
-        new StorageStatsLoaded('12.3 MB · 45 files'),
+        new StorageStatsLoaded(12897484, 45),
         makeEnv()
       );
 
-      expect(result.state.storageCacheSize).assertEqual('12.3 MB · 45 files');
+      expect(result.state.storageStatsBytes).assertEqual(12897484);
+      expect(result.state.storageStatsCount).assertEqual(45);
       expect(result.effects.length).assertEqual(0);
     });
 
     it('storageStatsLoaded_replacesStalePlaceholder', 0, () => {
-      // 初始硬编码占位 '0 B' 必须被真实值覆盖
+      // 初始占位（0 字节 / 0 文件，页面渲染成 '0 B'）必须被真实值覆盖
       const state = SettingsUiState.initial();
-      expect(state.storageCacheSize).assertEqual('0 B');
+      expect(state.storageStatsBytes).assertEqual(0);
+      expect(state.storageStatsCount).assertEqual(0);
 
-      const result = settingsReducer(state, new StorageStatsLoaded('1.5 KB · 2 files'), makeEnv());
-      expect(result.state.storageCacheSize).assertEqual('1.5 KB · 2 files');
+      const result = settingsReducer(state, new StorageStatsLoaded(1536, 2), makeEnv());
+      expect(result.state.storageStatsBytes).assertEqual(1536);
+      expect(result.state.storageStatsCount).assertEqual(2);
     });
 
     it('cacheCleared_usesReturnedStatisticsNotHardcodedZero', 0, () => {
-      // 清理后显示的是 TDLib 返回的真实剩余占用（数据库/语言包不会被清掉，
-      // 真实值通常非 0）——不再是此前硬编码的 '0 B'
-      const state = SettingsUiState.initial().copyWith({ storageCacheSize: '500.0 MB · 900 files' });
-      const result = settingsReducer(state, new CacheCleared('48.2 MB · 120 files'), makeEnv());
+      // 清理后写入的是 TDLib 返回的真实剩余占用（数据库/语言包不会被清掉，
+      // 真实值通常非 0）——不再是此前硬编码的 0
+      const state = SettingsUiState.initial().copyWith({ storageStatsBytes: 524288000, storageStatsCount: 900 });
+      const result = settingsReducer(state, new CacheCleared(50544663, 120), makeEnv());
 
-      expect(result.state.storageCacheSize).assertEqual('48.2 MB · 120 files');
+      expect(result.state.storageStatsBytes).assertEqual(50544663);
+      expect(result.state.storageStatsCount).assertEqual(120);
       expect(result.effects.length).assertEqual(1);
       expect((result.effects[0] as ShowToastEffect).messageKey).assertEqual('Cache cleared');
+    });
+
+    it('changeLanguage_keepsRawStorageNumbers', 0, () => {
+      // HOTSWITCH-101：换语言只动语言位，缓存占用的原始数字必须原样留存，
+      // 展示串由页面在渲染时按新语言重算（此前 label 存进 state，换语言后停在旧语言）。
+      const savedPref: LanguagePreference = Lang.getInstance().getPreference();
+      try {
+        const state = SettingsUiState.initial().copyWith({ storageStatsBytes: 45205381, storageStatsCount: 383 });
+        const result = settingsReducer(state, new ChangeLanguage('zh'), makeEnv());
+
+        expect(result.state.storageStatsBytes).assertEqual(45205381);
+        expect(result.state.storageStatsCount).assertEqual(383);
+        expect(result.state.languagePreference).assertEqual('zh');
+      } finally {
+        Lang.getInstance().setLanguage(savedPref);
+      }
     });
 
     it('clearCacheRequested_stillEmitsClearEffect', 0, () => {

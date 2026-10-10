@@ -8,7 +8,7 @@
  */
 
 import { AccountScope } from '@tgx/core-account';
-import { AppError, Result, ManualClock, SequentialIdGenerator, Lang } from '@tgx/core-common';
+import { AppError, Result, ManualClock, SequentialIdGenerator, Lang, SupportedLanguage } from '@tgx/core-common';
 import {
   ChatRegistry,
   GroupRegistry,
@@ -76,7 +76,8 @@ import {
   OnChatProfileError,
   OnSharedContentLoaded,
   OnSharedContentFailed,
-  OnSharedAudioPlaying
+  OnSharedAudioPlaying,
+  LanguageChanged
 } from '../contract/ChatProfileIntent';
 import {
   ChatProfileEffect,
@@ -129,6 +130,12 @@ export class ChatProfileCoordinator {
   /** 已订阅语音行发送者更新的 userId，避免重复订阅。 */
   private readonly subscribedVoiceUserIds: Set<number> = new Set<number>();
   private destroyed: boolean = false;
+  /**
+   * I18N-HOTSWITCH-101：成员数文案与成员行的角色/在线文案都是回灌时解析好的已解析串，
+   * 换语言只能按 registry 里的缓存重放；重放路径全部只读缓存，不发新请求。
+   */
+  private unsubscribeLang: (() => void) | null = null;
+  private lastProjectedLanguage: SupportedLanguage = 'en';
 
   constructor(
     scope: AccountScope,
@@ -232,10 +239,44 @@ export class ChatProfileCoordinator {
     // 旧会话的 next_from_message_id 对新会话毫无意义。
     this.sharedSearcher.resetOffsets();
     this.dispatch(new OpenChatProfile(chatId));
+    this.subscribeLanguage();
+  }
+
+  private subscribeLanguage(): void {
+    this.lastProjectedLanguage = Lang.getInstance().getLanguage();
+    const self: ChatProfileCoordinator = this;
+    this.unsubscribeLang = Lang.getInstance().subscribe((lang: SupportedLanguage): void => {
+      if (self.destroyed || lang === self.lastProjectedLanguage) {
+        return;
+      }
+      self.lastProjectedLanguage = lang;
+      self.dispatch(new LanguageChanged());
+      self.replayMembersFromCache();
+    });
+  }
+
+  /** 超级群成员列表：从 GroupRegistry 缓存重放一次，重解析角色与在线文案。 */
+  private replayMembersFromCache(): void {
+    const chat: Chat | undefined = this.chatRegistry.getChat(this.activeChatId);
+    if (chat === undefined || chat.type_ === null || chat.type_ === undefined) {
+      return;
+    }
+    if (chat.type_.type !== 'chatTypeSupergroup') {
+      return;
+    }
+    const supergroupId: number = (chat.type_ as ChatTypeSupergroup).supergroup_id;
+    const cached: ChatMember[] | null = this.groupRegistry.getSupergroupMembers(supergroupId);
+    if (cached !== null && cached.length > 0) {
+      this.processMembers(cached);
+    }
   }
 
   destroy(): void {
     this.destroyed = true;
+    if (this.unsubscribeLang !== null) {
+      this.unsubscribeLang();
+      this.unsubscribeLang = null;
+    }
     this.sharedSearcher.destroy();
     this.pendingPlayFileId = 0;
     this.audioPlayerPort.stop().catch((): void => {});

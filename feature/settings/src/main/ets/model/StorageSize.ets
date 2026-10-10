@@ -7,6 +7,8 @@
  * 字节级不带小数（"512 B" 而不是 "512.0 B"），与既有 `'0 B'` 默认值同风格。
  */
 
+import { Lang } from '@tgx/core-common';
+
 const KB: number = 1024;
 const MB: number = 1024 * 1024;
 const GB: number = 1024 * 1024 * 1024;
@@ -32,6 +34,9 @@ export function formatBytes(bytes: number): string {
  * 设置页"Cache size"一行的完整文案。
  * - 空缓存（bytes<=0）只出 "0 B"，不缀文件数——避免 "0 B · 0 files" 的冗余；
  * - 文件数 1 用单数 "file"。
+ *
+ * 单位词自 I18N-HOTSWITCH-101 起走 `Lang`：中文侧是 `43.0 MB · 379 个文件`，
+ * 不再是英文尾巴。单复数仍是两条 key（中文同形），因为 EN 要保留 `"1 file"`。
  */
 export function formatStorageLabel(bytes: number, fileCount: number): string {
   const size: string = formatBytes(bytes);
@@ -39,5 +44,5 @@ export function formatStorageLabel(bytes: number, fileCount: number): string {
   if (count === 0) {
     return size;
   }
-  return `${size} · ${count} ${count === 1 ? 'file' : 'files'}`;
+  return `${size} · ${Lang.getInstance().getString(count === 1 ? '{0} file' : '{0} files', count)}`;
 }

@@ -48,7 +48,7 @@ import {
   FakeAudioPlayer,
   FakeAudioRecorder
 } from '@tgx/platform-ports';
-import { ManualClock, SequentialIdGenerator, AppError, AppErrors, Lang } from '@tgx/core-common';
+import { ManualClock, SequentialIdGenerator, AppError, AppErrors, Lang, SupportedLanguage } from '@tgx/core-common';
 import { AccountScope } from '@tgx/core-account';
 import {
   Animation,
@@ -616,6 +616,18 @@ export class ChatCoordinator {
   /** CHAT-HIST-101：本次进会话已自动补拉/重试首屏的次数（拿到整屏内容即清零）。 */
   private backfillTries: number = 0;
   private destroyed: boolean = false;
+  /**
+   * I18N-HOTSWITCH-101：消息正文摘要、日期头、头部副标题都是投影时一次性解析后
+   * 存进 MessageItem/UiState 的已解析串，换语言必须由协调器用本地缓存重投影，
+   * 页面层的响应式救不回来。
+   */
+  private unsubscribeLang: (() => void) | null = null;
+  private lastProjectedLanguage: SupportedLanguage = 'en';
+  /**
+   * MSG-108 / I18N-HOTSWITCH-101：置顶条的标题与摘要同样是解析后存进
+   * PinnedMessageInfo 的已解析串，留存原始消息才能让换语言纯本地重投。
+   */
+  private lastPinnedMessage: Message | null = null;
   /** MSG-102：会话种类（getChat 一次性解析，群聊才出署名）。 */
   private chatKind: ChatKind = 'unknown';
   private chatTypeRequested: boolean = false;
@@ -862,6 +874,54 @@ export class ChatCoordinator {
     });
     this.fetchPinnedMessage();
     this.dispatch(new LoadInitialMessages());
+    this.subscribeLanguage();
+  }
+
+  /**
+   * I18N-HOTSWITCH-101：换语言后用本地缓存重投影一次消息列表并重算头部副标题。
+   *
+   * 只读内存（projection.state / userRegistry / memberCount），不发任何新请求：
+   * 媒体与用户订阅的重复触发已被 isDownloaded + requestedFileIds/requestedSenderIds
+   * 挡住。重投影走既有的 scheduleSyncFromProjection，与投影变更同一条节流路径。
+   */
+  private subscribeLanguage(): void {
+    this.lastProjectedLanguage = Lang.getInstance().getLanguage();
+    const self: ChatCoordinator = this;
+    this.unsubscribeLang = Lang.getInstance().subscribe((lang: SupportedLanguage): void => {
+      if (self.destroyed || lang === self.lastProjectedLanguage) {
+        return;
+      }
+      self.lastProjectedLanguage = lang;
+      self.scheduleSyncFromProjection();
+      self.refreshHeaderSubtitle();
+      // 置顶条用留存的原文重投；不允许在这条路上补发 getUser（换语言必须是纯本地）。
+      self.publishPinnedMessage(false);
+    });
+  }
+
+  /**
+   * 换语言后重算头部副标题（纯本地）：
+   * - 私聊：777000 走词典；User 已在缓存里才重算状态文案，缓存未命中时保持原样
+   *   （原本就没有可重算的串，不去补发请求）；
+   * - 群/频道：按已缓存的成员数与在线数重拼；
+   * - unknown：不动。
+   */
+  private refreshHeaderSubtitle(): void {
+    if (this.chatKind === 'private') {
+      const chatId: number = this.currentState.chatId;
+      if (chatId === 777000) {
+        this.dispatch(new OnHeaderSubtitleChanged(Lang.getInstance().getString('Service Notifications')));
+        return;
+      }
+      const user: User | null = this.userRegistry.getUser(chatId);
+      if (user !== null && user.status !== null) {
+        this.dispatch(new OnHeaderSubtitleChanged(this.formatUserStatus(user.status)));
+      }
+      return;
+    }
+    if (this.chatKind === 'group' || this.chatKind === 'channel') {
+      this.updateGroupHeaderSubtitle();
+    }
   }
 
   /**
@@ -1123,6 +1183,10 @@ export class ChatCoordinator {
 
   destroy(): void {
     this.destroyed = true;
+    if (this.unsubscribeLang !== null) {
+      this.unsubscribeLang();
+      this.unsubscribeLang = null;
+    }
     this.saveDraftNow();
     this.projection.setOnDraftLoaded(null);
     this.projection.setOnStateChanged(null);
@@ -3003,6 +3067,7 @@ export class ChatCoordinator {
     }
     const result: Result<TdPendingRequest, AppError> = this.projection.getChatPinnedMessage();
     if (result.err) {
+      this.lastPinnedMessage = null;
       this.dispatch(new OnPinnedMessageLoaded(null));
       return;
     }
@@ -3013,25 +3078,21 @@ export class ChatCoordinator {
         }
         if (res.err) {
           this.logger.info(TAG, 'pinned_message_none', `err=${res.error.message}`);
+          this.lastPinnedMessage = null;
           this.dispatch(new OnPinnedMessageLoaded(null));
           return;
         }
         if (res.ok) {
           const msg: Message | null = decodeMessage(res.value as TdJsonRaw);
           if (msg === null || msg.id <= 0) {
+            this.lastPinnedMessage = null;
             this.dispatch(new OnPinnedMessageLoaded(null));
             return;
           }
           this.projection.addCachedMessage(msg);
-          const senderTitle: string = this.resolvePinnedSenderTitle(msg);
-          const snippet: string = messageContentText(msg.content);
-          const pinnedInfo: PinnedMessageInfo = new PinnedMessageInfo(
-            msg.id,
-            senderTitle,
-            snippet.length > 0 ? snippet : 'Pinned message'
-          );
-          this.logger.info(TAG, 'pinned_message_loaded', `id=${msg.id} sender=${senderTitle}`);
-          this.dispatch(new OnPinnedMessageLoaded(pinnedInfo));
+          this.lastPinnedMessage = msg;
+          this.publishPinnedMessage(true);
+          this.logger.info(TAG, 'pinned_message_loaded', `id=${msg.id}`);
         }
       }).catch(() => {
         if (!this.destroyed) {
@@ -3041,8 +3102,28 @@ export class ChatCoordinator {
     }
   }
 
+  /**
+   * I18N-HOTSWITCH-101：用留存的置顶消息原文重算标题与摘要并回灌。
+   * 缓存为空（本会话无置顶）时直接返回，避免换语言把「无置顶」重投成假条目。
+   * allowSenderFetch 只在首次取数路径为 true：换语言重投必须是纯本地路径，
+   * 缓存未命中时沿用兜底文案，不补发 getUser。
+   */
+  private publishPinnedMessage(allowSenderFetch: boolean): void {
+    const msg: Message | null = this.lastPinnedMessage;
+    if (msg === null) {
+      return;
+    }
+    const senderTitle: string = this.resolvePinnedSenderTitle(msg, allowSenderFetch);
+    const snippet: string = messageContentText(msg.content);
+    this.dispatch(new OnPinnedMessageLoaded(new PinnedMessageInfo(
+      msg.id,
+      senderTitle,
+      snippet.length > 0 ? snippet : Lang.getInstance().getString('Pinned message')
+    )));
+  }
+
   /** MSG-108：解析置顶消息展示标题（发送者名字/群名称/私聊用户名）。 */
-  private resolvePinnedSenderTitle(msg: Message): string {
+  private resolvePinnedSenderTitle(msg: Message, allowSenderFetch: boolean): string {
     if (msg.sender_id !== null && msg.sender_id !== undefined) {
       if (msg.sender_id.type === 'messageSenderUser') {
         const userId: number = (msg.sender_id as MessageSenderUser).user_id;
@@ -3053,13 +3134,17 @@ export class ChatCoordinator {
             return name;
           }
         }
-        this.requestSenderUser(userId);
-        return 'Pinned Message';
+        if (allowSenderFetch) {
+          this.requestSenderUser(userId);
+        }
+        return Lang.getInstance().getString('Pinned message');
       } else if (msg.sender_id.type === 'messageSenderChat') {
-        return this.currentState.chatTitle.length > 0 ? this.currentState.chatTitle : 'Pinned Message';
+        return this.currentState.chatTitle.length > 0
+          ? this.currentState.chatTitle
+          : Lang.getInstance().getString('Pinned message');
       }
     }
-    return 'Pinned Message';
+    return Lang.getInstance().getString('Pinned message');
   }
 
   /** MSG-102：缓存未命中的 sender 拉取一次并订阅，User 到达后重映射上屏。 */

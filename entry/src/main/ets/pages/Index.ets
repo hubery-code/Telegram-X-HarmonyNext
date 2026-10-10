@@ -37,7 +37,7 @@ import { PreferencesStickerSettingsStore } from '../store/StickerSettingsStore';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { common } from '@kit.AbilityKit';
 import { AccountDescriptor, AccountScope } from '@tgx/core-account';
-import { AppError, Lang, ManualClock, Result, SequentialIdGenerator } from '@tgx/core-common';
+import { AppError, Lang, ManualClock, Result, SequentialIdGenerator, SupportedLanguage } from '@tgx/core-common';
 import { ReducerEnv } from '@tgx/feature-template';
 import { AppRoute, ChatRoute, ChatInfoRoute, UserProfileRoute, CommentsRoute, SettingsSectionRoute } from '@tgx/core-navigation';
 import { EntryNavigationController } from '../navigation/EntryNavigationController';
@@ -164,6 +164,18 @@ struct Index {
    * 开关可以拨动但界面无任何变化。
    */
   @StorageProp('activeTheme') T: Theme = LightTheme;
+
+  /**
+   * I18N-HOTSWITCH-101：语言 tick。
+   *
+   * 装配层（entry/Index）订阅 Lang，把**有效语言**（'en' | 'zh'，不是偏好 'system'）镜像进
+   * AppStorage('activeLanguage')；本页把它接成自己的可观察属性，于是 t() 读到的永远是
+   * 当前语言，而**换语言会重渲染本页**——不再是「等下一次取数才有新字」（103/104 设备记录的头号
+   * 盲区）。键缺席时 @StorageProp 用本行默认值自举，且挂载时自动取 AppStorage 现值，所以首帧
+   * 就是对的，不需要再写一次手工同步。类型收在 string 而不是 SupportedLanguage：装饰器成员
+   * 的字面量联合类型没有保证，而 t() 里反正要过一次收敛。
+   */
+  @StorageProp('activeLanguage') effectiveLanguage: string = 'en';
   @State currentRoute: AppRoute = { name: 'auth' };
   @State uiState: AuthUiState = AuthUiState.initial();
   @State chatListUiState: ChatListUiState = ChatListUiState.initial();
@@ -259,6 +271,14 @@ struct Index {
     `${CHAT_FONT_SIZE_DEFAULT}`;
   private chatFontSizeReady: boolean = false;
   private unsubscribeThemeFn: (() => void) | null = null;
+  /**
+   * I18N-HOTSWITCH-101：把 Lang 的有效语言（'en' | 'zh'，不是偏好 'system'）镜像进
+   * AppStorage('activeLanguage')。各页面/组件以 @StorageProp 订阅它并在 t() 里读取，
+   * 于是换语言是一次**全局重渲染**，而不是一次「等下一次取数才有新字」的等待。
+   * 键名与 SettingsReducer 写的 'appLanguage'（存的是**偏好**，供 LANG-PERSIST-101 回灌）
+   * 刻意分开：那个键回答「用户选了什么」，这个键回答「现在该说哪种话」。
+   */
+  private unsubscribeLangFn: (() => void) | null = null;
   private accountScope: AccountScope | null = null;
   private bootstrapResult: BootstrapResult | null = null;
   /**
@@ -335,6 +355,13 @@ struct Index {
       AppStorage.setOrCreate<Theme>('activeTheme', theme);
     });
 
+    // I18N-HOTSWITCH-101：语言 tick。首帧先落当前有效语言，之后 Lang 每次通知
+    // （含偏好改变与 system 偏好下的系统语言改变）都重写这个键。
+    AppStorage.setOrCreate<string>('activeLanguage', Lang.getInstance().getLanguage());
+    this.unsubscribeLangFn = Lang.getInstance().subscribe((lang: SupportedLanguage): void => {
+      AppStorage.setOrCreate<string>('activeLanguage', lang);
+    });
+
     this.unsubscribeNavFn = this.navController.subscribe((route: AppRoute, prev: AppRoute | null) => {
       this.currentRoute = route;
       this.onRouteChanged(route, prev);
@@ -384,6 +411,10 @@ struct Index {
     if (this.unsubscribeThemeFn !== null) {
       this.unsubscribeThemeFn();
       this.unsubscribeThemeFn = null;
+    }
+    if (this.unsubscribeLangFn !== null) {
+      this.unsubscribeLangFn();
+      this.unsubscribeLangFn = null;
     }
   }
 
@@ -485,8 +516,8 @@ struct Index {
    * key 根本没进 R2 的射程，词典缺项要等到上屏才看得见。
    */
   private t(key: string, ...args: (string | number)[]): string {
-    const lang: Lang = Lang.getInstance();
-    return args.length === 0 ? lang.getString(key) : lang.getString(key, ...args);
+    const langCode: SupportedLanguage = this.effectiveLanguage === 'zh' ? 'zh' : 'en';
+    return Lang.getInstance().formatByKey(key, langCode, args);
   }
 
   /**

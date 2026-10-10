@@ -48,6 +48,7 @@ import {
 import { AccountScope } from '@tgx/core-account';
 import { TdPendingRequest, TdRoutedEvent, TdUpdateFilter, TdUpdateSubscription, TdWireObject } from '@tgx/td-gateway';
 import { Result, AppError } from '@tgx/core-common';
+import { Lang } from '@tgx/core-common';
 import { Subscription } from '@tgx/platform-ports';
 
 class SimpleSubscription implements Subscription {
@@ -104,16 +105,11 @@ export function getGroupAvatarLetters(title: string): string {
  * 格式化群成员或频道订阅者数量。
  */
 export function formatMemberCount(count: number, isChannel: boolean): string {
+  const lang: Lang = Lang.getInstance();
   if (isChannel) {
-    if (count === 1) {
-      return '1 subscriber';
-    }
-    return `${count} subscribers`;
+    return count === 1 ? lang.getString('1 subscriber') : lang.getString('{0} subscribers', count);
   }
-  if (count === 1) {
-    return '1 member';
-  }
-  return `${count} members`;
+  return count === 1 ? lang.getString('1 member') : lang.getString('{0} members', count);
 }
 
 /**
@@ -125,10 +121,10 @@ export function formatMemberRole(member: ChatMember): string {
   }
   if (member.status !== null) {
     if (member.status.type === 'chatMemberStatusCreator') {
-      return 'Owner';
+      return Lang.getInstance().getString('Owner');
     }
     if (member.status.type === 'chatMemberStatusAdministrator') {
-      return 'Admin';
+      return Lang.getInstance().getString('Admin');
     }
   }
   return '';

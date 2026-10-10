@@ -13,7 +13,7 @@
  */
 
 import { AccountScope } from '@tgx/core-account';
-import { ManualClock, Result, AppError, SequentialIdGenerator, Lang } from '@tgx/core-common';
+import { ManualClock, Result, AppError, SequentialIdGenerator, Lang, SupportedLanguage } from '@tgx/core-common';
 import {
   UserRegistry,
   FileRegistry,
@@ -281,6 +281,12 @@ export class ProfileCoordinator {
   /** 已订阅语音行发送者更新的 userId，避免重复订阅。 */
   private readonly subscribedVoiceUserIds: Set<number> = new Set<number>();
   private destroyed: boolean = false;
+  /**
+   * I18N-HOTSWITCH-101：状态里的文案是回灌时一次性解析的已解析串，换语言不会重算；
+   * 订阅 Lang 后只读本地缓存重放一帧，不发新请求。
+   */
+  private unsubscribeLang: (() => void) | null = null;
+  private lastProjectedLanguage: SupportedLanguage = 'en';
 
   constructor(scope: AccountScope, userId: number, options?: ProfileCoordinatorOptions) {
     this.scope = scope;
@@ -399,6 +405,23 @@ export class ProfileCoordinator {
       // bio 失败不阻塞页面（基础信息已在拉），只记日志。
       this.logger.logError(TAG, infoRes.error);
     }
+    this.subscribeLanguage();
+  }
+
+  private subscribeLanguage(): void {
+    this.lastProjectedLanguage = Lang.getInstance().getLanguage();
+    const self: ProfileCoordinator = this;
+    this.unsubscribeLang = Lang.getInstance().subscribe((lang: SupportedLanguage): void => {
+      if (self.destroyed || lang === self.lastProjectedLanguage) {
+        return;
+      }
+      self.lastProjectedLanguage = lang;
+      // 缓存命中才重放；未命中说明原本就没有可重算的串，不补发请求。
+      const cached: User | null = self.userRegistry.getUser(self.userId);
+      if (cached !== null) {
+        self.pushUser(cached);
+      }
+    });
   }
 
   dispatch(intent: ProfileIntent): void {
@@ -434,6 +457,10 @@ export class ProfileCoordinator {
       return;
     }
     this.destroyed = true;
+    if (this.unsubscribeLang !== null) {
+      this.unsubscribeLang();
+      this.unsubscribeLang = null;
+    }
     this.sharedSearcher.destroy();
     this.pendingPlayFileId = 0;
     this.audioPlayerPort.stop().catch((): void => {});

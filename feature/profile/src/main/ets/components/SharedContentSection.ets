@@ -10,7 +10,7 @@
  */
 
 import { LightTheme, Theme } from '@tgx/core-design-system';
-import { Lang } from '@tgx/core-common';
+import { Lang, SupportedLanguage } from '@tgx/core-common';
 import { getAvatarColorIndex } from '@tgx/core-domain';
 import { fileUri } from '@kit.CoreFileKit';
 import { SharedAudioItem, SharedFileItem, SharedGroupItem, SharedLinkItem, SharedMediaItem } from '../contract/SharedContentItems';
@@ -135,6 +135,18 @@ const SHARED_TABS: SharedTabSpec[] = [
 @Component
 export struct SharedContentSection {
   @StorageProp('activeTheme') T: Theme = LightTheme;
+
+  /**
+   * I18N-HOTSWITCH-101：语言 tick。
+   *
+   * 装配层（entry/Index）订阅 Lang，把**有效语言**（'en' | 'zh'，不是偏好 'system'）镜像进
+   * AppStorage('activeLanguage')；本页把它接成自己的可观察属性，于是 t() 读到的永远是
+   * 当前语言，而**换语言会重渲染本页**——不再是「等下一次取数才有新字」（103/104 设备记录的头号
+   * 盲区）。键缺席时 @StorageProp 用本行默认值自举，且挂载时自动取 AppStorage 现值，所以首帧
+   * 就是对的，不需要再写一次手工同步。类型收在 string 而不是 SupportedLanguage：装饰器成员
+   * 的字面量联合类型没有保证，而 t() 里反正要过一次收敛。
+   */
+  @StorageProp('activeLanguage') effectiveLanguage: string = 'en';
   @Prop view: SharedContentViewData = new SharedContentViewData({});
   onSelectTab: (tab: number) => void = (): void => {};
   onLoadMore: () => void = (): void => {};
@@ -143,7 +155,8 @@ export struct SharedContentSection {
   onToggleAudio: (fileId: number) => void = (): void => {};
 
   private t(key: string, ...args: (string | number)[]): string {
-    return Lang.getInstance().getString(key, ...args);
+    const langCode: SupportedLanguage = this.effectiveLanguage === 'zh' ? 'zh' : 'en';
+    return Lang.getInstance().formatByKey(key, langCode, args);
   }
 
   private tabs(): SharedTabSpec[] {
@@ -158,29 +171,37 @@ export struct SharedContentSection {
    * 对齐 Android `SharedChatsController.needDateSectionSplitting() = false`。
    * 每次渲染现算：条目是逐页 append 进来的，段边界会随翻页移动，缓存反而容易漏更。
    */
+  /**
+   * I18N-HOTSWITCH-101：分组头是 span.header 里的已解析串，只有让 build 读到语言位
+   * 才会随应用内换语言重算，所以各 *Spans() 都显式带上本组件的响应式语言。
+   */
+  private languageCode(): SupportedLanguage {
+    return this.effectiveLanguage === 'zh' ? 'zh' : 'en';
+  }
+
   private mediaSpans(): SharedDateSpan[] {
     const dates: number[] = this.view.media.map((item: SharedMediaItem): number => item.date);
-    return splitSharedDateSpans(dates, Date.now());
+    return splitSharedDateSpans(dates, Date.now(), this.languageCode());
   }
 
   private fileSpans(): SharedDateSpan[] {
     const dates: number[] = this.view.files.map((item: SharedFileItem): number => item.date);
-    return splitSharedDateSpans(dates, Date.now());
+    return splitSharedDateSpans(dates, Date.now(), this.languageCode());
   }
 
   private linkSpans(): SharedDateSpan[] {
     const dates: number[] = this.view.links.map((item: SharedLinkItem): number => item.date);
-    return splitSharedDateSpans(dates, Date.now());
+    return splitSharedDateSpans(dates, Date.now(), this.languageCode());
   }
 
   private audioSpans(): SharedDateSpan[] {
     const dates: number[] = this.view.audios.map((item: SharedAudioItem): number => item.date);
-    return splitSharedDateSpans(dates, Date.now());
+    return splitSharedDateSpans(dates, Date.now(), this.languageCode());
   }
 
   private voiceSpans(): SharedDateSpan[] {
     const dates: number[] = this.view.voices.map((item: SharedAudioItem): number => item.date);
-    return splitSharedDateSpans(dates, Date.now());
+    return splitSharedDateSpans(dates, Date.now(), this.languageCode());
   }
 
   /** 分组头（对齐 TGX `ListItem.TYPE_HEADER`：左对齐小字、次要色，非吸顶）。 */
@@ -248,13 +269,13 @@ export struct SharedContentSection {
 
   /** 内容区空态（对齐 TGX 文案）。 */
   @Builder
-  Empty(title: string, subtitle: string) {
+  EmptyKey(titleKey: string, subtitleKey: string) {
     Column() {
-      Text(title)
+      Text(this.t(titleKey))
         .fontSize(this.T.typography.subheadline.fontSize)
         .fontColor(this.T.colors.textPrimary)
         .textAlign(TextAlign.Center)
-      Text(subtitle)
+      Text(this.t(subtitleKey))
         .fontSize(this.T.typography.footnote.fontSize)
         .fontColor(this.T.colors.textSecondary)
         .textAlign(TextAlign.Center)
@@ -317,7 +338,7 @@ export struct SharedContentSection {
       if (this.view.loadFailed) {
         this.LoadFailed()
       } else {
-        this.Empty(this.t('No Media Yet'), this.t('Share photos and videos in this chat and access them on all your devices.'))
+        this.EmptyKey('No Media Yet', 'Share photos and videos in this chat and access them on all your devices.')
       }
     } else {
       // 一段一个宫格：分组头要独占一行，所以不能全塞进同一个 wrap Flex。
@@ -382,7 +403,7 @@ export struct SharedContentSection {
       if (this.view.loadFailed) {
         this.LoadFailed()
       } else {
-        this.Empty(this.t('No Files Yet'), this.t('Share files in this chat and access them on all your devices.'))
+        this.EmptyKey('No Files Yet', 'Share files in this chat and access them on all your devices.')
       }
     } else {
       Column() {
@@ -444,7 +465,7 @@ export struct SharedContentSection {
       if (this.view.loadFailed) {
         this.LoadFailed()
       } else {
-        this.Empty(this.t('No Links Yet'), this.t('Share links in this chat and access them on all your devices.'))
+        this.EmptyKey('No Links Yet', 'Share links in this chat and access them on all your devices.')
       }
     } else {
       Column() {
@@ -531,7 +552,7 @@ export struct SharedContentSection {
       if (this.view.loadFailed) {
         this.LoadFailed()
       } else {
-        this.Empty(this.t('No Music Yet'), this.t('Share audio files in this chat and access them on all your devices.'))
+        this.EmptyKey('No Music Yet', 'Share audio files in this chat and access them on all your devices.')
       }
     } else {
       Column() {
@@ -557,7 +578,7 @@ export struct SharedContentSection {
       if (this.view.loadFailed) {
         this.LoadFailed()
       } else {
-        this.Empty(this.t('No Voice Messages Yet'), this.t('Share voice messages in this chat and access them on all your devices.'))
+        this.EmptyKey('No Voice Messages Yet', 'Share voice messages in this chat and access them on all your devices.')
       }
     } else {
       Column() {
@@ -584,7 +605,7 @@ export struct SharedContentSection {
       if (this.view.loadFailed) {
         this.LoadFailed()
       } else {
-        this.Empty(this.t('No Common Groups'), this.t('Groups you have in common with this user will appear here.'))
+        this.EmptyKey('No Common Groups', 'Groups you have in common with this user will appear here.')
       }
     } else {
       Column() {

@@ -178,24 +178,30 @@ export class LoadStorageStats implements Intent {
 
 /**
  * SET-104：存储占用拉取/清理后的结果回灌。
- * label 由 coordinator 用 `formatStorageLabel` 预先格式化好——与既有
- * CacheCleared 携带已格式化字符串的约定保持一致，reducer 保持纯搬运。
+ *
+ * 传**原始字节数与文件数**，不传已格式化串：label 是"取数时那一刻的语言"解析出来的
+ * 已解析串，存进 UiState 后换语言就再也不更新（I18N-HOTSWITCH-101 设备实测温出）。
+ * 数据进 state、文案在渲染时解析，语言位一变页面自己重算。
  */
 export class StorageStatsLoaded implements Intent {
   readonly kind: 'storageStatsLoaded' = 'storageStatsLoaded';
-  readonly label: string;
+  readonly size: number;
+  readonly count: number;
 
-  constructor(label: string) {
-    this.label = label;
+  constructor(size: number, count: number) {
+    this.size = size;
+    this.count = count;
   }
 }
 
 export class CacheCleared implements Intent {
   readonly kind: 'cacheCleared' = 'cacheCleared';
-  readonly newCacheSize: string;
+  readonly size: number;
+  readonly count: number;
 
-  constructor(newCacheSize: string = '0 B') {
-    this.newCacheSize = newCacheSize;
+  constructor(size: number = 0, count: number = 0) {
+    this.size = size;
+    this.count = count;
   }
 }
 

@@ -139,7 +139,6 @@ import {
 } from '@tgx/td-gateway';
 import { ReducerEnv, ReducerResult } from '@tgx/feature-template';
 import { SettingsUiState } from '../contract/SettingsUiState';
-import { formatStorageLabel } from '../model/StorageSize';
 import {
   NotificationScopeKey,
   areNotificationsEnabled,
@@ -472,7 +471,7 @@ export class SettingsCoordinator {
   start(): void {
     this.dispatch(new LoadUserProfile());
     this.dispatch(new LoadNotificationSettings());
-    // SET-104：进页即静默拉一次真实存储占用（此前 storageCacheSize 是硬编码占位）。
+    // SET-104：进页即静默拉一次真实存储占用（此前缓存行是硬编码占位）。
     this.dispatch(new LoadStorageStats());
     // AUTODL-101：策略行在「数据与存储」卡片里，进页就要有真实副标题。
     this.dispatch(new LoadAutoDownloadPolicy());
@@ -1209,7 +1208,8 @@ export class SettingsCoordinator {
         if (res.ok) {
           const stats: StorageStatistics | null = decodeStorageStatistics(res.value as TdJsonRaw);
           if (stats !== null) {
-            self.dispatch(new StorageStatsLoaded(formatStorageLabel(stats.size, stats.count)));
+            // 传原始数字，不传已解析串：换语言由页面按语言位重算（I18N-HOTSWITCH-101）。
+            self.dispatch(new StorageStatsLoaded(stats.size, stats.count));
           }
         }
         if (res.err) {
@@ -1256,10 +1256,8 @@ export class SettingsCoordinator {
         }
         if (res.ok) {
           const stats: StorageStatistics | null = decodeStorageStatistics(res.value as TdJsonRaw);
-          const label: string = stats !== null
-            ? formatStorageLabel(stats.size, stats.count)
-            : '0 B';
-          self.dispatch(new CacheCleared(label));
+          // 解不出来按 0 字节/0 文件处理（页面渲染成 '0 B'），语义与原先的 '0 B' 一致。
+          self.dispatch(new CacheCleared(stats !== null ? stats.size : 0, stats !== null ? stats.count : 0));
         }
         if (res.err) {
           self.dispatch(new SetErrorMessage(res.error.message));

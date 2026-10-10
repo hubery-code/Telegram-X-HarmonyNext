@@ -181,14 +181,14 @@ export struct DevicesSubPage {
               this.ErrorBannerView()
             }
 
-            this.SectionTitle(this.t('This Device'))
+            this.SectionTitleKey('This Device')
             this.CurrentDeviceCardView()
 
             if (this.getOtherSessions().length > 0) {
               this.TerminateAllButtonView()
             }
 
-            this.SectionTitle(this.t('Active Sessions'))
+            this.SectionTitleKey('Active Sessions')
             this.OtherSessionsCardView()
           }
           .width('100%')
@@ -247,8 +247,8 @@ export struct DevicesSubPage {
   }
 
   @Builder
-  SectionTitle(title: string) {
-    Text(title)
+  SectionTitleKey(titleKey: string) {
+    Text(this.t(titleKey))
       .fontSize(this.getTheme().typography.caption.fontSize)
       .fontWeight(this.getTheme().typography.caption.fontWeight)
       .fontColor(this.getTheme().colors.textSecondary)

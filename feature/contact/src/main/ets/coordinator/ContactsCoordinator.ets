@@ -18,7 +18,7 @@
  */
 
 import { AccountScope } from '@tgx/core-account';
-import { Lang, ManualClock, Result, AppError, AppErrors, SequentialIdGenerator } from '@tgx/core-common';
+import { Lang, ManualClock, Result, AppError, AppErrors, SequentialIdGenerator, SupportedLanguage } from '@tgx/core-common';
 import {
   UserRegistry,
   FileRegistry,
@@ -142,6 +142,12 @@ export class ContactsCoordinator {
   /** 已订阅下载回调的小头像 fileId，防重复订阅。 */
   private readonly subscribedAvatarFileIds: Set<number> = new Set();
   private destroyed: boolean = false;
+  /**
+   * I18N-HOTSWITCH-101：状态里的文案是回灌时一次性解析的已解析串，换语言不会重算；
+   * 订阅 Lang 后只读本地缓存重放一帧，不发新请求。
+   */
+  private unsubscribeLang: (() => void) | null = null;
+  private lastProjectedLanguage: SupportedLanguage = 'en';
 
   constructor(scope: AccountScope, options?: ContactsCoordinatorOptions) {
     this.scope = scope;
@@ -166,6 +172,20 @@ export class ContactsCoordinator {
 
   start(): void {
     this.fetchContacts();
+    this.subscribeLanguage();
+  }
+
+  private subscribeLanguage(): void {
+    this.lastProjectedLanguage = Lang.getInstance().getLanguage();
+    const self: ContactsCoordinator = this;
+    this.unsubscribeLang = Lang.getInstance().subscribe((lang: SupportedLanguage): void => {
+      if (self.destroyed || lang === self.lastProjectedLanguage) {
+        return;
+      }
+      self.lastProjectedLanguage = lang;
+      // publishContacts 按已缓存的 user_ids 全量重建，不重新 getContacts。
+      self.publishContacts();
+    });
   }
 
   dispatch(intent: ContactsIntent): void {
@@ -201,6 +221,10 @@ export class ContactsCoordinator {
       return;
     }
     this.destroyed = true;
+    if (this.unsubscribeLang !== null) {
+      this.unsubscribeLang();
+      this.unsubscribeLang = null;
+    }
     for (let i: number = 0; i < this.subscriptions.length; i++) {
       this.subscriptions[i].unsubscribe();
     }

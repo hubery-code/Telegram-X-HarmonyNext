@@ -9,7 +9,7 @@
  */
 
 import { LightTheme, Theme } from '@tgx/core-design-system';
-import { A11y, a11y, Lang } from '@tgx/core-common';
+import { A11y, a11y, Lang, SupportedLanguage } from '@tgx/core-common';
 import { StickerSetPreviewState, StickerSetItem } from '../model/StickerSetPreviewState';
 import { stickerCellImagePath } from '../model/StickerBoard';
 
@@ -31,6 +31,18 @@ export struct StickerSetPreviewSheet {
    * getter，写成 getter 会在渲染闭包里取到 undefined 并抛 TypeError。
    */
   @StorageProp('activeTheme') T: Theme = LightTheme;
+
+  /**
+   * I18N-HOTSWITCH-101：语言 tick。
+   *
+   * 装配层（entry/Index）订阅 Lang，把**有效语言**（'en' | 'zh'，不是偏好 'system'）镜像进
+   * AppStorage('activeLanguage')；本页把它接成自己的可观察属性，于是 t() 读到的永远是
+   * 当前语言，而**换语言会重渲染本页**——不再是「等下一次取数才有新字」（103/104 设备记录的头号
+   * 盲区）。键缺席时 @StorageProp 用本行默认值自举，且挂载时自动取 AppStorage 现值，所以首帧
+   * 就是对的，不需要再写一次手工同步。类型收在 string 而不是 SupportedLanguage：装饰器成员
+   * 的字面量联合类型没有保证，而 t() 里反正要过一次收敛。
+   */
+  @StorageProp('activeLanguage') effectiveLanguage: string = 'en';
   @Prop preview: StickerSetPreviewState | null = null;
   onClose: () => void = () => {};
   onInstall: (setId: string) => void = () => {};
@@ -241,7 +253,8 @@ export struct StickerSetPreviewSheet {
   }
 
   private t(key: string, ...args: (string | number)[]): string {
-    return Lang.getInstance().getString(key, ...args);
+    const langCode: SupportedLanguage = this.effectiveLanguage === 'zh' ? 'zh' : 'en';
+    return Lang.getInstance().formatByKey(key, langCode, args);
   }
 
   private formatSubtitle(): string {

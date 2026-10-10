@@ -19,7 +19,7 @@
  */
 
 import { Logger } from '@tgx/observability';
-import { Lang, ManualClock, SequentialIdGenerator, AppError, AppErrors } from '@tgx/core-common';
+import { Lang, ManualClock, SequentialIdGenerator, SupportedLanguage, AppError, AppErrors } from '@tgx/core-common';
 import { AccountScope } from '@tgx/core-account';
 import {
   Chat,
@@ -166,6 +166,13 @@ export class ChatListCoordinator {
   private readonly avatarSubscriptions: Map<number, Subscription> = new Map();
   private syncScheduled: boolean = false;
   private destroyed: boolean = false;
+  /**
+   * I18N-HOTSWITCH-101：会话列表的文案在 mapChatsToItems 里就已解析成字符串
+   * 存进 ChatListItem，换语言不会自动重算。订阅 Lang 后用本地缓存重投影一次，
+   * 不发任何新请求。
+   */
+  private unsubscribeLang: (() => void) | null = null;
+  private lastProjectedLanguage: SupportedLanguage = 'en';
 
   /** DRAWER-101：getMe 在途标记（reducer 的幂等守卫看的是回灌后的状态，挡不住连点）。 */
   private drawerAccountFetching: boolean = false;
@@ -261,10 +268,35 @@ export class ChatListCoordinator {
     this.dispatch(new LoadChats());
     // DRAWER-101：预热抽屉账号头（此前由装配层自己发 getMe，抽屉状态游离在 reducer 之外）。
     this.dispatch(new DrawerAccountRequested());
+    this.subscribeLanguage();
+  }
+
+  /**
+   * I18N-HOTSWITCH-101：换语言后整表重投影。
+   *
+   * 列表项的副标题/时间/"草稿"/"已存档"等串是在 mapChatsToItems 里当场解析后
+   * 存进 ChatListItem 的，页面层再怎么响应式也拿不到新文案 —— 只有重新投影一次
+   * 才会按新语言重取。投影源是内存 registry，重投影幂等：头像下载有
+   * isDownloaded + requestedAvatarFileIds 双门，不会因重建而重复订阅或发请求。
+   */
+  private subscribeLanguage(): void {
+    this.lastProjectedLanguage = Lang.getInstance().getLanguage();
+    const self: ChatListCoordinator = this;
+    this.unsubscribeLang = Lang.getInstance().subscribe((lang: SupportedLanguage): void => {
+      if (self.destroyed || lang === self.lastProjectedLanguage) {
+        return;
+      }
+      self.lastProjectedLanguage = lang;
+      self.syncFromProjection();
+    });
   }
 
   destroy(): void {
     this.destroyed = true;
+    if (this.unsubscribeLang !== null) {
+      this.unsubscribeLang();
+      this.unsubscribeLang = null;
+    }
     this.mainProjection.setOnStateChanged(null);
     this.mainProjection.stop();
     this.archiveProjection.setOnStateChanged(null);

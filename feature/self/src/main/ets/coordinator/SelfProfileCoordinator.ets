@@ -15,7 +15,7 @@
  */
 
 import { AccountScope } from '@tgx/core-account';
-import { ManualClock, Result, AppError, SequentialIdGenerator, Lang } from '@tgx/core-common';
+import { ManualClock, Result, AppError, SequentialIdGenerator, Lang, SupportedLanguage } from '@tgx/core-common';
 import {
   UserRegistry,
   FileRegistry,
@@ -151,6 +151,12 @@ export class SelfProfileCoordinator {
   /** 已订阅下载回调的头像 fileId，防重复订阅。 */
   private subscribedAvatarFileId: number = -1;
   private destroyed: boolean = false;
+  /**
+   * I18N-HOTSWITCH-101：状态里的文案是回灌时一次性解析的已解析串，换语言不会重算；
+   * 订阅 Lang 后只读本地缓存重放一帧，不发新请求。
+   */
+  private unsubscribeLang: (() => void) | null = null;
+  private lastProjectedLanguage: SupportedLanguage = 'en';
 
   constructor(scope: AccountScope, options?: SelfProfileCoordinatorOptions) {
     this.scope = scope;
@@ -175,6 +181,20 @@ export class SelfProfileCoordinator {
 
   start(): void {
     this.executeEffect(new FetchMeEffect());
+    this.subscribeLanguage();
+  }
+
+  private subscribeLanguage(): void {
+    this.lastProjectedLanguage = Lang.getInstance().getLanguage();
+    const self: SelfProfileCoordinator = this;
+    this.unsubscribeLang = Lang.getInstance().subscribe((lang: SupportedLanguage): void => {
+      if (self.destroyed || lang === self.lastProjectedLanguage) {
+        return;
+      }
+      self.lastProjectedLanguage = lang;
+      // pushFrame 只读 lastUser/lastFullInfo，不再 getMe。
+      self.pushFrame();
+    });
   }
 
   dispatch(intent: SelfProfileIntent): void {
@@ -214,6 +234,10 @@ export class SelfProfileCoordinator {
       return;
     }
     this.destroyed = true;
+    if (this.unsubscribeLang !== null) {
+      this.unsubscribeLang();
+      this.unsubscribeLang = null;
+    }
     for (let i = 0; i < this.subscriptions.length; i++) {
       this.subscriptions[i].unsubscribe();
     }

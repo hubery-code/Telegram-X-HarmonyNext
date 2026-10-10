@@ -11,7 +11,7 @@
  */
 
 import { AudioPlaybackMetadata } from '@tgx/platform-ports';
-import { Lang } from '@tgx/core-common';
+import { Lang, SupportedLanguage } from '@tgx/core-common';
 import {
   Message,
   TdMessageContent,
@@ -146,22 +146,33 @@ export function sharedDateSectionKey(unixSeconds: number, nowMs: number): string
 }
 
 /** 分组头文案：今天 / 昨天 / 星期日…星期六 / 上周 / `2026年8月`。源消息没给日期时为空串（不渲染头）。 */
-export function formatSharedDateHeader(unixSeconds: number, nowMs: number): string {
+export function formatSharedDateHeader(
+  unixSeconds: number,
+  nowMs: number,
+  langCode?: SupportedLanguage
+): string {
   const anchor: number = sharedDateAnchorKey(unixSeconds, nowMs);
   if (anchor === -1) {
     return '';
   }
+  // 传了 langCode 就按它取串：组件把响应式语言位读进来，换语言后分组头才会重算。
+  const keyOf = (key: string): string => {
+    if (langCode === undefined) {
+      return Lang.getInstance().getString(key);
+    }
+    return Lang.getInstance().formatByKey(key, langCode, []);
+  };
   if (anchor === 11) {
-    return Lang.getInstance().getString('Last Week');
+    return keyOf('Last Week');
   }
   if (anchor === 1) {
-    return Lang.getInstance().getString('Today');
+    return keyOf('Today');
   }
   if (anchor === 2) {
-    return Lang.getInstance().getString('Yesterday');
+    return keyOf('Yesterday');
   }
   if (anchor >= 4 && anchor <= 10) {
-    return Lang.getInstance().getString(SHARED_WEEKDAY_KEYS[anchor - 3]);
+    return keyOf(SHARED_WEEKDAY_KEYS[anchor - 3]);
   }
   const d: Date = new Date(unixSeconds * 1000);
   return `${d.getFullYear()}年${d.getMonth() + 1}月`; // i18n-allow 日期形态（自然月排布，归 I18N-DATE）
@@ -185,7 +196,11 @@ export class SharedDateSpan {
  * `needDateSectionSplitting`：首条必给头，其后只在分组键变化时插新头）。
  * 输入是纯日期数组，所以媒体宫格 / 文件 / 链接三种条目共用一份切分逻辑。
  */
-export function splitSharedDateSpans(dates: number[], nowMs: number): SharedDateSpan[] {
+export function splitSharedDateSpans(
+  dates: number[],
+  nowMs: number,
+  langCode?: SupportedLanguage
+): SharedDateSpan[] {
   const spans: SharedDateSpan[] = [];
   let start: number = 0;
   let key: string = '';
@@ -193,14 +208,14 @@ export function splitSharedDateSpans(dates: number[], nowMs: number): SharedDate
     const current: string = sharedDateSectionKey(dates[i], nowMs);
     if (i === 0 || current !== key) {
       if (i > 0) {
-        spans.push(new SharedDateSpan(formatSharedDateHeader(dates[start], nowMs), start, i));
+        spans.push(new SharedDateSpan(formatSharedDateHeader(dates[start], nowMs, langCode), start, i));
       }
       key = current;
       start = i;
     }
   }
   if (dates.length > 0) {
-    spans.push(new SharedDateSpan(formatSharedDateHeader(dates[start], nowMs), start, dates.length));
+    spans.push(new SharedDateSpan(formatSharedDateHeader(dates[start], nowMs, langCode), start, dates.length));
   }
   return spans;
 }

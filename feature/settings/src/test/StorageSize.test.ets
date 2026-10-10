@@ -8,6 +8,7 @@
  */
 
 import { describe, it, expect } from '@ohos/hypium';
+import { Lang, SupportedLanguage } from '@tgx/core-common';
 import { formatBytes, formatStorageLabel } from '../main/ets/model/StorageSize';
 
 export default function storageSizeTest() {
@@ -59,6 +60,22 @@ export default function storageSizeTest() {
     it('formatStorageLabel_ignoresInvalidFileCount', 0, () => {
       expect(formatStorageLabel(1536, -3)).assertEqual('1.5 KB');
       expect(formatStorageLabel(1536, Number.NaN)).assertEqual('1.5 KB');
+    });
+
+    it('formatStorageLabel_localizesUnitWord', 0, () => {
+      // I18N-HOTSWITCH-101：单位词是文案不是单位符号，中文侧必须出「个文件」。
+      const previous: SupportedLanguage = Lang.getInstance().getLanguage();
+      let zhOne: string = '';
+      let zhMany: string = '';
+      try {
+        Lang.getInstance().setSystemLanguage('zh');
+        zhOne = formatStorageLabel(1536, 1);
+        zhMany = formatStorageLabel(1024 * 1024 * 3.5, 128);
+      } finally {
+        Lang.getInstance().setSystemLanguage(previous);
+      }
+      expect(zhOne).assertEqual('1.5 KB · 1 个文件');
+      expect(zhMany).assertEqual('3.5 MB · 128 个文件');
     });
   });
 }
