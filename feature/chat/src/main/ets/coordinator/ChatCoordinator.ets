@@ -48,7 +48,20 @@ import {
   FakeAudioPlayer,
   FakeAudioRecorder
 } from '@tgx/platform-ports';
-import { ManualClock, SequentialIdGenerator, AppError, AppErrors, Lang, SupportedLanguage } from '@tgx/core-common';
+import {
+  AppError,
+  AppErrors,
+  DateParts,
+  datePartsFrom,
+  formatDateCompact,
+  formatDateHeader as formatLocalizedDateHeader,
+  formatTimeOfDay,
+  isSameDayParts,
+  Lang,
+  ManualClock,
+  SequentialIdGenerator,
+  SupportedLanguage
+} from '@tgx/core-common';
 import { AccountScope } from '@tgx/core-account';
 import {
   Animation,
@@ -414,21 +427,20 @@ export function messageContentText(content: TdMessageContent | null): string {
   }
 }
 
-/** SEARCH-102：搜索结果日期。当天显示 HH:mm，跨天显示 dd.MM（对齐简化的会话内时间呈现）。 */
+/**
+ * SEARCH-102 / I18N-DATE-101：搜索结果日期。当天 → 时间，跨天 → 日期，
+ * 且**当年不写年份、跨年才补**（旧实现是恒定 `dd.MM`，跨年时把年份整个丢了）。
+ * 形态走 `core/common/DateFormat`，所以英文界面出 `Sep 21`、中文界面出 `9月21日`，
+ * 不再是一处写死的欧式点分形。
+ */
 function formatSearchResultDate(unixSeconds: number): string {
-  const date: Date = new Date(unixSeconds * 1000);
-  const now: Date = new Date();
-  const sameDay: boolean = date.getFullYear() === now.getFullYear() &&
-    date.getMonth() === now.getMonth() &&
-    date.getDate() === now.getDate();
-  if (sameDay) {
-    return `${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
+  const lang: SupportedLanguage = Lang.getInstance().getLanguage();
+  const at: DateParts = datePartsFrom(unixSeconds * 1000);
+  const now: DateParts = datePartsFrom(Date.now());
+  if (isSameDayParts(at, now)) {
+    return formatTimeOfDay(at);
   }
-  return `${pad2(date.getDate())}.${pad2(date.getMonth() + 1)}`;
-}
-
-function pad2(value: number): string {
-  return value < 10 ? `0${value}` : `${value}`;
+  return formatDateCompact(lang, at, now);
 }
 
 /** Message.sending_state → MessageItem.sendState（CHAT-003）。 */
@@ -5357,14 +5369,16 @@ export function isSameDay(t1Ms: number, t2Ms: number): boolean {
     d1.getDate() === d2.getDate();
 }
 
-/** MSG-103：对齐 Telegram X 规范（Lang.getDate），当年输出 "M月d日"，跨年输出 "yyyy年M月d日"。 */
+/**
+ * MSG-103 / I18N-DATE-101：聊天页日期分隔头。当年 `September 11` / `9月11日`，
+ * 跨年 `September 11, 2020` / `2020年9月11日`。
+ *
+ * 这一位以前**无论界面什么语言都输出中文形态**（英文界面直接看到 `9月11日`），
+ * 而且是全仓最显眼的一处日期。月份用长名，对齐 Android `Lang.getDate` 走
+ * `DateFormat.getDateInstance(LONG)` 的口径（`d MMMM`），与列表/条目的缩写档不同 ——
+ * 那不是本端 invention，Android 两处本来就用不同档。
+ */
 export function formatDateHeader(timestampMs: number): string {
-  const date: Date = new Date(timestampMs);
-  const now: Date = new Date();
-  const month: number = date.getMonth() + 1;
-  const day: number = date.getDate();
-  if (date.getFullYear() === now.getFullYear()) {
-    return `${month}月${day}日`; // i18n-allow 日期形态（数字+月日排布，归 I18N-DATE）
-  }
-  return `${date.getFullYear()}年${month}月${day}日`; // i18n-allow 日期形态（跨年时补年份，归 I18N-DATE）
+  const lang: SupportedLanguage = Lang.getInstance().getLanguage();
+  return formatLocalizedDateHeader(lang, datePartsFrom(timestampMs), datePartsFrom(Date.now()));
 }

@@ -25,7 +25,14 @@
  */
 
 import { LightTheme, Theme, ThemeManager } from '@tgx/core-design-system';
-import { A11y, a11y, Lang, SupportedLanguage } from '@tgx/core-common';
+import {
+  A11y,
+  a11y,
+  datePartsFrom,
+  formatDateTimeCompact,
+  Lang,
+  SupportedLanguage
+} from '@tgx/core-common';
 import { ActiveSessionItem } from '../model/ActiveSessionItem';
 import { SettingsUiState } from '../contract/SettingsUiState';
 import {
@@ -36,39 +43,30 @@ import {
   TerminateSessionIntent
 } from '../contract/SettingsIntent';
 
-export function formatSessionDate(timestampSeconds: number, isZh: boolean = false): string {
+function sessionText(key: string, lang: SupportedLanguage, args: (string | number)[]): string {
+  return Lang.getInstance().formatByKey(key, lang, args);
+}
+
+/**
+ * 会话活跃时间：非正数时间戳 → 在线；一分钟内 → 刚刚；一小时内 → N 分钟前；
+ * 更早给「日期 + 时刻」，年份只在跨年时出现（形态统一由 `DateFormat` 决定）。
+ */
+export function formatSessionDate(timestampSeconds: number, lang: SupportedLanguage): string {
   if (timestampSeconds <= 0) {
-    return isZh ? '在线' : 'Online'; // i18n-allow 日期与相对时间形态，归 I18N-DATE
+    return sessionText('Online', lang, []);
   }
-  const date: Date = new Date(timestampSeconds * 1000);
-  const now: Date = new Date();
-  const diffSec: number = Math.floor((now.getTime() - date.getTime()) / 1000);
+  const diffSec: number = Math.floor((Date.now() - timestampSeconds * 1000) / 1000);
   if (diffSec < 60) {
-    return isZh ? '刚刚' : 'Just now'; // i18n-allow 同上
+    return sessionText('Just now', lang, []);
   }
   if (diffSec < 3600) {
-    const mins: number = Math.floor(diffSec / 60);
-    return isZh ? `${mins} 分钟前` : `${mins} min ago`; // i18n-allow 同上
+    return sessionText('{0} min ago', lang, [Math.floor(diffSec / 60)]);
   }
-  const hours: string = String(date.getHours()).padStart(2, '0');
-  const minutes: string = String(date.getMinutes()).padStart(2, '0');
-  const month: number = date.getMonth() + 1;
-  const day: number = date.getDate();
-  const isSameYear: boolean = date.getFullYear() === now.getFullYear();
-
-  if (isZh) {
-    if (isSameYear) {
-      return `${month}月${day}日 ${hours}:${minutes}`; // i18n-allow 同上
-    }
-    return `${date.getFullYear()}年${month}月${day}日 ${hours}:${minutes}`; // i18n-allow 同上
-  } else {
-    const months: string[] = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    const monthStr: string = months[date.getMonth()];
-    if (isSameYear) {
-      return `${monthStr} ${day}, ${hours}:${minutes}`;
-    }
-    return `${monthStr} ${day}, ${date.getFullYear()}, ${hours}:${minutes}`;
-  }
+  return formatDateTimeCompact(
+    lang,
+    datePartsFrom(timestampSeconds * 1000),
+    datePartsFrom(Date.now())
+  );
 }
 
 @Component
@@ -123,12 +121,11 @@ export struct DevicesSubPage {
   }
 
   private t(key: string, ...args: (string | number)[]): string {
-    const langCode: SupportedLanguage = this.uiState.languageCode === 'zh' || this.effectiveLang === 'zh' ? 'zh' : 'en';
-    return Lang.getInstance().formatByKey(key, langCode, args);
+    return Lang.getInstance().formatByKey(key, this.sessionLanguage(), args);
   }
 
-  private isChinese(): boolean {
-    return this.uiState.languageCode === 'zh' || this.effectiveLang === 'zh';
+  private sessionLanguage(): SupportedLanguage {
+    return this.uiState.languageCode === 'zh' || this.effectiveLang === 'zh' ? 'zh' : 'en';
   }
 
   private getCurrentSession(): ActiveSessionItem {
@@ -448,7 +445,7 @@ export struct DevicesSubPage {
                   .maxLines(1)
                   .textOverflow({ overflow: TextOverflow.Ellipsis })
 
-                Text(`${item.location} · ${formatSessionDate(item.lastActiveDate, this.isChinese())} · ${item.ipAddress}`)
+                Text(`${item.location} · ${formatSessionDate(item.lastActiveDate, this.sessionLanguage())} · ${item.ipAddress}`)
                   .fontSize(this.getTheme().typography.caption.fontSize)
                   .fontColor(this.getTheme().colors.textSecondary)
                   .margin({ top: this.getTheme().spacing.hairline })

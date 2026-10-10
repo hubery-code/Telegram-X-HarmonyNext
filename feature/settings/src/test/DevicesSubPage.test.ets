@@ -5,47 +5,52 @@
  * 1. formatSessionDate 在线状态（0 或负数时间戳）；
  * 2. 刚刚（< 60秒）中英双语；
  * 3. 分钟前（< 1小时）中英双语；
- * 4. 同年及跨年绝对时间格式化；
+ * 4. 同年及跨年绝对时间格式化（形态走 `DateFormat`，不是页面自己拼）；
  * 5. ActiveSessionItem 模型对象装配完整性。
  */
 
 import { describe, it, expect } from '@ohos/hypium';
+import { SupportedLanguage } from '@tgx/core-common';
 import { formatSessionDate } from '../main/ets/pages/DevicesSubPage';
 import { ActiveSessionItem } from '../main/ets/model/ActiveSessionItem';
+
+const EN: SupportedLanguage = 'en';
+const ZH: SupportedLanguage = 'zh';
 
 export default function devicesSubPageTest(): void {
   describe('DevicesSubPageTest', () => {
     it('formatSessionDate_onlineWhenZeroOrNegative', 0, () => {
-      expect(formatSessionDate(0, false)).assertEqual('Online');
-      expect(formatSessionDate(0, true)).assertEqual('在线');
-      expect(formatSessionDate(-100, false)).assertEqual('Online');
-      expect(formatSessionDate(-100, true)).assertEqual('在线');
+      expect(formatSessionDate(0, EN)).assertEqual('Online');
+      expect(formatSessionDate(0, ZH)).assertEqual('在线');
+      expect(formatSessionDate(-100, EN)).assertEqual('Online');
+      expect(formatSessionDate(-100, ZH)).assertEqual('在线');
     });
 
     it('formatSessionDate_justNowUnderSixtySeconds', 0, () => {
       const nowSec = Math.floor(Date.now() / 1000);
       const recentSec = nowSec - 15;
-      expect(formatSessionDate(recentSec, false)).assertEqual('Just now');
-      expect(formatSessionDate(recentSec, true)).assertEqual('刚刚');
+      expect(formatSessionDate(recentSec, EN)).assertEqual('Just now');
+      expect(formatSessionDate(recentSec, ZH)).assertEqual('刚刚');
     });
 
     it('formatSessionDate_minutesAgoUnderOneHour', 0, () => {
       const nowSec = Math.floor(Date.now() / 1000);
       const tenMinsAgoSec = nowSec - 600;
-      expect(formatSessionDate(tenMinsAgoSec, false)).assertEqual('10 min ago');
-      expect(formatSessionDate(tenMinsAgoSec, true)).assertEqual('10 分钟前');
+      expect(formatSessionDate(tenMinsAgoSec, EN)).assertEqual('10 min ago');
+      expect(formatSessionDate(tenMinsAgoSec, ZH)).assertEqual('10 分钟前');
     });
 
     it('formatSessionDate_pastDateFormatting', 0, () => {
-      // 过去特定固定时间戳：2020-05-15 12:30:00 UTC
+      // 过去特定固定时间戳：2020-05-15 12:30:00 本地时间
       const date2020 = new Date(2020, 4, 15, 12, 30, 0);
       const timestamp2020 = Math.floor(date2020.getTime() / 1000);
 
-      const zhFormatted = formatSessionDate(timestamp2020, true);
-      const enFormatted = formatSessionDate(timestamp2020, false);
+      const zhFormatted = formatSessionDate(timestamp2020, ZH);
+      const enFormatted = formatSessionDate(timestamp2020, EN);
 
-      expect(zhFormatted.includes('2020年5月15日')).assertTrue();
-      expect(enFormatted.includes('May 15, 2020')).assertTrue();
+      expect(zhFormatted).assertEqual('2020年5月15日 12:30');
+      // 英文日期本身带逗号，时刻用 `at` 连接而不是第三个逗号。
+      expect(enFormatted).assertEqual('May 15, 2020 at 12:30');
     });
 
     it('activeSessionItem_fieldsIntegrity', 0, () => {

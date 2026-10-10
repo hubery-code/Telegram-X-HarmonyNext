@@ -7,15 +7,15 @@
 `Lang` 缺译文时**原样回吐 key**，于是 Toast 上屏的是 `Sticker set: %s` 本身。也就是说
 「key 拼错」和「漏翻译」在屏幕上长得一模一样，没人会当场发现。
 
-本脚本守七条（R4' 与 R5a/R5b 是各自规则内的子条，不另计）：
+本脚本守八条（R4' 与 R5a/R5b 是各自规则内的子条，不另计）：
 
   R1 视图层字面量禁令：`entry` 与各 `feature/*` 的 **pages/ 与 components/** 下，任何 .ets 文件
      里都不允许出现含汉字的字符串字面量（emoji 不在 `一-鿿` 段内，不会被误伤）。
      理由是这一层是「文案的显示端」：文案的真相只在 `Lang.ets` 一处，页面里出现中文就说明
      这一句永远不会随语言变，而下一个改词典的人根本看不到它。
-     就地豁免：行尾写 `// i18n-allow <原因>`。豁免必须带原因 —— 本仓目前只有三类合法豁免：
-     日期/相对时间的**形态**（`10月3日` vs `Oct 3`，不是换词条而是换排布，归 I18N-DATE 一包），
-     语言选择器里的**本族名**（'简体中文' 在英文界面也该是 '简体中文'），以及 R4 的**源语言标签**
+     就地豁免：行尾写 `// i18n-allow <原因>`。豁免必须带原因，且**日期/时间形态不在合法类别里**
+     （I18N-DATE-101 起由 R8 收口）：本仓剩下的两类是语言选择器里的**本族名**
+     （'简体中文' 在英文界面也该是 '简体中文'），以及 R4 的**源语言标签**
      （English 界面里的 'English' 本来就该长这样）。
   R2 key 必须双词典命中：`getString('X')` / `.t('X')` / `t('X')` / `formatByKey('X', ...)` 的**字面量**
      key 必须同时存在于 EN 与 ZH。这就是上面那次事故的直接防线。动态 key（变量、三元）不在射程内，
@@ -54,7 +54,7 @@
      口径与 R1/R4 同构，按文件分两层：
        R5a 汉字禁令 —— `entry` 与 `feature/*` 里 **不在** pages//components/ 下的 .ets，
             任何含汉字的字符串字面量都是违规（豁免同 R1：就地 `// i18n-allow <原因>`，
-            本仓只用于日期/相对时间的形态串）。
+            日期形态那一类已由 R8 作废）。
        R5b 词典已知英文 —— 同批文件里，值命中词典（EN ∪ ZH）的英文字面量出现在四个位置之一：
             ① `return` 的**直接**操作数（`return 'Photo';`；要求字面量外层没有任何调用）；
             ② 显示出口 `showToast(` / `showHintToast(` 的实参；
@@ -95,6 +95,16 @@
      正确形状 = 传 key、builder 体内 `this.t(key)`（`NotificationScopeRowKey` / `FieldLabelKey` /
      `PickerSectionHeaderViewKey` 三个先例），或干脆内联进 build。
      口径是行内的，跨行写的 `this.Some(` + 下一行的 `this.t(...)` 扫不到（同「守卫跨行调用收口」一包）。
+  R8 日期形态只许出自一个文件（I18N-DATE-101 引入）：R1~R7 全都只管**文案**，日期形态是它们
+     的盲区 —— `'Sep'`、`21.09.2026`、`2026年9月` 在任何语言里都「没翻译错」，坏的是**没跟着界面
+     语言切换**。第五十七轮设备实测：英文界面的会话列表出 `21.09.2026`、共享内容分组头出 `2026年9月`。
+     所以按形状拦，射程比前七条宽（core/feature/platform/entry 的 `src/main/ets`）：
+       ① 中文排布 —— 插值后紧跟 `年/月/日/岁`（`${month}月${day}日`）；
+       ② 点分数字日期 —— `${…}.${…}`（旧会话列表的 `dd.MM.yyyy` 正是这个形状）；
+       ③ 英文月份名/星期名 —— 字面量命中 `MONTH_WEEKDAY_NAMES` 且**不是**词典 key
+          （`'Sunday'` 作为 `SHARED_WEEKDAY_KEYS` 的 key 是对的，`'Sep'` 不是任何 key）；
+       ④ 旧的 `// i18n-allow 日期形态` 就地豁免 —— 这一类豁免自本包起作废，标了就报。
+     唯一放行的是 `core/common/src/main/ets/DateFormat.ets`（形态表本体）与 `Lang.ets`（词典）。
 
 用法：python3 tools/ci/check_i18n_literals.py [--quiet]
 退出码：0 = 无违规；1 = 存在违规；2 = 前置条件坏了（词典解析不出来）
@@ -114,6 +124,24 @@ VIEW_DIRS = ['entry/src/main/ets'] + [
 ]
 VIEW_SEGMENTS = ('/pages/', '/components/')
 SKIP_PARTS = ('/oh_modules/', '/build/', '/.test/', '/.preview/')
+
+# R8：日期形态串的唯一合法出处（I18N-DATE-101 引入）。
+DATE_FORM_SOURCE = 'core/common/src/main/ets/DateFormat.ets'
+# 词典本身不算「拼日期的模板」：`'Sunday': '星期日'` 是词条，业务层按 key 取它是对的。
+DATE_DICT_SOURCE = 'core/common/src/main/ets/Lang.ets'
+# 月份名与星期名（英文两档）。中文侧靠 `}月`/`}年`/`}日` 的排布形状拦，不需要表。
+MONTH_WEEKDAY_NAMES = frozenset((
+    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+    'January', 'February', 'March', 'April', 'June', 'July', 'August', 'September',
+    'October', 'November', 'December',
+    'Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat',
+))
+# 中文日期排布：插值后面直接跟 `年/月/日/岁` 就是在本地拼串。
+CN_DATE_SHAPE_RE = re.compile(r'\$\{[^{}]*\}\s*[年月日岁]')
+# 点分数字日期（旧会话列表的 `dd.MM.yyyy`）。
+DOT_DATE_SHAPE_RE = re.compile(r'\$\{[^{}]*\}\.\\\$\{[^{}]*\}|\$\{[^{}]*\}\.\$\{[^{}]*\}')
+# 「日期形态」这一类就地豁免已作废：改走 DateFormat，标了就报。
+DATE_ALLOW_REASON_RE = re.compile(r'日期|时间形态|相对时间')
 
 # 汉字段（CJK Unified Ideographs）。emoji（😀 ★ ✋）与假名/谚文都不在此段，故意只拦汉字：
 # 本仓的界面文案只有中英两档，拦假名只会误伤测试里的样例数据。
@@ -215,6 +243,63 @@ def partitioned_files(view: bool):
     return out
 
 
+def date_form_files():
+    """R8 的射程：core/feature/platform/entry 各模块的 `src/main/ets`（比 R1~R7 多出 core 与 platform）。
+
+    按模块目录取而不是从 `feature` 整棵树 rglob —— 后者会把 `feature/*/build/default/cache/`
+    里的**上一版打包源码**一起扫进来，报出一堆改不掉的幽灵违规。
+    """
+    dirs = [ROOT / 'entry' / 'src' / 'main' / 'ets']
+    for top in ('core', 'feature', 'platform'):
+        dirs.extend(sorted(ROOT.glob(f'{top}/*/src/main/ets')))
+    out = []
+    for base in dirs:
+        if not base.is_dir():
+            continue
+        for path in sorted(base.rglob('*.ets')):
+            rel = str(path.relative_to(ROOT))
+            if any(part in rel for part in SKIP_PARTS):
+                continue
+            out.append((rel, path))
+    return out
+
+
+def scan_date_forms(files, dicts):
+    """R8：月份名/星期名与日期排布只许出现在 `DateFormat.ets`。
+
+    这一条存在的意义：日期形态不是文案，`Lang` 词典管不住它 —— 一个 `'Sep'` 在两种语言
+    里都「翻译正确」，出错的是**没有跟着界面语言切换**。旧的两套并存正是这么漏过 R1~R7 的
+    （英文界面的会话列表出 `21.09.2026`，中文形态的分组头出 `2026年9月`）。
+    所以口径按形状而不是按语言：中文排布（`${…}年/月/日/岁`）、点分数字日期（`${…}.${…}`）、
+    以及英文月份/星期名表，全部只许在那一个文件里。词典里的 `'Sunday': '星期日'` 是词条，
+    业务层按 key 取它是对的，所以 `Lang.ets` 与「双词典都命中的 key」不进射程。
+    """
+    problems = []
+    for rel, path in files:
+        if rel in (DATE_FORM_SOURCE, DATE_DICT_SOURCE):
+            continue
+        for idx, line, stripped in code_lines(path):
+            allow = ALLOW_RE.search(line)
+            if allow is not None and DATE_ALLOW_REASON_RE.search(allow.group('reason')):
+                problems.append(f'{rel}:{idx + 1}: `i18n-allow 日期形态` 这一类豁免已随 '
+                                f'I18N-DATE-101 作废（形态串的唯一出处是 {DATE_FORM_SOURCE}）')
+            shape = CN_DATE_SHAPE_RE.search(line)
+            if shape is not None:
+                problems.append(f'{rel}:{idx + 1}: 就地拼中文日期排布 {shape.group(0)!r} —— '
+                                f'语言驱动的形态表只在 {DATE_FORM_SOURCE}，此处应改调它')
+            dot = DOT_DATE_SHAPE_RE.search(line)
+            if dot is not None:
+                problems.append(f'{rel}:{idx + 1}: 就地拼点分数字日期 {dot.group(0)!r} —— '
+                                f'旧会话列表的 `dd.MM` 正是这个形状，改调 DateFormat')
+            for lit in LITERAL_RE.finditer(line):
+                value = lit.group(2)
+                if value in MONTH_WEEKDAY_NAMES and value not in dicts['EN']:
+                    problems.append(f'{rel}:{idx + 1}: 月份/星期名 {value!r} 出现在 '
+                                    f'{DATE_FORM_SOURCE} 之外（它是 locale 数据不是文案，'
+                                    f'加进词典只会多出一批只为拼日期而存在的 key）')
+    return problems
+
+
 def scan_literals(files, layer: str):
     """R1 / R5a：文件里的汉字字面量（`// i18n-allow 原因` 可豁免）。"""
     problems = []
@@ -232,7 +317,7 @@ def scan_literals(files, layer: str):
             if allow is not None:
                 if not allow.group('reason').strip():
                     problems.append(f'{rel}:{idx + 1}: i18n-allow 必须写原因'
-                                    f'（本仓合法豁免只有日期形态、本族名与源语言标签三类）')
+                                    f'（本仓合法豁免只有本族名与源语言标签两类，日期形态归 R8）')
                 else:
                     allowed.append(f'{rel}:{idx + 1}')
                 continue
@@ -706,6 +791,7 @@ def main() -> int:
 
     files = view_files()
     data = data_files()
+    date_files = date_form_files()
     dicts = load_dicts()
     ctor_index = build_ctor_index()
 
@@ -720,11 +806,13 @@ def main() -> int:
     # R7：@Builder 按值文案参数只求值一次，收已解析串就是换语言不刷新的洞。
     builder_problems = scan_builder_copy_params(files)
     parity_problems = scan_parity(dicts)
+    # R8：日期形态不是文案，词典四条规则都管不住 —— 单独收在一个白名单文件里。
+    date_form_problems = scan_date_forms(date_files, dicts)
 
     allowed = allowed_literal + allowed_slot + allowed_data_literal + allowed_data_slot
     failed = bool(literal_problems or slot_problems or data_literal_problems
                   or data_slot_problems or key_problems or carrier_problems
-                  or builder_problems or parity_problems)
+                  or builder_problems or parity_problems or date_form_problems)
     if not args.quiet or failed:
         for msg in literal_problems:
             print(f'[i18n] LITERAL {msg}')
@@ -742,8 +830,11 @@ def main() -> int:
             print(f'[i18n] BUILDER-VALUE {msg}')
         for msg in parity_problems:
             print(f'[i18n] PARITY {msg}')
+        for msg in date_form_problems:
+            print(f'[i18n] DATE-FORM {msg}')
         if not args.quiet:
             print(f'[i18n] 视图层文件 {len(files)} 个 / 数据层文件 {len(data)} 个，'
+                  f'日期形态射程 {len(date_files)} 个文件，'
                   f'字面量 key 调用点覆盖 {len(checked)} 个，'
                   f'key 载体字面量覆盖 {len(carrier_checked)} 个，'
                   f'词典 EN {len(dicts["EN"])} / ZH {len(dicts["ZH"])} 条，'
@@ -755,6 +846,7 @@ def main() -> int:
               f'写死英文 {len(slot_problems) + len(data_slot_problems)} / '
               f'缺词条 {len(key_problems)} / key 载体缺项 {len(carrier_problems)} / '
               f'builder 按值传串 {len(builder_problems)} / '
+              f'日期形态出格 {len(date_form_problems)} / '
               f'词典不对称 {len(parity_problems)}', file=sys.stderr)
         return 1
     print('[i18n] OK')

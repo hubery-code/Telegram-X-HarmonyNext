@@ -13,7 +13,16 @@
  */
 
 import { AccountScope } from '@tgx/core-account';
-import { ManualClock, Result, AppError, SequentialIdGenerator, Lang, SupportedLanguage } from '@tgx/core-common';
+import {
+  AppError,
+  datePartsFrom,
+  formatBirthday,
+  Lang,
+  ManualClock,
+  Result,
+  SequentialIdGenerator,
+  SupportedLanguage
+} from '@tgx/core-common';
 import {
   UserRegistry,
   FileRegistry,
@@ -138,20 +147,10 @@ const AVATAR_DOWNLOAD_PRIORITY: number = 2;
 /** PROFILE-103：共享媒体缩略图下载优先级。 */
 const SHARED_THUMB_DOWNLOAD_PRIORITY: number = 2;
 
-/** 按当前日期计算周岁。 */
-function ageOf(year: number, month: number, day: number, now: Date): number {
-  let age: number = now.getFullYear() - year;
-  const m: number = now.getMonth() + 1;
-  const d: number = now.getDate();
-  if (m < month || (m === month && d < day)) {
-    age--;
-  }
-  return age < 0 ? 0 : age;
-}
-
 /**
- * PROFILE-103：UserFullInfo.birthdate → 'YYYY年M月D日 (N 岁)'（year=0 时仅 'M月D日'）。
- * 无生日返回空串。
+ * PROFILE-103：UserFullInfo.birthdate → 按界面语言给「生日（年龄）」，
+ * 年份未知（TDLib 的 `year = 0`）时只给月日。无生日返回空串。
+ * 形态与周岁算法都在 `DateFormat.formatBirthday`，本仓另一处生日行（feature/self）走同一条。
  */
 function formatBirthdayText(info: UserFullInfo, now: Date): string {
   const birth = info.birthdate;
@@ -161,11 +160,8 @@ function formatBirthdayText(info: UserFullInfo, now: Date): string {
   if (birth.day <= 0 || birth.month <= 0 || birth.month > 12) {
     return '';
   }
-  if (birth.year > 0) {
-    const age: number = ageOf(birth.year, birth.month, birth.day, now);
-    return `${birth.year}年${birth.month}月${birth.day}日 (${age} 岁)`; // i18n-allow 日期形态（数字+年月日/岁，归 I18N-DATE）
-  }
-  return `${birth.month}月${birth.day}日`; // i18n-allow 日期形态（数字+年月日排布，归 I18N-DATE）
+  const lang: SupportedLanguage = Lang.getInstance().getLanguage();
+  return formatBirthday(lang, birth.year, birth.month, birth.day, datePartsFrom(now.getTime()));
 }
 
 export interface ProfileCoordinatorOptions {

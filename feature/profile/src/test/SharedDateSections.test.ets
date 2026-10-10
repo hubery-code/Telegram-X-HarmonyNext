@@ -7,7 +7,7 @@
  * 全部用本地时区构造时间戳，避免用例在不同 tz 的机器上漂移。
  * 分组头自 I18N-LITERAL-103 起经 `Lang` 取词典；单测里 preference 是 `system`、系统语言
  * 默认 `en`，所以用例开头显式钉成中文，断言的是真正上屏的那串字。
- * 自然月头（`2026年9月`）仍是带 i18n-allow 的日期形态，归 I18N-DATE。
+ * 自然月头（`2026年9月` / `September 2026`）自 I18N-DATE-101 起由 `DateFormat` 按语言给。
  */
 
 import { describe, expect, it } from '@ohos/hypium';
@@ -96,6 +96,14 @@ export default function sharedDateSectionsTest(): void {
       expect(formatSharedDateHeader(at(2025, 12, 31), NOW_MS)).assertEqual('2025年12月');
       expect(sharedDateSectionKey(at(2026, 1, 1), NOW_MS) ===
         sharedDateSectionKey(at(2025, 12, 31), NOW_MS)).assertFalse();
+    });
+
+    it('monthHeader_followsInjectedLanguageNotAHardcodedShape', 0, () => {
+      // I18N-DATE-101：英文界面的自然月头此前直接上屏 `2026年9月`（设备实测）。
+      // 形态收在 `DateFormat.formatMonthYear`，这里锁住「按语言出串」这条线。
+      expect(formatSharedDateHeader(at(2026, 8, 31), NOW_MS, 'en')).assertEqual('August 2026');
+      expect(formatSharedDateHeader(at(2025, 12, 31), NOW_MS, 'en')).assertEqual('December 2025');
+      expect(formatSharedDateHeader(at(2026, 8, 31), NOW_MS, 'zh')).assertEqual('2026年8月');
     });
 
     it('spans_coverEveryItemExactlyOnceAndStartWithHeader', 0, () => {

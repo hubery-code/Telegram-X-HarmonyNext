@@ -13,6 +13,14 @@
 import { AudioPlaybackMetadata } from '@tgx/platform-ports';
 import { Lang, SupportedLanguage } from '@tgx/core-common';
 import {
+  DateParts,
+  datePartsFrom,
+  formatDateCompact,
+  formatMonthYear,
+  formatTimeOfDay,
+  isSameDayParts
+} from '@tgx/core-common';
+import {
   Message,
   TdMessageContent,
   MessageText,
@@ -63,20 +71,22 @@ function pad2(value: number): string {
   return value < 10 ? `0${value}` : `${value}`;
 }
 
-/** 共享内容条目日期。当天 HH:mm，跨天 dd.MM（与 feature/chat 搜索结果一致）。 */
+/**
+ * I18N-DATE-101：条目日期。当天 → 时间，跨天 → 日期（当年不写年份、跨年补）。
+ * 与 `formatSearchResultDate` 走同一个函数、同一张形态表 —— 这两处以前各写一份
+ * `dd.MM`，跨年时都把年份整条丢掉（三年前的文件与昨天的文件长得一样）。
+ */
 export function formatSharedDate(unixSeconds: number): string {
   if (unixSeconds <= 0) {
     return '';
   }
-  const date: Date = new Date(unixSeconds * 1000);
-  const now: Date = new Date();
-  const sameDay: boolean = date.getFullYear() === now.getFullYear() &&
-    date.getMonth() === now.getMonth() &&
-    date.getDate() === now.getDate();
-  if (sameDay) {
-    return `${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
+  const lang: SupportedLanguage = Lang.getInstance().getLanguage();
+  const at: DateParts = datePartsFrom(unixSeconds * 1000);
+  const now: DateParts = datePartsFrom(Date.now());
+  if (isSameDayParts(at, now)) {
+    return formatTimeOfDay(at);
   }
-  return `${pad2(date.getDate())}.${pad2(date.getMonth() + 1)}`;
+  return formatDateCompact(lang, at, now);
 }
 
 const DAY_MS: number = 24 * 60 * 60 * 1000;
@@ -156,6 +166,9 @@ export function formatSharedDateHeader(
     return '';
   }
   // 传了 langCode 就按它取串：组件把响应式语言位读进来，换语言后分组头才会重算。
+  const langOf = (): SupportedLanguage => {
+    return langCode === undefined ? Lang.getInstance().getLanguage() : langCode;
+  };
   const keyOf = (key: string): string => {
     if (langCode === undefined) {
       return Lang.getInstance().getString(key);
@@ -174,8 +187,9 @@ export function formatSharedDateHeader(
   if (anchor >= 4 && anchor <= 10) {
     return keyOf(SHARED_WEEKDAY_KEYS[anchor - 3]);
   }
-  const d: Date = new Date(unixSeconds * 1000);
-  return `${d.getFullYear()}年${d.getMonth() + 1}月`; // i18n-allow 日期形态（自然月排布，归 I18N-DATE）
+  // I18N-DATE-101：`September 2025` / `2025年9月`。以前这一行只有中文形态，
+  // 英文界面的自然月头因此直接显示 `2025年9月`（设备实测）。
+  return formatMonthYear(langOf(), datePartsFrom(unixSeconds * 1000));
 }
 
 /** 一段同日期分组的条目区间（左闭右开），组件按它渲染「分组头 + 该段内容」。 */

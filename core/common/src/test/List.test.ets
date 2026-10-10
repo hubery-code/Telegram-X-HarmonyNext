@@ -5,6 +5,7 @@ import idGeneratorTest from './Id.test';
 import base64Test from './Base64.test';
 import langTest from './Lang.test';
 import a11ySlotsTest from './A11ySlots.test';
+import dateFormatTest from './DateFormat.test';
 
 export default function testsuite() {
   resultTest();
@@ -14,4 +15,5 @@ export default function testsuite() {
   base64Test();
   langTest();
   a11ySlotsTest();
+  dateFormatTest();
 }

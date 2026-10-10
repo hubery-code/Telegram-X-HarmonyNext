@@ -16,7 +16,7 @@
  */
 
 import { LightTheme, Theme } from '@tgx/core-design-system';
-import { A11y, a11y, Lang, SupportedLanguage } from '@tgx/core-common';
+import { A11y, a11y, formatListTimestamp, Lang, SupportedLanguage } from '@tgx/core-common';
 import { ChatListItem } from '../model/ChatListItem';
 import { ChatListUiState, ChatActionMenuState, ChatFolderTab, filterChatsByFolder } from '../contract/ChatListUiState';
 import { DrawerItemKey } from '../contract/DrawerState';
@@ -48,27 +48,15 @@ const SEARCH_BAR_HEIGHT: number = 40;
 /** FOLDERS-101：Folder 标签栏高（vp）。 */
 const FOLDER_TAB_HEIGHT: number = 40;
 const FAB_SIZE: number = 56;
-const ONE_DAY_MS: number = 24 * 60 * 60 * 1000;
-const WEEKDAY_NAMES: string[] = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
-function pad2(value: number): string {
-  return value < 10 ? `0${value}` : `${value}`;
-}
-
-/** 当天显示 HH:mm，一周内显示星期，更早显示 dd.MM.yyyy。 */
-function formatChatTimestamp(timestampMs: number): string {
-  const date: Date = new Date(timestampMs);
-  const now: Date = new Date();
-  const sameDay: boolean = date.getFullYear() === now.getFullYear() &&
-    date.getMonth() === now.getMonth() &&
-    date.getDate() === now.getDate();
-  if (sameDay) {
-    return `${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
-  }
-  if (now.getTime() - timestampMs < 7 * ONE_DAY_MS) {
-    return WEEKDAY_NAMES[date.getDay()];
-  }
-  return `${pad2(date.getDate())}.${pad2(date.getMonth() + 1)}.${date.getFullYear()}`;
+/**
+ * I18N-DATE-101：档位判据（当天 → 时间、一周内 → 星期、更早 → 日期，且当年不写年份）
+ * 收进 `core/common` 的 `formatListTimestamp`，形态由传入的语言档决定。
+ * 这一位以前是本仓唯一一处「把 locale 数据写死成英文」的地方：
+ * 一张私有 `['Sun','Mon',…]` 表加无条件带 4 位年份的 `dd.MM.yyyy`。
+ */
+function formatChatTimestamp(timestampMs: number, lang: SupportedLanguage): string {
+  return formatListTimestamp(lang, timestampMs, Date.now());
 }
 
 /**
@@ -254,9 +242,16 @@ export struct ChatListPage {
     this.onDispatch(new DrawerAccountClicked());
   }
 
+  /**
+   * I18N-DATE-101：语言档只从响应式语言位取。`Lang.getLanguage()` 是单例上的普通方法，
+   * ArkUI 不会因为它变化而重渲染，所以文案与日期形态都必须走 `effectiveLanguage` 这一条。
+   */
+  private listLanguage(): SupportedLanguage {
+    return this.effectiveLanguage === 'zh' ? 'zh' : 'en';
+  }
+
   private t(key: string, ...args: (string | number)[]): string {
-    const langCode: SupportedLanguage = this.effectiveLanguage === 'zh' ? 'zh' : 'en';
-    return Lang.getInstance().formatByKey(key, langCode, args);
+    return Lang.getInstance().formatByKey(key, this.listLanguage(), args);
   }
 
   build() {
@@ -725,7 +720,7 @@ export struct ChatListPage {
               .margin({ left: this.T.spacing.sm })
           }
 
-          Text(formatChatTimestamp(item.timestampMs))
+          Text(formatChatTimestamp(item.timestampMs, this.listLanguage()))
             .fontSize(this.T.typography.footnote.fontSize)
             .fontColor(this.T.colors.textSecondary)
             .margin({ left: this.T.spacing.sm })

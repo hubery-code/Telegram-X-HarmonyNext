@@ -15,7 +15,16 @@
  */
 
 import { AccountScope } from '@tgx/core-account';
-import { ManualClock, Result, AppError, SequentialIdGenerator, Lang, SupportedLanguage } from '@tgx/core-common';
+import {
+  AppError,
+  datePartsFrom,
+  formatBirthday,
+  Lang,
+  ManualClock,
+  Result,
+  SequentialIdGenerator,
+  SupportedLanguage
+} from '@tgx/core-common';
 import {
   UserRegistry,
   FileRegistry,
@@ -106,8 +115,8 @@ function bioTextOf(info: UserFullInfo): string {
 }
 
 /**
- * 生日文案：`YYYY年M月D日 (N 岁)`（N 按当前日期周岁算，生日未到减一）；
- * year=0（未知年份）退化为 `M月D日`；无 birthdate 返回空串。
+ * 生日文案：按界面语言给「生日（年龄）」，周岁按当前日期算、生日未到减一；
+ * `year = 0`（对方没填年份）退化为只有月日；无 birthdate 返回空串。
  */
 function formatBirthdayText(birthdate: Birthdate | null): string {
   if (birthdate === null || birthdate === undefined) {
@@ -119,20 +128,8 @@ function formatBirthdayText(birthdate: Birthdate | null): string {
   if (day <= 0 || month <= 0) {
     return '';
   }
-  if (year <= 0) {
-    return `${month}月${day}日`; // i18n-allow 日期形态：数字+年月日排布，属 I18N-DATE 的 locale 格式化
-  }
-  const now: Date = new Date();
-  let age: number = now.getFullYear() - year;
-  const currentMonth: number = now.getMonth() + 1;
-  const currentDay: number = now.getDate();
-  if (currentMonth < month || (currentMonth === month && currentDay < day)) {
-    age = age - 1;
-  }
-  if (age < 0) {
-    age = 0;
-  }
-  return `${year}年${month}月${day}日 (${age} 岁)`; // i18n-allow 日期形态（数字+年月日/岁，归 I18N-DATE）
+  const lang: SupportedLanguage = Lang.getInstance().getLanguage();
+  return formatBirthday(lang, year, month, day, datePartsFrom(Date.now()));
 }
 
 export class SelfProfileCoordinator {

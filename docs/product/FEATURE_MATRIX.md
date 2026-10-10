@@ -128,7 +128,7 @@
 |---|---|---|---|---|---|---|---|---|
 | FEAT-UI-001 | 深色/浅色主题 | P1 | `theme/ThemeManager.java:48`（DEFAULT_DARK_THEME = NIGHT_BLUE）, `theme/Theme.java` | —（平台侧） | 跟随系统/手动切换，关键页面（列表/聊天/设置）色值正确；偏好（system/light/dark）跨进程持久，系统深浅色经 `onConfigurationUpdate` 实时参与解析 | — | Accepted | 迁移组, APPSTORAGE-PAIR-101 |
 | FEAT-UI-002 | 大字体（聊天字号调节） | P1 | `unsorted/Settings.java:791`（CHAT_FONT_SIZES）, `ui/SettingsController.java:218`（getChatFontSize） | —（平台侧） | 大字号模式下气泡/列表不截断不重叠 | 字体缩放 | Accepted | SET-105 |
-| FEAT-UI-003 | 中/英文案资源 | P1 | `core/Lang.java`, `ui/SettingsLanguageController.java` | — | 关键路径文案中英齐全，无硬编码遗漏（视图层与 coordinator/model 数据层的写死文案、词典缺项由 `check_i18n_literals.py` 六条规则强制）；语言偏好跨进程持久且系统语言参与解析；写进 AppStorage 的键必须有读者（`check_appstorage_pairs.py` R1） | — | Accepted | I18N-LITERAL-101/102/103/104, I18N-HOTSWITCH-101, LANG-PERSIST-101, APPSTORAGE-PAIR-101 |
+| FEAT-UI-003 | 中/英文案资源 | P1 | `core/Lang.java`, `ui/SettingsLanguageController.java` | — | 关键路径文案中英齐全，无硬编码遗漏（视图层与 coordinator/model 数据层的写死文案、词典缺项由 `check_i18n_literals.py` 七条规则强制）；日期形态与文案分治 —— 月份名/星期名/`年月日`排布只许出自 `core/common/…/DateFormat.ets` 一个文件（同守卫第八条规则 R8）；语言偏好跨进程持久且系统语言参与解析；写进 AppStorage 的键必须有读者（`check_appstorage_pairs.py` R1） | — | Accepted | I18N-LITERAL-101/102/103/104, I18N-HOTSWITCH-101, LANG-PERSIST-101, APPSTORAGE-PAIR-101, I18N-DATE-101 |
 | FEAT-UI-004 | 抽屉主导航（≡ 账号头 + 联系人/通话/我的收藏/设置/邀请朋友/帮助 + 夜间模式开关） | P1 | `navigation/DrawerController.java`, `MainActivity.java` | —（平台侧） | 会话列表抽屉导航，账号头展示在线状态，入口路由正确 | — | Accepted | DRAWER-101 |
 
 ---
@@ -2446,6 +2446,92 @@
 > **后续**：候选「APPStorage-PAIR-101」结掉（含其上游 ③④ 两条盲区）。剩余按根因挂
 > **I18N-DATE**、群头部两条解析路径字段集对齐、守卫跨行调用与间接传参收口、
 > TDLib `system_language_code` 接真设备语言。
+
+### FEAT-UI-003 / I18N-DATE-101 日期形态接回语言驱动：全仓只许一个文件拼日期（2026-10-10）
+
+> **题面**：前四个 i18n 包管的全是**文案**，日期形态是它们的盲区 —— `'Sep'`、`21.09.2026`、`2026年9月`
+> 在任何语言里都「没翻译错」，坏的是**不跟着界面语言切换**。上一轮设备实测已经把两处钉死：
+> 英文界面的会话列表出 `21.09.2026`，英文界面的共享内容自然月分组头出 `2026年9月`。
+> 本轮读码定案：本仓是**两套并存、都不是语言驱动**。
+> ① 会话列表 `formatChatTimestamp` 自带一张私有英文星期表（`['Sun','Mon',…]`）和 `dd.MM.yyyy`
+> —— 界面是中文时它照样出欧洲格式；
+> ② 聊天页日期头、我的资料生日行、共享内容分组头、设备会话页（`DevicesSubPage`）无论界面什么语言
+> 恒出中文形（`9月21日`、`yyyy年M月d日`、`2026年9月`、`（40 岁）`）—— 英文界面直接出中文日期。
+> **年份处理两个方向都错**：① 永远带四位年（Android 是当年不带年），② 的生日与分组头反而没有跨年概念。
+> 语义对标 Android `core/Lang.java` 的 `getDate` / `timeOrDateShort`：**当年不写年份、跨年才补**；
+> 会话列表三档 = 当天→时间、一周内→星期、更早→日期；聊天页日期头用**长月份名**；生日走**数量复数**。
+>
+> **链路：`core/common/src/main/ets/DateFormat.ets`（新）是全仓唯一的日期形态出处**。
+> 与 `Lang` 的分工写进了文件头，判据是「**句子里的串** vs **日期模板的槽位**」：`Lang` 按 key 取词条，
+> DateFormat 出月份名/星期名/`年月日`排布/全角与半角括号/one-other 复数档。后者是 locale 数据而不是文案
+> —— 塞进词典会让 EN/ZH 词条对等检查凭空多出一批「只为拼日期而存在」的 key。
+> 17 个导出函数全为纯函数：入参只有 `(lang, DateParts, now)`，不读时钟、不引 `@kit`
+> （`check_architecture.py` 禁 `core/*` 引 Kit，所以「今天」与时区必须由调用方传 `datePartsFrom` 折算），
+> 也因此每一条形态都能脱离设备单测。六处日期站点全部改调它：
+> `ChatCoordinator`（聊天页日期头与消息时间）、`ChatListPage`（列表三档，私有星期表删除）、
+> `ProfileCoordinator`（资料页共享内容分组头）、`SharedContentFormat`（分组头与条目串）、
+> `SelfProfileCoordinator`（生日行）、`DevicesSubPage`（会话日期）。
+> 换语言后能重算靠的是 I18N-HOTSWITCH-101 铺好的响应式语言位：页面把 `@StorageProp('activeLanguage')`
+> 当 `lang` 传进来，coordinator 走 `Lang.getInstance().getLanguage()`，
+> `SharedContentFormat` 的头部函数收一个**可选注入** `langCode`（测试里钉语言用，不依赖全局态）。
+>
+> **两处刻意决定，如实记**：
+> ① **跨年用四位年**，不抄 Android 的 `d MMM ''yy`（两位年）—— 那个 pattern 里带转义撇号，
+> 在中英两种语言都不是更好的读法，而「是否跨年」这条语义已经保住了；
+> ② 英文条目「日期 + 时间」用 `at`（`Sep 21 at 14:30`），中文直接空格（`9月21日 14:30`）——
+> 英文跨年时日期自身已含逗号（`Sep 21, 2025`），再用逗号相接会读成三项列表。
+>
+> **守卫 R8（`check_i18n_literals.py` 第八条规则）**：前七条全按「文案」判，所以 R8 按**形状**拦，
+> 射程比前七条宽（core/feature/platform/entry 的 `src/main/ets`，实测 344 个文件）：
+> ① 插值后紧跟 `年/月/日/岁`；② 点分数字日期 `${…}.${…}`；
+> ③ 字面量命中月份/星期名且**不是**词典 key（`'Sunday'` 作为 `SHARED_WEEKDAY_KEYS` 的 key 是对的，
+> `'Sep'` 不是任何 key）；④ 旧的 `// i18n-allow 日期形态` 就地豁免自本包起**作废**，标了就报。
+> 唯一放行 `DateFormat.ets`（形态表本体）与 `Lang.ets`（词典）。
+> 规则靠**负向对照**验证会拦，而不是靠读代码自信：临时造一个 `${y}年${m}月`、临时放一个 `'Sep'` 字面量、
+> 临时拼 `${d}.${m}.${y}`、临时给中文日期加一条 `// i18n-allow 日期形态` —— 四次探针分别被
+> `DATE-FORM` 拦下（第四种同时拦下作废豁免与形态出格两条），探针全部即时删除，工作区未残留。
+>
+> **测试**：core_common **80/80**（新套件 `DateFormat.test.ets` **13 例**：两档月份形、当年不带年/跨年带年、
+> 日期头两档都走长月份名、`at` 与空格两种拼接、时间补零、星期表 0=周日、列表三档、日差与同日判定、
+> 生日未过当年减一与越界钳制、one/other 复数、月份越界回落数字而不抛错，
+> 以及 `noCrossLanguageLeak`：zh 入参不许出英文月名、en 入参不许出 `年月日`）；
+> feature_chat **469/469**（`DateAndUnreadSeparator` 加 `useLanguage('zh'|'en')` 把两档都钉住）、
+> feature_chat_list **37/37**、feature_profile **110/110**（新例
+> `monthHeader_followsInjectedLanguageNotAHardcodedShape` 断 `'August 2026'` / `'2026年8月'`）、
+> feature_self **7/7**、feature_settings **350/350**（`DevicesSubPage` 用例改**按语言钉死**：
+> `'2020年5月15日 12:30'` / `'May 15, 2020 at 12:30'`，不再依赖机器 locale）。
+> 七守卫全 OK（`[i18n] OK`，词典 EN 546 / ZH 546 对等，存量就地豁免 3 处均为本族名/源语言标签类）。
+>
+> **设备双 locale A/B**（127.0.0.1:5555，Debug HAP；只读页面与改语言，未发消息、未动账号状态、
+> **未卸载未清数据**；所有账号标识不入文档）。改前基线不是「再装一次旧 HAP」，而是上一轮设备实拍的两处：
+> 英文会话列表 `21.09.2026`、英文共享内容分组头 `2026年9月`。本轮在同一台设备上中英各跑一遍，四个面全对上：
+> ① 会话列表三档：中文侧 `9月21日`、`10月3日`、`9月26日` + 当天 `12:21`/`11:35`/`02:54` + 一周内 `周四`、`周日`，
+> **屏上再没有 `dd.MM`**；英文侧同位出 `Sep 21` / `Oct 3` 与 `Thu`、`Sun`。
+> ② 聊天页日期头：中文 `10月8日`（bounds `[514,384][742,461]`）↔ 英文 `October 8`（`[495,384][761,461]`）——
+> **同一站点、两种语言、形态各自正确**，这一条是「两套并存」被结掉的直接证据。
+> ③ 共享内容分组头：中文侧相对档 `昨天`、`星期二`、`上周`（走词典 key）与自然月 `2026年8月`（走形态表）
+> ↔ 英文侧同站点 `September 2026`。
+> ④ 生日行：中文 `1986年3月24日（40 岁）`（**全角括号**）↔ 英文 `Mar 24, 1986 (40 years)`（半角 + 复数）。
+> 即时切换：在 LANGUAGE 卡点「简体中文」后**未重启**即整屏翻转，证明 HOTSWITCH-101 的语言 tick 对日期同样有效。
+> 持久化：`aa force-stop` → 冷启动 `EntryAbility: language restored: locale=zh-Hans preference=zh effective=zh`，
+> 会话列表仍是中文三档。
+> **设备交付现状**：取证后按本轮开工前的状态**还原成英文**（dump 确认 `Language, English`），没把界面留在中文。
+>
+> **一处如实记的副作用**：为取聊天页与共享内容的证据打开了若干会话，**未读标记被清掉**
+> （会话文件夹计数 All 4→3、Groups 2→1，仍剩一个频道未读）。这是打开会话的固有行为、不是缺陷，
+> 但下一轮若要拿未读数当基线，得先重新取数。
+>
+> **盲区，如实记**：
+> ① **12/24 小时制没接** —— `formatTimeOfDay` 恒走 24 小时。判定要 `@ohos.i18n` 的 `is24HourFormat`，
+> 那是 Kit 调用，按分层红线只能落装配层 → 拆 **I18N-DATE-102**（entry 取数 → 灌 AppStorage → DateFormat 收档位）；
+> ② 「一周内」用的是**日历日差**，Android 走的是 7×24h 毫秒差 —— 跨夏令时地区可能差一天。
+> 本仓两种语言的目标市场都不涉及，暂不改，但口径差异记在这；
+> ③ TDLib `system_language_code` 仍写死 `'en'`（连续第三轮未动；它影响的是本地化贴纸包**取数**，不是显示）；
+> ④ R8 的中文形状靠「插值紧邻 `年月日岁`」判定，写成 `'年' + y` 的**字符串相加**形式扫不到
+> （与「守卫跨行调用与间接传参收口」同一包收）。
+>
+> **后续**：候选 **I18N-DATE-101** 结掉。剩余按根因挂 **I18N-DATE-102**（12/24 小时制）、
+> 群头部两条解析路径字段集对齐、守卫跨行调用与间接传参收口、TDLib `system_language_code` 接真设备语言。
 
 
 | 功能 ID | 功能名 |

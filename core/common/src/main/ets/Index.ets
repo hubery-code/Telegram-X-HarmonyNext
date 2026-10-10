@@ -30,3 +30,23 @@ export {
   formatString
 } from './Lang';
 export { A11y, A11Y_SLOTS, a11y } from './A11y';
+export {
+  DateParts,
+  datePartsFrom,
+  startOfDayMs,
+  daysBetween,
+  isSameDayParts,
+  formatTimeOfDay,
+  formatWeekdayShort,
+  formatMonthDay,
+  formatMonthDayYear,
+  formatMonthDayLong,
+  formatDateCompact,
+  formatDateHeader,
+  formatDateTimeCompact,
+  formatMonthYear,
+  formatBirthday,
+  formatListTimestamp,
+  formatAgeLabel,
+  ageOf
+} from './DateFormat';
