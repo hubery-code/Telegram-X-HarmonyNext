@@ -22,7 +22,8 @@
  *   requestUser + subscribeUser（requestedSenderIds 防重），User 晚到后
  *   scheduleSyncFromProjection 重映射上屏；
  * - MSG-109：getChat 回包缓存 supergroupId/basicGroupId 并回灌 OnChatKindChanged；
- *   buildHeaderSubtitle() 计算头部副标题（私聊状态 / 群成员数+在线人数）经
+ *   publishHeaderSubtitle(allowFetch) 是头部副标题的唯一计算点（私聊状态 / 群成员数+在线人数），
+ *   首次取数与语言位重投影只差 allowFetch 这一个参数，文案字段集同源；经
  *   OnHeaderSubtitleChanged 回灌；私聊用户经 requestUser + subscribeUser 晚到重算，
  *   群/频道经 getSupergroupFullInfo + updateChatOnlineMemberCount 订阅刷新；
  *   openChatProfile 转 onOpenChatProfile 回调，chatMenuAction 只记日志。
@@ -194,6 +195,7 @@ import {
   FileRegistry,
   formatFullName,
   isChatMuted,
+  groupHeaderSubtitle,
   canSendAnyMedia,
   ChatSendRights,
   sendRightsFromPermissions,
@@ -867,6 +869,10 @@ export class ChatCoordinator {
     this.projection.setOnStateChanged(() => {
       this.scheduleSyncFromProjection();
     });
+    // MSG-109 / CHATHEADER-101：在线人数订阅必须**早于** projection.start() 发出的 openChat ——
+    // TDLib 重新打开会话时只回灌一次缓存值（`DialogParticipantManager.cpp:1081-1092`），
+    // 晚注册就把首屏那一次的在线数丢了，头部于是只剩成员数一半字段。
+    this.subscribeOnlineMemberCount();
     this.projection.start();
     const parsed = this.extractDraft(this.projection.getInitialDraft());
     if (parsed !== null) {
@@ -885,7 +891,7 @@ export class ChatCoordinator {
     this.subscribeInstalledStickerSets();
     // MSG-109：先按已知信息补一次副标题（chatKind 未回前为 no-op），
     // getChat 回包 / 用户状态订阅 / 在线人数订阅到达后各自重算。
-    this.buildHeaderSubtitle();
+    this.publishHeaderSubtitle(true);
     // MSG-108：加载会话置顶消息与监听动态变更
     this.projection.setOnPinnedMessageChanged((_messageId: number, _isPinned: boolean) => {
       this.fetchPinnedMessage();
@@ -916,35 +922,10 @@ export class ChatCoordinator {
       self.lastProjectedLanguage = lang;
       self.lastProjectedClock = clock;
       self.scheduleSyncFromProjection();
-      self.refreshHeaderSubtitle();
+      self.publishHeaderSubtitle(false);
       // 置顶条用留存的原文重投；不允许在这条路上补发 getUser（换语言必须是纯本地）。
       self.publishPinnedMessage(false);
     });
-  }
-
-  /**
-   * 换语言后重算头部副标题（纯本地）：
-   * - 私聊：777000 走词典；User 已在缓存里才重算状态文案，缓存未命中时保持原样
-   *   （原本就没有可重算的串，不去补发请求）；
-   * - 群/频道：按已缓存的成员数与在线数重拼；
-   * - unknown：不动。
-   */
-  private refreshHeaderSubtitle(): void {
-    if (this.chatKind === 'private') {
-      const chatId: number = this.currentState.chatId;
-      if (chatId === 777000) {
-        this.dispatch(new OnHeaderSubtitleChanged(Lang.getInstance().getString('Service Notifications')));
-        return;
-      }
-      const user: User | null = this.userRegistry.getUser(chatId);
-      if (user !== null && user.status !== null) {
-        this.dispatch(new OnHeaderSubtitleChanged(this.formatUserStatus(user.status)));
-      }
-      return;
-    }
-    if (this.chatKind === 'group' || this.chatKind === 'channel') {
-      this.updateGroupHeaderSubtitle();
-    }
   }
 
   /**
@@ -3032,7 +3013,7 @@ export class ChatCoordinator {
             this.applyChatSendPermissions(chat.permissions);
             // MSG-109：回灌 reducer 驱动头部通话按钮/菜单，并启动副标题计算。
             this.dispatch(new OnChatKindChanged(this.chatKind));
-            this.buildHeaderSubtitle();
+            this.publishHeaderSubtitle(true);
             this.scheduleSyncFromProjection();
           }
         }
@@ -3191,14 +3172,19 @@ export class ChatCoordinator {
   // ---- MSG-109 头部信息区：副标题计算 ----
 
   /**
-   * 计算头部副标题并回灌（start()、chatKind 解析后及相关订阅回调里调用）：
-   * - private：777000 → '服务通知'；否则取 User.status 格式化（缓存未命中先空串，
-   *   requestUser + subscribeUser，User 到达后重算）；
-   * - group/channel：已知 supergroupId 时拉 getSupergroupFullInfo 出成员数，
-   *   并订阅 updateChatOnlineMemberCount 追加在线人数；基本群暂无副标题；
+   * 头部副标题的**唯一**计算与回灌点（CHATHEADER-101）：首次取数与语言位重投影都走这里。
+   *
+   * 过去 `buildHeaderSubtitle()`（取数侧）和 `refreshHeaderSubtitle()`（重投影侧）各写一遍
+   * 「777000 → 服务通知 / User.status → 状态文案 / 群 → 人数」，两份复制粘贴的字段集
+   * 就是设备上看到 `5779 members` 与 `5779 位成员, 93 在线` 并存的原因。
+   * 现在两条路只差 `allowFetch` 一个参数，而它**只管要不要补发请求**，不参与文案：
+   * - private：777000 → 服务通知；否则取 User.status 格式化（缓存未命中时，取数侧先空串并
+   *   `requestUser` + `subscribeUser` 等晚到重算，重投影侧保持原样，绝不为了切语言打 RPC）；
+   * - group/channel：交给 `groupHeaderSubtitle()`（成员数 + 在线数的唯一组合规则，单复数与
+   *   资料页、邀请弹窗同源）；取数侧负责把成员数问出来；
    * - unknown：不动（保持空串）。
    */
-  private buildHeaderSubtitle(): void {
+  private publishHeaderSubtitle(allowFetch: boolean): void {
     if (this.destroyed) {
       return;
     }
@@ -3213,19 +3199,23 @@ export class ChatCoordinator {
         this.dispatch(new OnHeaderSubtitleChanged(this.formatUserStatus(user.status)));
         return;
       }
-      // 缓存未命中：先空串，发起请求并订阅该用户，晚到后经回调重算。
-      this.requestHeaderUser(chatId);
-      this.dispatch(new OnHeaderSubtitleChanged(''));
+      if (allowFetch) {
+        // 缓存未命中：先空串，发起请求并订阅该用户，晚到后经回调重算。
+        this.requestHeaderUser(chatId);
+        this.dispatch(new OnHeaderSubtitleChanged(''));
+      }
       return;
     }
     if (this.chatKind === 'group' || this.chatKind === 'channel') {
-      this.subscribeOnlineMemberCount();
-      if (this.supergroupId > 0) {
-        this.requestSupergroupMemberCount();
-      } else if (this.basicGroupId > 0) {
-        this.requestBasicGroupMemberCount();
+      if (allowFetch) {
+        if (this.supergroupId > 0) {
+          this.requestSupergroupMemberCount();
+        } else if (this.basicGroupId > 0) {
+          this.requestBasicGroupMemberCount();
+        }
       }
-      this.updateGroupHeaderSubtitle();
+      this.dispatch(new OnHeaderSubtitleChanged(
+        groupHeaderSubtitle(this.chatKind === 'channel', this.memberCount, this.onlineMemberCount)));
     }
   }
 
@@ -3254,7 +3244,7 @@ export class ChatCoordinator {
     if (this.headerUserSubscription === null) {
       this.headerUserSubscription = this.userRegistry.subscribeUser(userId, () => {
         if (!this.destroyed) {
-          this.buildHeaderSubtitle();
+          this.publishHeaderSubtitle(true);
         }
       });
     }
@@ -3296,7 +3286,7 @@ export class ChatCoordinator {
           const info: SupergroupFullInfo | null = decodeSupergroupFullInfo(res.value as TdJsonRaw);
           if (info !== null) {
             this.memberCount = info.member_count;
-            this.updateGroupHeaderSubtitle();
+            this.publishHeaderSubtitle(false);
           }
         }
       }).catch(() => {
@@ -3332,7 +3322,7 @@ export class ChatCoordinator {
           const group: BasicGroup | null = decodeBasicGroup(res.value as TdJsonRaw);
           if (group !== null) {
             this.memberCount = group.member_count;
-            this.updateGroupHeaderSubtitle();
+            this.publishHeaderSubtitle(false);
           }
         }
       }).catch(() => {
@@ -3340,26 +3330,14 @@ export class ChatCoordinator {
     }
   }
 
-  /** MSG-109：按已缓存的成员数/在线人数回灌群副标题（`{0} members` / `{0}, {1} online`）。 */
-  private updateGroupHeaderSubtitle(): void {
-    if (this.chatKind !== 'group' && this.chatKind !== 'channel') {
-      return;
-    }
-    let text: string = '';
-    if (this.memberCount > 0) {
-      text = Lang.getInstance().getString(
-        this.chatKind === 'channel' ? '{0} subscribers' : '{0} members', this.memberCount);
-    }
-    // 在线人数仅群聊展示（频道不显示在线数）。
-    if (this.chatKind === 'group' && this.onlineMemberCount > 0) {
-      text = text.length > 0
-        ? Lang.getInstance().getString('{0}, {1} online', text, this.onlineMemberCount)
-        : Lang.getInstance().getString('{0} online', this.onlineMemberCount);
-    }
-    this.dispatch(new OnHeaderSubtitleChanged(text));
-  }
-
-  /** MSG-109：订阅 updateChatOnlineMemberCount（群在线人数推送），destroy 时退订。 */
+  /**
+   * MSG-109：订阅 updateChatOnlineMemberCount（群在线人数推送），destroy 时退订。
+   *
+   * TDLib 只在会话**打开期间**推这个更新，且重新打开时只回灌 30 分钟内的缓存值
+   * （`DialogParticipantManager.cpp:1081-1092` 的 `on_dialog_opened` 与 `:1137` 的
+   * `need_update = is_open && …`），所以订阅必须早于 `openChat` —— 晚注册等于把
+   * 首屏那一次在线数丢掉，头部只剩成员数。
+   */
   private subscribeOnlineMemberCount(): void {
     if (this.destroyed || this.onlineCountSubscription !== null) {
       return;
@@ -3379,8 +3357,13 @@ export class ChatCoordinator {
         if (online.chat_id !== this.currentState.chatId) {
           return;
         }
+        if (online.online_member_count !== this.onlineMemberCount) {
+          // 在线数是头部字段集的一部分：不留这一行，「为什么这次没有在线数」就无从可查。
+          this.logger.info(TAG, 'online_member_count',
+            `count=${online.online_member_count},previous=${this.onlineMemberCount}`);
+        }
         this.onlineMemberCount = online.online_member_count;
-        this.updateGroupHeaderSubtitle();
+        this.publishHeaderSubtitle(false);
       }
     );
   }

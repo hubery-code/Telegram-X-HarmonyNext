@@ -6,7 +6,8 @@
  * 2. UpdateBasicGroup / UpdateBasicGroupFullInfo 事件响应与监听器通知；
  * 3. UpdateSupergroup / UpdateSupergroupFullInfo 事件响应与监听器通知；
  * 4. 监听器退订幂等性与 clear 清空行为；
- * 5. 展示辅助函数：formatMemberCount, getGroupAvatarLetters, formatMemberRole；
+ * 5. 展示辅助函数：formatMemberCount, getGroupAvatarLetters, formatMemberRole,
+ *    groupHeaderSubtitle（CHATHEADER-101：群/频道头部字段集的唯一组合点）；
  * 6. request* TDLib 异步请求与回包反序列化集成。
  */
 
@@ -44,12 +45,13 @@ import {
   TdWireObject,
   TdWireValue
 } from '@tgx/td-gateway';
-import { Result, AppError } from '@tgx/core-common';
+import { Result, AppError, Lang } from '@tgx/core-common';
 import {
   GroupRegistry,
   formatMemberCount,
   getGroupAvatarLetters,
-  formatMemberRole
+  formatMemberRole,
+  groupHeaderSubtitle
 } from '../../main/ets/group/GroupRegistry';
 
 interface SentBridgeRequest {
@@ -428,6 +430,57 @@ export default function groupRegistryTest(): void {
       expect(formatMemberCount(5, false)).assertEqual('5 members');
       expect(formatMemberCount(1, true)).assertEqual('1 subscriber');
       expect(formatMemberCount(100, true)).assertEqual('100 subscribers');
+    });
+
+    it('groupHeaderSubtitle_en_assemblesMemberAndOnlineCounts', 0, (): void => {
+      Lang.getInstance().reset();
+      Lang.getInstance().setLanguage('en');
+
+      // 群聊：成员数 + 在线数，两个字段都在。
+      expect(groupHeaderSubtitle(false, 5779, 93)).assertEqual('5779 members, 93 online');
+      // 频道：照 Android，永远不出在线数（即便 TDLib 推了也不写）。
+      expect(groupHeaderSubtitle(true, 5779, 93)).assertEqual('5779 subscribers');
+      // 在线数是 push-only 的，0 = 还不知道，宁缺不假。
+      expect(groupHeaderSubtitle(false, 5779, 0)).assertEqual('5779 members');
+      // 成员数为 0（刚建/隐私会话）时不留「0 members」这句假话，只剩在线数。
+      expect(groupHeaderSubtitle(false, 0, 5)).assertEqual('5 online');
+      expect(groupHeaderSubtitle(true, 0, 5)).assertEqual('');
+      // 两者都不知道 → 空串，页面按空串不渲染这一行。
+      expect(groupHeaderSubtitle(false, 0, 0)).assertEqual('');
+      // 单复数与资料页、邀请弹窗同一条规则。
+      expect(groupHeaderSubtitle(false, 1, 3)).assertEqual('1 member, 3 online');
+      expect(groupHeaderSubtitle(true, 1, 3)).assertEqual('1 subscriber');
+    });
+
+    it('groupHeaderSubtitle_zh_keepsTheSameFieldSet', 0, (): void => {
+      Lang.getInstance().reset();
+      Lang.getInstance().setLanguage('zh');
+
+      expect(groupHeaderSubtitle(false, 5779, 93)).assertEqual('5779 位成员, 93 在线');
+      expect(groupHeaderSubtitle(true, 5779, 93)).assertEqual('5779 位订阅者');
+      expect(groupHeaderSubtitle(false, 5779, 0)).assertEqual('5779 位成员');
+      expect(groupHeaderSubtitle(false, 0, 5)).assertEqual('5 在线');
+      expect(groupHeaderSubtitle(false, 1, 3)).assertEqual('1 位成员, 3 在线');
+
+      // 换语言只换措辞，不许换字段集：这是上一轮「同一会话两次算出两句不同的话」的根因面。
+      const en: Lang = Lang.getInstance();
+      en.setLanguage('en');
+      const groupOnce: string = groupHeaderSubtitle(false, 5779, 93);
+      const groupTwice: string = groupHeaderSubtitle(false, 5779, 93);
+      expect(groupOnce).assertEqual(groupTwice);
+      expect(groupOnce.indexOf(',') >= 0).assertTrue();
+      expect(groupOnce.indexOf('online') >= 0).assertTrue();
+
+      Lang.getInstance().reset();
+    });
+
+    it('groupHeaderSubtitle_neverWritesZeroMembers', 0, (): void => {
+      Lang.getInstance().reset();
+      Lang.getInstance().setLanguage('en');
+      expect(groupHeaderSubtitle(false, 0, 0).indexOf('0 member') >= 0).assertFalse();
+      Lang.getInstance().setLanguage('zh');
+      expect(groupHeaderSubtitle(false, 0, 0).indexOf('0 位成员') >= 0).assertFalse();
+      Lang.getInstance().reset();
     });
 
     it('should correctly extract avatar letters from titles', 0, (): void => {

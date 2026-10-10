@@ -2277,7 +2277,8 @@
 >
 > **盲区，如实记**：
 > ① **群头部两侧字段集不一致**：英文侧 `5779 members` 不带在线数，中文侧重投影出 `… 位成员, 93 在线`。
-> 两条解析路径（首次取数 vs 语言位重投影）用的输入不同，本包只保证「会跟着语言变」，不保证「两条路径算出同一句」；
+> 当时归因为「两条解析路径（首次取数 vs 语言位重投影）用的输入不同」—— **这条归因是错的，见 CHATHEADER-101 的更正**：
+> 群/频道分支两条路径本来就走同一个组合函数。本包只保证「会跟着语言变」，不保证「两次算出同一句」；
 > ② **登录线七页仍无设备证据**（账号已登录，走不进 auth 流程，同 104 ③）；
 > ③ **语言偏好不跨进程持久** —— `AppStorage.setOrCreate('appLanguage', …)` 全仓只有写没有读，
 > 重启即回 Follow System → **LANG-PERSIST-101**；
@@ -2627,6 +2628,85 @@
 > **后续**：候选 **I18N-DATE-102** 结掉。剩余按根因挂 群头部两条解析路径字段集对齐、
 > 守卫跨行调用与间接传参收口、`CommentsCoordinator` / `SearchCoordinator` 的语言与时制订阅收口、
 > TDLib `system_language_code` 接真设备语言。
+
+### CHAT-HEADER / CHATHEADER-101 群头部副标题收成唯一计算点：字段集不再分两次算（2026-10-10）
+
+> **题面**（上一轮候选 ①）：「换语言后群头部两条解析路径的字段集对齐（首取 vs 重投影收成同一个纯函数）」，
+> 出处是 HOTSWITCH-101 的设备取证 —— 英文侧 `5779 members`、中文侧 `5779 位成员, 93 在线`。
+>
+> **一、先把上一轮写进文档的归因更正**：那份盲区说「两条解析路径用的输入不同」。读码后是**误诊**：
+> 群/频道分支的首次取数与语言位重投影**本来就走同一个组合函数**。真正造成两侧读数不同的两条根因是：
+> ① **在线人数是 push-only 且初值为 0，而订阅注册得太晚**。TDLib 没有查在线数的同步接口
+> （唯一来源是 `updateChatOnlineMemberCount`），而 `ChatCoordinator.start()` 把
+> `subscribeOnlineMemberCount()` 排在 `projection.start()`（它发 `openChat`）**之后**。
+> 按 `DialogParticipantManager.cpp` 的实现，会话重新打开时只回灌**一次缓存值**，且缓存窗是
+> `ONLINE_MEMBER_COUNT_CACHE_EXPIRE_TIME = 30*60`（`:1081-1092`），`need_update` 还要求
+> `is_open`（`:1137`）；开着每 `5*60` 刷一次，关闭会话会把 `is_update_sent` 复位。
+> 于是首屏那一次推送被错过 —— 头部只剩成员数一半字段，看起来「像英文侧少了一段」。
+> ② **单复数规则只活在 `formatMemberCount` 里**：群头部走了它，邀请弹窗自己拼 `{0} members`，
+> 同一份人数在两个面上可以一个带复数一个不带。
+>
+> **二、链路怎么收**（三处，全部是「把重复的计算点合成一个」，没有新增契约字段、没改 UiState 形状）：
+> 1. `groupHeaderSubtitle(isChannel, memberCount, onlineMemberCount)` 落 `core/domain` 的
+> `GroupRegistry.ets`，成为**全仓唯一的头部组合点**：成员数为 0 不写（TDLib 对刚建/隐私会话给 0，
+> 「0 位成员」是句假话）；在线人数**只在群聊**展示；两者皆无 → 空串（页面按空串不渲染这一行）；
+> 单复数一律经 `formatMemberCount`，与资料页、邀请弹窗同一条规则。
+> 2. `publishHeaderSubtitle(allowFetch: boolean)` 取代原先的 `buildHeaderSubtitle` /
+> `refreshHeaderSubtitle` / `updateGroupHeaderSubtitle` 三个函数，成为 `ChatCoordinator` 里头部副标题
+> 的**唯一计算点**。布尔量**只允许管副作用**（`requestUser` / `getSupergroupFullInfo` / `getBasicGroup`），
+> 不允许管措辞 —— 于是「两个时机算出两句不同的话」在结构上不可能再发生。
+> 私聊分支原本在两处各写一遍（含 777000 服务通知、`User` 缓存命中与晚到请求），也一并收成一处。
+> 3. `subscribeOnlineMemberCount()` 提前到 `projection.start()` **之前**，并加一条**只在值变化时**打点
+> 的日志（`online_member_count count=26,previous=0`，口径同 `chat_mute_state`）——
+> 不留这一行，「为什么这次没有在线数」在设备上无从可查。
+> 4. `inviteCountLabelKey` 补单数档（`1 member` / `1 subscriber`）。单数 key 不含 `{0}`，
+> 而消费侧一律 `t(key, count)`：`Lang.formatByKey` 走的 `formatString` 会**忽略多余实参**，
+> 所以模板与调用点都不用改，弹窗不会出「1 member 1」。
+>
+> **三、对标如实记**：Android `Telegram-X` 侧 `updateChatOnlineMemberCount` 只有
+> `Tdlib.java` / `TdlibListeners.java` 的管线，**没有任何 UI 消费者** —— 所以「成员数与在线数怎么拼」
+> 在本仓**没有 parity 目标**。本仓规则（频道永不显示在线数）是本地产品决定，本节不把它写成对齐结论。
+>
+> **四、测试**：core_domain **195/195**（新增 3 例：`groupHeaderSubtitle_en_assemblesMemberAndOnlineCounts`
+> 钉「群两个字段都在 / 频道不出在线数 / 在线数 0 时只留成员数 / 成员数 0 时只留在线数 / 0+0 出空串 /
+> 单数走 `1 member`」；`groupHeaderSubtitle_zh_keepsTheSameFieldSet` 钉中文侧同字段集，并断言
+> **同输入两次调用逐字相同**；`groupHeaderSubtitle_neverWritesZeroMembers` 钉「0 位成员」这类假话
+> 在两种语言里都不出现）、feature_chat **469/469**（协调器改动无回归）、entry **155/155**
+> （新例把单数 key 与 `invitePromptCard` 的 footnote 一起钉住，含 `count=0` 出空 footnote）；
+> 七守卫全 OK（architecture / codegen / design_tokens / a11y_labels / i18n_literals /
+> appstorage_pairs / secret_scan）。未新增任何 i18n key —— 用到的六个 key 中英早已对等。
+>
+> **五、设备 A/B**（127.0.0.1:5555，`entry-default-unsigned.hap` 覆盖安装 `bm install -p`，
+> **未卸载、未清数据**；只读页面与改界面语言，未发消息、未动账号状态；**账号与会话标识不入文档**）：
+> ① **群（英文）首屏**头部副标题 `[182,251][755,313]` 出 `638 members, 26 online`，
+> 同帧日志 `INFO ChatCoordinator online_member_count count=26,previous=0` ——
+> 在线数**在首屏就在**，这正是「订阅提前到 openChat 之前」的直接对照面（改前这一次推送会落在注册之前）；
+> ② **同一会话换简体中文**（设置 LANGUAGE 卡，不重启）：同站点出 `637 位成员, 26 在线` ——
+> **字段集与英文侧逐字段对应，只差措辞**（638→637 是真实人数变动，不是字段集差异）；
+> ③ **频道**同站点出 `1040 位订阅者`，**没有**在线数那一段 —— 「频道不显示在线数」在设备上成立；
+> ④ 取证后界面语言**还原成英文**（dump 确认设置页回到英文行）。
+> 顺带可读的旁证：列表行的时刻在中文界面出 `上午11:35`（I18N-DATE-102 的时制跟随），
+> 语言卡自身出「语言, 简体中文」（HOTSWITCH-101 的 tick）。
+>
+> **六、盲区，如实记**：
+> ① 「**聊天页开着时**换语言重算」这一路径本轮**只有单测证据** —— 换语言必须离开聊天页进设置，
+> 离开时 coordinator 已销毁，设备上进不到「同一实例的语言 tick」；单测里用「同输入两次调用逐字相同」
+> 把结构不变量钉住，替代那条取不到的设备证据；
+> ② 私聊头部的状态文案仍依赖 `User` 晚到后重算（时序没动，只是收成一处）；
+> ③ TDLib 在会话**非 open** 状态会推 `online_member_count = 0`，所以从聊天页返回再进来，
+> 有一帧「只剩成员数」的中间态 —— 本轮没做头部 keep-alive，如实记为遗留；
+> ④ `CommentsCoordinator` / `SearchCoordinator` 的语言与时制订阅收口未动（原样挂在候选 ③）。
+>
+> **当前待认领候选**（按可独立落地排序）：① **守卫跨行调用与间接传参收口**（整文件括号栈 +
+> 局部变量溯源，顺带覆盖 R8⑤ 的间接写法盲区）；② **`CommentsCoordinator` / `SearchCoordinator`
+> 的语言与时制订阅收口**（上一轮盲区 ① + 本轮盲区 ④）；③ native TL schema/layer 被服务端嫌旧
+> （动画贴纸包与 gifts 的 406 只剩这一条路）；④ 无会话上下文时的贴纸包预览宿主、未知包省掉重复的
+> `name-forced` 第二次往返；⑤ A11Y-104（播报内容无可观察口径）与 **RTL-101**；
+> ⑥ **APPLOCK-103 生物识别**（需真机 + HUKS auth-bound key，模拟器不可验）；
+> ⑦ TDLib `system_language_code` 接真设备语言；⑧ 头部在「返回再进来」时的在线数中间帧（本轮盲区 ③）；
+> ⑨ 薄遗留：PRIVACY 收尾、抽屉→联系人路由不响应返回键、GIF 实际发送链路与类目真实数据、
+> MEDIA-VIEWER / AUTODL / CONTACT / SHARED-AUDIO / AUDIO-BG / STICKER-RECENT 各处、
+> DEEPLINK 的 Share Extension、代理扫码导入、平板/折叠双栏、板卡动效静帧、lottie 的 Release 与全量 CI 收口。
 
 
 | 功能 ID | 功能名 |

@@ -63,6 +63,17 @@ export default function appLinkPromptTest() {
       expect(inviteCountLabelKey(inviteData(12, true, false))).assertEqual('{0} subscribers');
       // TDLib 对新建/隐私会话给 0；「0 位成员」是句假话，宁可空着。
       expect(inviteCountLabelKey(inviteData(0, true, false))).assertEqual('');
+      // CHATHEADER-101：单复数规则和群头部、资料页同一条（此前只有 `formatMemberCount` 有）。
+      expect(inviteCountLabelKey(inviteData(1, false, false))).assertEqual('1 member');
+      expect(inviteCountLabelKey(inviteData(1, true, false))).assertEqual('1 subscriber');
+    });
+
+    it('inviteCountLabel_rendersSingularWithoutStraySlot', 0, () => {
+      // 单数 key 不带 `{0}`，而构卡函数一律把人数当实参传进去 —— 多余的实参必须被忽略，
+      // 否则 1 人的会话会显示「1 member 1」。
+      expect(invitePromptCard(inviteData(1, false, false), fakeTranslate).footnote).assertEqual('1 member');
+      expect(invitePromptCard(inviteData(1, true, false), fakeTranslate).footnote).assertEqual('1 subscriber');
+      expect(invitePromptCard(inviteData(0, false, false), fakeTranslate).footnote).assertEqual('');
     });
 
     it('invitePromptCard_hasNoSecondaryAction', 0, () => {

@@ -11,7 +11,7 @@
  *   - getBasicGroup, requestBasicGroup, getBasicGroupFullInfo, requestBasicGroupFullInfo
  *   - getSupergroup, requestSupergroup, getSupergroupFullInfo, requestSupergroupFullInfo
  *   - getSupergroupMembers, requestSupergroupMembers
- * - 展示辅助函数：formatMemberCount, getGroupAvatarLetters, formatMemberRole
+ * - 展示辅助函数：formatMemberCount, groupHeaderSubtitle, getGroupAvatarLetters, formatMemberRole
  * - 纯 ArkTS / 100% Kit-free。
  */
 
@@ -110,6 +110,35 @@ export function formatMemberCount(count: number, isChannel: boolean): string {
     return count === 1 ? lang.getString('1 subscriber') : lang.getString('{0} subscribers', count);
   }
   return count === 1 ? lang.getString('1 member') : lang.getString('{0} members', count);
+}
+
+/**
+ * 群/频道头部的副标题（成员数 + 在线数），**全仓唯一的组合点**。
+ *
+ * 会话头部有两个调用时机（首次取数、语言/时制位重投影），过去各拼一遍字段集，
+ * 于是同一份输入可以算出两句不同的话（`5779 members` vs `5779 位成员, 93 在线`）。
+ * 现在两条路都调这一个函数：输入相同 → 输出逐字相同，字段集不可能再分叉。
+ *
+ * 字段规则：
+ * - 成员数为 0 不写（TDLib 对刚建/隐私会话给 0，「0 位成员」是句假话）；单复数走
+ *   `formatMemberCount`，与资料页、邀请弹窗共用同一条规则；
+ * - 在线人数**只在群聊**展示（频道不显示在线数，照 Android）；
+ * - 两者都没有 → 空串（页面按空串不渲染这一行）。
+ */
+export function groupHeaderSubtitle(
+  isChannel: boolean,
+  memberCount: number,
+  onlineMemberCount: number
+): string {
+  const lang: Lang = Lang.getInstance();
+  let text: string = memberCount > 0 ? formatMemberCount(memberCount, isChannel) : '';
+  // 在线人数只由 updateChatOnlineMemberCount 推送，0 = 还不知道，宁可不写。
+  if (!isChannel && onlineMemberCount > 0) {
+    text = text.length > 0
+      ? lang.getString('{0}, {1} online', text, onlineMemberCount)
+      : lang.getString('{0} online', onlineMemberCount);
+  }
+  return text;
 }
 
 /**

@@ -61,10 +61,15 @@ export function inviteActionLabelKey(data: InvitePromptData): string {
 /**
  * 人数副标题键；`memberCount <= 0` 时回空串，让弹窗只留简介那一行。
  * TDLib 对刚建的/隐私会话会给 0，写「0 位成员」是句假话。
+ * 单数走 `1 member` / `1 subscriber` —— 与资料页、会话头部同一条规则
+ * （`formatMemberCount`），不然同一个「1」在三处三种说法。
  */
 export function inviteCountLabelKey(data: InvitePromptData): string {
   if (data.memberCount <= 0) {
     return '';
+  }
+  if (data.memberCount === 1) {
+    return data.isChannel ? '1 subscriber' : '1 member';
   }
   return data.isChannel ? '{0} subscribers' : '{0} members';
 }
