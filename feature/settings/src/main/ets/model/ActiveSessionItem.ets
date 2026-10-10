@@ -27,3 +27,18 @@ export interface ActiveSessionItem {
   readonly location: string;
   readonly lastActiveDate: number;
 }
+
+/**
+ * 设备行副标题的词典键：1 条走单数键（`1 active sessions` 是坏英文），
+ * 0 条只留标题不写数字（TDLib 取不到会话时「0 个活跃会话」是句假话）。
+ * 0 档的 key 不含 `{0}`，调用点仍统一传 count —— `Lang.formatByKey` 忽略多余实参。
+ */
+export function devicesRowSubtitleKey(count: number): string {
+  if (count <= 0) {
+    return 'Active Sessions';
+  }
+  if (count === 1) {
+    return '{0} active session';
+  }
+  return '{0} active sessions';
+}

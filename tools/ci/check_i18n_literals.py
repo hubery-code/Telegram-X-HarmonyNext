@@ -7,6 +7,11 @@
 `Lang` 缺译文时**原样回吐 key**，于是 Toast 上屏的是 `Sticker set: %s` 本身。也就是说
 「key 拼错」和「漏翻译」在屏幕上长得一模一样，没人会当场发现。
 
+八条规则共用同一套**射程口径**（I18N-GUARDSPAN-101）：判定跑在整文件括号栈拼出的**逻辑行**上
+（跨行调用进同一条），字面量先过一遍**单一定值变量溯源**（间接传参按实参判），而行号归因与
+就地豁免仍按**物理行**走。旧口径是逐物理行建模，`Text(`↵`'Reply'`、`const hint = 'Try Again';`
++ `Text(hint)` 两类写法全都看不见。
+
 本脚本守八条（R4' 与 R5a/R5b 是各自规则内的子条，不另计）：
 
   R1 视图层字面量禁令：`entry` 与各 `feature/*` 的 **pages/ 与 components/** 下，任何 .ets 文件
@@ -18,8 +23,10 @@
      （'简体中文' 在英文界面也该是 '简体中文'），以及 R4 的**源语言标签**
      （English 界面里的 'English' 本来就该长这样）。
   R2 key 必须双词典命中：`getString('X')` / `.t('X')` / `t('X')` / `formatByKey('X', ...)` 的**字面量**
-     key 必须同时存在于 EN 与 ZH。这就是上面那次事故的直接防线。动态 key（变量、三元）不在射程内，
-     所以 R3 兜住整本表。射程 = 视图层 + 数据层（I18N-LITERAL-103 起 coordinator/model 里的
+     key 必须同时存在于 EN 与 ZH。这就是上面那次事故的直接防线。三元条件不在射程内
+     （`t(mode === 'en' ? 'English' : 'System')` 里的 `'en'` 是条件不是 key），但**单一定值变量**
+     会先溯源展开再判（`const k = 'X'; t(k)`，I18N-GUARDSPAN-101），所以这一路也查得到。
+     射程 = 视图层 + 数据层（I18N-LITERAL-103 起 coordinator/model 里的
      `getString('X')` 同样进检，否则这一路的新调用一个都不被查）。
   R3 两本词典 key 集合全等：EN 有 ZH 没有 = 中文界面回吐英文原文；ZH 有 EN 没有 = 英文界面回吐中文。
      两个方向都是「界面上出现另一种语言」，所以全等比「ZH 覆盖 EN 的差集」更严，也更便宜。
@@ -72,10 +79,14 @@
             接收）之外再加一类，认同一枚约定的另一半：**函数名**以 `Key` 结尾（settings 那批
             `privacyModeLabelKey` / `appLinkReasonKey` 纯函数）时，返回值按定义就是 key，
             由页面 `t()` 解析。于是「`…Key` 结尾 = 传 key」在视图层和数据层两侧都被机器兜住。
-     射程外的一类如实记下：**跨行调用里的实参**。本脚本按**行**建模调用栈，`(` 换行了就不进栈，
-     于是 `TextInput({`↵`  placeholder: '…'` 这一类新位置看不见。本包实跑撞到过一次
-     （`CodePage` 的 `Enter ${…}-digit code`），当时靠人工接线补上；收口要改成整文件括号栈，
-     记在后续包里，不在这儿冒充已覆盖。
+     射程外的一类已收口（I18N-GUARDSPAN-101）：旧脚本按**行**建模调用栈，`(` 换行了就不进栈，
+     于是 `TextInput({`↵`  placeholder: '…'` 这一类新位置看不见（本包实跑撞到的 `CodePage` 的
+     `Enter ${…}-digit code` 当时靠人工接线补上）。现在八条规则统一跑在**整文件括号栈拼出的
+     逻辑行**上，只并尚未闭合的 `(`/`[`，不并 UI 块的 `{`（并了会把 `Column() {` 体内任何
+     像文案的串都算成 `@Builder Column(` 的实参）；字面量还先过一遍**局部字面量溯源**，
+     `const hint: string = 'Try Again';` + `Text(hint)` 这类间接传参按实参判，
+     消息里标「经由变量 hint」。行号与就地豁免仍按**物理行**归因，并行不会让一枚
+     `// i18n-allow` 替到别的行上去。
   R6 `*Key` 载体必须双词典命中（I18N-LITERAL-104 引入）：R4/R5b 为了「传 key 不传串」开了豁免，
      豁免自己就成了洞 —— `new ShowToastEffect('Cache cleared')` 被 `messageKey` 接走之后，
      没有任何一条规则检查这个 key 真在词典里。SET-103 那次事故（`'Sticker set: %s'` 两本词典都
@@ -94,7 +105,7 @@
      再看调用点有没有 `this.t(...)` / `getString(...)` / `formatByKey(...)` 现取的串。
      正确形状 = 传 key、builder 体内 `this.t(key)`（`NotificationScopeRowKey` / `FieldLabelKey` /
      `PickerSectionHeaderViewKey` 三个先例），或干脆内联进 build。
-     口径是行内的，跨行写的 `this.Some(` + 下一行的 `this.t(...)` 扫不到（同「守卫跨行调用收口」一包）。
+     跨行写的 `this.Some(` + 下一行的 `this.t(...)` 同在射程内（I18N-GUARDSPAN-101 起按逻辑行判）。
   R8 日期形态只许出自一个文件（I18N-DATE-101 引入）：R1~R7 全都只管**文案**，日期形态是它们
      的盲区 —— `'Sep'`、`21.09.2026`、`2026年9月` 在任何语言里都「没翻译错」，坏的是**没跟着界面
      语言切换**。第五十七轮设备实测：英文界面的会话列表出 `21.09.2026`、共享内容分组头出 `2026年9月`。
@@ -104,14 +115,19 @@
        ③ 英文月份名/星期名 —— 字面量命中 `MONTH_WEEKDAY_NAMES` 且**不是**词典 key
           （`'Sunday'` 作为 `SHARED_WEEKDAY_KEYS` 的 key 是对的，`'Sep'` 不是任何 key）；
        ④ 旧的 `// i18n-allow 日期形态` 就地豁免 —— 这一类豁免自本包起作废，标了就报；
-       ⑤ 手取时间字段 —— 调用 `getHours()` / `getMinutes()`（I18N-DATE-102 补）。前四类只
+       ⑤ 手取时间字段 —— 出现 `getHours` / `getMinutes` **标识符**（I18N-DATE-102 补形状，
+          I18N-GUARDSPAN-101 改成按标识符判：`.getHours()`、`['getHours']()`、
+          `const f = date.getHours` 读的是同一个字段，时制档位同样不会生效）。前四类只
           拦**字符串形状**，而 `HH:mm` 是 `${pad2(date.getHours())}` 拼出来的：落盘后长得和
           任何数字串一样，抓不到。时制的差异只在「取完字段之后怎么排版」，所以把取字段这一
           步本身就收紧 —— 只有形态表本体能读时钟，业务层一律交 `DateParts` 进去。
      唯一放行的是 `core/common/src/main/ets/DateFormat.ets`（形态表本体）与 `Lang.ets`（词典）。
 
-用法：python3 tools/ci/check_i18n_literals.py [--quiet]
-退出码：0 = 无违规；1 = 存在违规；2 = 前置条件坏了（词典解析不出来）
+用法：python3 tools/ci/check_i18n_literals.py [--quiet] [--self-test]
+      默认每次扫描前先跑一遍负向对照（--self-test 只跑对照、不扫全仓）：
+      本包把八条规则的扫描单位从物理行换成了逻辑行，「全仓 0 违规」此时既可能是代码干净、
+      也可能是扫描器自己瞎了，所以让它每次先自证。
+退出码：0 = 无违规；1 = 存在违规（或负向对照不符）；2 = 前置条件坏了（词典解析不出来）
 """
 
 import argparse
@@ -119,6 +135,7 @@ import collections
 import pathlib
 import re
 import sys
+import tempfile
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 LANG_FILE = ROOT / 'core' / 'common' / 'src' / 'main' / 'ets' / 'Lang.ets'
@@ -148,7 +165,12 @@ DOT_DATE_SHAPE_RE = re.compile(r'\$\{[^{}]*\}\.\\\$\{[^{}]*\}|\$\{[^{}]*\}\.\$\{
 DATE_ALLOW_REASON_RE = re.compile(r'日期|时间形态|相对时间')
 # R8⑤：手写时钟取值。`HH:mm` 这类形态是 `${pad2(d.getHours())}` 拼出来的，字符串形状抓不到，
 # 于是把「读时钟字段」这一步本身收紧：只有形态表本体能取值，业务层交 `DateParts` 进去。
-CLOCK_FIELD_RE = re.compile(r'\.get(Hours|Minutes)\s*\(\s*\)')
+# 101 起按**标识符**而不是按调用形状拦：旧口径只认 `.getHours()`，于是
+# `date['getHours']()` 与 `const f = date.getHours` 这类间接写法畅通 —— 而它们读的是同一个字段，
+# 时制档位同样不会生效。判定跑在去过行内注释的代码文本上，所以注释里提一句不会被当成取值；
+# 代价是字符串里出现这个词也算一次（`'getHours failed'` 这种日志串会被拦）—— 按标识符拦就是要
+# 宁可宽一点，读时钟字段这件事本身只许出现在形态表里。
+CLOCK_FIELD_RE = re.compile(r'\b(getHours|getMinutes)\b')
 
 # 汉字段（CJK Unified Ideographs）。emoji（😀 ★ ✋）与假名/谚文都不在此段，故意只拦汉字：
 # 本仓的界面文案只有中英两档，拦假名只会误伤测试里的样例数据。
@@ -156,13 +178,8 @@ CJK_RE = re.compile(r'[一-鿿]')
 LITERAL_RE = re.compile(r"(['\"`])((?:\\.|(?!\1).)*)\1")
 ALLOW_RE = re.compile(r'//\s*i18n-allow(?P<reason>[^\n]*)')
 
-# R2：字面量 key 的四种写法。`t('X')` / `.t('X')` / `getString('X')` / `formatByKey('X',`
-KEY_CALL_RE = re.compile(
-    r"""(?:\.\s*(?:t|getString|formatByKey)\s*\(\s*|(?<![\w.])t\s*\(\s*)"""
-    r"""'((?:[^'\\]|\\.)+)'"""
-)
-
-# R4：查词典的调用与「传 key」的命名约定。
+# R2：查词典调用的四种写法（`t(` / `.t(` / `getString(` / `formatByKey(`）。
+# 101 起不再用一行正则认「`t(` 后面紧跟的那个引号」，改成按调用栈判 —— 见 `key_slot`。
 KEY_CALL_NAMES = frozenset(('t', 'getString', 'formatByKey'))
 KEY_CARRIER_SUFFIX = 'Key'
 # R4：直接吃显示串的 ArkUI 调用/属性。
@@ -181,7 +198,11 @@ RETURN_RE = re.compile(r'return\b')
 QUOTES = ('\'', '"', '`')
 
 # 104 收紧后的三条规则共用的基础设施：字面量的语法位置（Hit）与构造器参数表索引。
-Hit = collections.namedtuple('Hit', 'value callers field prefix start line')
+# `via` —— 这个位置本来不是字面量，是**一个指向上面那种字面量的局部变量名**（GUARDSPAN-101 的
+# 局部溯源）；报违规时要把它一并写出来，否则读者看到的是一句「`Text(hint)` 写死文案」，
+# 而真正要改的是 `hint` 那一行。
+Hit = collections.namedtuple('Hit', 'value callers field prefix start line via arg_open')
+Hit.__new__.__defaults__ = (None, None)
 # `new Foo(` 的被调名与 `new` 关键字；`\s*$` 允许 `Foo (`。
 CALL_TAIL_RE = re.compile(r'(?:(?P<newkw>\bnew)\s+)?(?P<ident>[A-Za-z_$][\w$]*)\s*$')
 # R5b③：赋值右侧。`=(?!=)` 排除 `==`/`===`，`=>` 因为前面有 `>` 也不匹配。
@@ -222,6 +243,150 @@ def code_lines(path):
         if is_comment(stripped):
             continue
         yield idx, line, stripped
+
+
+def strip_inline_comments(line: str) -> str:
+    """把行内注释填成空格（长度不变，所以列偏移仍然对得上原文）。
+
+    跨行扫描（`statements`）必须先把注释去掉：`Text(label, // 先试 (retry)` 里那个左括号
+    会把后面整层的括号深度带歪。旧口径按行独立建栈，这种误数一行就自愈；一旦按语句并行，
+    它会把之后几十行都算进同一个调用里。R8⑤ 也借这一层：注释里提一句 `getHours` 不该算取值。
+    """
+    out = list(line)
+    i = 0
+    n = len(line)
+    quote = None
+    while i < n:
+        ch = line[i]
+        if quote is not None:
+            if ch == '\\':
+                i += 2
+                continue
+            if ch == quote:
+                quote = None
+            i += 1
+            continue
+        if ch in QUOTES:
+            quote = ch
+            i += 1
+            continue
+        if ch == '/' and i + 1 < n and line[i + 1] in '/*':
+            if line[i + 1] == '/':
+                for k in range(i, n):
+                    out[k] = ' '
+                break
+            end = line.find('*/', i + 2)
+            stop = n if end < 0 else end + 2
+            for k in range(i, stop):
+                out[k] = ' '
+            i = stop
+            continue
+        i += 1
+    return ''.join(out)
+
+
+LOCAL_LITERAL_RE = re.compile(
+    r'^\s*(?:export\s+)?(?:const|let)\s+([A-Za-z_$][\w$]*)\s*'
+    r'(?::\s*(?:const\s+)?string\b[^=]*)?=\s*'
+    r"(?:'((?:[^'\\]|\\.)*)'|\"((?:[^\"\\]|\\.)*)\")\s*;?\s*$")
+
+
+def literal_locals(path):
+    """文件内「名字 -> 它唯一的那个字符串字面量」表（间接传参溯源）。
+
+    为什么要这一层：R2/R4/R5b 判的都是**字面量本身**出现在哪个槽位，于是
+    `const hint: string = 'Try Again'` 后面接 `Text(hint)` 一条都不报 —— 串还是那句串，
+    只是换了个位置写。视图层尤其吃这一套：R4 只看槽位，赋值行根本不在射程里。
+
+    两条收窄，为的是不误伤：
+      ① 只收「整条右侧就是一个字面量」的 `const/let`（三元、拼接、函数调用都不算，
+         那些值来自别处，解出来的可能是假串）；
+      ② 同名在两处赋**不同**值时整个名字作废 —— 本表按文件顺序取最近一次赋值，
+         而不同函数里的同名变量互相看不见；与其把别的函数的串算到这一行头上，不如不报。
+    """
+    out = {}
+    dead = set()
+    for idx, line, stripped in code_lines(path):
+        m = LOCAL_LITERAL_RE.match(strip_inline_comments(line))
+        if m is None:
+            continue
+        name = m.group(1)
+        value = m.group(2) if m.group(2) is not None else m.group(3)
+        if name in out and out[name] != value:
+            dead.add(name)
+            continue
+        out.setdefault(name, value)
+    for name in dead:
+        out.pop(name, None)
+    return out
+
+
+# 一条「语句」：跨行写的调用并成一项，扫描规则因此在同一项里能看到完整的调用栈。
+Stmt = collections.namedtuple('Stmt', 'text first line_no raw_lines fn')
+# 并行的上限：括号计数一旦数错（本脚本不是解析器），宁可截断成两项，
+# 也不能把从这一行到文件末尾并成一条语句 —— 那样报错的行号会指向整个页面。
+MAX_STMT_LINES = 60
+
+
+def statements(path):
+    """整文件括号栈：把 `(` 换行才闭合的语句并成一项（GUARDSPAN-101 的跨行收口）。
+
+    为什么并**语句**而不是并整文件、也不是并「块」：
+      ① 只在有未闭合的 `(` 或 `[` 时才把下一行并进来 —— ArkUI 的 `Column() {` 是**块**，不是调用。
+         块也并进来的话，块体里每个字面量头上都压着一个调用帧，而 R5b 的 ① `return` 与 ③ 赋值右侧
+         判的恰恰是「外层没有任何调用」—— 那样跨行调用是没漏了，这两类位置整类失声，比漏报更糟。
+      ② 不用特判行尾的 `;`/`{`/`}`：`(` 闭合到 depth 0 本身就是语句边界，`)`、`);`、`})` 都落在
+         同一行上。真出现括号不配对（本脚本不是解析器）时按 MAX_STMT_LINES 截断，宁缺毋滥。
+    并完之后所有判定仍然按**行**归因：`line_no` 是「字符 -> 物理行号」的映射，
+    报违规指到字面量所在那一行，就地 `// i18n-allow` 也只认那一行的标记，
+    不让一枚豁免在一整条语句里扩散。
+    """
+    raw_lines = path.read_text(encoding='utf-8').splitlines()
+    buf = []
+    line_no = []
+    raw_map = {}
+    start = 0
+    depth = 0
+    in_block = False
+    fn = None
+    for idx, raw in enumerate(raw_lines):
+        stripped = raw.strip()
+        if stripped.startswith('/*'):
+            in_block = True
+        if in_block:
+            if stripped.endswith('*/'):
+                in_block = False
+            continue
+        if is_comment(stripped):
+            continue
+        code = strip_inline_comments(raw)
+        m = FUNCTION_RE.search(code)
+        if m is not None:
+            fn = m.group(1)
+        for ch in code:
+            if ch in '([':
+                depth += 1
+            elif ch in ')]':
+                depth -= 1
+        buf.append(code)
+        line_no.extend([idx + 1] * len(code))
+        buf.append('\n')
+        line_no.append(idx + 1)
+        raw_map[idx + 1] = raw
+        if depth <= 0 or (idx - start) >= MAX_STMT_LINES:
+            depth = 0
+            text = ''.join(buf)
+            yield Stmt(text, start + 1, line_no, raw_map, fn)
+            buf, line_no, raw_map, start = [], [], {}, idx + 1
+    if buf and start < len(raw_lines):
+        yield Stmt(''.join(buf), start + 1, line_no, raw_map, fn)
+
+
+def stmt_line_at(stmt, offset: int) -> int:
+    """逻辑偏移 -> 物理行号（报违规用，口径与并行之前逐行扫描一致）。"""
+    if 0 <= offset < len(stmt.line_no):
+        return stmt.line_no[offset]
+    return stmt.first
 
 
 def view_files():
@@ -287,28 +452,33 @@ def scan_date_forms(files, dicts):
     for rel, path in files:
         if rel in (DATE_FORM_SOURCE, DATE_DICT_SOURCE):
             continue
-        for idx, line, stripped in code_lines(path):
-            allow = ALLOW_RE.search(line)
-            if allow is not None and DATE_ALLOW_REASON_RE.search(allow.group('reason')):
-                problems.append(f'{rel}:{idx + 1}: `i18n-allow 日期形态` 这一类豁免已随 '
-                                f'I18N-DATE-101 作废（形态串的唯一出处是 {DATE_FORM_SOURCE}）')
-            shape = CN_DATE_SHAPE_RE.search(line)
-            if shape is not None:
-                problems.append(f'{rel}:{idx + 1}: 就地拼中文日期排布 {shape.group(0)!r} —— '
+        for stmt in statements(path):
+            # 豁免标记只能按**物理行**判：`// i18n-allow 日期形态` 写在形参那一行，
+            # 而形状可能在上一行 —— 按语句判会把整条语句一起豁免掉。
+            for lineno, raw in sorted(stmt.raw_lines.items()):
+                allow = ALLOW_RE.search(raw)
+                if allow is not None and DATE_ALLOW_REASON_RE.search(allow.group('reason')):
+                    problems.append(f'{rel}:{lineno}: `i18n-allow 日期形态` 这一类豁免已随 '
+                                    f'I18N-DATE-101 作废（形态串的唯一出处是 {DATE_FORM_SOURCE}）')
+            text = stmt.text
+            for shape in CN_DATE_SHAPE_RE.finditer(text):
+                problems.append(f'{rel}:{stmt_line_at(stmt, shape.start())}: '
+                                f'就地拼中文日期排布 {shape.group(0)!r} —— '
                                 f'语言驱动的形态表只在 {DATE_FORM_SOURCE}，此处应改调它')
-            dot = DOT_DATE_SHAPE_RE.search(line)
-            if dot is not None:
-                problems.append(f'{rel}:{idx + 1}: 就地拼点分数字日期 {dot.group(0)!r} —— '
+            for dot in DOT_DATE_SHAPE_RE.finditer(text):
+                problems.append(f'{rel}:{stmt_line_at(stmt, dot.start())}: '
+                                f'就地拼点分数字日期 {dot.group(0)!r} —— '
                                 f'旧会话列表的 `dd.MM` 正是这个形状，改调 DateFormat')
-            clock = CLOCK_FIELD_RE.search(line)
-            if clock is not None:
-                problems.append(f'{rel}:{idx + 1}: 就地读时钟字段 {clock.group(0).lstrip(".")!r} —— '
+            for clock in CLOCK_FIELD_RE.finditer(text):
+                problems.append(f'{rel}:{stmt_line_at(stmt, clock.start())}: 就地读时钟字段 '
+                                f'{clock.group(0)!r} —— '
                                 f'12/24 小时的档位只在 {DATE_FORM_SOURCE} 生效，'
                                 f'改调 formatTimeOfDay(datePartsFrom(ms), lang, clock)')
-            for lit in LITERAL_RE.finditer(line):
+            for lit in LITERAL_RE.finditer(text):
                 value = lit.group(2)
                 if value in MONTH_WEEKDAY_NAMES and value not in dicts['EN']:
-                    problems.append(f'{rel}:{idx + 1}: 月份/星期名 {value!r} 出现在 '
+                    problems.append(f'{rel}:{stmt_line_at(stmt, lit.start())}: 月份/星期名 '
+                                    f'{value!r} 出现在 '
                                     f'{DATE_FORM_SOURCE} 之外（它是 locale 数据不是文案，'
                                     f'加进词典只会多出一批只为拼日期而存在的 key）')
     return problems
@@ -340,8 +510,8 @@ def scan_literals(files, layer: str):
     return problems, allowed
 
 
-def scan_line_literals(line):
-    """把一行拆成「字面量 + 它在语法上的位置」，供 R4/R5b/R6 判定槽位。
+def scan_line_literals(line, locals_map=None):
+    """把一条语句拆成「字面量 + 它在语法上的位置」，供 R4/R5b/R6 判定槽位。
 
     只做粗粒度语法位置判定，不是解析器。每个尚未闭合的调用/容器是一个栈帧
     `(被调名, 是否成员调用, 是否 new 构造, 该层已走过的实参序号)`：
@@ -353,6 +523,12 @@ def scan_line_literals(line):
     字面量另带 `prefix`（它左边那半行）与 `start`（偏移），赋值位置（R5b③）要判断
     它是不是落在 `=` 的右边。
     字符串内部的括号与引号一律不解析（逐字符跳到配对的引号结束），所以 `Text('a(b')` 不误。
+
+    `locals_map` 给出「间接传参」的那一半：`Text(hint)` 里没有任何字面量，旧口径看不见，
+    于是每个**独立成词的标识符**（后面紧跟 `,`/`)`/`]`/`}`/`;` 或到行尾，即它就是一个实参
+    而不是 `foo()` 的被调名、也不是 `a.b` 的一段）如果在表里，就按它指向的字面量补一个位置，
+    带上 `via=变量名`。报违规时把变量名一并写出来，否则读者看到的是「这一行写死文案」，
+    而要改的其实是上面那一行。
     """
     out = []
     stack = []
@@ -375,10 +551,28 @@ def scan_line_literals(line):
                     break
                 buf.append(c)
                 j += 1
-            out.append(Hit(''.join(buf), tuple(tuple(fr) for fr in stack),
-                           field, line[:i], i, line))
+            out.append(Hit(''.join(buf), tuple(fr[:4] for fr in stack),
+                           field, line[:i], i, line,
+                           None, stack[-1][4] if stack else None))
             i = j + 1
             field = None
+            continue
+        if ch.isalpha() or ch in '_$':
+            j = i + 1
+            while j < n and (line[j].isalnum() or line[j] in '_$'):
+                j += 1
+            ident = line[i:j]
+            if locals_map is not None and ident in locals_map:
+                k = j
+                while k < n and line[k] in ' \t':
+                    k += 1
+                # `\n` 也是终止符：语句现在可能由几行拼成，`return caption` 正好落在
+                # 一条语句的末尾，只认「到字符串结尾」的话这一类就还是看不见。
+                if k >= n or line[k] in ',)]};\n':
+                    out.append(Hit(locals_map[ident], tuple(fr[:4] for fr in stack),
+                                   field, line[:i], i, line, ident,
+                                   stack[-1][4] if stack else None))
+            i = j
             continue
         if ch in '([{':
             name = None
@@ -390,7 +584,7 @@ def scan_line_literals(line):
                     name = m.group('ident')
                     ctor = m.group('newkw') is not None
                     member = line[:m.start('ident')].rstrip().endswith('.')
-            stack.append([name, member, ctor, 0])
+            stack.append([name, member, ctor, 0, i + 1])
             field = None
             i += 1
             continue
@@ -541,6 +735,10 @@ def key_carrier_exemption(callers, field, ctor_index) -> bool:
 def display_slot_reason(hit, stripped_line, fn, dicts, ctor_index):
     """R4/R4'：字面量所处文案槽位的写法；不属于文案槽位则回 None（本规则不管它）。"""
     callers, field = hit.callers, hit.field
+    if hit.via is not None and hit.via.endswith(KEY_CARRIER_SUFFIX):
+        # `Text(cancelKey)` 里 `…Key` 这个变量名就是「传 key 不传串」的记号，
+        # 该谁负责很清楚：漏了 `t()` 是另一条（R7/页面）的事，不在这里当成写死文案。
+        return None
     if key_carrier_exemption(callers, field, ctor_index):
         return None
     for name, member, _ctor, _idx in callers:
@@ -567,6 +765,8 @@ def data_slot_reason(hit, stripped_line, fn, dicts, ctor_index):
     除 R4 的两类豁免外再加一类，沿用同一套「传 key 不传串」约定的另一半：**函数名**以 `Key`
     结尾时（settings 那一整批 `privacyModeLabelKey` 纯函数）返回值按定义就是 key。
     """
+    if hit.via is not None and hit.via.endswith(KEY_CARRIER_SUFFIX):
+        return None
     if key_carrier_exemption(hit.callers, hit.field, ctor_index):
         return None
     for name, _member, _ctor, _idx in hit.callers:
@@ -587,20 +787,6 @@ def data_slot_reason(hit, stripped_line, fn, dicts, ctor_index):
     return None
 
 
-def code_lines_with_fn(path):
-    """逐行产出代码行，并带上「最近见过的函数名」，供 R5b 认 `*Key` 约定。
-
-    只做行内正则推进，不是作用域分析：本仓 model/coordinator 的函数都是 `export function xxx(` 平铺，
-    嵌套函数会沿用外层名，误豁免需要函数名正好以 Key 结尾，方向上安全。
-    """
-    fn = None
-    for idx, line, stripped in code_lines(path):
-        m = FUNCTION_RE.search(line)
-        if m is not None:
-            fn = m.group(1)
-        yield idx, line, stripped, fn
-
-
 def looks_like_copy(value: str, known) -> bool:
     """R4'（104 收紧）的形状判据：含空格、或首字母大写、或命中词典 —— 三者任一成立就算文案。
 
@@ -618,27 +804,38 @@ def looks_like_copy(value: str, known) -> bool:
 
 
 def scan_slots(files, dicts, ctor_index, reason_for, wants, fix_hint):
-    """R4/R4' 与 R5b 的公共骨架：符合 `wants` 的字面量出现在「文案位置」即违规。"""
+    """R4/R4' 与 R5b 的公共骨架：符合 `wants` 的字面量出现在「文案位置」即违规。
+
+    扫描单位是 `statements()` 的**语句**而不是物理行（GUARDSPAN-101）：脚本自己一直在
+    「射程外」那一栏里记着同一条盲区 —— `(` 换行了就不进栈，于是 `Text(`↵`'Reply'` 这一类
+    实参整类看不见（CodePage 的 `Enter …-digit code` 当年只能靠人工接线补上）。
+    行号与就地豁免仍然按**字面量所在的那一行**归因，所以并行不会让一枚 `// i18n-allow`
+    从第一行扩散到整条语句。
+    """
     problems = []
     allowed = []
     known = dicts['EN'] | dicts['ZH']
     for rel, path in files:
-        for idx, line, stripped, fn in code_lines_with_fn(path):
-            for hit in scan_line_literals(line):
+        locals_map = literal_locals(path)
+        for stmt in statements(path):
+            head = stmt.text.strip()
+            for hit in scan_line_literals(stmt.text, locals_map):
                 if not hit.value or not wants(hit.value, known):
                     continue
-                reason = reason_for(hit, stripped, fn, dicts, ctor_index)
+                reason = reason_for(hit, head, stmt.fn, dicts, ctor_index)
                 if reason is None:
                     continue
-                allow = ALLOW_RE.search(line)
+                lineno = stmt_line_at(stmt, hit.start)
+                allow = ALLOW_RE.search(stmt.raw_lines.get(lineno, ''))
                 if allow is not None:
                     if not allow.group('reason').strip():
-                        problems.append(f'{rel}:{idx + 1}: i18n-allow 必须写原因'
+                        problems.append(f'{rel}:{lineno}: i18n-allow 必须写原因'
                                         f'（本仓合法豁免只有日期形态、本族名与源语言标签三类）')
                     else:
-                        allowed.append(f'{rel}:{idx + 1}')
+                        allowed.append(f'{rel}:{lineno}')
                     continue
-                problems.append(f'{rel}:{idx + 1}: 文案位置 {reason} 里写死了 '
+                via = f'的实参 {hit.via} 指向 ' if hit.via is not None else '里写死了 '
+                problems.append(f'{rel}:{lineno}: 文案位置 {reason} {via}'
                                 f'{hit.value}（{fix_hint}，确需保留请标 // i18n-allow <原因>）')
     return problems, allowed
 
@@ -682,21 +879,31 @@ def scan_key_carriers(files, dicts, ctor_index):
     """
     problems = []
     checked = set()
+    allowed = []
     for rel, path in files:
-        for idx, line, stripped in code_lines(path):
-            if ALLOW_RE.search(line):
-                continue
-            for hit in scan_line_literals(line):
+        locals_map = literal_locals(path)
+        for stmt in statements(path):
+            for hit in scan_line_literals(stmt.text, locals_map):
                 carrier = r6_carrier_name(hit.callers, hit.field, ctor_index)
                 if carrier is None or not hit.value or CJK_RE.search(hit.value):
+                    continue
+                lineno = stmt_line_at(stmt, hit.start)
+                allow = ALLOW_RE.search(stmt.raw_lines.get(lineno, ''))
+                if allow is not None:
+                    if not allow.group('reason').strip():
+                        problems.append(f'{rel}:{lineno}: i18n-allow 必须写原因'
+                                        f'（本仓合法豁免只有本族名与源语言标签两类，日期形态归 R8）')
+                    else:
+                        allowed.append(f'{rel}:{lineno}')
                     continue
                 checked.add(hit.value)
                 missing = [n for n in ('EN', 'ZH') if hit.value not in dicts[n]]
                 if missing:
-                    problems.append(f'{rel}:{idx + 1}: {carrier} 收到的 {hit.value!r} '
-                                    f'缺 {" 与 ".join(missing)} 词条'
+                    via = f'（经由变量 {hit.via}）' if hit.via is not None else ''
+                    problems.append(f'{rel}:{lineno}: {carrier} 收到的 {hit.value!r} 缺 '
+                                    f'{" 与 ".join(missing)} 词条{via}'
                                     f'（key 载体收的必须是词典里成在的 key）')
-    return problems, checked
+    return problems, checked, allowed
 
 
 # R7：`@Builder` 的按值文案参数。
@@ -740,17 +947,18 @@ def scan_builder_copy_params(files):
                 break
         if not copy_params:
             continue
-        for idx, line, stripped in code_lines(path):
-            if ALLOW_RE.search(line):
-                continue
-            m = BUILDER_CALL_RE.search(stripped)
+        for stmt in statements(path):
+            m = BUILDER_CALL_RE.search(stmt.text.rstrip())
             if m is None or m.group(1) not in copy_params:
+                continue
+            lineno = stmt_line_at(stmt, m.start())
+            if ALLOW_RE.search(stmt.raw_lines.get(lineno, '')):
                 continue
             args = m.group(2)
             if not RESOLVED_CALL_RE.search(args):
                 continue
             problems.append(
-                f'{rel}:{idx + 1}: this.{m.group(1)}({args[:60]}) 的按值参数 '
+                f'{rel}:{lineno}: this.{m.group(1)}({args[:60]}) 的按值参数 '
                 f'{" / ".join(copy_params[m.group(1)])} 收到了现取的已解析串 —— @Builder 按值参数'
                 f'只求值一次，应用内换语言不会重算；改成传 key（形参改名 *Key，builder 体内 '
                 f'this.t(key)），或直接内联进 build')
@@ -773,19 +981,45 @@ def load_dicts():
     return out
 
 
+def key_slot(hit) -> bool:
+    """这个位置是不是查词典调用的**第一个**实参（也就是 key 位）。
+
+    为什么从正则改成按调用栈判：旧口径是 `t('X')` 一行内的正则，于是 `t(`↵`'X'` 看不见，
+    而且 `t(a, 'X')` 的第二个实参反而会被当成 key（它前面的逗号让栈深不变，正则却只认括号）。
+    现在认「最近的调用帧是 t/getString/formatByKey 且它已经走过的实参序号是 0」——
+    嵌套调用（`showToast(this.t('X'))`）取最内层，正是 key 的那一层。
+    """
+    if not hit.callers or hit.arg_open is None:
+        return False
+    frame = hit.callers[-1]
+    if frame[0] not in KEY_CALL_NAMES or frame[3] != 0:
+        return False
+    # 「在第 0 号实参位」还不够：`t(mode === 'en' ? 'English' : 'System')` 里的 `'en'`
+    # 同样在 `t(` 那一层、也没被逗号推进过，但它是三元判断的条件，不是 key。
+    # 动态 key（三元、变量）本来就不在 R2 射程内（脚本头部 R2 一条就这么写的），
+    # 少判这一刀会把 AuthRootPage 的 `'ready'`、SettingsPage 的 `'en'` 报成缺词条。
+    return hit.line[hit.arg_open:hit.start].strip() == ''
+
+
 def scan_keys(files, dicts):
-    """R2：字面量 key 必须两本词典都有。"""
+    """R2：字面量 key 必须两本词典都有（跨行写、经局部变量传进来的同样算）。"""
     problems = []
     checked = set()
     for rel, path in files:
-        for idx, line, stripped in code_lines(path):
-            for m in KEY_CALL_RE.finditer(line):
-                key = m.group(1)
+        locals_map = literal_locals(path)
+        for stmt in statements(path):
+            for hit in scan_line_literals(stmt.text, locals_map):
+                if not hit.value or not key_slot(hit):
+                    continue
+                key = hit.value
                 checked.add(key)
-                if key not in dicts['EN'] or key not in dicts['ZH']:
-                    missing = [n for n in ('EN', 'ZH') if key not in dicts[n]]
-                    problems.append(f'{rel}:{idx + 1}: key {key!r} 缺 {" 与 ".join(missing)} 词条'
-                                    f'（Lang 缺译文会原样回吐 key，屏幕上就是一串英文标识）')
+                if key in dicts['EN'] and key in dicts['ZH']:
+                    continue
+                missing = [n for n in ('EN', 'ZH') if key not in dicts[n]]
+                via = f'（经由变量 {hit.via}）' if hit.via is not None else ''
+                problems.append(f'{rel}:{stmt_line_at(stmt, hit.start)}: key {key!r} 缺 '
+                                f'{" 与 ".join(missing)} 词条{via}'
+                                f'（Lang 缺译文会原样回吐 key，屏幕上就是一串英文标识）')
     return problems, checked
 
 
@@ -798,10 +1032,340 @@ def scan_parity(dicts):
     return problems
 
 
+# ---- --self-test：射程负向对照（I18N-GUARDSPAN-101）--------------------------------
+#
+# 为什么要有这一段：守卫报 0 条有两种可能 ——「代码干净」和「扫描器自己坏了」，而本轮八条规则
+# 同时改写了扫描单位（物理行 → 逻辑行）并新增了溯源，只盯「全仓 0 违规」分不出这两者。
+# 所以每条新射程形状配一对判定：坏形状必须报，且要报到点子上（needle 断言消息里的关键片段，
+# 避免靠一条无关的旧违规蒙过）；正确形状必须不报。历史近失也各留了一项：并行不并行 UI 块的 `{`、
+# 同名两值的变量作废、`t(cond === 'en' ? …)` 的三元条件不许当成缺词条的 key。
+#
+# 样例是**文本样例**，不是可编译的 ArkTS：有的用例故意让同一个名字在两个方法里各赋一次值，
+# 用来钉住溯源的收窄规则。词典片段用真词典里成在的 key（'Devices' / 'Online' /
+# 'Saved Messages'），缺项一律用 'SelfTest.Missing.Key' 与 'counter.stepInvalid' ——
+# 前者不在任何一本词典里，也不会有人哪天误把它建成词条。
+SelfCase = collections.namedtuple('SelfCase', 'name checks src')
+
+SELF_TEST_RUNNERS = {
+    'R1': lambda files, dicts, ctor: scan_literals(files, '视图层')[0],
+    'R2': lambda files, dicts, ctor: scan_keys(files, dicts)[0],
+    'R4': lambda files, dicts, ctor: scan_display_slots(files, dicts, ctor)[0],
+    'R5b': lambda files, dicts, ctor: scan_data_layer(files, dicts, ctor)[0],
+    'R6': lambda files, dicts, ctor: scan_key_carriers(files, dicts, ctor)[0],
+    'R7': lambda files, dicts, ctor: scan_builder_copy_params(files),
+    'R8': lambda files, dicts, ctor: scan_date_forms(files, dicts),
+}
+
+SELF_TEST_CASES = (
+    SelfCase('r1-han-baseline', (
+        ('R1', 'fire', '写死中文'),
+    ), """
+@Component
+struct Panel {
+  build() {
+    Column() {
+      Text('清空历史记录')
+    }
+  }
+}
+"""),
+    SelfCase('r1-han-allowed-in-place', (
+        ('R1', 'clean', None),
+    ), """
+@Component
+struct Panel {
+  private nativeName(): string {
+    const name: string = '简体中文' // i18n-allow 本族名
+    return name
+  }
+}
+"""),
+    SelfCase('r4-cross-line-text-arg', (
+        ('R4', 'fire', 'Text('),
+        ('R1', 'clean', None),
+    ), """
+@Component
+struct Panel {
+  build() {
+    Column() {
+      Text(
+        'Try Again'
+      ).fontSize(14)
+    }
+  }
+}
+"""),
+    SelfCase('r4-block-body-not-joined', (
+        ('R4', 'clean', None),
+        ('R2', 'clean', None),
+    ), """
+@Component
+struct Panel {
+  build() {
+    Column() {
+      Text(this.t('Devices'))
+        .fontFamily('HarmonyOS Sans')
+        .fontSize(14)
+      Row() {
+        Text(this.t('Online'))
+      }
+    }
+    .alignItems(HorizontalAlign.Start)
+  }
+}
+"""),
+    SelfCase('r4-via-local', (
+        ('R4', 'fire', '的实参 text 指向'),
+    ), """
+@Component
+struct Panel {
+  build() {
+    Column() {
+      const text: string = 'Try Again'
+      Text(text)
+    }
+  }
+}
+"""),
+    SelfCase('r4-via-local-ambiguous-name-voided', (
+        ('R4', 'clean', None),
+    ), """
+@Component
+struct Panel {
+  @Builder
+  First() {
+    const hint: string = 'Try Again'
+  }
+
+  @Builder
+  Second() {
+    const hint: string = 'Sign In'
+  }
+
+  build() {
+    Column() {
+      Text(hint)
+    }
+  }
+}
+"""),
+    SelfCase('r2-cross-line-key', (
+        ('R2', 'fire', "缺 EN 与 ZH"),
+        ('R4', 'clean', None),
+    ), """
+@Component
+struct Panel {
+  t(key: string): string {
+    return key
+  }
+
+  build() {
+    Column() {
+      Text(this.t(
+        'SelfTest.Missing.Key'
+      ))
+    }
+  }
+}
+"""),
+    SelfCase('r2-via-local-key', (
+        ('R2', 'fire', '经由变量 missingKey'),
+    ), """
+@Component
+struct Panel {
+  build() {
+    Column() {
+      const missingKey: string = 'SelfTest.Missing.Key'
+      Text(this.t(missingKey))
+    }
+  }
+}
+"""),
+    SelfCase('r2-ternary-condition-is-not-a-key', (
+        ('R2', 'clean', None),
+        ('R4', 'clean', None),
+        ('R5b', 'clean', None),
+    ), """
+@Component
+struct Panel {
+  build() {
+    Column() {
+      Text(this.t(this.mode === 'en' ? 'English' : 'System'))
+    }
+  }
+}
+"""),
+    SelfCase('r5b-return-operand-still-detected', (
+        ('R5b', 'fire', 'return 里写死了'),
+    ), """
+function rowSummary(ok: boolean): string {
+  if (ok) {
+    return 'Saved Messages'
+  }
+  return ''
+}
+"""),
+    SelfCase('r5b-return-via-local', (
+        ('R5b', 'fire', '的实参 caption 指向'),
+    ), """
+function rowCaption(): string {
+  const caption: string = 'Saved Messages'
+  return caption
+}
+"""),
+    SelfCase('r6-carrier-via-local', (
+        ('R6', 'fire', '经由变量 STEP_INVALID_TOAST'),
+        ('R5b', 'clean', None),
+    ), """
+class ShowToast {
+  readonly messageKey: string
+
+  constructor(messageKey: string) {
+    this.messageKey = messageKey
+  }
+}
+
+const STEP_INVALID_TOAST: string = 'counter.stepInvalid'
+
+export function stepInvalidEffect(): ShowToast {
+  return new ShowToast(STEP_INVALID_TOAST)
+}
+"""),
+    SelfCase('r6-carrier-holds-real-key', (
+        ('R6', 'clean', None),
+        ('R5b', 'clean', None),
+        ('R2', 'clean', None),
+    ), """
+class ShowToast {
+  readonly messageKey: string
+
+  constructor(messageKey: string) {
+    this.messageKey = messageKey
+  }
+}
+
+const DEVICES_TOAST_KEY: string = 'Devices'
+
+export function devicesEffect(): ShowToast {
+  return new ShowToast(DEVICES_TOAST_KEY)
+}
+"""),
+    SelfCase('r7-cross-line-builder-value-copy', (
+        ('R7', 'fire', '按值参数'),
+    ), """
+@Component
+struct Panel {
+  t(key: string): string {
+    return key
+  }
+
+  @Builder
+  SectionTitle(title: string) {
+    Text(title)
+  }
+
+  build() {
+    Column() {
+      this.SectionTitle(
+        this.t('Devices')
+      )
+    }
+  }
+}
+"""),
+    SelfCase('r7-builder-takes-key', (
+        ('R7', 'clean', None),
+        ('R4', 'clean', None),
+        ('R2', 'clean', None),
+    ), """
+@Component
+struct Panel {
+  t(key: string): string {
+    return key
+  }
+
+  @Builder
+  SectionTitleKey(titleKey: string) {
+    Text(this.t(titleKey))
+  }
+
+  build() {
+    Column() {
+      this.SectionTitleKey(
+        'Devices'
+      )
+    }
+  }
+}
+"""),
+    SelfCase('r8-indirect-clock-read', (
+        ('R8', 'fire', '就地读时钟字段'),
+    ), """
+function hhmm(d: Date): string {
+  const read: number = d['getHours']()
+  const later: Function = d.getHours
+  return formatTimeByLang(read, later)
+}
+"""),
+    SelfCase('r8-clock-through-dateformat', (
+        ('R8', 'clean', None),
+    ), """
+function hhmm(d: Date, clock: string): string {
+  return formatDateByLang(d, clock)
+}
+"""),
+)
+
+
+def self_test(quiet: bool = False) -> int:
+    """跑负向对照：每条射程形状必须报，正确形状必须不报。返回 0/1，不扫全仓。"""
+    dicts = load_dicts()
+    # 构造器参数表只放样例用到的类：R5b④ 与 R6 都是「按参数名放行」，
+    # 传进去的真索引会让这两条在这里没有意义。
+    ctor_index = {'ShowToast': ('messageKey',)}
+    failures = []
+    total = 0
+    with tempfile.TemporaryDirectory(prefix='i18n-selftest-') as td:
+        root = pathlib.Path(td)
+        for case in SELF_TEST_CASES:
+            path = root / (case.name + '.ets')
+            path.write_text(case.src, encoding='utf-8')
+            files = [(f'fixture/{case.name}.ets', path)]
+            for rule, expect, needle in case.checks:
+                total += 1
+                problems = SELF_TEST_RUNNERS[rule](files, dicts, ctor_index)
+                if expect == 'fire':
+                    if not problems:
+                        failures.append(f'{case.name}/{rule}: 该拦的没拦（0 条）')
+                    elif needle is not None and not any(needle in p for p in problems):
+                        failures.append(f'{case.name}/{rule}: 报了但没说到点子上 -> {problems[0]}')
+                elif problems:
+                    failures.append(f'{case.name}/{rule}: 不该报却报了 -> {problems[0]}')
+    for msg in failures:
+        print(f'[i18n-selftest] FAIL {msg}', file=sys.stderr)
+    if failures:
+        print(f'[i18n-selftest] FAILED: {len(failures)} / {total} 项对照不符', file=sys.stderr)
+        return 1
+    if not quiet:
+        print(f'[i18n-selftest] OK: {total} 项对照（{len(SELF_TEST_CASES)} 个样例）全部符合预期')
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument('--quiet', action='store_true')
+    parser.add_argument('--self-test', action='store_true',
+                        help='只跑负向对照样例（证明规则会拦、正确形状不误伤），不扫全仓')
     args = parser.parse_args()
+
+    if args.self_test:
+        return self_test()
+
+    # 每次扫描都先自证一遍（< 0.1 秒）：扫描器自己坏掉时，「全仓 0 违规」是最容易相信的假消息，
+    # 而这一轮八条规则同时换了扫描单位 —— 光看 0 违规分不出「代码干净」和「判定失效」。
+    if self_test(quiet=True) != 0:
+        print('[i18n] FAILED: 负向对照不符 —— 先修脚本，再谈代码', file=sys.stderr)
+        return 1
 
     files = view_files()
     data = data_files()
@@ -816,14 +1380,15 @@ def main() -> int:
     # R2 覆盖两层：coordinator/model 里的 getString('X') 同样必须双词典命中。
     key_problems, checked = scan_keys(files + data, dicts)
     # R6：R4/R5b 的「传 key 不传串」豁免本身就是洞，收进去的 key 必须成在。
-    carrier_problems, carrier_checked = scan_key_carriers(files + data, dicts, ctor_index)
+    carrier_problems, carrier_checked, allowed_carrier = scan_key_carriers(files + data, dicts, ctor_index)
     # R7：@Builder 按值文案参数只求值一次，收已解析串就是换语言不刷新的洞。
     builder_problems = scan_builder_copy_params(files)
     parity_problems = scan_parity(dicts)
     # R8：日期形态不是文案，词典四条规则都管不住 —— 单独收在一个白名单文件里。
     date_form_problems = scan_date_forms(date_files, dicts)
 
-    allowed = allowed_literal + allowed_slot + allowed_data_literal + allowed_data_slot
+    allowed = (allowed_literal + allowed_slot + allowed_data_literal
+               + allowed_data_slot + allowed_carrier)
     failed = bool(literal_problems or slot_problems or data_literal_problems
                   or data_slot_problems or key_problems or carrier_problems
                   or builder_problems or parity_problems or date_form_problems)

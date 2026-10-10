@@ -8,7 +8,7 @@
 #   4. check_architecture.py   核心层架构依赖与 Kit-free 校验（P1-QA-003）
 #   5. check_codegen.py        TDLib 代码生成与敏感字段一致性校验（P1-QA-003）
 #   6. check_accessibility_labels.py 图标控件无障碍标签守卫（A11Y-101）
-#   7. check_i18n_literals.py  视图层+数据层写死文案（中/英）、词典键、日期与时间形态守卫，八条规则（I18N-LITERAL-101/102/103/104, I18N-DATE-101/102）
+#   7. check_i18n_literals.py  视图层+数据层写死文案（中/英）、词典键、日期与时间形态守卫，八条规则，每次先跑负向对照自证（I18N-LITERAL-101/102/103/104, I18N-DATE-101/102, GUARDSPAN-101）
 #   8. check_appstorage_pairs.py AppStorage 键读写配对守卫（APPSTORAGE-PAIR-101）
 #   9. check.sh         codelinter（若存在）+ ArkTS typecheck 构建（GOV-006）
 #   10. test_all_modules.py 全模块单元测试调度与断言（P1-QA-001 / QA-002）
@@ -51,7 +51,7 @@ run_step "3/12 design tokens (INTEG-002)"      python3 "${ROOT}/tools/ci/check_d
 run_step "4/12 architecture guard (QA-002)"    python3 "${ROOT}/tools/ci/check_architecture.py"
 run_step "5/12 codegen verify (QA-002)"        python3 "${ROOT}/tools/ci/check_codegen.py"
 run_step "6/12 a11y label guard (A11Y-101)"    python3 "${ROOT}/tools/ci/check_accessibility_labels.py"
-run_step "7/12 i18n literal guard (I18N-101/102/103/104, I18N-DATE-101)" python3 "${ROOT}/tools/ci/check_i18n_literals.py"
+run_step "7/12 i18n literal guard (I18N-101/102/103/104, I18N-DATE-101/102, GUARDSPAN-101)" python3 "${ROOT}/tools/ci/check_i18n_literals.py"
 run_step "8/12 appstorage pair guard (APPSTORAGE-PAIR-101)" python3 "${ROOT}/tools/ci/check_appstorage_pairs.py"
 run_step "9/12 lint + typecheck (GOV-006)"     "${ROOT}/tools/ci/check.sh"
 run_step "10/12 unit test all modules (QA-002)" python3 "${ROOT}/tools/ci/test_all_modules.py"

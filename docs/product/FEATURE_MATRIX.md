@@ -128,7 +128,7 @@
 |---|---|---|---|---|---|---|---|---|
 | FEAT-UI-001 | 深色/浅色主题 | P1 | `theme/ThemeManager.java:48`（DEFAULT_DARK_THEME = NIGHT_BLUE）, `theme/Theme.java` | —（平台侧） | 跟随系统/手动切换，关键页面（列表/聊天/设置）色值正确；偏好（system/light/dark）跨进程持久，系统深浅色经 `onConfigurationUpdate` 实时参与解析 | — | Accepted | 迁移组, APPSTORAGE-PAIR-101 |
 | FEAT-UI-002 | 大字体（聊天字号调节） | P1 | `unsorted/Settings.java:791`（CHAT_FONT_SIZES）, `ui/SettingsController.java:218`（getChatFontSize） | —（平台侧） | 大字号模式下气泡/列表不截断不重叠 | 字体缩放 | Accepted | SET-105 |
-| FEAT-UI-003 | 中/英文案资源 | P1 | `core/Lang.java`, `ui/SettingsLanguageController.java` | — | 关键路径文案中英齐全，无硬编码遗漏（视图层与 coordinator/model 数据层的写死文案、词典缺项由 `check_i18n_literals.py` 七条规则强制）；日期形态与文案分治 —— 月份名/星期名/`年月日`排布只许出自 `core/common/…/DateFormat.ets` 一个文件（同守卫第八条规则 R8）；语言偏好跨进程持久且系统语言参与解析；写进 AppStorage 的键必须有读者（`check_appstorage_pairs.py` R1） | — | Accepted | I18N-LITERAL-101/102/103/104, I18N-HOTSWITCH-101, LANG-PERSIST-101, APPSTORAGE-PAIR-101, I18N-DATE-101 |
+| FEAT-UI-003 | 中/英文案资源 | P1 | `core/Lang.java`, `ui/SettingsLanguageController.java` | — | 关键路径文案中英齐全，无硬编码遗漏（视图层与 coordinator/model 数据层的写死文案、词典缺项由 `check_i18n_literals.py` 八条规则强制（R1–R8，判定单位是**逻辑行**：跨行调用与「字面量先赋给 const、再把 const 传进槽位」都在射程内，且每次扫描前先跑一遍负向对照自证））；日期形态与文案分治 —— 月份名/星期名/`年月日`排布只许出自 `core/common/…/DateFormat.ets` 一个文件（同守卫第八条规则 R8）；语言偏好跨进程持久且系统语言参与解析；写进 AppStorage 的键必须有读者（`check_appstorage_pairs.py` R1） | — | Accepted | I18N-LITERAL-101/102/103/104, I18N-HOTSWITCH-101, LANG-PERSIST-101, APPSTORAGE-PAIR-101, I18N-DATE-101, I18N-DATE-102, I18N-GUARDSPAN-101 |
 | FEAT-UI-004 | 抽屉主导航（≡ 账号头 + 联系人/通话/我的收藏/设置/邀请朋友/帮助 + 夜间模式开关） | P1 | `navigation/DrawerController.java`, `MainActivity.java` | —（平台侧） | 会话列表抽屉导航，账号头展示在线状态，入口路由正确 | — | Accepted | DRAWER-101 |
 
 ---
@@ -2704,6 +2704,95 @@
 > `name-forced` 第二次往返；⑤ A11Y-104（播报内容无可观察口径）与 **RTL-101**；
 > ⑥ **APPLOCK-103 生物识别**（需真机 + HUKS auth-bound key，模拟器不可验）；
 > ⑦ TDLib `system_language_code` 接真设备语言；⑧ 头部在「返回再进来」时的在线数中间帧（本轮盲区 ③）；
+> ⑨ 薄遗留：PRIVACY 收尾、抽屉→联系人路由不响应返回键、GIF 实际发送链路与类目真实数据、
+> MEDIA-VIEWER / AUTODL / CONTACT / SHARED-AUDIO / AUDIO-BG / STICKER-RECENT 各处、
+> DEEPLINK 的 Share Extension、代理扫码导入、平板/折叠双栏、板卡动效静帧、lottie 的 Release 与全量 CI 收口。
+
+### FEAT-UI-003 / I18N-GUARDSPAN-101 守卫射程口径：逻辑行判定 + 单一定值溯源 + 每次自证（2026-10-10）
+
+> **题面**（上一轮候选 ①）：「守卫跨行调用与间接传参收口（整文件括号栈 + 局部变量溯源，顺带覆盖 R8⑤ 的间接写法盲区）」。
+>
+> **一、盲区为什么存在**（读码定案，不是「写得懒」）：旧脚本八条规则共用同一个建模单位 —— **一条物理行**。
+> 每条规则各自拿 `code_lines(path)` 的一行去判调用栈，于是 `(` 一旦换行就不进栈。两类写法必漏，而且都不是边角：
+> ① **跨行调用** —— ArkUI 的链式写法天然把 `Text(` 和实参分行写，`Text(`↵`'Reply'` 这一路的写死英文、
+> `t(`↵`'Key'`（R2 的缺项防线）全都判不到；R7 更直接，`this.SectionTitle(`↵`this.t(key))` 是本轮题面本身。
+> ② **间接传参** —— `const hint: string = 'Try Again';` + `Text(hint)`：字面量在赋值行（不在文案槽位），
+> 参数位只剩一个标识符（不是字面量），两条规则各看一半，谁都不报。
+> R8⑤ 另有第三种形状：旧口径只认 `.getHours()` 的**调用形状**，`date['getHours']()` 与 `const f = date.getHours`
+> 读的是同一个字段、拿的是同一份没有时制档位的数，却畅通。
+>
+> **二、三条收口**（都在 `tools/ci/check_i18n_literals.py` 内，判定口径统一，规则语义一条没改）：
+> 1. `statements()` 做**整文件括号栈**：只在 `(`/`[` 未闭合时把下一行拼进当前语句（逻辑行），
+> 深度回 0 或攒够 `MAX_STMT_LINES = 60` 行就 flush。**刻意不并 ArkUI 块体的 `{`** —— R5b 的
+> ① `return` 操作数与 ③ 赋值右侧都要求「外层没有任何调用」，把 `Column() { … }` 的体内并进同一条语句，
+> 体内任何像文案的串都会算成 `@Builder Column(` 的实参，那两个位置从此整体哑火。
+> 2. **行号归因与就地豁免仍走物理行**：`Stmt.line_no` 建 char→line 映射，`stmt_line_at()` 反查命中所在行，
+> `Stmt.raw_lines` 供 `// i18n-allow` 匹配。并成逻辑行之后，豁免不会替到别的行上去。
+> 3. `literal_locals()` + `LOCAL_LITERAL_RE` 做**单一定值变量溯源**：只认「右侧是一个字面量」的
+> `const x = '…'`；同名不同值的重复声明直接作废该名字（宁可漏判也不猜值）。参数位是裸标识符且紧跟
+> 终止符时，按变量值合成一条命中并在消息里标「经由变量 x」。终止符集是 `',)]};` **加 `\n`** ——
+> 这条是实测撞出来的：`return caption` 正好落在一条语句的末尾，只认「到字符串结尾」时这一类仍然看不见。
+> R8⑤ 顺势改成按**标识符**判（`\b(getHours|getMinutes)\b`，跑在去过行内注释的代码文本上），
+> 代价写进注释：字符串里出现这个词也算一次，读时钟字段这件事本身就该只出现在形态表里。
+>
+> **三、`--self-test`：本轮真正的主角**。八条规则同时换扫描单位，最坏的结果不是报错而是**静默变瞎** ——
+> 「全仓 0 违规」既可能是代码干净，也可能是判定失效，而这两者在输出里长得一模一样。
+> 所以补 17 个临时样例、27 项断言的负向对照：八条规则的每个射程形状都要有「该拦必拦」的一侧，
+> 也都要有「不该报必不报」的一侧（R1 就地豁免、R4 块体不并、R2 三元条件不是 key、R6 真 key、
+> R7 builder 收 key、R8 走 `DateFormat`）；报了还不算数，needle 子串校验要求消息**说到点子上**。
+> 并且**每次全仓扫描前先静默自证一遍**（< 0.1 秒），对照不符就 `先修脚本，再谈代码` 直接退出 1。
+> 另跑两次变异探针（把 R8⑤ 的正则、语句末尾的 `\n` 终止符各自改回旧写法），确认对照集会 FAIL ——
+> 证明这套对照不是摆设。探针脚本用完即删，未入库。
+>
+> **四、网拉开后新暴露的四条**（两条真阳性、一条误伤、一条守卫自身的账）：
+> ① `SettingsPage` 设备行副标题 `${n} active sessions`（模板串，`Text(` 与实参隔了一行才一直没被判到）
+> → 新增词条并接 `this.t(key, n)`；**接的时候立刻撞上单复数**：`1 active sessions` 是坏英文，
+> 于是落 `devicesRowSubtitleKey(count)` 三档纯函数（单数 key / 复数 key / 0 条只留标题不写数字 ——
+> 取不到会话时「0 个活跃会话」是句假话），形状与 CHATHEADER-101 的 `inviteCountLabelKey` 一致；
+> ② `ChatPage` 搜索空态引导 `'Search messages in this chat'` / `'No results'`（三元两臂都在换行后）
+> → 前者建词条，后者**复用已有的 `'No Results'`**，不新增近似重复项；
+> ③ `feature/_template` 示例 reducer 的 `STEP_INVALID_TOAST = 'counter.stepInvalid'` 是模板占位 key，
+> 被自己的单测断言，**不能**进产品词典 → 走文档化的就地豁免 `// i18n-allow <原因>`；
+> ④ R6 的 `i18n-allow` 之前不进「就地豁免 N 处」台账（少计），也没强制写原因 → 现在计入并沿用同一红线。
+>
+> **五、测试**：core_common **83/83**、feature_settings **352/352**（新增 2 例：
+> `devicesRowSubtitleKey_zeroSessionsKeepsTitleWithoutNumber` 钉「0 条不写数字，且 0 档 key 不含 `{0}` 时
+> 多余实参被 `formatByKey` 忽略」、`devicesRowSubtitleKey_singularAndPluralEnglishForms` 钉单复数两档在
+> 中英两侧的实际取词）、feature_chat **469/469**、feature_template **15/15**；
+> 七守卫全 OK（architecture / codegen / design_tokens / a11y_labels / i18n_literals / appstorage_pairs /
+> secret_scan），词典 EN/ZH **549/549** 对等（R3），守卫自证 27 项对照全符。
+>
+> **六、设备 A/B**（模拟器，覆盖安装 `bm install -p`，不卸载不清数据）：
+> ① 英文档 · **0 档**：设置页设备行是 `Devices` + 副标题 `Active Sessions` —— 此刻活跃会话还没取回来，
+> `count === 0` 走「只留标题不写数字」档，实测**没有** `0 active sessions` 这种假话上屏；
+> ② 英文档 · 复数：会话回来后同一行副标题 `9 active sessions`；
+> ③ 中文档：同一行 `设备` + `9 个活跃会话`（中英两档措辞不同、字段集一致）；
+> ④ 会话内搜索空态引导：中文 `在此会话中搜索消息` → 切回英文同一处 `Search messages in this chat`；
+> 这条串落在输入框的 prompt 位，`dumpLayout` 的 `text` 字段里没有它，得对原始 json 做子串 grep 才取得到。
+> 取证后界面语言**还原成英文**（设置页回读 `Language, English`），账号与设备状态未改动。
+> **单数档 `1 active session` 设备不可复现**（真实会话数不为 1），由
+> `devicesRowSubtitleKey_singularAndPluralEnglishForms` 钉住，不记作实测。
+>
+> **七、盲区，如实记**：
+> ① 溯源只认「右侧恰好是一个字面量」的 `const`；`const a = ok ? 'A' : 'B'`、`const a = 'a' + b`、
+> 函数返回值初始化的变量仍然看不见 —— 这是「宁漏不猜」换来的代价。
+> ② 同名不同值的重复声明会把该名字整体作废（同一个 `hint` 在文件里赋过两个值就一个都不判）。
+> ③ R8⑤ 改按标识符判之后口径变宽：字符串里出现 `getHours`/`getMinutes` 这个词也算一次
+> （比如日志串 `'getHours failed'`），已经写进脚本注释。
+> ④ ArkUI 块体的 `{` 依旧不并：`Column() { … }` 体内不在 `(`/`[` 里的跨行模板串仍按物理行判。
+> ⑤ `MAX_STMT_LINES = 60`：超长语句攒到 60 行就 flush，其后实参不再并进同一条语句。
+> ⑥ 只并 `(`/`[`，纯链式 `.` 换行（深度已回 0）还是两条语句 —— `.onClick(` 靠的是那个左括号。
+> ⑦ 自证的形状覆盖以 fixture 为准：R5b ④「构造实参」只钉了样例类里那一种写法，
+> 其余构造调用形状没有各自独立的负向对照。
+>
+> **当前待认领候选**（按可独立落地排序）：① **`CommentsCoordinator` / `SearchCoordinator`
+> 的语言与时制订阅收口**（换语言/换时制后这两个协调器的投影仍要等下一次外部事件才重算）；
+> ② native TL schema/layer 被服务端嫌旧（动画贴纸包与 gifts 的 406 只剩这一条路）；
+> ③ 无会话上下文时的贴纸包预览宿主、未知包省掉重复的 `name-forced` 第二次往返；
+> ④ A11Y-104（播报内容无可观察口径）与 **RTL-101**；
+> ⑤ **APPLOCK-103 生物识别**（需真机 + HUKS auth-bound key，模拟器不可验）；
+> ⑥ TDLib `system_language_code` 接真设备语言；⑦ 头部在「返回再进来」时的在线数中间帧；
+> ⑧ 本轮七条盲区里值得收的两条 —— 溯源扩到「三元/拼接字面量」、R5b ④ 补构造形状对照；
 > ⑨ 薄遗留：PRIVACY 收尾、抽屉→联系人路由不响应返回键、GIF 实际发送链路与类目真实数据、
 > MEDIA-VIEWER / AUTODL / CONTACT / SHARED-AUDIO / AUDIO-BG / STICKER-RECENT 各处、
 > DEEPLINK 的 Share Extension、代理扫码导入、平板/折叠双栏、板卡动效静帧、lottie 的 Release 与全量 CI 收口。

@@ -21,7 +21,7 @@ export const counterReducer: Reducer<CounterState, CounterIntent, CounterEffect>
         return reduced(state.copyWith(state.count - state.step));
       case 'stepChanged':
         if (intent.value < CounterState.MIN_STEP || intent.value > CounterState.MAX_STEP) {
-          return reduced(state, [new ShowToast(STEP_INVALID_TOAST)]);
+          return reduced(state, [new ShowToast(STEP_INVALID_TOAST)]); // i18n-allow 示例占位 key，接入真实功能时换成词典里存在的 key
         }
         return reduced(state.copyWith(undefined, intent.value));
       case 'savePressed':

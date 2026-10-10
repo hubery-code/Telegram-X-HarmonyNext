@@ -53,6 +53,7 @@ import {
   ClosePasscodePage,
   OpenPasscodePage
 } from '../contract/SettingsIntent';
+import { devicesRowSubtitleKey } from '../model/ActiveSessionItem';
 import { NotificationScopeKey } from '../model/NotificationSettings';
 import {
   PrivacySettingItem,
@@ -617,9 +618,8 @@ export struct SettingsPage {
           .fontSize(this.getTheme().typography.body.fontSize)
           .fontColor(this.getTheme().colors.textPrimary)
 
-        Text(this.uiState.activeSessions.length > 0
-          ? `${this.uiState.activeSessions.length} active sessions`
-          : this.t('Active Sessions'))
+        Text(this.t(devicesRowSubtitleKey(this.uiState.activeSessions.length),
+          this.uiState.activeSessions.length))
           .fontSize(this.getTheme().typography.footnote.fontSize)
           .fontColor(this.getTheme().colors.textSecondary)
           .margin({ top: this.getTheme().spacing.xs })

@@ -5356,8 +5356,8 @@ export struct ChatPage {
           // 未输入关键词时给引导文案；输入过但无命中才提示 No results
           // （否则一打开面板就是"No results"，看起来像搜索坏了）。
           Text(this.uiState.searchQuery.trim().length === 0
-            ? 'Search messages in this chat'
-            : 'No results')
+            ? this.t('Search messages in this chat')
+            : this.t('No Results'))
             .fontSize(this.T.typography.body.fontSize)
             .fontColor(this.T.colors.textSecondary)
             .textAlign(TextAlign.Center)
