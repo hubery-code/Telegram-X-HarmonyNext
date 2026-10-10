@@ -25,8 +25,8 @@
  * 均由类型化控制器负责。
  */
 
-import { LightTheme, Theme, ThemeManager, parseChatFontSize, CHAT_FONT_SIZE_DEFAULT } from '@tgx/core-design-system';
-import { saveChatFontSize, writeSettingsString, KEY_APP_LANGUAGE } from '../store/SettingsStore';
+import { LightTheme, Theme, ThemeManager, ThemePreference, parseChatFontSize, CHAT_FONT_SIZE_DEFAULT } from '@tgx/core-design-system';
+import { saveChatFontSize, writeSettingsString, KEY_APP_LANGUAGE, KEY_THEME_PREFERENCE } from '../store/SettingsStore';
 import { PreferencesAutoDownloadPolicyStore } from '../store/AutoDownloadStore';
 import { AppLockGate } from '../applock/AppLockGate';
 import { appLockGate, appLockStore } from '../applock/AppLockWiring';
@@ -280,6 +280,16 @@ struct Index {
    */
   @StorageProp('appLanguage') @Watch('onAppLanguageChanged') appLanguageRaw: string = 'system';
   private appLanguageReady: boolean = false;
+  /**
+   * APPSTORAGE-PAIR-101：主题偏好的落盘通道，形状与上面两个完全一致。
+   *
+   * 存的是**偏好**（'system' | 'light' | 'dark'），不是解析后的 ThemeMode——后者会把
+   * 「跟随系统」在第一次写盘时永久改写成当时那一档。键由 `SettingsReducer` 在
+   * `changeThemeMode` 时写、由 EntryAbility 冷启动时从盘上种回来并喂给 ThemeManager。
+   * 此前这两个键（'themeMode' / 'themePreference'）只有写没有读，是守卫找出的第二例。
+   */
+  @StorageProp('themePreference') @Watch('onThemePreferenceChanged') themePreferenceRaw: string = 'system';
+  private themePreferenceReady: boolean = false;
   private unsubscribeThemeFn: (() => void) | null = null;
   /**
    * I18N-HOTSWITCH-101：把 Lang 的有效语言（'en' | 'zh'，不是偏好 'system'）镜像进
@@ -375,6 +385,8 @@ struct Index {
     // 回灌值；从这里起才允许把用户的选择写回磁盘（与字号同一条口径，免得启动回灌
     // 本身触发一次无意义的写）。
     this.appLanguageReady = true;
+    // APPSTORAGE-PAIR-101：同一个形状——'themePreference' 也已由 EntryAbility 种好。
+    this.themePreferenceReady = true;
 
     this.unsubscribeNavFn = this.navController.subscribe((route: AppRoute, prev: AppRoute | null) => {
       this.currentRoute = route;
@@ -409,6 +421,19 @@ struct Index {
       return;
     }
     writeSettingsString(KEY_APP_LANGUAGE, this.appLanguageRaw);
+  }
+
+  /**
+   * APPSTORAGE-PAIR-101：`themePreference` 变化 → 落盘。
+   *
+   * 与语言同一条口径：原样写盘，脏值与缺值由读盘侧 `themePreferenceFromStored` 收敛，
+   * 免得「写进去的」和「读回来的」是两套规则。
+   */
+  private onThemePreferenceChanged(): void {
+    if (!this.themePreferenceReady) {
+      return;
+    }
+    writeSettingsString(KEY_THEME_PREFERENCE, this.themePreferenceRaw);
   }
 
   aboutToDisappear(): void {
@@ -1761,7 +1786,12 @@ struct Index {
             // DRAWER-101：账号头（getMe + 头像）与菜单去向都由 chat_list 的
             // reducer/coordinator 决定；装配层只执行夜间模式切换与账号切换占位。
             onDrawerNightModeChanged: (on: boolean): void => {
-              ThemeManager.getInstance().setPreference(on ? 'dark' : 'light');
+              const preference: ThemePreference = on ? 'dark' : 'light';
+              ThemeManager.getInstance().setPreference(preference);
+              // APPSTORAGE-PAIR-101：这一位必须同时落进 'themePreference'。抽屉开关
+              // 是设置页 reducer 之外的第二条主题写入路径，不镜像进 AppStorage 的话，
+              // 它改掉的偏好会在冷启动被回灌成盘上的旧值（两条路径各说各话）。
+              AppStorage.setOrCreate<string>(KEY_THEME_PREFERENCE, preference);
               hilog.info(DOMAIN, TAG, 'drawer night mode changed: %{public}s', `${on}`);
             },
             onDrawerSwitchAccount: (): void => {

@@ -7,7 +7,9 @@ import {
 import {
   ThemeManager,
   resolveTheme,
-  resolveThemeMode
+  resolveThemeMode,
+  themeModeFromColorMode,
+  themePreferenceFromStored
 } from '../main/ets/ThemeManager';
 
 export default function themeManagerTest(): void {
@@ -179,6 +181,79 @@ export default function themeManagerTest(): void {
 
       tm.setPreference('dark');
       expect(callCount).assertEqual(0);
+    });
+
+    it('themePreferenceFromStored_acceptsOnlyTheThreeBuckets', 0, () => {
+      expect(themePreferenceFromStored('system')).assertEqual('system');
+      expect(themePreferenceFromStored('light')).assertEqual('light');
+      expect(themePreferenceFromStored('dark')).assertEqual('dark');
+    });
+
+    /**
+     * APPSTORAGE-PAIR-101：读盘侧的兜底语义。
+     *
+     * 缺值与脏值都回 'system'，**不回 'light' 也不回 'dark'**——显式档位会永久改写
+     * 「跟随系统」这个语义，用户下一次就没法回到跟随了。'light'/'dark' 这两个
+     * 解析结果形状的输入同样按脏值处理，防止有人误把 ThemeMode 存进偏好键。
+     */
+    it('themePreferenceFromStored_neverFallsBackToAnExplicitBucket', 0, () => {
+      expect(themePreferenceFromStored(null)).assertEqual('system');
+      expect(themePreferenceFromStored(undefined)).assertEqual('system');
+      expect(themePreferenceFromStored('')).assertEqual('system');
+      expect(themePreferenceFromStored('System')).assertEqual('system');
+      expect(themePreferenceFromStored('auto')).assertEqual('system');
+      expect(themePreferenceFromStored('  dark  ')).assertEqual('system');
+    });
+
+    /**
+     * `COLOR_MODE_DARK` 是数字 **0**，所以判定必须是等值比较而非真值判断。
+     * 这是本包最容易写错的一行：`if (colorMode)` 会把深色当成假。
+     */
+    it('themeModeFromColorMode_treatsZeroAsDark', 0, () => {
+      expect(themeModeFromColorMode(0)).assertEqual('dark');
+      expect(themeModeFromColorMode(1)).assertEqual('light');
+    });
+
+    it('themeModeFromColorMode_unreadableAndNotSetResolveLight', 0, () => {
+      expect(themeModeFromColorMode(null)).assertEqual('light');
+      expect(themeModeFromColorMode(undefined)).assertEqual('light');
+      // COLOR_MODE_NOT_SET：系统没告知，按 ThemeManager 的构造默认档（light）收，
+      // 不引入第三种状态。
+      expect(themeModeFromColorMode(-1)).assertEqual('light');
+    });
+
+    /**
+     * APPSTORAGE-PAIR-101：`setSystemMode` 此前在全仓**零调用者**，于是「跟随系统」
+     * 恒解析为浅色。这组用例把这条门的正确行为钉住，EntryAbility 的
+     * hydrateTheme/onConfigurationUpdate 是它的两个新调用点。
+     */
+    it('themeManager_setSystemMode_movesEffectiveThemeUnderSystemPreference', 0, () => {
+      const tm = new ThemeManager();
+      let callCount: number = 0;
+      tm.subscribe((_theme: Theme): void => {
+        callCount++;
+      });
+
+      tm.setSystemMode('dark');
+      expect(callCount).assertEqual(1);
+      expect(tm.getEffectiveMode()).assertEqual('dark');
+      expect(tm.getTheme()).assertEqual(DarkTheme);
+
+      // 同值不重复通知——回灌与 onConfigurationUpdate 都会被系统反复触发。
+      tm.setSystemMode('dark');
+      expect(callCount).assertEqual(1);
+    });
+
+    it('themeManager_setSystemMode_doesNotOverrideExplicitPreference', 0, () => {
+      const tm = new ThemeManager('light');
+      let callCount: number = 0;
+      tm.subscribe((_theme: Theme): void => {
+        callCount++;
+      });
+
+      tm.setSystemMode('dark');
+      expect(callCount).assertEqual(0);
+      expect(tm.getEffectiveMode()).assertEqual('light');
     });
   });
 }

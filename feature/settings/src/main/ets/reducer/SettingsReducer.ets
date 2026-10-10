@@ -415,9 +415,14 @@ export const settingsReducer: Reducer<SettingsUiState, SettingsIntent, SettingsE
       // 1. 同步更新全局 ThemeManager
       ThemeManager.getInstance().setPreference(themeIntent.themeMode);
 
-      // 2. 同步持久化到 AppStorage（若在 UI 运行环境中）
+      // 2. 同步持久化到 AppStorage（若在 UI 运行环境中）。
+      //    APPSTORAGE-PAIR-101：这里曾有 `'themeMode'` + `'themePreference'` 两个键，
+      //    全仓零读主（守卫 R1 找出的第二例，形状与上一轮的 `'languagePreference'`
+      //    完全一致）。现在只留一个键，存**偏好**而不是解析后的 ThemeMode——落盘解析
+      //    结果会把「跟随系统」在第一次写盘时永久改写成当时那一档。
+      //    读主与落盘在装配层：EntryAbility 冷启动回灌 → pages/Index 的 @StorageProp
+      //    + @Watch → store/SettingsStore；业务层保持零 Kit 依赖。
       try {
-        AppStorage.setOrCreate<string>('themeMode', themeIntent.themeMode);
         AppStorage.setOrCreate<string>('themePreference', themeIntent.themeMode);
       } catch (_e) {
         // 无 AppStorage 运行环境（如纯逻辑单测）容错

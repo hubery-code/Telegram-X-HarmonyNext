@@ -53,6 +53,16 @@ export const KEY_CHAT_FONT_SIZE: string = 'chatFontSize';
  */
 export const KEY_APP_LANGUAGE: string = 'appLanguage';
 
+/**
+ * APPSTORAGE-PAIR-101：主题**偏好**的落盘键（`'system' | 'light' | 'dark'`）。
+ *
+ * 与 `KEY_APP_LANGUAGE` 同一条链路、同一个形状：存的是**偏好**而不是解析后的
+ * `ThemeMode`。落盘有效值会把「跟随系统」在第一次写盘时永久改写成「浅色」或
+ * 「深色」——因为解析结果恰好是 light 时无法与「用户选了 light」区分。
+ * 键名与 `SettingsReducer` 写进 AppStorage 的那个一致。
+ */
+export const KEY_THEME_PREFERENCE: string = 'themePreference';
+
 let store: preferences.Preferences | undefined = undefined;
 
 /**

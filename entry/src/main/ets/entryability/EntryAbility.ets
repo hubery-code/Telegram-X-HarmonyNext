@@ -1,8 +1,14 @@
-import { AbilityConstant, bundleManager, UIAbility, Want } from '@kit.AbilityKit';
+import { AbilityConstant, bundleManager, Configuration, UIAbility, Want } from '@kit.AbilityKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { window } from '@kit.ArkUI';
 import { i18n } from '@kit.LocalizationKit';
 import { LanguagePreference, Lang, languagePreferenceFromStored, systemLanguageFromLocale } from '@tgx/core-common';
+import {
+  ThemeManager,
+  ThemePreference,
+  themeModeFromColorMode,
+  themePreferenceFromStored
+} from '@tgx/core-design-system';
 import { bootstrap, BootstrapResult } from '../Bootstrap';
 import { appDeepLinkQueue } from '../deeplink/DeepLinkQueue';
 import { TdlibParametersConfig } from '@tgx/feature-auth';
@@ -12,7 +18,8 @@ import {
   loadChatFontSize,
   readSettingsString,
   KEY_APP_LANGUAGE,
-  KEY_CHAT_FONT_SIZE
+  KEY_CHAT_FONT_SIZE,
+  KEY_THEME_PREFERENCE
 } from '../store/SettingsStore';
 import { AppLockGate } from '../applock/AppLockGate';
 import { appLockGate, installAppLock } from '../applock/AppLockWiring';
@@ -155,6 +162,12 @@ export default class EntryAbility extends UIAbility {
     // 两步都排在 loadContent 之前，首帧即为正确语言，不需要二次重渲。
     this.hydrateLanguage();
 
+    // APPSTORAGE-PAIR-101：主题与语言是同一个失效形状的两例。此前 `themeMode` /
+    // `themePreference` 两个键都只有写没有读（设置页选「深色」→ 冷启动变回「跟随
+    // 系统」），且 `ThemeManager.setSystemMode` 全仓零调用者——于是「跟随系统」
+    // 在任何机器上都恒解析为浅色。两条都在这里接上，同样排在 loadContent 之前。
+    this.hydrateTheme();
+
     // 应用锁（APPLOCK-101）：自动锁定档位存在上面那条 preferences 盘上，
     // 所以装配必须排在 initSettingsStore 之后；bootstrap() 决定「这次起来要不要锁」，
     // 必须排在 loadContent 之前，否则解锁前会闪一帧主界面。
@@ -212,6 +225,60 @@ export default class EntryAbility extends UIAbility {
       hilog.warn(DOMAIN, TAG, 'system language unreadable: %{public}s', String(e));
       return null;
     }
+  }
+
+  /**
+   * APPSTORAGE-PAIR-101：启动时的主题回灌，两条写入方向都在这里。
+   *
+   * 与 `hydrateLanguage()` 同形状，同样只写**偏好**不写解析结果：`'system'` 这一
+   * 档必须能一直跟着系统深浅色走，落盘 `ThemeMode` 会把它在第一次写盘时永久固化。
+   *
+   * `setSystemMode` 排在 `setPreference` 之前：两者都是同值即返回，反过来写时
+   * 「偏好本就是 system + 系统是深色」这条路径会先被 setPreference 拦掉，深色白读一次。
+   */
+  private hydrateTheme(): void {
+    const preference: ThemePreference = themePreferenceFromStored(readSettingsString(KEY_THEME_PREFERENCE));
+    const colorMode: number | undefined = this.systemColorMode();
+    ThemeManager.getInstance().setSystemMode(themeModeFromColorMode(colorMode));
+    ThemeManager.getInstance().setPreference(preference);
+    AppStorage.setOrCreate<string>(KEY_THEME_PREFERENCE, preference);
+    hilog.info(DOMAIN, TAG, 'theme restored: colorMode=%{public}s preference=%{public}s effective=%{public}s',
+      colorMode === undefined ? 'unreadable' : `${colorMode}`, preference,
+      ThemeManager.getInstance().getEffectiveMode());
+  }
+
+  /**
+   * 系统当前深浅色原值（`ConfigurationConstant.ColorMode`，深色是 **0**）。
+   *
+   * 读不到按 undefined 返回，交给 `themeModeFromColorMode` 收为浅色——与 ThemeManager
+   * 的构造默认档一致，不会把「读不到」写成第三种状态。
+   */
+  private systemColorMode(): number | undefined {
+    try {
+      return this.context.config.colorMode;
+    } catch (e) {
+      hilog.warn(DOMAIN, TAG, 'system color mode unreadable: %{public}s', String(e));
+      return undefined;
+    }
+  }
+
+  /**
+   * APPSTORAGE-PAIR-101：系统深浅色/语言在应用运行期间改变走这一个钩子。
+   *
+   * 这是 `ThemeManager.setSystemMode` 在本仓的**第一个**调用者（此前它是有 setter
+   * 没有 caller 的死门，于是「跟随系统」恒解析为浅色）。
+   *
+   * 语言刻意重取 `i18n.System.getSystemLanguage()` 而不是读 `newConfig.language`：
+   * 与 `hydrateLanguage` 同一个读数来源，冷启动与运行中两条路径不会算出两个值
+   * （上一轮 LANG-PERSIST-101 记录的盲区 ①）。深浅色取回调里的新值——那是变更的
+   * 那一位，`context.config` 在本回调触发前不一定已同步。
+   */
+  onConfigurationUpdate(newConfig: Configuration): void {
+    const colorMode: number | undefined = newConfig.colorMode;
+    if (colorMode !== undefined) {
+      ThemeManager.getInstance().setSystemMode(themeModeFromColorMode(colorMode));
+    }
+    Lang.getInstance().setSystemLanguage(systemLanguageFromLocale(this.systemLocale()));
   }
 
   onForeground(): void {

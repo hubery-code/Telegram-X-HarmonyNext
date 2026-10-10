@@ -126,9 +126,9 @@
 
 | 功能 ID | 功能 | 优先级 | Android 参考位置 | TDLib 方法 | Harmony 目标行为 | 平台能力/权限 | 状态 | 负责人 |
 |---|---|---|---|---|---|---|---|---|
-| FEAT-UI-001 | 深色/浅色主题 | P1 | `theme/ThemeManager.java:48`（DEFAULT_DARK_THEME = NIGHT_BLUE）, `theme/Theme.java` | —（平台侧） | 跟随系统/手动切换，关键页面（列表/聊天/设置）色值正确 | — | Accepted | 迁移组 |
+| FEAT-UI-001 | 深色/浅色主题 | P1 | `theme/ThemeManager.java:48`（DEFAULT_DARK_THEME = NIGHT_BLUE）, `theme/Theme.java` | —（平台侧） | 跟随系统/手动切换，关键页面（列表/聊天/设置）色值正确；偏好（system/light/dark）跨进程持久，系统深浅色经 `onConfigurationUpdate` 实时参与解析 | — | Accepted | 迁移组, APPSTORAGE-PAIR-101 |
 | FEAT-UI-002 | 大字体（聊天字号调节） | P1 | `unsorted/Settings.java:791`（CHAT_FONT_SIZES）, `ui/SettingsController.java:218`（getChatFontSize） | —（平台侧） | 大字号模式下气泡/列表不截断不重叠 | 字体缩放 | Accepted | SET-105 |
-| FEAT-UI-003 | 中/英文案资源 | P1 | `core/Lang.java`, `ui/SettingsLanguageController.java` | — | 关键路径文案中英齐全，无硬编码遗漏（视图层与 coordinator/model 数据层的写死文案、词典缺项由 `check_i18n_literals.py` 六条规则强制）；语言偏好跨进程持久且系统语言参与解析 | — | Accepted | I18N-LITERAL-101/102/103/104, I18N-HOTSWITCH-101, LANG-PERSIST-101 |
+| FEAT-UI-003 | 中/英文案资源 | P1 | `core/Lang.java`, `ui/SettingsLanguageController.java` | — | 关键路径文案中英齐全，无硬编码遗漏（视图层与 coordinator/model 数据层的写死文案、词典缺项由 `check_i18n_literals.py` 六条规则强制）；语言偏好跨进程持久且系统语言参与解析；写进 AppStorage 的键必须有读者（`check_appstorage_pairs.py` R1） | — | Accepted | I18N-LITERAL-101/102/103/104, I18N-HOTSWITCH-101, LANG-PERSIST-101, APPSTORAGE-PAIR-101 |
 | FEAT-UI-004 | 抽屉主导航（≡ 账号头 + 联系人/通话/我的收藏/设置/邀请朋友/帮助 + 夜间模式开关） | P1 | `navigation/DrawerController.java`, `MainActivity.java` | —（平台侧） | 会话列表抽屉导航，账号头展示在线状态，入口路由正确 | — | Accepted | DRAWER-101 |
 
 ---
@@ -2351,6 +2351,101 @@
 >
 > **后续**：候选 ① 结掉。剩余按根因挂 **I18N-DATE**（两套日期形态并存）、
 > 群头部两条解析路径字段集对齐、守卫跨行调用与间接传参收口、APPStorage-PAIR-101（③④）。
+>
+> **交付更新（2026-10-10 第五十七轮，APPSTORAGE-PAIR-101）**：上面的盲区 ①③④ 已由该包结掉 ——
+> ① 系统语言与深浅色的**运行中变化**都接进了 `Ability.onConfigurationUpdate`（不需要 `COMMON_EVENT_LOCALE_CHANGED`，
+> 这是框架给的标准钩子）；③④ 由新守卫 `check_appstorage_pairs.py` 覆盖，且 ③ 的修法与本品完全同形状
+> （见下一节）。盲区 ②（TDLib `system_language_code` 写死 `'en'`）**仍未动**，是本轮之后的候选。
+
+### FEAT-UI-001 / APPSTORAGE-PAIR-101 AppStorage 键读写配对守卫，并把主题偏好按同一形状接活（2026-10-10）
+
+> **题面**：上一轮的盲区 ④ 说得很直白 —— 「只有写、没人读」的 AppStorage 键**不报错、不崩溃、
+> 也不在任何类型里**，它唯一的表征是「改完重启变回默认」。这类缺口在上一个包被发现的形状是
+> `'languagePreference'` 一个键；本轮先做守卫（盲区 ④），再用守卫回头扫主题（盲区 ③）。
+> 扫出来的是**三处**，不是一处：
+> ① `'themeMode'` 写 1 / 读 0，② `'themePreference'` 写 1 / 读 0 —— 两个键都躺在设置页 reducer 里，
+> 全仓没有任何读者，所以「深色」在第一次重启时必然回落到「跟随系统」；
+> ③ `ThemeManager.setSystemMode` **全仓零调用者**。这一条比 ①② 更严重也更隐蔽：
+> 偏好是 `'system'` 时 `resolveTheme` 读的是私有字段 `systemMode`，而它从未被外部改动过，
+> 于是**「跟随系统」在任何一台机器上、无论系统深浅色，恒解析为浅色**。
+> 前四个包各记了一次「主题不持久」的盲区，都没有发现这一条 —— 因为大家找的是「没人读」，
+> 而这次缺的是「**没人写那个 setter**」，形状不同、症状一样。
+>
+> **守卫 `tools/ci/check_appstorage_pairs.py`（第四条「形状类」静态防线）四条规则**：
+> R1 **配对**：每个键字面量的写主（`AppStorage.setOrCreate/getOrCreate/setAndRemove`）与读主
+> （`@StorageProp/@StorageLink/@StorageConsume/@Provide/@Consumer`、`AppStorage.get/has/delete`）
+> 必须都非零；只有写 → `DEAD-WRITE`，只有读 → `ORPHAN-READ`。
+> R2 **键必须是字面量或可解析的常量**：`AppStorage.get(someFn())` 这类动态键无法配对，判 `DYNAMIC-KEY`
+> （允许 `KEY_*` 常量跨文件解析，因为落盘键名正是靠这种常量做契约的）。
+> R3 **常量名↔值形状**：`KEY_THEME_PREFERENCE = 'themeMode'` 这种「常量名说 A、值是 B」的漂移
+> 会让落盘键与观察键静默错开，判 `NAME-DRIFT`（`KEY_APP_LANGUAGE` → `appLanguage` 的驼峰换算）。
+> R4 **豁免必须带原因**：`// appstorage-allow <原因>`，无原因的裸豁免同样报错。
+> 只扫 `entry|feature|core|platform` 的 `src/main/ets`（测试与文档里的示例字符串不是契约）；
+> `--basis` 输出每键的写/读计数表，这条在本次交付里兼任「改前基线」的证据来源。
+> 规则靠**三组负向对照**验证会拦，而不是靠读代码自信：临时把 reducer 改回只有写（拦下 `DEAD-WRITE`）、
+> 临时把常量值改成漂移（拦下 `NAME-DRIFT`）、临时用函数返回值当键（拦下 `DYNAMIC-KEY`），
+> 三处探针都自动还原，未留在工作区。已注册进 `tools/ci/ci.sh`（11 步重排为 12 步，第 8 步）。
+>
+> **修法（按 LANG-PERSIST-101 的同一形状，不图省事只删死键）**：
+> 写：reducer 删掉重复的 `'themeMode'`，只留 `'themePreference'` 一个键，
+> 且存的是**偏好**（`'system'|'light'|'dark'`）而不是解析后的 `ThemeMode`
+> —— 落盘解析结果会把「跟随系统」在第一次写盘时永久改写成 light/dark，因为系统恰为浅色时
+> 「解析成 light」与「用户选了 light」在盘上无法区分。语言那个包踩过同一个坑，此处按同样的判据避开。
+> 落盘：`entry/pages/Index.ets` 以 `@StorageProp('themePreference') @Watch` 观察 → `writeSettingsString(KEY_THEME_PREFERENCE, …)`。
+> 读：`EntryAbility.onWindowStageCreate` 在 `hydrateLanguage()` 之后、`loadContent()` 之前跑 `hydrateTheme()`
+> → 先 `setSystemMode(themeModeFromColorMode(this.context.config.colorMode))`、后 `setPreference(盘上偏好)`
+> （**顺序有因**：两个 setter 都是「同值即 return」，反过来先灌偏好会让系统位停在构造器默认值上不再更新），
+> 再把同一个偏好种回 `AppStorage` 让 UI 与盘一致。
+> 新增两个 Kit-free 纯函数 `themePreferenceFromStored` / `themeModeFromColorMode` 进 `core/design_system`
+> （`check_architecture.py` 禁 `core/*` 引 `@kit`，entry 只负责取数与灌值）。
+> 运行中变化：`Ability.onConfigurationUpdate` 是框架给的标准钩子，同时刷新系统深浅色与系统语言
+> —— 这一笔顺带结掉上一轮盲区 ①（运行中改系统语言观察不到），不需要自己订阅 `COMMON_EVENT_LOCALE_CHANGED`。
+>
+> **按实测定的两处**：
+> ① `colorMode` 在这台模拟器上实测报 **1**（`COLOR_MODE_LIGHT`），不是 `-1`，
+> 所以判定写成 `colorMode === 0 ? 'dark' : 'light'` 的**等值比较**而不是真值判断
+> （`COLOR_MODE_NOT_SET=-1`、`DARK=0`、`LIGHT=1`：若按真值，`-1` 会被误判成深色）。
+> ② 取不到（undefined / 抛错）时兜 `'light'` —— 那正是构造器默认值，**不引入第三个状态**，
+> 否则「系统语言未知」会变成「主题未知」。
+>
+> **顺带关掉的第三处漂移**：抽屉的夜间模式开关是设置页 reducer **之外**的第二条主题写入路径，
+> 它过去只调 `ThemeManager.setPreference`，不碰 AppStorage。接完持久化后如果不镜像，
+> 这条路径改掉的偏好会在冷启动被盘上旧值回灌覆盖（两条写入路径各说各话）。
+> 现在它也写 `'themePreference'`：**一条持久化通道，两个写主**。
+>
+> **测试**：core_design_system **60/60**（新增 6 例：三档白名单、脏值全拒收且**绝不兜成显式档**
+> —— null/`''`/`'System'`/`'auto'`/`'  dark  '` 一律 `'system'`；`colorMode` 零值判深、
+> null/undefined/-1 判浅；`setSystemMode` 在偏好为 system 时真的挪动生效主题且只在变化时通知一次、
+> 偏好为显式档时**不许**覆盖显式偏好）；feature_settings **350/350**（新增 3 例：
+> 回灌序列「偏好 system + 系统深色 → 落深色」「盘上无值 → 保持 system/light」、
+> 抽屉两个档位必须是合法偏好值）；entry **154/154**（新套件 `SettingsStoreTheme.test.ets` 4 例，
+> 钉 `KEY_THEME_PREFERENCE === 'themePreference'` 的跨层键名契约、冷启动缺失回落、
+> 偏好×系统档的合成，以及 store 未打开时的写失败分支）。
+> 七守卫（架构 / 代码生成 / token / 无障碍 / i18n / **appstorage 配对** / secret_scan）全 OK。
+>
+> **设备 A/B**（127.0.0.1:5555，只读页面与改主题，未发消息、未动账号状态、**未卸载未清数据**）：
+> 改前基线不是「再装一次旧 HAP」得来的，而是机器可查的两份：`--basis` 计数表里
+> `themeMode 写1/读0`、`themePreference 写1/读0`，加严格跑出的两行 `DEAD-WRITE`。
+> ① 冷启动 `EntryAbility: theme restored: colorMode=1 preference=system effective=light`（与 `colorMode=1` 一致）；
+> ② 点 Dark → 设置行 `Theme Mode, Dark`，屏幕像素采样 `(28,28,30)`（深色底）；
+> ③ 盘上直接可读：`…/haps/entry/preferences/tgx_settings` 里 `<string key="themePreference">dark</string>`；
+> ④ `aa force-stop` → 冷启动 `theme restored: colorMode=1 preference=dark effective=dark`，整屏保持深色
+> —— **这一条就是改前必然失败的那一步**（改前这里会是 `preference=system`，因为没人读盘）；
+> ⑤ 取证后按 System 档位还原，重新冷启动确认 `preference=system effective=light`。
+> **设备交付现状**：主题停在 `system`，盘上多了 `themePreference=system` 一项（改前该键不存在，
+> 「缺失」与 `'system'` 经同一函数解析，行为完全一致）；语言仍停在上一轮取证留下的 `appLanguage=en`，
+> 本轮未改。
+>
+> **盲区，如实记**：
+> ① 守卫只认**同名键**的读写配对，读不出「写了 A 键、读的是语义相同但名字不同的 B 键」这种错配；
+> 跨语言/主题之外的 AppStorage 键（会话草稿、滚动位置等）本轮没有一条有读者需求，未逐一评估；
+> ② `onConfigurationUpdate` 能观察系统深浅色与语言切换，但**依赖模拟器/系统真的发出配置回调**，
+> 本机只验证了冷启动路径，运行中翻系统深色未取证；
+> ③ TDLib `system_language_code` 仍写死 `'en'`（上一轮盲区 ② 原样未动）。
+>
+> **后续**：候选「APPStorage-PAIR-101」结掉（含其上游 ③④ 两条盲区）。剩余按根因挂
+> **I18N-DATE**、群头部两条解析路径字段集对齐、守卫跨行调用与间接传参收口、
+> TDLib `system_language_code` 接真设备语言。
 
 
 | 功能 ID | 功能名 |

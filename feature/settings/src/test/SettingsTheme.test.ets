@@ -3,7 +3,9 @@ import {
   ThemeManager,
   LightTheme,
   DarkTheme,
-  ThemePreference
+  ThemePreference,
+  themeModeFromColorMode,
+  themePreferenceFromStored
 } from '@tgx/core-design-system';
 import { ManualClock, SequentialIdGenerator } from '@tgx/core-common';
 import { ReducerEnv } from '@tgx/feature-template';
@@ -108,6 +110,58 @@ export default function settingsThemeTest(): void {
       const mode: SettingsThemeMode = 'system';
       const pref: ThemePreference = mode;
       expect(pref).assertEqual('system');
+    });
+
+    /**
+     * APPSTORAGE-PAIR-101：`EntryAbility.hydrateTheme()` 的四步（读盘 → 校验回落 →
+     * setSystemMode → setPreference）在这里可复现，因为它全程只用公开 API。
+     *
+     * 钉的是最易失的那一格：**偏好为 'system' 且系统深色**。'system' 与构造默认值
+     * 相同，`setPreference` 会同值直接返回，所以这一格的深浅完全由 `setSystemMode`
+     * 决定——而它此前全仓零调用者，于是这一格恒为浅色。
+     */
+    it('hydrateSequence_systemPreferenceWithDarkSystem_landsDark', 0, () => {
+      const tm: ThemeManager = ThemeManager.getInstance();
+      tm.reset();
+
+      const storedPreference: string | null = 'system';
+      const storedColorMode: number = 0;
+      tm.setSystemMode(themeModeFromColorMode(storedColorMode));
+      tm.setPreference(themePreferenceFromStored(storedPreference));
+
+      expect(tm.getPreference()).assertEqual('system');
+      expect(tm.getSystemMode()).assertEqual('dark');
+      expect(tm.getEffectiveTheme()).assertEqual(DarkTheme);
+    });
+
+    /**
+     * 同一串步骤在盘上什么都没有时（首装）必须回到浅色 + 跟随系统，
+     * 且**不许**落到某个显式档位——显式档位会把「跟随系统」永久改写。
+     */
+    it('hydrateSequence_withoutDiskValue_staysSystemLight', 0, () => {
+      const tm: ThemeManager = ThemeManager.getInstance();
+      tm.reset();
+
+      tm.setSystemMode(themeModeFromColorMode(null));
+      tm.setPreference(themePreferenceFromStored(null));
+
+      expect(tm.getPreference()).assertEqual('system');
+      expect(tm.getEffectiveTheme()).assertEqual(LightTheme);
+      tm.reset();
+    });
+
+    /**
+     * 抽屉夜间模式开关是 reducer 之外的第二条主题写入路径（entry/pages/Index.ets）。
+     * 它写的必须是**偏好**串的同一套词表，否则落盘的值在读盘侧会被当脏值丢掉。
+     */
+    it('drawerBucketValues_areValidPreferences', 0, () => {
+      expect(themePreferenceFromStored('dark')).assertEqual('dark');
+      expect(themePreferenceFromStored('light')).assertEqual('light');
+      const drawerOn: boolean = true;
+      const drawerOff: boolean = false;
+      const asPreference: ThemePreference = themePreferenceFromStored(drawerOn ? 'dark' : 'light');
+      expect(asPreference).assertEqual('dark');
+      expect(themePreferenceFromStored(drawerOff ? 'dark' : 'light')).assertEqual('light');
     });
   });
 }

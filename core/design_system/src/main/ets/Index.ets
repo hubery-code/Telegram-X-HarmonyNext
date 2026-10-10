@@ -65,5 +65,7 @@ export {
   ThemeManager,
   themeManager,
   resolveTheme,
-  resolveThemeMode
+  resolveThemeMode,
+  themePreferenceFromStored,
+  themeModeFromColorMode
 } from './ThemeManager';

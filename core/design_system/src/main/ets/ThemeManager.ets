@@ -29,6 +29,32 @@ export function resolveThemeMode(
 }
 
 /**
+ * 纯函数：把盘上读到的原始字符串收成合法偏好；脏值一律回 `'system'`。
+ *
+ * 与 `Lang` 侧的 `languagePreferenceFromStored` 同规则：**不兜成 `'light'`**。
+ * `'light'` 带着「用户显式选了浅色」的语义，兜成它会永久改写「跟随系统」；
+ * `'system'` 又正好是首装默认。`'AUTO'`、`'dark '`（带空格）、`''`、null 全部拒收。
+ */
+export function themePreferenceFromStored(stored: string | null | undefined): ThemePreference {
+  if (stored === 'system' || stored === 'light' || stored === 'dark') {
+    return stored;
+  }
+  return 'system';
+}
+
+/**
+ * 纯函数：`ConfigurationConstant.ColorMode` → 本仓的 `ThemeMode`。
+ *
+ * 系统侧取值是 `COLOR_MODE_NOT_SET = -1` / `COLOR_MODE_DARK = 0` / `COLOR_MODE_LIGHT = 1`，
+ * 数字 0 是唯一表示深色的那个，所以只能按等值判而不是真值判（`0` 在布尔位置是假的）。
+ * core 层保持零 Kit 依赖，因此常量由调用方（entry 装配层）以数字传入。
+ * 未设置（-1）与读不到（null/undefined）都回 `'light'`，与 `ThemeManager` 构造器默认一致。
+ */
+export function themeModeFromColorMode(colorMode: number | null | undefined): ThemeMode {
+  return colorMode === 0 ? 'dark' : 'light';
+}
+
+/**
  * Pure function: resolve effective Theme instance from preference, system mode,
  * optional font scale, and optional chat font size.
  */
