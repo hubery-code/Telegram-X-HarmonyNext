@@ -704,6 +704,11 @@ const EN_DICTIONARY: Record<string, string> = {
   'Search chats, messages...': 'Search chats, messages...',
   'Searching...': 'Searching...',
   'Search Error': 'Search Error',
+  // I18N-HOTSWITCH-102 —— 三条搜索失败兜底文案（以前硬编码在 SearchCoordinator，不在词典，
+  // 守卫 R5b 看不见：现在状态里传 key，这里补双词典）
+  'Too many searches. Please wait a moment and try again.': 'Too many searches. Please wait a moment and try again.',
+  'Search is temporarily unavailable. Check your connection and try again.': 'Search is temporarily unavailable. Check your connection and try again.',
+  'Search failed. Please try again.': 'Search failed. Please try again.',
   'No Results': 'No Results',
   'Search messages in this chat': 'Search messages in this chat',
   'No results found for "{0}"': 'No results found for "{0}"',
@@ -1310,6 +1315,9 @@ const ZH_DICTIONARY: Record<string, string> = {
   'Search chats, messages...': '搜索聊天、消息…',
   'Searching...': '正在搜索…',
   'Search Error': '搜索出错',
+  'Too many searches. Please wait a moment and try again.': '搜索太频繁了，请稍候再试。',
+  'Search is temporarily unavailable. Check your connection and try again.': '搜索暂不可用，请检查网络后再试。',
+  'Search failed. Please try again.': '搜索失败，请重试。',
   'No Results': '没有结果',
   'Search messages in this chat': '在此会话中搜索消息',
   'No results found for "{0}"': '未找到与“{0}”相关的结果',

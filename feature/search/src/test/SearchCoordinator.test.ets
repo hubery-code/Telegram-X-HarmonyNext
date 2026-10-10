@@ -2,6 +2,7 @@ import { describe, it, expect } from '@ohos/hypium';
 import {
   AppError,
   AppErrors,
+  Lang,
   ManualClock,
   Result,
   SequentialIdGenerator,
@@ -14,7 +15,7 @@ import { SearchMessageItem } from '../main/ets/contract/SearchMessageItem';
 import {
   SearchCoordinator,
   SearchQueryProvider,
-  searchErrorMessage
+  searchErrorMessageKey
 } from '../main/ets/coordinator/SearchCoordinator';
 
 function waitFor(millis: number): Promise<void> {
@@ -57,7 +58,7 @@ class RecordingSearchProvider implements SearchQueryProvider {
       return err<SearchMessageItem[], AppError>(this.messageError);
     }
     return ok<SearchMessageItem[], AppError>([
-      new SearchMessageItem(this.messageQueries.length, 1, query, 'Sender', query, '12:00')
+      new SearchMessageItem(this.messageQueries.length, 1, query, 'Sender', query, 1758000600)
     ]);
   }
 }
@@ -76,7 +77,7 @@ export default function searchCoordinatorTest(): void {
       await waitFor(20);
 
       expect(coordinator.state.isLoading).assertFalse();
-      expect(coordinator.state.errorMessage).assertEqual(
+      expect(coordinator.state.errorMessageKey).assertEqual(
         'Too many searches. Please wait a moment and try again.'
       );
       expect(coordinator.state.chatResults.length).assertEqual(0);
@@ -86,12 +87,32 @@ export default function searchCoordinatorTest(): void {
 
     it('networkFailure_hasStableUserSafeMessage', 0, () => {
       const networkError: AppError = AppErrors.network('timeout', 'diagnostic timeout', true);
-      expect(searchErrorMessage(networkError)).assertEqual(
+      expect(searchErrorMessageKey(networkError)).assertEqual(
         'Search is temporarily unavailable. Check your connection and try again.'
       );
-      expect(searchErrorMessage(AppErrors.internal('decode'))).assertEqual(
+      expect(searchErrorMessageKey(AppErrors.internal('decode'))).assertEqual(
         'Search failed. Please try again.'
       );
+    });
+
+    /**
+     * I18N-HOTSWITCH-102：这三个串以前是**硬编码英文**且不在词典里，
+     * 于是中文界面原样上屏，而守卫 R5b 只拦「词典已知的英文」—— 它们压根不在词典，
+     * 属于守卫看不见的洞。本用例把「兜底 key 双词典命中」钉成回归：
+     * 任一档缺词条，页面 `this.t(key)` 就会把 key 原文铺到屏幕上。
+     */
+    it('searchErrorKeys_resolveInBothDictionaries', 0, () => {
+      const lang: Lang = Lang.getInstance();
+      const keys: string[] = [
+        searchErrorMessageKey(AppErrors.network('timeout', 'diagnostic', true)),
+        searchErrorMessageKey(AppErrors.tdlib('unknown', 'failed', true, undefined, '429:FLOOD_WAIT_15')),
+        searchErrorMessageKey(AppErrors.internal('decode'))
+      ];
+      for (let i = 0; i < keys.length; i++) {
+        const key: string = keys[i];
+        expect(lang.formatByKey(key, 'zh', []).length > 0).assertTrue();
+        expect(lang.formatByKey(key, 'zh', []) !== key).assertTrue();
+      }
     });
 
     it('throttleCoalescesRapidQueriesAndKeepsOnlyLatestResult', 0, async (): Promise<void> => {
@@ -141,12 +162,12 @@ export default function searchCoordinatorTest(): void {
 
     it('floodWaitErrorInCauseOrMessage_mapsToRateLimitMessage', 0, () => {
       const floodError1: AppError = AppErrors.tdlib('unknown', 'TDLib request failed', true, undefined, '429:FLOOD_WAIT_15');
-      expect(searchErrorMessage(floodError1)).assertEqual(
+      expect(searchErrorMessageKey(floodError1)).assertEqual(
         'Too many searches. Please wait a moment and try again.'
       );
 
       const floodError2: AppError = AppErrors.tdlib('internal', 'Search flood exceeded', true);
-      expect(searchErrorMessage(floodError2)).assertEqual(
+      expect(searchErrorMessageKey(floodError2)).assertEqual(
         'Too many searches. Please wait a moment and try again.'
       );
     });

@@ -64,19 +64,20 @@ export class OnSearchLoaded implements Intent {
 
 export class SearchFailed implements Intent {
   readonly kind: 'searchFailed' = 'searchFailed';
-  readonly errorMessage: string;
+  /** 词典 key（I18N-HOTSWITCH-102）：状态里传 key 不传串，由页面 `t()` 现取。 */
+  readonly errorMessageKey: string;
 
-  constructor(errorMessage: string) {
-    this.errorMessage = errorMessage;
+  constructor(errorMessageKey: string) {
+    this.errorMessageKey = errorMessageKey;
   }
 }
 
 export class OnSearchFailed implements Intent {
   readonly kind: 'onSearchFailed' = 'onSearchFailed';
-  readonly errorMessage: string;
+  readonly errorMessageKey: string;
 
-  constructor(errorMessage: string) {
-    this.errorMessage = errorMessage;
+  constructor(errorMessageKey: string) {
+    this.errorMessageKey = errorMessageKey;
   }
 }
 

@@ -18,7 +18,7 @@ import {
   TdWireObject,
   TdWireValue
 } from '@tgx/td-gateway';
-import { Result, AppError } from '@tgx/core-common';
+import { Lang, Result, AppError, LanguagePreference } from '@tgx/core-common';
 import { CommentsCoordinator, CommentsUiState } from '../main/ets/coordinator/CommentsCoordinator';
 
 const TEST_CHANNEL_ID: number = 1001;
@@ -179,6 +179,55 @@ export default function commentsCoordinatorTest(): void {
       expect(sendReqs.length).assertEqual(1);
 
       coordinator.destroy();
+    });
+
+    /**
+     * I18N-HOTSWITCH-102 不变量①：`buildState()` 是纯投影 —— 同一原始输入
+     * 投两次必须逐字相同（不然语言重投的「同值即返回」会漏掉真实变化，
+     * 反过来重投不幂等则每次 tick 都会有假刷新）。
+     */
+    it('sameSourceTwice_producesIdenticalProjection', 0, (): void => {
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const scope: AccountScope = createScope(bridge);
+      const coordinator: CommentsCoordinator = new CommentsCoordinator(scope, TEST_CHANNEL_ID, TEST_POST_ID);
+
+      coordinator.setInputText('Deterministic');
+      const first: CommentsUiState = coordinator.getState();
+      coordinator.setInputText('Deterministic');
+      const second: CommentsUiState = coordinator.getState();
+
+      expect(JSON.stringify(second)).assertEqual(JSON.stringify(first));
+
+      coordinator.destroy();
+    });
+
+    /**
+     * I18N-HOTSWITCH-102 不变量②：语言位变化后，协调器**只做本地重投影** ——
+     * 称谓/兜底标题换词，TDLib 请求一条不多发。订阅在 `start()` 里挂上。
+     */
+    it('languageChange_reprojectsLocallyWithoutNewRequests', 0, (): void => {
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const scope: AccountScope = createScope(bridge);
+      const coordinator: CommentsCoordinator = new CommentsCoordinator(scope, TEST_CHANNEL_ID, TEST_POST_ID);
+      const lang: Lang = Lang.getInstance();
+      const originalPreference: LanguagePreference = lang.getPreference();
+
+      coordinator.start();
+      coordinator.setInputText('A comment');
+      coordinator.sendComment();
+      const requestsBefore: number = bridge.sent.length;
+      expect(coordinator.getState().comments[0].senderName).assertEqual('Me');
+
+      try {
+        lang.setLanguage('zh');
+        const state: CommentsUiState = coordinator.getState();
+        expect(state.comments[0].senderName).assertEqual('我');
+        expect(state.channelTitle).assertEqual('频道帖子');
+        expect(bridge.sent.length).assertEqual(requestsBefore);
+      } finally {
+        lang.setLanguage(originalPreference);
+        coordinator.destroy();
+      }
     });
 
     it('destroy_preventsSubscribersFromReceivingUpdates', 0, (): void => {

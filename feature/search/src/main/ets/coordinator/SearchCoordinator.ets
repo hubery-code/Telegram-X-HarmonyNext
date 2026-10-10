@@ -5,15 +5,20 @@
  * - 支持防抖（默认 300ms）；
  * - 封装 TDLib searchChats / searchMessages 与统一查询契约；
  * - 提供状态订阅 subscribe(listener: (state: SearchUiState) => void): () => void。
+ *
+ * I18N-HOTSWITCH-102 的定案：本协调器**不需要**语言/时制订阅。
+ * 上屏的本地化输出只剩两类，都不在这里解析：
+ * ① 时间 —— 条目带原始 `dateUnix`，形态由页面在 `activeLanguage` / `is24HourClock`
+ *    两个响应式位上现算（与 `ChatListPage` 的会话行同一条路子）；
+ * ② 失败文案 —— 状态里存的是 `errorMessageKey`，页面 `this.t(key)` 现取。
+ * 所以换语言不会让这里的任何字段变旧，也就没有「重投影」要做 —— 反之，
+ * 结果列表若要缓存重投，就得把已解析串存回状态，那正是本轮要拆掉的形状。
  */
 
 import { Logger } from '@tgx/observability';
 import {
   AppError,
   AppErrors,
-  datePartsFrom,
-  formatTimeOfDay,
-  Lang,
   Result,
   SequentialIdGenerator,
   SystemClock,
@@ -59,26 +64,20 @@ import { searchReducer } from '../reducer/SearchReducer';
 
 const TAG: string = 'SearchCoordinator';
 
-/**
- * 搜索结果行的时间。I18N-DATE-102：这一位此前手写 `HH:mm`（`getHours()` / `getMinutes()`
- * 直接拼串），既不跟语言也不跟系统时制走 —— 系统切 12 小时制后仍出 `14:05`。
- * 形态改由 `DateFormat` 给，档位与语言在投影时现取（投影出的是已解析串，
- * 换语言/换时制必须由协调器重投影，与 HOTSWITCH-101 同一条路子）。
- */
-function formatMessageDate(unixSeconds: number): string {
-  return formatTimeOfDay(
-    datePartsFrom(unixSeconds * 1000),
-    Lang.getInstance().getLanguage(),
-    Lang.getInstance().getHourClock()
-  );
-}
-
 export interface SearchQueryProvider {
   searchChats(query: string, limit: number): Promise<Result<SearchChatItem[], AppError>>;
   searchMessages(query: string, limit: number): Promise<Result<SearchMessageItem[], AppError>>;
 }
 
-export function searchErrorMessage(error: AppError): string {
+/**
+ * 搜索失败文案的 **key**（I18N-HOTSWITCH-102）。
+ *
+ * 以前这个函数直接回三句写死英文，而它们从没进过 `Lang` 词典 —— 所以 R5b 的
+ * 「值命中词典的英文」根本拦不到它（拦不到正是这类洞的成因：串没建词条，守卫就当它是数据）。
+ * 现在按 `…Key` 结尾的约定回 key，页面 `this.t(errorMessageKey)` 在响应式语言位上解析，
+ * 换语言不需要重新失败一次才能换词。
+ */
+export function searchErrorMessageKey(error: AppError): string {
   const causeLower: string = (error.cause !== undefined ? error.cause : '').toLowerCase();
   const messageLower: string = (error.message !== undefined ? error.message : '').toLowerCase();
   if (
@@ -205,13 +204,17 @@ export class TdlibSearchQueryProvider implements SearchQueryProvider {
                 textSnippet = textContent.text.text;
               }
             }
+            // I18N-HOTSWITCH-102：这一位以前写死 `'Sender'` —— 一句既不在词典、又会在
+            // 中文界面原样上屏的英文。TDLib 的 searchMessages 只回 message，发送者名字要
+            // 额外取用户，本地没有就叫它空着，页面按 `senderName.length > 0` 不渲染这一行。
+            // 时间同理改回原始输入（`dateUnix`），形态由页面在响应式语言/时制位上现算。
             items.push(new SearchMessageItem(
               msg.id,
               msg.chat_id,
               this.titleOf(msg.chat_id),
-              'Sender',
+              '',
               textSnippet,
-              formatMessageDate(msg.date)
+              msg.date
             ));
           }
           return ok<SearchMessageItem[], AppError>(items);
@@ -249,11 +252,13 @@ export class MockSearchQueryProvider implements SearchQueryProvider {
       new SearchChatItem(3, 'HarmonyOS Developers', 'harmony_dev', null, false, true),
       new SearchChatItem(4, 'ArkTS Community', 'arkts_chat', null, false, true)
     ];
+    // 时间给 unix 秒（I18N-HOTSWITCH-102）：以前这几条 fixture 直接写死 '10:30' 这样的
+    // 已解析串，形态根本不吃语言与时制；现在把档位选择交回页面。
     this.mockMessages = mockMessages !== undefined ? mockMessages : [
-      new SearchMessageItem(101, 1, 'Telegram News', 'Telegram', 'Welcome to Telegram X on HarmonyOS NEXT!', '10:30'),
-      new SearchMessageItem(102, 2, 'Telegram X Beta', 'Alice', 'Testing the global search feature', '11:15'),
-      new SearchMessageItem(103, 3, 'HarmonyOS Developers', 'Bob', 'ArkTS strict typing rules are important', '12:00'),
-      new SearchMessageItem(104, 4, 'ArkTS Community', 'Charlie', 'MVI and Reducer pattern works smoothly', '14:20')
+      new SearchMessageItem(101, 1, 'Telegram News', 'Telegram', 'Welcome to Telegram X on HarmonyOS NEXT!', 1758000600),
+      new SearchMessageItem(102, 2, 'Telegram X Beta', 'Alice', 'Testing the global search feature', 1758000900),
+      new SearchMessageItem(103, 3, 'HarmonyOS Developers', 'Bob', 'ArkTS strict typing rules are important', 1758001200),
+      new SearchMessageItem(104, 4, 'ArkTS Community', 'Charlie', 'MVI and Reducer pattern works smoothly', 1758001500)
     ];
   }
 
@@ -553,7 +558,7 @@ export class SearchCoordinator {
       return;
     }
     this.logger.logError(TAG, error);
-    this.dispatch(new SearchFailed(searchErrorMessage(error)));
+    this.dispatch(new SearchFailed(searchErrorMessageKey(error)));
   }
 
   private async executeSearch(request: PendingSearch): Promise<void> {

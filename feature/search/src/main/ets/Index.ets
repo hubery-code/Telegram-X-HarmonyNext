@@ -31,7 +31,7 @@ export {
 } from './reducer/SearchReducer';
 export {
   SearchQueryProvider,
-  searchErrorMessage,
+  searchErrorMessageKey,
   TdlibSearchQueryProvider,
   MockSearchQueryProvider,
   SearchChatMetadata,

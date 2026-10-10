@@ -52,13 +52,13 @@ export const searchReducer: Reducer<SearchUiState, SearchIntent, SearchEffect> =
           isLoading: false,
           chatResults: [],
           messageResults: [],
-          errorMessage: null
+          errorMessageKey: null
         };
         return reduced(state.copyWith(opts));
       }
       const opts: SearchUiStateOptions = {
         query: updateIntent.query,
-        errorMessage: null
+        errorMessageKey: null
       };
       return reduced(state.copyWith(opts));
     }
@@ -69,7 +69,7 @@ export const searchReducer: Reducer<SearchUiState, SearchIntent, SearchEffect> =
         isLoading: false,
         chatResults: [],
         messageResults: [],
-        errorMessage: null
+        errorMessageKey: null
       };
       return reduced(state.copyWith(opts));
     }
@@ -89,7 +89,7 @@ export const searchReducer: Reducer<SearchUiState, SearchIntent, SearchEffect> =
       const opts: SearchUiStateOptions = {
         activeTab: tabIntent.tab,
         isLoading: true,
-        errorMessage: null
+        errorMessageKey: null
       };
       const effects: SearchEffect[] = [
         new ExecuteSearchEffect(trimmedQuery, tabIntent.tab)
@@ -106,7 +106,7 @@ export const searchReducer: Reducer<SearchUiState, SearchIntent, SearchEffect> =
           isLoading: false,
           chatResults: [],
           messageResults: [],
-          errorMessage: null
+          errorMessageKey: null
         };
         return reduced(state.copyWith(opts));
       }
@@ -114,7 +114,7 @@ export const searchReducer: Reducer<SearchUiState, SearchIntent, SearchEffect> =
       const opts: SearchUiStateOptions = {
         query: searchIntent.query,
         isLoading: true,
-        errorMessage: null,
+        errorMessageKey: null,
         recentSearches: updatedRecent
       };
       const effects: SearchEffect[] = [
@@ -130,7 +130,7 @@ export const searchReducer: Reducer<SearchUiState, SearchIntent, SearchEffect> =
         isLoading: false,
         chatResults: successIntent.chats,
         messageResults: successIntent.messages,
-        errorMessage: null
+        errorMessageKey: null
       };
       return reduced(state.copyWith(opts));
     }
@@ -141,7 +141,7 @@ export const searchReducer: Reducer<SearchUiState, SearchIntent, SearchEffect> =
         isLoading: false,
         chatResults: loadedIntent.chats,
         messageResults: loadedIntent.messages,
-        errorMessage: null
+        errorMessageKey: null
       };
       return reduced(state.copyWith(opts));
     }
@@ -152,7 +152,7 @@ export const searchReducer: Reducer<SearchUiState, SearchIntent, SearchEffect> =
         isLoading: false,
         chatResults: [],
         messageResults: [],
-        errorMessage: failedIntent.errorMessage
+        errorMessageKey: failedIntent.errorMessageKey
       };
       return reduced(state.copyWith(opts));
     }
@@ -163,7 +163,7 @@ export const searchReducer: Reducer<SearchUiState, SearchIntent, SearchEffect> =
         isLoading: false,
         chatResults: [],
         messageResults: [],
-        errorMessage: failedIntent.errorMessage
+        errorMessageKey: failedIntent.errorMessageKey
       };
       return reduced(state.copyWith(opts));
     }

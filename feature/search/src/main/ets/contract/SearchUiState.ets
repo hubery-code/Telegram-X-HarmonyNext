@@ -18,7 +18,7 @@ export interface SearchUiStateOptions {
   readonly chatResults?: SearchChatItem[];
   readonly messageResults?: SearchMessageItem[];
   readonly recentSearches?: string[];
-  readonly errorMessage?: string | null;
+  readonly errorMessageKey?: string | null;
 }
 
 export class SearchUiState implements UiState {
@@ -28,7 +28,12 @@ export class SearchUiState implements UiState {
   readonly chatResults: SearchChatItem[];
   readonly messageResults: SearchMessageItem[];
   readonly recentSearches: string[];
-  readonly errorMessage: string | null;
+  /**
+   * 失败文案的**词典 key**（I18N-HOTSWITCH-102）。以前这里存的是 `searchErrorMessage()`
+   * 拼好的英文整句，于是它在状态里一直是旧的：换语言要重新失败一次才换词，
+   * 而那三句还从没进过词典（中文界面直接上屏英文）。
+   */
+  readonly errorMessageKey: string | null;
 
   constructor(
     query: string,
@@ -37,7 +42,7 @@ export class SearchUiState implements UiState {
     chatResults: SearchChatItem[],
     messageResults: SearchMessageItem[],
     recentSearches: string[],
-    errorMessage: string | null
+    errorMessageKey: string | null
   ) {
     this.query = query;
     this.isLoading = isLoading;
@@ -45,7 +50,7 @@ export class SearchUiState implements UiState {
     this.chatResults = chatResults;
     this.messageResults = messageResults;
     this.recentSearches = recentSearches;
-    this.errorMessage = errorMessage;
+    this.errorMessageKey = errorMessageKey;
   }
 
   static initial(): SearchUiState {
@@ -60,7 +65,7 @@ export class SearchUiState implements UiState {
       options.chatResults !== undefined ? options.chatResults : this.chatResults,
       options.messageResults !== undefined ? options.messageResults : this.messageResults,
       options.recentSearches !== undefined ? options.recentSearches : this.recentSearches,
-      options.errorMessage !== undefined ? options.errorMessage : this.errorMessage
+      options.errorMessageKey !== undefined ? options.errorMessageKey : this.errorMessageKey
     );
   }
 }

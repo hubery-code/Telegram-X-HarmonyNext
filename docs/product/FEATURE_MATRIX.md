@@ -2797,6 +2797,62 @@
 > MEDIA-VIEWER / AUTODL / CONTACT / SHARED-AUDIO / AUDIO-BG / STICKER-RECENT 各处、
 > DEEPLINK 的 Share Extension、代理扫码导入、平板/折叠双栏、板卡动效静帧、lottie 的 Release 与全量 CI 收口。
 
+### FEAT-UI-003 / I18N-HOTSWITCH-102 两协调器收口：重投影 vs 视图侧现算，外加守卫看不见的 never-registered 串（2026-10-10）
+
+> **题面**（上一轮候选 ①）：「`CommentsCoordinator` / `SearchCoordinator` 的语言与时制订阅收口」——
+> 换语言/换时制后这两个协调器的投影仍要等下一次外部事件才重算。
+>
+> **一、两个协调器拆成两种机制，判据是「状态里存了什么」**：
+> ① **`CommentsCoordinator` 走协调器重投影**。它的 UiState 里存的是**已解析串**：发送者称谓（`Me`/`User`）、
+> 时刻、兜底串（「Channel post」「No comment thread」「Network error」）。照 HOTSWITCH-101 的 7 个协调器
+> 同一条路子改：所有会随语言/时制变的位退回**原始输入**（`titleSource` / `postTextSource: string|null` /
+> `postDateUnix` / `countSource` / `errorKey` / `errorRaw` / `commentSources[]`；评论行退成 `CommentSource`，
+> 只留与语言无关的 `id/text/dateUnix/isOutgoing/isSending/avatarColor` —— `avatarColor` 保留是因为它由
+> `sender_id` 派生而投影阶段已没有 `sender_id`），`buildState()` 成为**全文件唯一组装点**（词典取值全部
+> 现取），`subscribeLanguage()` 同值即返回、变化时 `repaint()`。**纯本地重投影，不发任何新请求**：
+> 切语言必须进设置、评论页此时已销毁，设备走不到「同一实例的语言 tick」，所以这条路的证据是两条单测
+> —— `sameSourceTwice_producesIdenticalProjection`（同输入两次投影逐字相同）与
+> `languageChange_reprojectsLocallyWithoutNewRequests`（语言位变化后称谓/标题换词而 `bridge.sent` 计数不变）。
+> ② **`SearchCoordinator` 反向走，根本不加订阅**。它的投影只是「格式化」（行时间戳），把状态里仅剩的两类
+> 已解析串清干净即可：搜索结果行时间的手拼 `HH:mm` 删掉，`SearchMessageItem` 构造器收
+> `dateUnix: number` 原始数据；错误串收成 `errorMessageKey` 载体。行时刻由 `SearchPage` 在 render 时经
+> `messageRowDate(dateUnix, lang, clock)` 现算，行 key 加 `语言|时制` 指纹防 LazyForEach 复用旧行
+> —— 与 ChatListPage 同形。
+> **判据**：重投影适合「投影本身要拼词」（称谓、兜底、副标题），视图侧现算适合「投影只是格式化」——
+> 后者连订阅都可以省。
+>
+> **二、R5b 看不见的洞：never-registered 串**。三条搜索失败串
+> （`Too many searches. Please wait a moment and try again.` / `Search is temporarily unavailable. Check your
+> connection and try again.` / `Search failed. Please try again.`）写死在 `SearchCoordinator`、
+> **从没进过 `Lang` 词典** —— 守卫 R5b 的判据是「词典认识的英文」（命中 EN 词才提示接回），
+> never-registered 的串在四条规则下全部静默，设备上中文界面会原样出英文。
+> 收法是 `*Key` 载体约定：`SearchUiState.errorMessage` → `errorMessageKey`，错误只留 key
+> （TDLib/AppError 原文走另一条 `errorRaw` 位不动，与语言无关），三条串进双词典
+>（EN/ZH **552/552**），新单测 `searchErrorKeys_resolveInBothDictionaries` 把三条 key 在两侧都能解出
+> 且不等于 key 本身钉死。同包清理：mock fixture 的 `'Sender'` 占位串删除（改传 `''`，这串同样不在词典）；
+> `SearchPage.ErrorView` 的 `@Builder` 按值参按 R7 改收 `messageKey`、体内 `this.t(messageKey)`。
+>
+> **测试**：core_common **83/83**、feature_search **28/28**（错误断言全部改 `errorMessageKey`）、
+> feature_chat **471/471**；七守卫全 OK（architecture / codegen / design_tokens / a11y_labels /
+> i18n_literals / appstorage_pairs / secret_scan），词典 EN/ZH **552/552** 对等。
+>
+> **设备 A/B**（模拟器，Debug HAP 覆盖安装 `bm install -p`，不卸载不清数据；只读页面与改界面语言，
+> 未发消息、未动账号状态，账号与会话标识不入文档）：
+> ① 英文档全局搜索同一 query 出消息行时间 `1:13 AM` / `10:31 AM` / `3:54 PM`
+>（此前该位置是手拼 `HH:mm`，不跟语言不跟时制）；
+> ② 切简体中文（设置 LANGUAGE 卡，不重启）→ 设置页整屏即时翻转，同 query 同三条消息行出
+> `上午1:13` / `上午10:31` / `下午3:54`，分组头 `聊天（2）` / `消息（20）`；
+> ③ 中文会话列表 `9月21日` / `周四` / `下午5:09` / `上午2:54` —— 语言与形态双跟随；
+> ④ 取证后界面语言还原成英文。
+> **如实记**：应用内搜索走真 TDLib（mock provider 只活在单测），与账号无关的词一律 `No Results`，
+> 取证须用账号里真实存在的会话名；评论页（帖子评论线程）的中文 A/B 未取 —— 只能从频道帖子进入，
+> 时间盒内未打通，其语言不变量由 feature_chat 两条新单测钉住（「单测代设备」先例同口径）。
+>
+> **盲区，如实记**：① `errorMessageKey` 只覆盖搜索链路，其它 coordinator 的 `errorRaw` 位仍是原文透传
+>（那是**有意**的：TDLib 原文与语言无关，不在词典射程内）；② 评论页的乐观发送行在设备上无 A/B
+>（发送路径会向讨论组发真实消息，取证红线禁止）；③ 真机时制 24 小时档下的搜索行形态未取
+>（模拟器系统停在 12 小时档，24 小时档形态由 `timeOfDay_clockGears` 单测钉住）。
+
 
 | 功能 ID | 功能名 |
 |---|---|

@@ -11,7 +11,16 @@
  */
 
 import { LightTheme, Theme } from '@tgx/core-design-system';
-import { A11y, a11y, Lang, SupportedLanguage } from '@tgx/core-common';
+import {
+  a11y,
+  A11y,
+  datePartsFrom,
+  formatTimeOfDay,
+  hourClockFromFlag,
+  HourClock,
+  Lang,
+  SupportedLanguage
+} from '@tgx/core-common';
 import { SearchChatItem } from '../contract/SearchChatItem';
 import { SearchMessageItem } from '../contract/SearchMessageItem';
 import { SearchTab, SearchUiState } from '../contract/SearchUiState';
@@ -50,6 +59,19 @@ function getAvatarLetter(title: string): string {
   return trimmed.charAt(0).toUpperCase();
 }
 
+/**
+ * 消息行的时间形态（I18N-HOTSWITCH-102）。
+ *
+ * 条目只带原始 unix 秒，形态在**视图侧**现算 —— 与 `ChatListPage.formatChatTimestamp`
+ * 同一条路子。以前是协调器把 `HH:mm` 拼好存进状态，于是换语言/换时制后列表里的时间
+ * 一直是旧串，除非重新搜一次（而换语言不该触发取数）。
+ */
+function messageRowDate(
+  dateUnix: number, lang: SupportedLanguage, clock: HourClock
+): string {
+  return formatTimeOfDay(datePartsFrom(dateUnix * 1000), lang, clock);
+}
+
 @Component
 export struct SearchPage {
   /**
@@ -72,6 +94,12 @@ export struct SearchPage {
    * 的字面量联合类型没有保证，而 t() 里反正要过一次收敛。
    */
   @StorageProp('activeLanguage') effectiveLanguage: string = 'en';
+  /**
+   * I18N-DATE-102 / HOTSWITCH-102：系统 12/24 小时制档也是响应式位。
+   * 消息行的时间在这一位上现算，所以它和 `effectiveLanguage` 一起进列表 key
+   * （见 `localeTickKey()`），否则切了时制旧行会被复用、时间停在旧形态。
+   */
+  @StorageProp('is24HourClock') is24HourClock: boolean = true;
   @Prop uiState: SearchUiState = SearchUiState.initial();
   coordinator: SearchCoordinator | null = null;
   onDispatch: (intent: Object) => void = () => {};
@@ -160,9 +188,26 @@ export struct SearchPage {
     this.onNavigateToChat(chatId, messageId);
   }
 
+  /**
+   * I18N-HOTSWITCH-102：语言档只从响应式语言位取（文案与时间形态共用同一档），
+   * 时制同理 —— `Lang.getLanguage()` / `getHourClock()` 是单例上的普通方法，
+   * ArkUI 不会因为它们变化而重渲染本页。
+   */
+  private rowLanguage(): SupportedLanguage {
+    return this.effectiveLanguage === 'zh' ? 'zh' : 'en';
+  }
+
+  private rowClock(): HourClock {
+    return hourClockFromFlag(this.is24HourClock);
+  }
+
+  /** 列表 key 的语言/时制指纹：见 `messageRowKey`。 */
+  private localeTickKey(): string {
+    return `${this.effectiveLanguage}|${this.is24HourClock}`;
+  }
+
   private t(key: string, ...args: (string | number)[]): string {
-    const langCode: SupportedLanguage = this.effectiveLanguage === 'zh' ? 'zh' : 'en';
-    return Lang.getInstance().formatByKey(key, langCode, args);
+    return Lang.getInstance().formatByKey(key, this.rowLanguage(), args);
   }
 
   build() {
@@ -232,8 +277,8 @@ export struct SearchPage {
       // 3. 内容区
       if (this.uiState.isLoading) {
         this.LoadingView()
-      } else if (this.uiState.errorMessage !== null) {
-        this.ErrorView(this.uiState.errorMessage)
+      } else if (this.uiState.errorMessageKey !== null) {
+        this.ErrorView(this.uiState.errorMessageKey)
       } else if (this.uiState.query.trim().length === 0) {
         this.RecentSearchesView()
       } else if (this.uiState.chatResults.length === 0 && this.uiState.messageResults.length === 0) {
@@ -265,15 +310,20 @@ export struct SearchPage {
     .alignItems(HorizontalAlign.Center)
   }
 
+  /**
+   * I18N-HOTSWITCH-102：收 key 不收已解析串。
+   * 以前这一位收的是 `errorMessage`（协调器拼好的英文），一方面中文界面原样上屏，
+   * 另一方面 `@Builder` 的按值参数只在宿主 build 时求值一次，换语言也不会重算（R7）。
+   */
   @Builder
-  private ErrorView(message: string) {
+  private ErrorView(messageKey: string) {
     Column() {
       Text(this.t('Search Error'))
         .fontSize(this.T.typography.headline.fontSize)
         .fontWeight(FontWeight.Bold)
         .fontColor(this.T.colors.destructive)
         .textAlign(TextAlign.Center)
-      Text(message)
+      Text(this.t(messageKey))
         .fontSize(this.T.typography.subheadline.fontSize)
         .fontColor(this.T.colors.destructive)
         .textAlign(TextAlign.Center)
@@ -422,6 +472,8 @@ export struct SearchPage {
             })
         }
 
+        // 键里带语言/时制指纹：行内的 `Channel`/`Group` 徽标是 `this.t()` 现取的串，
+        // ForEach 同键会复用旧行、不重渲染 —— 与 `ChatListPage.chatRowKey` 同因。
         ForEach(this.uiState.chatResults, (item: SearchChatItem) => {
           ListItem() {
             this.ChatResultRow(item)
@@ -429,7 +481,7 @@ export struct SearchPage {
           .onClick(() => {
             this.handleChatClick(item.chatId);
           })
-        }, (item: SearchChatItem) => `chat_${item.chatId}`)
+        }, (item: SearchChatItem) => `chat_${item.chatId}|${this.localeTickKey()}`)
       }
 
       // 消息分段
@@ -457,7 +509,7 @@ export struct SearchPage {
           .onClick(() => {
             this.handleMessageClick(item.chatId, item.messageId);
           })
-        }, (item: SearchMessageItem) => `msg_${item.chatId}_${item.messageId}`)
+        }, (item: SearchMessageItem) => `msg_${item.chatId}_${item.messageId}|${this.localeTickKey()}`)
       }
     }
     .width('100%')
@@ -560,7 +612,7 @@ export struct SearchPage {
             .textOverflow({ overflow: TextOverflow.Ellipsis })
             .layoutWeight(1)
 
-          Text(item.dateFormatted)
+          Text(messageRowDate(item.dateUnix, this.rowLanguage(), this.rowClock()))
             .fontSize(this.T.typography.caption.fontSize)
             .fontColor(this.T.colors.textSecondary)
             .margin({ left: this.T.spacing.xs })

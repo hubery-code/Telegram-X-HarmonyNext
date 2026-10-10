@@ -41,8 +41,8 @@ function sampleChats(): SearchChatItem[] {
 
 function sampleMessages(): SearchMessageItem[] {
   return [
-    new SearchMessageItem(101, 1, 'Telegram News', 'Admin', 'Announcement', '12:00'),
-    new SearchMessageItem(102, 2, 'Community Group', 'Bob', 'Hello everyone', '12:05')
+    new SearchMessageItem(101, 1, 'Telegram News', 'Admin', 'Announcement', 1758000600),
+    new SearchMessageItem(102, 2, 'Community Group', 'Bob', 'Hello everyone', 1758000900)
   ];
 }
 
@@ -57,16 +57,16 @@ export default function searchReducerTest() {
       expect(state.chatResults.length).assertEqual(0);
       expect(state.messageResults.length).assertEqual(0);
       expect(state.recentSearches.length).assertEqual(0);
-      expect(state.errorMessage).assertNull();
+      expect(state.errorMessageKey).assertNull();
     });
 
     it('updateQuery_withNonEmptyQuery_updatesQueryAndClearsError', 0, () => {
       const env = makeEnv();
-      const initial = SearchUiState.initial().copyWith({ errorMessage: 'old error' });
+      const initial = SearchUiState.initial().copyWith({ errorMessageKey: 'old error' });
       const result = searchReducer(initial, new UpdateQuery('hello'), env);
 
       expect(result.state.query).assertEqual('hello');
-      expect(result.state.errorMessage).assertNull();
+      expect(result.state.errorMessageKey).assertNull();
       expect(result.effects.length).assertEqual(0);
     });
 
@@ -85,7 +85,7 @@ export default function searchReducerTest() {
       expect(result.state.isLoading).assertFalse();
       expect(result.state.chatResults.length).assertEqual(0);
       expect(result.state.messageResults.length).assertEqual(0);
-      expect(result.state.errorMessage).assertNull();
+      expect(result.state.errorMessageKey).assertNull();
       expect(result.effects.length).assertEqual(0);
     });
 
@@ -96,7 +96,7 @@ export default function searchReducerTest() {
         isLoading: true,
         chatResults: sampleChats(),
         messageResults: sampleMessages(),
-        errorMessage: 'some error'
+        errorMessageKey: 'some error'
       });
 
       const result = searchReducer(activeState, new ClearQuery(), env);
@@ -105,7 +105,7 @@ export default function searchReducerTest() {
       expect(result.state.isLoading).assertFalse();
       expect(result.state.chatResults.length).assertEqual(0);
       expect(result.state.messageResults.length).assertEqual(0);
-      expect(result.state.errorMessage).assertNull();
+      expect(result.state.errorMessageKey).assertNull();
       expect(result.effects.length).assertEqual(0);
     });
 
@@ -139,7 +139,7 @@ export default function searchReducerTest() {
 
       expect(result.state.activeTab).assertEqual('chats');
       expect(result.state.isLoading).assertTrue();
-      expect(result.state.errorMessage).assertNull();
+      expect(result.state.errorMessageKey).assertNull();
       expect(result.effects.length).assertEqual(1);
 
       const effect: SearchEffect = result.effects[0];
@@ -177,7 +177,7 @@ export default function searchReducerTest() {
 
       expect(result.state.query).assertEqual('ArkTS');
       expect(result.state.isLoading).assertTrue();
-      expect(result.state.errorMessage).assertNull();
+      expect(result.state.errorMessageKey).assertNull();
       expect(result.state.recentSearches.length).assertEqual(2);
       expect(result.state.recentSearches[0]).assertEqual('ArkTS');
       expect(result.state.recentSearches[1]).assertEqual('existing');
@@ -216,7 +216,7 @@ export default function searchReducerTest() {
       const env = makeEnv();
       const state = SearchUiState.initial().copyWith({
         isLoading: true,
-        errorMessage: 'prior error'
+        errorMessageKey: 'prior error'
       });
       const chats = sampleChats();
       const messages = sampleMessages();
@@ -228,7 +228,7 @@ export default function searchReducerTest() {
       expect(result.state.messageResults.length).assertEqual(2);
       expect(result.state.chatResults[0].title).assertEqual('Telegram News');
       expect(result.state.messageResults[0].textSnippet).assertEqual('Announcement');
-      expect(result.state.errorMessage).assertNull();
+      expect(result.state.errorMessageKey).assertNull();
       expect(result.effects.length).assertEqual(0);
     });
 
@@ -236,7 +236,7 @@ export default function searchReducerTest() {
       const env = makeEnv();
       const state = SearchUiState.initial().copyWith({
         isLoading: true,
-        errorMessage: 'prior error'
+        errorMessageKey: 'prior error'
       });
       const chats = sampleChats();
       const messages = sampleMessages();
@@ -248,7 +248,7 @@ export default function searchReducerTest() {
       expect(result.state.messageResults.length).assertEqual(2);
       expect(result.state.chatResults[0].title).assertEqual('Telegram News');
       expect(result.state.messageResults[0].textSnippet).assertEqual('Announcement');
-      expect(result.state.errorMessage).assertNull();
+      expect(result.state.errorMessageKey).assertNull();
       expect(result.effects.length).assertEqual(0);
     });
 
@@ -263,7 +263,7 @@ export default function searchReducerTest() {
       const result = searchReducer(state, new SearchFailed('Network timeout'), env);
 
       expect(result.state.isLoading).assertFalse();
-      expect(result.state.errorMessage).assertEqual('Network timeout');
+      expect(result.state.errorMessageKey).assertEqual('Network timeout');
       expect(result.state.chatResults.length).assertEqual(0);
       expect(result.state.messageResults.length).assertEqual(0);
       expect(result.effects.length).assertEqual(0);
@@ -280,7 +280,7 @@ export default function searchReducerTest() {
       const result = searchReducer(state, new OnSearchFailed('Flood wait error'), env);
 
       expect(result.state.isLoading).assertFalse();
-      expect(result.state.errorMessage).assertEqual('Flood wait error');
+      expect(result.state.errorMessageKey).assertEqual('Flood wait error');
       expect(result.state.chatResults.length).assertEqual(0);
       expect(result.state.messageResults.length).assertEqual(0);
       expect(result.effects.length).assertEqual(0);
@@ -339,7 +339,7 @@ export default function searchReducerTest() {
         chatResults: sampleChats(),
         messageResults: sampleMessages(),
         recentSearches: ['first'],
-        errorMessage: null
+        errorMessageKey: null
       });
 
       const queryBefore = state.query;
