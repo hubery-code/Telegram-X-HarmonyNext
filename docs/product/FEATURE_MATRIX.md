@@ -29,7 +29,7 @@
 | FEAT-FEAS-003 | 真机垂直链路：授权→会话列表→打开聊天→收发文本→重启恢复 | P0 | `MainActivity.java`, `ui/ChatsController.java`, `ui/MessagesController.java` | SetAuthenticationPhoneNumber, GetChats, GetChatHistory, SendMessage, GetAuthorizationState | 真机一次会话内完成全链路，杀进程重启后状态自动恢复 | 网络 | Accepted | 迁移组 |
 | FEAT-FEAS-004 | 数据目录隔离、数据库密钥保存、异常退出恢复 | P0 | `telegram/Tdlib.java`（updateAuthState, :1194），`BaseApplication.kt` | SetTdlibParameters（database_directory / encryption key） | 每账号独立目录，key 入 HUKS，kill -9 后无数据库损坏 | 文件、HUKS | Accepted | 迁移组 |
 | FEAT-FEAS-005 | 前后台切换、断网重连、24 小时 update 事件 soak | P0 | `telegram/ConnectionListener.java`, `telegram/TdlibManager.java`, `core/WatchDog.java` | updateConnectionState（可订阅） | 24h 事件流无乱序/丢失/泄漏，断网自动重连 | 网络 | Accepted | 迁移组 |
-| FEAT-FEAS-006 | Push Kit token 经 Telegram 后端端到端唤醒 | P0 | `telegram/Tdlib.java:683`（RegisterDevice）, `service/PushHandler.kt`, `service/PushProcessor.java` | RegisterDevice, updateNotification | 新 bundle 的 Push token 注册成功，杀进程后推送可达 | Push Kit | Blocked | ADR-003 |
+| FEAT-FEAS-006 | Push Kit token 经 Telegram 后端端到端唤醒 | P0 | `telegram/Tdlib.java:683`（RegisterDevice）, `service/PushHandler.kt`, `service/PushProcessor.java` | RegisterDevice, updateNotification | 新 bundle 的 Push token 注册成功，杀进程后推送可达 | Push Kit | Deferred (用户 2026-10-12 指示短期不做) | ADR-003 |
 | FEAT-FEAS-007 | tgcalls/WebRTC + OHAudio/Camera 双向音视频最小 PoC | P0 | `voip/TgCallsController.java`, `voip/VoIPController.java`, `voip/AudioRecordJNI.java`, `voip/AudioTrackJNI.java` | SetCall, DiscardCall | 真机双向通话 ≥60s，音频双向可听、视频帧可渲染 | Call Service Kit、OHAudio、Camera、麦克风/相机权限 | Deferred | ADR-004 |
 
 ## P1：核心聊天 MVP（计划 §3.2）
@@ -108,8 +108,8 @@
 
 | 功能 ID | 功能 | 优先级 | Android 参考位置 | TDLib 方法 | Harmony 目标行为 | 平台能力/权限 | 状态 | 负责人 |
 |---|---|---|---|---|---|---|---|---|
-| FEAT-PUSH-001 | Push token 注册与消息推送接收 | P1 | `telegram/Tdlib.java:683`（RegisterDevice）, `service/PushHandler.kt`, `service/PushProcessor.java` | RegisterDevice, processPushNotification | 登录后自动注册；后台/杀进程状态推送可达 | Push Kit、通知权限 | Blocked | ADR-003 |
-| FEAT-PUSH-002 | 通知聚合与点击跳转 | P1 | `telegram/TdlibNotificationManager.java`, `telegram/TdlibNotificationGroup.java`, `receiver/TGMessageReceiver.java`（点击路由） | updateNotification / updateNotificationGroup | 同会话消息聚合为单条通知，点击直达对应聊天 | 通知、WantAgent | Blocked | ADR-003 |
+| FEAT-PUSH-001 | Push token 注册与消息推送接收 | P1 | `telegram/Tdlib.java:683`（RegisterDevice）, `service/PushHandler.kt`, `service/PushProcessor.java` | RegisterDevice, processPushNotification | 登录后自动注册；后台/杀进程状态推送可达 | Push Kit、通知权限 | Deferred (用户 2026-10-12 指示短期不做) | ADR-003 |
+| FEAT-PUSH-002 | 通知聚合与点击跳转 | P1 | `telegram/TdlibNotificationManager.java`, `telegram/TdlibNotificationGroup.java`, `receiver/TGMessageReceiver.java`（点击路由） | updateNotification / updateNotificationGroup | 同会话消息聚合为单条通知，点击直达对应聊天 | 通知、WantAgent | Deferred (用户 2026-10-12 指示短期不做) | ADR-003 |
 | FEAT-PUSH-003 | 前后台切换与连接恢复 | P1 | `MainActivity.java`（生命周期）, `telegram/ConnectionListener.java`, `core/WatchDog.java` | updateConnectionState, GetChats（恢复增量） | 回前台 2s 内同步离线期间消息，无重复推送 | — | Accepted | 迁移组 |
 
 ### 基础设置
@@ -2932,7 +2932,7 @@
 | FEAT-P2-008 | Passcode、生物识别、活跃会话管理 |
 | FEAT-P2-009 | 实时位置、地图 adapter |
 | FEAT-P2-010 | `tg://`、`t.me` 深链与 Share Extension |
-| FEAT-P2-011 | 平板/折叠屏双栏、无障碍与 RTL |
+| FEAT-P2-011 | 平板/折叠屏双栏、无障碍与 RTL（注：无障碍依用户 2026-10-12 明确指示不做） |
 
 ## P3：高级功能（计划 §3.4，仅列名）
 
