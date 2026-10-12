@@ -12,7 +12,7 @@
 就地豁免仍按**物理行**走。旧口径是逐物理行建模，`Text(`↵`'Reply'`、`const hint = 'Try Again';`
 + `Text(hint)` 两类写法全都看不见。
 
-本脚本守八条（R4' 与 R5a/R5b 是各自规则内的子条，不另计）：
+本脚本守九条（R4' 与 R5a/R5b 是各自规则内的子条，不另计）：
 
   R1 视图层字面量禁令：`entry` 与各 `feature/*` 的 **pages/ 与 components/** 下，任何 .ets 文件
      里都不允许出现含汉字的字符串字面量（emoji 不在 `一-鿿` 段内，不会被误伤）。
@@ -122,6 +122,15 @@
           任何数字串一样，抓不到。时制的差异只在「取完字段之后怎么排版」，所以把取字段这一
           步本身就收紧 —— 只有形态表本体能读时钟，业务层一律交 `DateParts` 进去。
      唯一放行的是 `core/common/src/main/ets/DateFormat.ets`（形态表本体）与 `Lang.ets`（词典）。
+  R9 TDLib 的语言档只许一个计算点（I18N-SYSLANG-101 引入）：R1~R8 管的是**屏幕上**的语言，
+     这一位管的是**服务端看到**的语言 —— `setTdlibParameters.system_language_code` 此前在
+     `EntryAbility` 与 `pages/Index` 两条路径上各写死一个 `'en'`，于是中文设备在 MTProto
+     头部和贴纸语言列表里恒报告英文。它坏的时候屏幕上一个字符都不变、TDLib 也不报错
+     （非空即通过），是十条规则里最容易静默的一条。所以按字段名拦：`systemLanguageCode:`
+     的实参是字面量、或经由「定值是字面量」的局部变量传进来（沿用 GUARDSPAN-101 的溯源口径），
+     一律违规。正确形状只有 `tdlibSystemLanguageCode(语言偏好, 系统 locale)` 这一个出处；
+     `setTdlibParameters` 一个客户端只发一次，所以档位是**进程内常量**，页面侧那条兜底参数
+     读 `AppStorage` 里的同一份，不许自己再算。这条不开就地豁免 —— 要豁免的不是写法，是漏洞。
 
 用法：python3 tools/ci/check_i18n_literals.py [--quiet] [--self-test]
       默认每次扫描前先跑一遍负向对照（--self-test 只跑对照、不扫全仓）：
@@ -171,6 +180,18 @@ DATE_ALLOW_REASON_RE = re.compile(r'日期|时间形态|相对时间')
 # 代价是字符串里出现这个词也算一次（`'getHours failed'` 这种日志串会被拦）—— 按标识符拦就是要
 # 宁可宽一点，读时钟字段这件事本身只许出现在形态表里。
 CLOCK_FIELD_RE = re.compile(r'\b(getHours|getMinutes)\b')
+
+# R9（I18N-SYSLANG-101）：TDLib 参数里的语言档字段。
+# 判按 ArkTS 侧的字段名 `systemLanguageCode`（`TdlibParametersConfig`）而不是送进 TDLib 之后
+# 的 snake_case —— 生成类型里的 `system_language_code: string = ''` 是 TDLib 的字段声明，
+# 不是本仓的计算点，不该进射程。值同时认两种写法：直接写字面量，和经由「定值是一个
+# 字符串字面量」的局部变量传进来（GUARDSPAN-101 的溯源口径，否则 `const c = 'en';
+# systemLanguageCode: c` 又是一条漏网的路）。
+TDLIB_LANG_FIELD_RE = re.compile(
+    r'(?P<field>\bsystemLanguageCode\s*:\s*)'
+    r'(?P<value>(?P<quote>["\'`])(?P<body>(?:\\.|(?!(?P=quote)).)*(?P=quote))'
+    r'|[A-Za-z_$][\w$]*)')
+TDLIB_LANG_COMPUTATION = 'tdlibSystemLanguageCode(语言偏好, 系统 locale)'
 
 # 汉字段（CJK Unified Ideographs）。emoji（😀 ★ ✋）与假名/谚文都不在此段，故意只拦汉字：
 # 本仓的界面文案只有中英两档，拦假名只会误伤测试里的样例数据。
@@ -965,6 +986,41 @@ def scan_builder_copy_params(files):
     return problems
 
 
+def scan_tdlib_language_field(files):
+    """R9（I18N-SYSLANG-101）：TDLib 的 `system_language_code` 只许来自一个计算点。
+
+    这一位不是文案，R1~R8 全都不认它，于是本仓把它写死成 `'en'` 写了十几轮：中文设备
+    在服务端侧（MTProto 头部、贴纸语言列表）恒报告英文。TDLib 对它的唯一要求是「非空」，
+    所以写错不会崩、不会报错，只会静默送一个错值 —— 正是本仓反复撞的那一类。
+    正确形状是「建参数前从语言偏好 + 系统 locale 算好」（`tdlibSystemLanguageCode`）。
+    就地豁免在这里不给：这一条拦的不是「哪种写法是例外」，而是「第二个计算点」。
+    """
+    problems = []
+    for rel, path in files:
+        literals = literal_locals(path)
+        for stmt in statements(path):
+            for m in TDLIB_LANG_FIELD_RE.finditer(stmt.text):
+                line_no = stmt_line_at(stmt, m.start('field'))
+                value = m.group('value')
+                if m.group('quote') is not None:
+                    where = f'写成字面量 {value}'
+                elif value in literals:
+                    where = f'经由变量 {value}（它的定值是 {literals[value]!r}）'
+                else:
+                    continue
+                if any(ALLOW_RE.search(raw) is not None
+                       for lineno, raw in stmt.raw_lines.items() if lineno == line_no):
+                    problems.append(
+                        f'{rel}:{line_no}: R9 就地豁免不适用（TDLib 语言档只许一个计算点）: '
+                        f'{stmt.text[m.start("field"):].strip()[:80]}')
+                    continue
+                problems.append(
+                    f'{rel}:{line_no}: R9 TDLib 参数 `systemLanguageCode` {where} —— 这一位必须出自 '
+                    f'`{TDLIB_LANG_COMPUTATION}` 这一个计算点（`setTdlibParameters` 一个客户端只发一次，'
+                    f'所以档位是进程内常量，页面侧那条兜底参数读 AppStorage 的同一份）')
+    return problems
+
+
 def load_dicts():
     if not LANG_FILE.is_file():
         print(f'[i18n] ERROR: 找不到词典 {LANG_FILE}', file=sys.stderr)
@@ -1054,6 +1110,7 @@ SELF_TEST_RUNNERS = {
     'R6': lambda files, dicts, ctor: scan_key_carriers(files, dicts, ctor)[0],
     'R7': lambda files, dicts, ctor: scan_builder_copy_params(files),
     'R8': lambda files, dicts, ctor: scan_date_forms(files, dicts),
+    'R9': lambda files, dicts, ctor: scan_tdlib_language_field(files),
 }
 
 SELF_TEST_CASES = (
@@ -1314,6 +1371,41 @@ function hhmm(d: Date, clock: string): string {
   return formatDateByLang(d, clock)
 }
 """),
+    SelfCase('r9-tdlib-language-hardcoded', (
+        ('R9', 'fire', '写成字面量'),
+    ), """
+export function buildParams(): TdlibParametersConfig {
+  return {
+    databaseDirectory: '/data/storage/el2/base/files',
+    systemLanguageCode: 'en',
+    useTestDc: false
+  }
+}
+"""),
+    SelfCase('r9-tdlib-language-via-local', (
+        ('R9', 'fire', '经由变量 code'),
+    ), """
+function buildParams(): TdlibParametersConfig {
+  const code: string = 'en-US'
+  return { systemLanguageCode: code }
+}
+"""),
+    SelfCase('r9-tdlib-language-from-computation', (
+        ('R9', 'clean', None),
+    ), """
+const systemLanguageCode: string = tdlibSystemLanguageCode(preference, locale)
+
+function buildParams(): TdlibParametersConfig {
+  return {
+    systemLanguageCode: systemLanguageCode,
+    deviceModel: 'HarmonyOS NEXT'
+  }
+}
+
+function fallbackParams(): TdlibParametersConfig {
+  return { systemLanguageCode: AppStorage.get<string>('tdlibLanguageCode') }
+}
+"""),
 )
 
 
@@ -1386,12 +1478,17 @@ def main() -> int:
     parity_problems = scan_parity(dicts)
     # R8：日期形态不是文案，词典四条规则都管不住 —— 单独收在一个白名单文件里。
     date_form_problems = scan_date_forms(date_files, dicts)
+    # R9：TDLib 的语言档同样不是文案 —— 它写死成 'en' 时屏幕上一个字符都不变，
+    # 错的只有服务端看到的东西（贴纸语言列表、MTProto 头部）。射程借 R8 那批
+    # 「全模块 src/main/ets」目录：参数在 entry 建，契约在 feature/auth，两边都得看着。
+    tdlib_lang_problems = scan_tdlib_language_field(date_files)
 
     allowed = (allowed_literal + allowed_slot + allowed_data_literal
                + allowed_data_slot + allowed_carrier)
     failed = bool(literal_problems or slot_problems or data_literal_problems
                   or data_slot_problems or key_problems or carrier_problems
-                  or builder_problems or parity_problems or date_form_problems)
+                  or builder_problems or parity_problems or date_form_problems
+                  or tdlib_lang_problems)
     if not args.quiet or failed:
         for msg in literal_problems:
             print(f'[i18n] LITERAL {msg}')
@@ -1411,6 +1508,8 @@ def main() -> int:
             print(f'[i18n] PARITY {msg}')
         for msg in date_form_problems:
             print(f'[i18n] DATE-FORM {msg}')
+        for msg in tdlib_lang_problems:
+            print(f'[i18n] TDLIB-LANG {msg}')
         if not args.quiet:
             print(f'[i18n] 视图层文件 {len(files)} 个 / 数据层文件 {len(data)} 个，'
                   f'日期形态射程 {len(date_files)} 个文件，'
@@ -1426,6 +1525,7 @@ def main() -> int:
               f'缺词条 {len(key_problems)} / key 载体缺项 {len(carrier_problems)} / '
               f'builder 按值传串 {len(builder_problems)} / '
               f'日期形态出格 {len(date_form_problems)} / '
+              f'TDLib 语言档写死 {len(tdlib_lang_problems)} / '
               f'词典不对称 {len(parity_problems)}', file=sys.stderr)
         return 1
     print('[i18n] OK')

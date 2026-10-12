@@ -37,7 +37,7 @@ import { PreferencesStickerSettingsStore } from '../store/StickerSettingsStore';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { common } from '@kit.AbilityKit';
 import { AccountDescriptor, AccountScope } from '@tgx/core-account';
-import { AppError, Lang, ManualClock, Result, SequentialIdGenerator, SupportedLanguage } from '@tgx/core-common';
+import { AppError, Lang, ManualClock, Result, SequentialIdGenerator, SupportedLanguage, TDLIB_LANGUAGE_CODE_FALLBACK } from '@tgx/core-common';
 import { ReducerEnv } from '@tgx/feature-template';
 import { AppRoute, ChatRoute, ChatInfoRoute, UserProfileRoute, CommentsRoute, SettingsSectionRoute } from '@tgx/core-navigation';
 import { EntryNavigationController } from '../navigation/EntryNavigationController';
@@ -1269,7 +1269,7 @@ struct Index {
           apiHash: TELEGRAM_CREDENTIALS.apiHash,
           databaseDirectory: '',
           filesDirectory: '',
-          systemLanguageCode: 'en',
+          systemLanguageCode: this.tdlibLanguageCode(),
           deviceModel: 'HarmonyOS NEXT',
           applicationVersion: '0.1.0',
           useTestDc: false
@@ -1282,6 +1282,22 @@ struct Index {
       logger: this.logger
     };
     return new AuthCoordinator(deps);
+  }
+
+  /**
+   * I18N-SYSLANG-101：兜底 params 里的 `system_language_code`。
+   *
+   * 唯一计算点在 `EntryAbility.onCreate` —— 那必须早于 `setTdlibParameters`，因为 TDLib
+   * 对这个键**一生只认第一次**。这里只读它算好的那一份：自己重算一次就会出现「同一份
+   * 语言状态、两个时刻、两个字符串」。读不到时收敛到同一个回落常量，不再回硬编码
+   * `'en'` —— 那正是本包要拆掉的东西。
+   */
+  private tdlibLanguageCode(): string {
+    const code: string | undefined = AppStorage.get<string>('tdlibLanguageCode');
+    if (code === undefined || code === null || code.length === 0) {
+      return TDLIB_LANGUAGE_CODE_FALLBACK;
+    }
+    return code;
   }
 
   /**

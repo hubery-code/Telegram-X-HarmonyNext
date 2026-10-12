@@ -8,7 +8,9 @@ import {
   lang,
   languagePreferenceFromStored,
   resolveLanguage,
-  systemLanguageFromLocale
+  systemLanguageFromLocale,
+  tdlibSystemLanguageCode,
+  TDLIB_LANGUAGE_CODE_FALLBACK
 } from '../main/ets/Lang';
 
 function hasHan(text: string): boolean {
@@ -668,6 +670,39 @@ export default function langTest(): void {
         instance.setSystemLanguage(savedSystemLanguage);
         instance.setLanguage(savedPreference);
       }
+    });
+
+    /**
+     * I18N-SYSLANG-101：TDLib `system_language_code` 的档位。
+     *
+     * 钉的是三个各自会静默出错的分支：显式偏好必须压过系统 locale（送的是**应用渲染
+     * 语言**，照抄 Android 的 `Lang.getConfigurationLocale()`），跟随系统时保留地区子标签，
+     * 以及读不到/形状不对时回落 `en-US` 而**绝不是空串** —— 空串会让 `setTdlibParameters`
+     * 直接 `400 System language code must be non-empty`，整个客户端起不来。
+     */
+    it('tdlibSystemLanguageCode_explicitPreferenceOverridesSystemLocale', 0, () => {
+      expect(tdlibSystemLanguageCode('en', 'zh-Hans')).assertEqual('en');
+      expect(tdlibSystemLanguageCode('zh', 'en-US')).assertEqual('zh-Hans');
+      expect(tdlibSystemLanguageCode('en', null)).assertEqual('en');
+      expect(tdlibSystemLanguageCode('zh', undefined)).assertEqual('zh-Hans');
+    });
+
+    it('tdlibSystemLanguageCode_systemKeepsRegionSubtag', 0, () => {
+      expect(tdlibSystemLanguageCode('system', 'zh-Hans')).assertEqual('zh-Hans');
+      expect(tdlibSystemLanguageCode('system', 'en-US')).assertEqual('en-US');
+      expect(tdlibSystemLanguageCode('system', 'fr-CA')).assertEqual('fr-CA');
+      expect(tdlibSystemLanguageCode('system', 'zh')).assertEqual('zh');
+    });
+
+    it('tdlibSystemLanguageCode_unreadableOrMalformedFallsBackToEnUs', 0, () => {
+      expect(tdlibSystemLanguageCode('system', null)).assertEqual(TDLIB_LANGUAGE_CODE_FALLBACK);
+      expect(tdlibSystemLanguageCode('system', undefined)).assertEqual(TDLIB_LANGUAGE_CODE_FALLBACK);
+      expect(tdlibSystemLanguageCode('system', '')).assertEqual(TDLIB_LANGUAGE_CODE_FALLBACK);
+      expect(tdlibSystemLanguageCode('system', '   ')).assertEqual(TDLIB_LANGUAGE_CODE_FALLBACK);
+      // 中文界面下读不到系统 locale 时不许送出汉字标签：TDLib 只认 `xx` / `xx-…`。
+      expect(tdlibSystemLanguageCode('system', '中文')).assertEqual(TDLIB_LANGUAGE_CODE_FALLBACK);
+      expect(tdlibSystemLanguageCode('system', 'not a tag!')).assertEqual(TDLIB_LANGUAGE_CODE_FALLBACK);
+      expect(TDLIB_LANGUAGE_CODE_FALLBACK).assertEqual('en-US');
     });
   });
 }

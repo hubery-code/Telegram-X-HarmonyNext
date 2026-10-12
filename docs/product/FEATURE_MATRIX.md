@@ -128,7 +128,7 @@
 |---|---|---|---|---|---|---|---|---|
 | FEAT-UI-001 | 深色/浅色主题 | P1 | `theme/ThemeManager.java:48`（DEFAULT_DARK_THEME = NIGHT_BLUE）, `theme/Theme.java` | —（平台侧） | 跟随系统/手动切换，关键页面（列表/聊天/设置）色值正确；偏好（system/light/dark）跨进程持久，系统深浅色经 `onConfigurationUpdate` 实时参与解析 | — | Accepted | 迁移组, APPSTORAGE-PAIR-101 |
 | FEAT-UI-002 | 大字体（聊天字号调节） | P1 | `unsorted/Settings.java:791`（CHAT_FONT_SIZES）, `ui/SettingsController.java:218`（getChatFontSize） | —（平台侧） | 大字号模式下气泡/列表不截断不重叠 | 字体缩放 | Accepted | SET-105 |
-| FEAT-UI-003 | 中/英文案资源 | P1 | `core/Lang.java`, `ui/SettingsLanguageController.java` | — | 关键路径文案中英齐全，无硬编码遗漏（视图层与 coordinator/model 数据层的写死文案、词典缺项由 `check_i18n_literals.py` 八条规则强制（R1–R8，判定单位是**逻辑行**：跨行调用与「字面量先赋给 const、再把 const 传进槽位」都在射程内，且每次扫描前先跑一遍负向对照自证））；日期形态与文案分治 —— 月份名/星期名/`年月日`排布只许出自 `core/common/…/DateFormat.ets` 一个文件（同守卫第八条规则 R8）；语言偏好跨进程持久且系统语言参与解析；写进 AppStorage 的键必须有读者（`check_appstorage_pairs.py` R1） | — | Accepted | I18N-LITERAL-101/102/103/104, I18N-HOTSWITCH-101, LANG-PERSIST-101, APPSTORAGE-PAIR-101, I18N-DATE-101, I18N-DATE-102, I18N-GUARDSPAN-101 |
+| FEAT-UI-003 | 中/英文案资源 | P1 | `core/Lang.java`, `ui/SettingsLanguageController.java` | — | 关键路径文案中英齐全，无硬编码遗漏（视图层与 coordinator/model 数据层的写死文案、词典缺项由 `check_i18n_literals.py` 九条规则强制（R1–R9，判定单位是**逻辑行**：跨行调用与「字面量先赋给 const、再把 const 传进槽位」都在射程内，且每次扫描前先跑一遍负向对照自证））；日期形态与文案分治 —— 月份名/星期名/`年月日`排布只许出自 `core/common/…/DateFormat.ets` 一个文件（同守卫第八条规则 R8）；语言偏好跨进程持久且系统语言参与解析；送进 TDLib 的 `system_language_code` 不许是字面量，只许出自 `tdlibSystemLanguageCode()`（同守卫第九条规则 R9）；写进 AppStorage 的键必须有读者（`check_appstorage_pairs.py` R1） | — | Accepted | I18N-LITERAL-101/102/103/104, I18N-HOTSWITCH-101/102, LANG-PERSIST-101, APPSTORAGE-PAIR-101, I18N-DATE-101, I18N-DATE-102, I18N-GUARDSPAN-101, I18N-SYSLANG-101 |
 | FEAT-UI-004 | 抽屉主导航（≡ 账号头 + 联系人/通话/我的收藏/设置/邀请朋友/帮助 + 夜间模式开关） | P1 | `navigation/DrawerController.java`, `MainActivity.java` | —（平台侧） | 会话列表抽屉导航，账号头展示在线状态，入口路由正确 | — | Accepted | DRAWER-101 |
 
 ---
@@ -2852,6 +2852,72 @@
 >（那是**有意**的：TDLib 原文与语言无关，不在词典射程内）；② 评论页的乐观发送行在设备上无 A/B
 >（发送路径会向讨论组发真实消息，取证红线禁止）；③ 真机时制 24 小时档下的搜索行形态未取
 >（模拟器系统停在 12 小时档，24 小时档形态由 `timeOfDay_clockGears` 单测钉住）。
+
+
+### FEAT-UI-003 / I18N-SYSLANG-101 TDLib 的 `system_language_code` 接回真实语言：一个位、一个时刻、一个计算点（2026-10-12）
+
+> **题面**（第五十八轮盲区 ③ 起登记，连续四轮未动）：「TDLib `system_language_code` 仍写死 `'en'`，
+> 影响的是本地化贴纸包**取数**」。
+>
+> **一、定案：Android 送的不是「裸系统语言」**（读码纠正题面措辞）。`TdlibManager.java:2196-2202` 的
+> `getSystemLanguageCode()` 初值写 `en-US`，只有 `Lang.getConfigurationLocale()` 读成功才覆盖 ——
+> 送的是**应用实际渲染语言**的 BCP-47 标签。用户在应用内换语言会改那个 locale，所以 TDLib 那一侧
+> 跟着**应用语言**走；照题面直接接「系统语言」会造出一个与 TGX 相反的行为：应用内选英文、系统中文时
+> 本端送 `zh-Hans`、TGX 送 `en`。
+>
+> **二、三条 TDLib 约束决定了这个位只能怎么算**：
+> ① `Td.cpp:1471-1473` —— 空串是硬错误 `400 System language code must be non-empty`，所以**任何**回落
+> 路径都不许回空，回落值取 Android 的那个 `en-US`（不是 UI 词典的 `en`：这一位是给服务端看的）；
+> ② `setTdlibParameters` **一个 client 一生只认第一次**，所以这个值必须是**进程常量**、且在 params
+> 构造之前算好 —— 不能「等语言解析完再补发」，也不许两处各算一次；
+> ③ `StickersManager.cpp:9885-9891` 只认 `xx` 或 `xx-…`（≥2 字符、无 `$`、长度为 2 或第 3 位是 `-`），
+> 并取 `substr(0,2)` 去要本地化贴纸包的语言列表 —— 这正是「写死 `en` 时本地化包取不到」的机制。
+>
+> **三、唯一计算点与它的载体**。`core/common/src/main/ets/Lang.ets` 新增纯函数
+> `tdlibSystemLanguageCode(preference, systemLocale)`：显式 `'en'`/`'zh'` → `en`/`zh-Hans`（本端只有两本
+> 词典，地区差异未建模）；`'system'` → **原样透传系统标签、保留地区**（`en-US` 与 `en-GB` 对服务端是
+> 两件事）；标签缺失或形状不对 → 回落常量。消费侧只有两个时刻，且都在 `EntryAbility.onCreate`：
+> `hydrateLanguage(locale)` 读盘上偏好并回灌 `Lang`，**同一个 `locale` 读数、同一次解析出的
+> `preference`** 直接喂给 `tdlibSystemLanguageCode()` —— 两个消费者看的是同一个时刻，不会算出两个值。
+> 算好的值经 `AppStorage('tdlibLanguageCode')` 交给装配层的兜底 params 站点
+> （`entry/src/main/ets/pages/Index.ets`）：那里只读不算，读不到就收敛到同一个
+> `TDLIB_LANGUAGE_CODE_FALLBACK`，**不回退成 `'en'` 字面量**（刻意不用
+> `tdlibSystemLanguageCode('system', null)` —— 那要凭空造一个偏好实参）。这一位不是盘上设置，
+> 只是进程内载体，所以没有进 `SettingsStore` 的键表。
+>
+> **四、守卫 R9（`check_i18n_literals.py` 第九条规则）**：前八条管「屏上的字」，这一条管**送出去的一位
+> 数据** —— 射程是全模块 `src/main/ets`（实测 344 文件），凡 `systemLanguageCode:` 的值是**字符串字面量**、
+> 或是一个**定值为字面量的局部 const**，一律报警；`// i18n-allow` 在这条上**不作豁免**（这一位没有
+> 「本地名 / 源语言标签」那类合法字面量场景）。函数调用、成员访问、`AppStorage.get` 都算干净。
+> 会拦的证据是拿改前的旧文件跑的：`git show HEAD:entry/…/Index.ets` 落到临时目录后 R9 在 `:1272` 报出
+> `写成字面量 'en'` —— 本轮改的正是那一行。三条负向对照进 `--self-test`（字面量必拦 / 经由变量必拦且
+> 消息点到变量名 / 计算点来的不报），对照现 30 项。
+>
+> **测试**：core_common **86/86**（新 3 例：显式偏好压过系统 locale、`'system'` 档保留地区子标签
+> `zh-Hans`/`en-US`/`fr-CA`/`zh`、缺失与畸形（`null`/`undefined`/`''`/空白/`中文`/`not a tag!`）一律回落
+> 并把回落值本身钉成 `'en-US'`）；entry **155/155**；守卫全 OK（architecture / codegen / design_tokens /
+> a11y_labels / i18n_literals（含 R9 自证）/ appstorage_pairs（8 键全配对）/ secret_scan），词典 EN/ZH
+> **552/552** 未动。
+>
+> **设备取证**（127.0.0.1:5555，Debug HAP 覆盖安装 `bm install -p`，**未卸载、未清数据**；只读页面与
+> 改界面语言，未发消息、未动账号状态；**账号与会话标识不入文档**；`.hvigor/outputs/syslang101/`）：
+> ① 显式英文档冷启动 `language restored: locale=zh-Hans preference=en effective=en` →
+> `tdlib system_language_code=en` —— 应用语言压过系统语言，与 Android 同向；
+> ② 设置 LANGUAGE 卡点「跟随系统」→ 整屏即时翻中文（副标题 `跟随系统 (简体中文)`）→ 再次冷启动
+> `locale=zh-Hans preference=system effective=zh` → **`tdlib system_language_code=zh-Hans`**，
+> 同一份日志里 `AuthCoordinator set_tdlib_parameters_succeeded` —— 带地区的真机标签被 TDLib 收下，
+> 不是「送出去但被拒」；
+> ③ 取证后偏好**还原英文**，第三次冷启动回到 `preference=en → code=en`、参数再次 succeeded。
+> **改前的对拍不是设备截的**：那一版根本没有这条日志（日志行与修法是同一包），改前的证据是源码里的
+> 字面量 `'en'` 加上 R9 在旧文件上报警 —— 记清楚，免得下轮把 ① 当成 A/B 的「改前侧」。
+>
+> **盲区，如实记**：① 这一位**只在进程启动时算一次**，运行中换语言不会重发 params（TDLib 一生一次，
+> 这是上游边界不是本端缺陷），要换得重启应用 —— 本地化贴纸包的语言列表因此也是重启后才换；
+> ② `'system'` 档透传的是**系统**标签，而 Android 透传的是 **app configuration** locale：本端没有
+> 「按应用覆盖 locale」的 Kit 调用，两者在 `preference='system'` 时同值，在显式档时各自给出
+> `en`/`zh-Hans`，语义等价、形状不同；③ 词典只有中英两本，`fr-CA` 这类系统语言在 `system` 档原样送给
+> TDLib、而 UI 仍是英文 —— 这是**照抄 Android** 的行为（它也不按词典裁剪），但值得记：TDLib 可能返回
+> 本端没有对应文案的本地化贴纸包；④ 三段证据全在 HVD 上取的，真机标签未取。
 
 
 | 功能 ID | 功能名 |

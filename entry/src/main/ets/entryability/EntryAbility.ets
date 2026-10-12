@@ -8,7 +8,8 @@ import {
   Lang,
   hourClockFromFlag,
   languagePreferenceFromStored,
-  systemLanguageFromLocale
+  systemLanguageFromLocale,
+  tdlibSystemLanguageCode
 } from '@tgx/core-common';
 import {
   ThemeManager,
@@ -51,12 +52,33 @@ export default class EntryAbility extends UIAbility {
     const filesDir: string = this.context.filesDir;
     const cacheDir: string = this.context.cacheDir;
 
+    // I18N-SYSLANG-101：语言回灌必须排在 TDLib 参数**之前**。
+    //
+    // 此前 `setTdlibParameters.system_language_code` 写死 `'en'`，而语言回灌
+    // （`hydrateLanguage()`）排在 `onWindowStageCreate` —— 那条链的读取端（盘 + 系统
+    // locale）比这一次参数发送晚了整整一个生命周期阶段，于是中文设备在服务端侧
+    // 永远报告英文。`setTdlibParameters` 一个客户端只能发一次（TDLib 之后会拒
+    // 「already initialized」），所以这一位的正确形状就是「建参数前算好、进程内不变」。
+    //
+    // `initSettingsStore` 一起提前：它只要 `this.context`，且在 `loadContent` 之前
+    // 完成就和原来一样喂得住首帧。
+    initSettingsStore(this.context);
+    // 系统 locale 与盘上偏好各读一次，喂给下面两处（语言回灌 + TDLib 语言档）：
+    // 同一个时刻的两个消费者必须看到同一个值。
+    const locale: string | null = this.systemLocale();
+    const preference: LanguagePreference = this.hydrateLanguage(locale);
+    const systemLanguageCode: string = tdlibSystemLanguageCode(preference, locale);
+    // 只有一个计算点：页面侧那条兜底参数（bootstrap 失败时）读同一个键，
+    // 不允许它自己再拼一个语言串。
+    AppStorage.setOrCreate<string>('tdlibLanguageCode', systemLanguageCode);
+    hilog.info(DOMAIN, TAG, 'tdlib system_language_code=%{public}s', systemLanguageCode);
+
     const tdlibParams: TdlibParametersConfig = {
       apiId: TELEGRAM_CREDENTIALS.apiId,
       apiHash: TELEGRAM_CREDENTIALS.apiHash,
       databaseDirectory: `${filesDir}/tdlib/db`,
       filesDirectory: `${filesDir}/tdlib/files`,
-      systemLanguageCode: 'en',
+      systemLanguageCode: systemLanguageCode,
       deviceModel: 'HarmonyOS NEXT',
       applicationVersion: '0.1.0',
       useTestDc: false
@@ -155,19 +177,11 @@ export default class EntryAbility extends UIAbility {
     //
     // 时序要点：必须在 `loadContent` 之前把盘上的值灌进 AppStorage，
     // 页面 aboutToAppear 才能读到；否则首帧会先按默认档渲染再跳一次。
-    initSettingsStore(this.context);
+    // （盘的打开与语言回灌已经提前到 `onCreate` —— TDLib 参数要用语言档，
+    //   I18N-SYSLANG-101；这里只剩灌 AppStorage 的部分。）
     const restoredChatFontSize: number = loadChatFontSize();
     AppStorage.setOrCreate<string>(KEY_CHAT_FONT_SIZE, `${restoredChatFontSize}`);
     hilog.info(DOMAIN, TAG, 'chatFontSize restored: %{public}s', `${restoredChatFontSize}`);
-
-    // LANG-PERSIST-101：把语言接回系统 locale 与磁盘。此前有两条静默失效：
-    //   ① 设置页选的偏好只写进 AppStorage（进程级内存），冷启动即回到「跟随系统」；
-    //   ② 全仓没有任何地方把系统语言灌进 Lang，`systemLanguage` 恒为构造默认的 'en'，
-    //      于是「跟随系统」在 zh-Hans 的机器上一直说英文——显式选 en/zh 反而能生效，
-    //      因为它不走这一位。
-    // 顺序：先灌系统语言档（它只影响 'system' 偏好下的有效语言），再灌盘上的显式偏好。
-    // 两步都排在 loadContent 之前，首帧即为正确语言，不需要二次重渲。
-    this.hydrateLanguage();
 
     // APPSTORAGE-PAIR-101：主题与语言是同一个失效形状的两例。此前 `themeMode` /
     // `themePreference` 两个键都只有写没有读（设置页选「深色」→ 冷启动变回「跟随
@@ -208,9 +222,15 @@ export default class EntryAbility extends UIAbility {
    * 「读盘 + 回落」与「写盘」刻意分开：这一位只有 entry 知道磁盘，业务层
    * （`feature_settings` 的 reducer）继续只管写 AppStorage，由 pages/Index 的
    * `@Watch` 落盘。所以偏好改动不需要任何新通道：reducer 写键 → entry 观察 → 落盘。
+   *
+   * I18N-SYSLANG-101 把调用点从 `onWindowStageCreate` 提到了 `onCreate`（TDLib
+   * 参数之前）。两条时序要求叠在一起：既要早于 `loadContent`（首帧语言正确），
+   * 也要早于 `setTdlibParameters`（那一生只发一次）。
+   *
+   * `locale` 由调用方给、返回解析后的**偏好**：`onCreate` 还要用同一份读出去算
+   * TDLib 的语言档，两个消费者不该各读一次盘、各调一次 Kit。
    */
-  private hydrateLanguage(): void {
-    const locale: string | null = this.systemLocale();
+  private hydrateLanguage(locale: string | null): LanguagePreference {
     const effectivePreference: LanguagePreference =
       languagePreferenceFromStored(readSettingsString(KEY_APP_LANGUAGE));
     Lang.getInstance().setSystemLanguage(systemLanguageFromLocale(locale));
@@ -221,6 +241,7 @@ export default class EntryAbility extends UIAbility {
     // 只记语言档，不记任何账号信息。
     hilog.info(DOMAIN, TAG, 'language restored: locale=%{public}s preference=%{public}s effective=%{public}s',
       locale === null ? 'unreadable' : locale, effectivePreference, Lang.getInstance().getLanguage());
+    return effectivePreference;
   }
 
   /**

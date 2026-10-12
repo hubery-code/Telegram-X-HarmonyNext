@@ -8,7 +8,7 @@
 #   4. check_architecture.py   核心层架构依赖与 Kit-free 校验（P1-QA-003）
 #   5. check_codegen.py        TDLib 代码生成与敏感字段一致性校验（P1-QA-003）
 #   6. check_accessibility_labels.py 图标控件无障碍标签守卫（A11Y-101）
-#   7. check_i18n_literals.py  视图层+数据层写死文案（中/英）、词典键、日期与时间形态守卫，八条规则，每次先跑负向对照自证（I18N-LITERAL-101/102/103/104, I18N-DATE-101/102, GUARDSPAN-101）
+#   7. check_i18n_literals.py  视图层+数据层写死文案（中/英）、词典键、日期与时间形态、TDLib 语言档守卫，九条规则，每次先跑负向对照自证（I18N-LITERAL-101/102/103/104, I18N-DATE-101/102, I18N-GUARDSPAN-101, I18N-SYSLANG-101）
 #   8. check_appstorage_pairs.py AppStorage 键读写配对守卫（APPSTORAGE-PAIR-101）
 #   9. check.sh         codelinter（若存在）+ ArkTS typecheck 构建（GOV-006）
 #   10. test_all_modules.py 全模块单元测试调度与断言（P1-QA-001 / QA-002）

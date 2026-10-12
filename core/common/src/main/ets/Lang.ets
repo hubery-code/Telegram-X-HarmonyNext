@@ -62,6 +62,46 @@ export function languagePreferenceFromStored(stored: string | null | undefined):
 }
 
 /**
+ * TDLib `setTdlibParameters.system_language_code` 的回落值。
+ *
+ * 照抄 Android `TdlibManager.getSystemLanguageCode()`：它把 `en-US` 写成初值，
+ * 只有 `Lang.getConfigurationLocale()` 读成功才覆盖，异常时原样返回 —— 所以
+ * 「读不到」在这条链上出的是 `en-US`，不是本仓 UI 词典用的 `en`。这一位是给
+ * 服务端看的（MTProto 头部、贴纸语言列表用它），跟着 UI 回落档走会送出
+ * TDLib 不收的形状：它要求非空，且 `StickersManager.get_used_language_codes`
+ * 只认 `xx` 或 `xx-…`，`en-US` 与 `en` 都能过，但 `''` 会让 `setTdlibParameters`
+ * 直接 `400 System language code must be non-empty`。
+ */
+export const TDLIB_LANGUAGE_CODE_FALLBACK: string = 'en-US';
+
+const LANGUAGE_TAG_RE: RegExp = /^[A-Za-z]{2,3}(-[A-Za-z0-9]{1,8})*$/;
+
+/**
+ * Pure function: 语言偏好 + 系统 locale → TDLib 的 `system_language_code`。
+ *
+ * 语义照抄 Android：送的是**应用实际渲染语言**的 BCP-47 标签，不是裸的系统 locale。
+ * TGX 里 `Lang.getConfigurationLocale()` 读的是 app context 的配置，用户在应用内
+ * 换语言会改它，所以 TDLib 那一侧跟着应用语言走；「跟随系统」时两者才相等。
+ *
+ * - 显式 `'en'` / `'zh'` → `en` / `zh-Hans`（本端只有这两本词典，地区差异未建模）；
+ * - `'system'` → 原样透传系统标签（保留地区，`en-US` 与 `en-GB` 对服务端是两件事）；
+ * - 标签缺失或形状不对 → 回落常量，绝不回空串（空串是 TDLib 的硬错误）。
+ */
+export function tdlibSystemLanguageCode(
+  preference: LanguagePreference,
+  systemLocale: string | null | undefined
+): string {
+  if (preference === 'en') {
+    return 'en';
+  }
+  if (preference === 'zh') {
+    return 'zh-Hans';
+  }
+  const tag: string = systemLocale === null || systemLocale === undefined ? '' : systemLocale.trim();
+  return LANGUAGE_TAG_RE.test(tag) ? tag : TDLIB_LANGUAGE_CODE_FALLBACK;
+}
+
+/**
  * Pure function: 系统的 24 小时制开关（`i18n.System.is24HourClock()` 的布尔）→ 本端时制档。
  *
  * **只有明确读到 `false` 才给 12 小时制**：`undefined` / `null`（Kit 调用抛错被上层收敛成
