@@ -25,14 +25,16 @@ export default function settingsStoreLanguageTest(): void {
       expect(readSettingsString(KEY_APP_LANGUAGE)).assertNull();
     });
 
-    it('coldStartWithNoDiskValue_fallsBackToFollowSystem', 0, () => {
-      // EntryAbility 的读取链就是这两步：读盘（null）→ 校验回落（'system'）。
-      expect(languagePreferenceFromStored(readSettingsString(KEY_APP_LANGUAGE))).assertEqual('system');
-      // 最坏情况连系统语言都读不到（locale null → 'en'）：跟随系统 = 英文，
-      // 与本包改动前的表现一致，不会把界面静默变成中文。
+    it('coldStartWithNoDiskValue_fallsBackToChinese', 0, () => {
+      // EntryAbility 的读取链就是这两步：读盘（null）→ 校验回落（'zh'）。
+      expect(languagePreferenceFromStored(readSettingsString(KEY_APP_LANGUAGE))).assertEqual('zh');
+      // 无条件默认显示中文：首装无盘上记录时，无论系统 locale 是 null 还是英文，均无条件出中文
       expect(resolveLanguage(
         languagePreferenceFromStored(readSettingsString(KEY_APP_LANGUAGE)),
-        systemLanguageFromLocale(null))).assertEqual('en');
+        systemLanguageFromLocale(null))).assertEqual('zh');
+      expect(resolveLanguage(
+        languagePreferenceFromStored(readSettingsString(KEY_APP_LANGUAGE)),
+        systemLanguageFromLocale('en-US'))).assertEqual('zh');
     });
 
     it('writeSettingsString_reportsFailureWithoutAnOpenedStore', 0, () => {

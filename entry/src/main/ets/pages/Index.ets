@@ -175,7 +175,7 @@ struct Index {
    * 就是对的，不需要再写一次手工同步。类型收在 string 而不是 SupportedLanguage：装饰器成员
    * 的字面量联合类型没有保证，而 t() 里反正要过一次收敛。
    */
-  @StorageProp('activeLanguage') effectiveLanguage: string = 'en';
+  @StorageProp('activeLanguage') effectiveLanguage: string = 'zh';
   @State currentRoute: AppRoute = { name: 'auth' };
   @State uiState: AuthUiState = AuthUiState.initial();
   @State chatListUiState: ChatListUiState = ChatListUiState.initial();
@@ -278,7 +278,7 @@ struct Index {
    * 「英文」。键由 `SettingsReducer` 在 `changeLanguage` 时写，由 EntryAbility 在
    * 冷启动时从盘上种回来。
    */
-  @StorageProp('appLanguage') @Watch('onAppLanguageChanged') appLanguageRaw: string = 'system';
+  @StorageProp('appLanguage') @Watch('onAppLanguageChanged') appLanguageRaw: string = 'zh';
   private appLanguageReady: boolean = false;
   /**
    * APPSTORAGE-PAIR-101：主题偏好的落盘通道，形状与上面两个完全一致。

@@ -84,10 +84,10 @@ export default function langTest(): void {
       expect(instance1 === lang).assertTrue();
     });
 
-    it('initialState_defaultsToSystemPreferenceAndEnglish', 0, () => {
+    it('initialState_defaultsToChinesePreferenceAndLanguage', 0, () => {
       Lang.getInstance().reset();
-      expect(Lang.getInstance().getPreference()).assertEqual('system');
-      expect(Lang.getInstance().getLanguage()).assertEqual('en');
+      expect(Lang.getInstance().getPreference()).assertEqual('zh');
+      expect(Lang.getInstance().getLanguage()).assertEqual('zh');
     });
 
     it('setLanguage_updatesPreferenceAndEffectiveLanguage', 0, () => {
@@ -102,11 +102,16 @@ export default function langTest(): void {
 
       Lang.getInstance().setPreference('system');
       expect(Lang.getInstance().getPreference()).assertEqual('system');
-      expect(Lang.getInstance().getLanguage()).assertEqual('en');
+      expect(Lang.getInstance().getLanguage()).assertEqual('zh');
     });
 
     it('setSystemLanguage_affectsLanguageWhenPreferenceIsSystem', 0, () => {
       Lang.getInstance().reset();
+      expect(Lang.getInstance().getLanguage()).assertEqual('zh');
+
+      Lang.getInstance().setPreference('system');
+      Lang.getInstance().setSystemLanguage('en');
+      expect(Lang.getInstance().getSystemLanguage()).assertEqual('en');
       expect(Lang.getInstance().getLanguage()).assertEqual('en');
 
       Lang.getInstance().setSystemLanguage('zh');
@@ -531,8 +536,8 @@ export default function langTest(): void {
 
     it('subscribe_notifiesListenersOnLanguageChange', 0, () => {
       Lang.getInstance().reset();
-      let notifiedLang: SupportedLanguage = 'en';
-      let notifiedPref: LanguagePreference = 'system';
+      let notifiedLang: SupportedLanguage = 'zh';
+      let notifiedPref: LanguagePreference = 'zh';
       let callCount: number = 0;
 
       const unsubscribe = Lang.getInstance().subscribe((lang: SupportedLanguage, pref: LanguagePreference): void => {
@@ -541,22 +546,22 @@ export default function langTest(): void {
         callCount++;
       });
 
-      Lang.getInstance().setLanguage('zh');
-      expect(callCount).assertEqual(1);
-      expect(notifiedLang).assertEqual('zh');
-      expect(notifiedPref).assertEqual('zh');
-
-      // No-op when setting identical language
-      Lang.getInstance().setLanguage('zh');
-      expect(callCount).assertEqual(1);
-
       Lang.getInstance().setLanguage('en');
-      expect(callCount).assertEqual(2);
+      expect(callCount).assertEqual(1);
       expect(notifiedLang).assertEqual('en');
       expect(notifiedPref).assertEqual('en');
 
-      unsubscribe();
+      // No-op when setting identical language
+      Lang.getInstance().setLanguage('en');
+      expect(callCount).assertEqual(1);
+
       Lang.getInstance().setLanguage('zh');
+      expect(callCount).assertEqual(2);
+      expect(notifiedLang).assertEqual('zh');
+      expect(notifiedPref).assertEqual('zh');
+
+      unsubscribe();
+      Lang.getInstance().setLanguage('en');
       expect(callCount).assertEqual(2);
     });
 
@@ -584,11 +589,11 @@ export default function langTest(): void {
       };
 
       Lang.getInstance().subscribe(listener);
-      Lang.getInstance().setLanguage('zh');
+      Lang.getInstance().setLanguage('en');
       expect(callCount).assertEqual(1);
 
       Lang.getInstance().unsubscribe(listener);
-      Lang.getInstance().setLanguage('en');
+      Lang.getInstance().setLanguage('zh');
       expect(callCount).assertEqual(1);
     });
 
@@ -599,16 +604,16 @@ export default function langTest(): void {
         called = true;
       });
 
-      Lang.getInstance().setLanguage('zh');
+      Lang.getInstance().setLanguage('en');
       expect(called).assertTrue();
 
       called = false;
       Lang.getInstance().reset();
-      expect(Lang.getInstance().getPreference()).assertEqual('system');
-      expect(Lang.getInstance().getLanguage()).assertEqual('en');
+      expect(Lang.getInstance().getPreference()).assertEqual('zh');
+      expect(Lang.getInstance().getLanguage()).assertEqual('zh');
 
       // Previous listeners cleared
-      Lang.getInstance().setLanguage('zh');
+      Lang.getInstance().setLanguage('en');
       expect(called).assertFalse();
     });
 
@@ -618,31 +623,38 @@ export default function langTest(): void {
       expect(systemLanguageFromLocale('zh-Hant-HK')).assertEqual('zh');
       expect(systemLanguageFromLocale('ZH-CN')).assertEqual('zh');
       expect(systemLanguageFromLocale('en-US')).assertEqual('en');
-      expect(systemLanguageFromLocale('fr')).assertEqual('en');
-      expect(systemLanguageFromLocale('')).assertEqual('en');
-      expect(systemLanguageFromLocale(null)).assertEqual('en');
-      expect(systemLanguageFromLocale(undefined)).assertEqual('en');
+      expect(systemLanguageFromLocale('en')).assertEqual('en');
+      // 缺省/无法识别回落中文
+      expect(systemLanguageFromLocale('')).assertEqual('zh');
+      expect(systemLanguageFromLocale(null)).assertEqual('zh');
+      expect(systemLanguageFromLocale(undefined)).assertEqual('zh');
     });
 
     it('languagePreferenceFromStored_rejectsAnythingButTheThreeBuckets', 0, () => {
       expect(languagePreferenceFromStored('system')).assertEqual('system');
       expect(languagePreferenceFromStored('en')).assertEqual('en');
       expect(languagePreferenceFromStored('zh')).assertEqual('zh');
-      // 脏值与缺值一律回落 'system'（Android 首装档）。刻意不回落成显式的 'en'：
-      // 'en' 是一条**用户选过**的偏好，用它兜脏值会把「跟随系统」永久压掉。
-      expect(languagePreferenceFromStored('zh-CN')).assertEqual('system');
-      expect(languagePreferenceFromStored('EN')).assertEqual('system');
-      expect(languagePreferenceFromStored('')).assertEqual('system');
-      expect(languagePreferenceFromStored(null)).assertEqual('system');
-      expect(languagePreferenceFromStored(undefined)).assertEqual('system');
+      // 首装与缺省/脏值无条件默认回落 'zh'（用户明确指令：无条件默认显示中文）
+      expect(languagePreferenceFromStored('zh-CN')).assertEqual('zh');
+      expect(languagePreferenceFromStored('EN')).assertEqual('zh');
+      expect(languagePreferenceFromStored('')).assertEqual('zh');
+      expect(languagePreferenceFromStored(null)).assertEqual('zh');
+      expect(languagePreferenceFromStored(undefined)).assertEqual('zh');
     });
 
     it('hydrationFormula_resolvesStoredPreferenceAgainstSystemLocale', 0, () => {
       // EntryAbility 冷启动灌的就是这条公式（LANG-PERSIST-101）。
+      // 缺盘上配置（null）时首装无条件显示中文 'zh'（无论系统 locale 是 zh 还是 en）
       expect(resolveLanguage(
         languagePreferenceFromStored(null), systemLanguageFromLocale('zh-Hans'))).assertEqual('zh');
       expect(resolveLanguage(
+        languagePreferenceFromStored(null), systemLanguageFromLocale('en-US'))).assertEqual('zh');
+      // 用户显式选 'system' 时，跟随系统语言
+      expect(resolveLanguage(
         languagePreferenceFromStored('system'), systemLanguageFromLocale('en-US'))).assertEqual('en');
+      expect(resolveLanguage(
+        languagePreferenceFromStored('system'), systemLanguageFromLocale('zh-Hans'))).assertEqual('zh');
+      // 显式偏好压过系统语言
       expect(resolveLanguage(
         languagePreferenceFromStored('en'), systemLanguageFromLocale('zh-Hans'))).assertEqual('en');
       expect(resolveLanguage(
@@ -677,7 +689,7 @@ export default function langTest(): void {
      *
      * 钉的是三个各自会静默出错的分支：显式偏好必须压过系统 locale（送的是**应用渲染
      * 语言**，照抄 Android 的 `Lang.getConfigurationLocale()`），跟随系统时保留地区子标签，
-     * 以及读不到/形状不对时回落 `en-US` 而**绝不是空串** —— 空串会让 `setTdlibParameters`
+     * 以及读不到/形状不对时回落 `zh-Hans` 而**绝不是空串** —— 空串会让 `setTdlibParameters`
      * 直接 `400 System language code must be non-empty`，整个客户端起不来。
      */
     it('tdlibSystemLanguageCode_explicitPreferenceOverridesSystemLocale', 0, () => {
@@ -694,7 +706,7 @@ export default function langTest(): void {
       expect(tdlibSystemLanguageCode('system', 'zh')).assertEqual('zh');
     });
 
-    it('tdlibSystemLanguageCode_unreadableOrMalformedFallsBackToEnUs', 0, () => {
+    it('tdlibSystemLanguageCode_unreadableOrMalformedFallsBackToZhHans', 0, () => {
       expect(tdlibSystemLanguageCode('system', null)).assertEqual(TDLIB_LANGUAGE_CODE_FALLBACK);
       expect(tdlibSystemLanguageCode('system', undefined)).assertEqual(TDLIB_LANGUAGE_CODE_FALLBACK);
       expect(tdlibSystemLanguageCode('system', '')).assertEqual(TDLIB_LANGUAGE_CODE_FALLBACK);
@@ -702,7 +714,7 @@ export default function langTest(): void {
       // 中文界面下读不到系统 locale 时不许送出汉字标签：TDLib 只认 `xx` / `xx-…`。
       expect(tdlibSystemLanguageCode('system', '中文')).assertEqual(TDLIB_LANGUAGE_CODE_FALLBACK);
       expect(tdlibSystemLanguageCode('system', 'not a tag!')).assertEqual(TDLIB_LANGUAGE_CODE_FALLBACK);
-      expect(TDLIB_LANGUAGE_CODE_FALLBACK).assertEqual('en-US');
+      expect(TDLIB_LANGUAGE_CODE_FALLBACK).assertEqual('zh-Hans');
     });
   });
 }

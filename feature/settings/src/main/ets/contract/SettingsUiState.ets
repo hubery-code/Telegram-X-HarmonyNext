@@ -329,8 +329,8 @@ export class SettingsUiState implements UiState {
 
   static initial(
     themeMode: SettingsThemeMode = 'system',
-    languagePreference: LanguagePreference = 'system',
-    languageCode: string = 'en',
+    languagePreference: LanguagePreference = 'zh',
+    languageCode: string = 'zh',
     currentAccountKey: string = '',
     availableAccounts: readonly string[] = [],
     chatFontSize: number = CHAT_FONT_SIZE_DEFAULT

@@ -24,55 +24,48 @@ export type LanguageListener = (language: SupportedLanguage, preference: Languag
  */
 export function resolveLanguage(
   preference: LanguagePreference,
-  systemLanguage: SupportedLanguage = 'en'
+  systemLanguage: SupportedLanguage = 'zh'
 ): SupportedLanguage {
   if (preference === 'en' || preference === 'zh') {
     return preference;
   }
-  return systemLanguage === 'zh' ? 'zh' : 'en';
+  return systemLanguage === 'en' ? 'en' : 'zh';
 }
 
 /**
  * Pure function: 系统 locale（`i18n.System.getSystemLanguage()` 的 `'zh-Hans'` /
  * `'en-US'` / `'fr-FR'` 这类 BCP-47 串）→ 本端支持的语言档。
  *
- * 只按**语言子标签**判定，不看地区：`zh` / `zh-Hans` / `zh-Hant-HK` / `ZH-CN` 都归 `zh`
- * （词典只有两本，地区差异本端还没建模）；其余与缺失值一律 `en`，与「读不到系统语言时
- * 不许让界面变成半中半英」的回落方向一致。
+ * 只按**语言子标签**判定，不看地区：`zh` / `zh-Hans` / `zh-Hant-HK` / `ZH-CN` 都归 `zh`；
+ * 显式以 'en' 开头归 'en'；其余与缺失值无条件默认回落 'zh'（对齐用户指示：app 默认显示中文）。
  */
 export function systemLanguageFromLocale(locale: string | null | undefined): SupportedLanguage {
   if (locale === null || locale === undefined) {
-    return 'en';
+    return 'zh';
   }
-  return locale.toLowerCase().startsWith('zh') ? 'zh' : 'en';
+  return locale.toLowerCase().startsWith('en') ? 'en' : 'zh';
 }
 
 /**
  * Pure function: 盘上读回的**偏好**串 → 合法 `LanguagePreference`。
  *
- * 区分「没存过」与「存了脏值」两种情况都回落 `system` —— 那正是 Android 首装的默认档。
- * 绝不能把脏值当 `'en'` 处理：`'en'` 是一条**显式**偏好，会把「跟随系统」这条
- * 语义永久压掉，用户下次换系统语言就不再跟随了。
+ * 用户明确指示：应用无条件默认显示中文。
+ * - 盘上有显式 'en' 或 'zh' 或 'system' → 尊重既有存储；
+ * - 缺值（null/undefined，即首装）与脏值 → 无条件回落 'zh'。
  */
 export function languagePreferenceFromStored(stored: string | null | undefined): LanguagePreference {
   if (stored === 'system' || stored === 'en' || stored === 'zh') {
     return stored;
   }
-  return 'system';
+  return 'zh';
 }
 
 /**
  * TDLib `setTdlibParameters.system_language_code` 的回落值。
  *
- * 照抄 Android `TdlibManager.getSystemLanguageCode()`：它把 `en-US` 写成初值，
- * 只有 `Lang.getConfigurationLocale()` 读成功才覆盖，异常时原样返回 —— 所以
- * 「读不到」在这条链上出的是 `en-US`，不是本仓 UI 词典用的 `en`。这一位是给
- * 服务端看的（MTProto 头部、贴纸语言列表用它），跟着 UI 回落档走会送出
- * TDLib 不收的形状：它要求非空，且 `StickersManager.get_used_language_codes`
- * 只认 `xx` 或 `xx-…`，`en-US` 与 `en` 都能过，但 `''` 会让 `setTdlibParameters`
- * 直接 `400 System language code must be non-empty`。
+ * 默认使用中文 'zh-Hans'。
  */
-export const TDLIB_LANGUAGE_CODE_FALLBACK: string = 'en-US';
+export const TDLIB_LANGUAGE_CODE_FALLBACK: string = 'zh-Hans';
 
 const LANGUAGE_TAG_RE: RegExp = /^[A-Za-z]{2,3}(-[A-Za-z0-9]{1,8})*$/;
 
@@ -1383,15 +1376,15 @@ const ZH_DICTIONARY: Record<string, string> = {
 export class Lang {
   private static instance: Lang | null = null;
 
-  private preference: LanguagePreference = 'system';
-  private systemLanguage: SupportedLanguage = 'en';
+  private preference: LanguagePreference = 'zh';
+  private systemLanguage: SupportedLanguage = 'zh';
   private hourClock: HourClock = '24h';
   private readonly listeners: LanguageListener[] = [];
   private dictionaries: Record<SupportedLanguage, Record<string, string>>;
 
   constructor(
-    initialPreference: LanguagePreference = 'system',
-    initialSystemLanguage: SupportedLanguage = 'en'
+    initialPreference: LanguagePreference = 'zh',
+    initialSystemLanguage: SupportedLanguage = 'zh'
   ) {
     this.preference = initialPreference;
     this.systemLanguage = initialSystemLanguage;
@@ -1535,8 +1528,8 @@ export class Lang {
   }
 
   reset(): void {
-    this.preference = 'system';
-    this.systemLanguage = 'en';
+    this.preference = 'zh';
+    this.systemLanguage = 'zh';
     this.hourClock = '24h';
     this.listeners.length = 0;
     this.dictionaries = this.createDefaultDictionaries();
