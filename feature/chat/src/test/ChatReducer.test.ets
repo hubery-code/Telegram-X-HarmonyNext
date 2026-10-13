@@ -126,10 +126,12 @@ import {
   TogglePollComposerAnonymous,
   TogglePollComposerMultiple,
   SubmitPollComposer,
-  VotePollOption
+  VotePollOption,
+  RetractPollVote
 } from '../main/ets/contract/ChatIntent';
 import { PinnedMessageInfo } from '../main/ets/model/PinnedMessageInfo';
-import { PollComposerState, PollOptionView, PollView } from '../main/ets/model/PollView';
+import { PollComposerState, PollOptionView, PollView, pollViewOf } from '../main/ets/model/PollView';
+import { Poll, PollOption, FormattedText } from '@tgx/core-td-api-generated';
 import { ReactionChip } from '../main/ets/model/ReactionChip';
 import { StickerSetPreviewState, StickerSetItem } from '../main/ets/model/StickerSetPreviewState';
 import { StickerBoardPack, StickerBoardState, StickerTrendingPack } from '../main/ets/model/StickerBoard';
@@ -343,14 +345,15 @@ function makePollMessage(
   messageId: number,
   allowsMultiple: boolean = false,
   isClosed: boolean = false,
-  chosenIndexes: number[] = []
+  chosenIndexes: number[] = [],
+  allowsRevoting: boolean = true
 ): MessageItem {
   const options: PollOptionView[] = [
     new PollOptionView(0, 'A', 3, 30, chosenIndexes.indexOf(0) >= 0),
     new PollOptionView(1, 'B', 7, 70, chosenIndexes.indexOf(1) >= 0)
   ];
   const poll: PollView = new PollView(
-    'Q?', options, 10, true, allowsMultiple, isClosed, chosenIndexes.length > 0, chosenIndexes.length > 0
+    'Q?', options, 10, true, allowsMultiple, isClosed, chosenIndexes.length > 0, chosenIndexes.length > 0, allowsRevoting
   );
   return makeTextMessage(messageId, false).withPoll(poll);
 }
@@ -3453,6 +3456,63 @@ export default function chatReducerTest() {
       );
       expect(res.state.messages[0] === textMsg).assertTrue();
       expect(pollOfMessage(res.state.messages[1]).options[0].isChosen).assertTrue();
+    });
+
+    it('votePollOption_singleChoice_reselectingChosenOption_retractsVote', 0, () => {
+      const withVote: MessageItem = makePollMessage(7, false, false, [0], true);
+      const res: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        makeStateWith([withVote]), new VotePollOption(7, 0), makeEnv()
+      );
+      const poll: PollView = pollOfMessage(res.state.messages[0]);
+      expect(poll.options[0].isChosen).assertFalse();
+      expect(poll.hasVoted).assertFalse();
+      expect((res.effects[0] as SetPollAnswerEffect).optionIds.length).assertEqual(0);
+    });
+
+    it('retractPollVote_clearsAllOptions_andEmitsEmptyOptionIds', 0, () => {
+      const withVote: MessageItem = makePollMessage(7, false, false, [0], true);
+      const res: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        makeStateWith([withVote]), new RetractPollVote(7), makeEnv()
+      );
+      const poll: PollView = pollOfMessage(res.state.messages[0]);
+      expect(poll.options[0].isChosen).assertFalse();
+      expect(poll.hasVoted).assertFalse();
+      expect(res.effects.length).assertEqual(1);
+      const effect: SetPollAnswerEffect = res.effects[0] as SetPollAnswerEffect;
+      expect(effect.kind).assertEqual('setPollAnswer');
+      expect(effect.messageId).assertEqual(7);
+      expect(effect.optionIds.length).assertEqual(0);
+    });
+
+    it('retractPollVote_closedOrUnvoted_isNoOp', 0, () => {
+      const unvoted: MessageItem = makePollMessage(7, false, false, []);
+      const res1: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        makeStateWith([unvoted]), new RetractPollVote(7), makeEnv()
+      );
+      expect(res1.effects.length).assertEqual(0);
+
+      const closed: MessageItem = makePollMessage(7, false, true, [0]);
+      const res2: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        makeStateWith([closed]), new RetractPollVote(7), makeEnv()
+      );
+      expect(res2.effects.length).assertEqual(0);
+    });
+
+    it('pollViewOf_mapsAllowsRevoting', 0, () => {
+      const raw: Poll = new Poll();
+      raw.allows_revoting = false;
+      raw.question = new FormattedText();
+      raw.question.text = 'Is this working?';
+      const opt1: PollOption = new PollOption();
+      opt1.text = new FormattedText();
+      opt1.text.text = 'Yes';
+      raw.options = [opt1];
+      const view: PollView | null = pollViewOf(raw);
+      expect(view !== null).assertTrue();
+      if (view !== null) {
+        expect(view.allowsRevoting).assertFalse();
+        expect(view.question).assertEqual('Is this working?');
+      }
     });
 
     it('addFavoriteSticker_emitsAddFavoriteStickerInTdlibEffect', 0, () => {

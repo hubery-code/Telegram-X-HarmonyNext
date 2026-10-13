@@ -806,7 +806,8 @@ export type ChatIntent =
   | TogglePollComposerAnonymous
   | TogglePollComposerMultiple
   | SubmitPollComposer
-  | VotePollOption;
+  | VotePollOption
+  | RetractPollVote;
 
 /** STICKER-PREVIEW-101：打开贴纸包预览弹窗。 */
 export class OpenStickerSet implements Intent {
@@ -1314,6 +1315,16 @@ export class VotePollOption implements Intent {
   constructor(messageId: number, optionIndex: number) {
     this.messageId = messageId;
     this.optionIndex = optionIndex;
+  }
+}
+
+/** POLL-102：撤回投票（reducer 出 SetPollAnswerEffect 传空选项，并乐观清除选中态）。 */
+export class RetractPollVote implements Intent {
+  readonly kind: 'retractPollVote' = 'retractPollVote';
+  readonly messageId: number;
+
+  constructor(messageId: number) {
+    this.messageId = messageId;
   }
 }
 

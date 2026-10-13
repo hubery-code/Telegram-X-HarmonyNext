@@ -161,6 +161,7 @@ export {
   TogglePollComposerMultiple,
   SubmitPollComposer,
   VotePollOption,
+  RetractPollVote,
   ChatIntent
 } from './contract/ChatIntent';
 

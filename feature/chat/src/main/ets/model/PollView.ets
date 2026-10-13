@@ -46,6 +46,8 @@ export class PollView {
   readonly showResults: boolean;
   /** 本端是否已投出过一票（任一选项 is_chosen）。 */
   readonly hasVoted: boolean;
+  /** 是否允许撤销/更改投票（TDLib allows_revoting）。 */
+  readonly allowsRevoting: boolean;
 
   constructor(
     question: string,
@@ -55,7 +57,8 @@ export class PollView {
     allowsMultipleAnswers: boolean,
     isClosed: boolean,
     showResults: boolean,
-    hasVoted: boolean
+    hasVoted: boolean,
+    allowsRevoting: boolean = true
   ) {
     this.question = question;
     this.options = options;
@@ -65,6 +68,7 @@ export class PollView {
     this.isClosed = isClosed;
     this.showResults = showResults;
     this.hasVoted = hasVoted;
+    this.allowsRevoting = allowsRevoting;
   }
 }
 
@@ -92,7 +96,8 @@ export function pollViewOf(poll: Poll | null): PollView | null {
     poll.allows_multiple_answers,
     poll.is_closed,
     showResults,
-    hasVoted
+    hasVoted,
+    poll.allows_revoting
   );
 }
 

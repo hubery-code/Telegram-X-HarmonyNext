@@ -203,7 +203,8 @@ import {
   TogglePollComposerAnonymous,
   TogglePollComposerMultiple,
   SubmitPollComposer,
-  VotePollOption
+  VotePollOption,
+  RetractPollVote
 } from '../contract/ChatIntent';
 import { isMessageSelected } from '../model/ForwardSelection';
 import { ChatSearchResultItem } from '../model/ChatSearchResultItem';
@@ -336,7 +337,7 @@ function messageRowKey(
       const o: PollOptionView = item.poll.options[k];
       optParts.push(`${o.voterCount}|${o.votePercentage}|${o.isChosen}`);
     }
-    pollSig = `${item.poll.totalVoterCount}|${item.poll.hasVoted}|${item.poll.isClosed}|${optParts.join(';')}`;
+    pollSig = `${item.poll.totalVoterCount}|${item.poll.hasVoted}|${item.poll.isClosed}|${item.poll.showResults}|${optParts.join(';')}`;
   }
   const signature: string =
     `${item.sendState}|${item.isRead}|${item.isEdited}|${item.senderColorIndex}|` +
@@ -3867,23 +3868,25 @@ export struct ChatPage {
     return canRecordVoice(this.uiState.sendRights);
   }
 
-  /** POLL-101：投票卡片的底部统计文案。 */
+  /** POLL-101 / POLL-102：投票卡片的底部统计文案（多语言驱动）。 */
   private pollFooterText(poll: PollView): string {
-    const parts: string[] = [`${poll.totalVoterCount} vote${poll.totalVoterCount === 1 ? '' : 's'}`];
+    const voteKey: string = poll.totalVoterCount === 1 ? '{0} vote' : '{0} votes';
+    const parts: string[] = [this.t(voteKey, poll.totalVoterCount)];
     if (poll.isAnonymous) {
-      parts.push('Anonymous poll');
+      parts.push(this.t('Anonymous Poll'));
     }
     if (poll.allowsMultipleAnswers) {
-      parts.push('Multiple answers');
+      parts.push(this.t('Multiple Answers'));
     }
     if (poll.isClosed) {
-      parts.push('Finished');
+      parts.push(this.t('Final Results'));
     }
     return parts.join(' · ');
   }
 
   /**
-   * POLL-101：投票卡片气泡。题目 + 选项行（选中高亮/计数/百分比/进度条）+ 统计脚注。
+   * POLL-101 / POLL-102：投票卡片气泡。
+   * 题目 + 选项行（单选圆圈/多选方框/选中打勾高亮/计数/百分比/进度条）+ 统计脚注 + 撤回投票按钮。
    * 点选项分发 VotePollOption（reducer 乐观翻转选中态并出 setPollAnswer），
    * 权威计数与百分比由 TDLib updateMessageContent 回灌覆盖。
    */
@@ -3901,10 +3904,17 @@ export struct ChatPage {
         Column() {
           Row() {
             if (poll.showResults) {
-              Image(option.isChosen ? $r('app.media.ic_check_single') : $r('app.media.ic_radio_empty'))
+              Image(option.isChosen ? $r('app.media.ic_check_single') : (poll.allowsMultipleAnswers ? $r('app.media.ic_checkbox_empty') : $r('app.media.ic_radio_empty')))
                 .width(18)
                 .height(18)
                 .fillColor(option.isChosen ? this.T.colors.accent : this.T.colors.textSecondary)
+                .opacity(option.isChosen ? 1.0 : 0.6)
+                .margin({ right: this.T.spacing.sm })
+            } else {
+              Image(poll.allowsMultipleAnswers ? $r('app.media.ic_checkbox_empty') : $r('app.media.ic_radio_empty'))
+                .width(18)
+                .height(18)
+                .fillColor(this.T.colors.textSecondary)
                 .margin({ right: this.T.spacing.sm })
             }
             Text(option.text)
@@ -3956,16 +3966,33 @@ export struct ChatPage {
         `${messageId}:${option.index}:${option.isChosen}:${option.voterCount}:${option.votePercentage}:${poll.showResults}`)
 
       Row() {
-        Image($r('app.media.ic_poll'))
-          .width(14)
-          .height(14)
-          .fillColor(this.T.colors.textSecondary)
-          .margin({ right: this.T.spacing.xs })
-        Text(this.pollFooterText(poll))
-          .fontSize(this.chatText(this.T.typography.footnote.fontSize))
-          .fontColor(this.T.colors.textSecondary)
+        Row() {
+          Image($r('app.media.ic_poll'))
+            .width(14)
+            .height(14)
+            .fillColor(this.T.colors.textSecondary)
+            .margin({ right: this.T.spacing.xs })
+          Text(this.pollFooterText(poll))
+            .fontSize(this.chatText(this.T.typography.footnote.fontSize))
+            .fontColor(this.T.colors.textSecondary)
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+        }
+        .layoutWeight(1)
+
+        if (poll.hasVoted && poll.allowsRevoting && !poll.isClosed) {
+          Text(this.t('Retract Vote'))
+            .fontSize(this.chatText(this.T.typography.footnote.fontSize))
+            .fontWeight(FontWeight.Medium)
+            .fontColor(this.T.colors.accent)
+            .padding({ left: this.T.spacing.xs, right: this.T.spacing.xs })
+            .onClick(() => {
+              this.onDispatch(new RetractPollVote(messageId));
+            })
+        }
       }
       .width('100%')
+      .alignItems(VerticalAlign.Center)
       .margin({ top: this.T.spacing.sm })
     }
     .width(BUBBLE_MAX_WIDTH)

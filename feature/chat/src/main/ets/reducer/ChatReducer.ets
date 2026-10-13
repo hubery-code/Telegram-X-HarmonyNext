@@ -149,7 +149,8 @@ import {
   TogglePollComposerAnonymous,
   TogglePollComposerMultiple,
   SubmitPollComposer,
-  VotePollOption
+  VotePollOption,
+  RetractPollVote
 } from '../contract/ChatIntent';
 import {
   ChatEffect,
@@ -2102,7 +2103,12 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
           const option: PollOptionView = poll.options[i];
           let chosen: boolean = option.isChosen;
           if (i === voteIntent.optionIndex) {
-            chosen = poll.allowsMultipleAnswers ? !tappedChosen : true;
+            if (poll.allowsMultipleAnswers) {
+              chosen = !tappedChosen;
+            } else {
+              // 单选：若已选过该项且允许改票/撤票（allowsRevoting），则反选撤回；否则设为选中
+              chosen = (tappedChosen && poll.allowsRevoting) ? false : true;
+            }
           } else if (!poll.allowsMultipleAnswers) {
             chosen = false;
           }
@@ -2122,7 +2128,8 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
           poll.allowsMultipleAnswers,
           poll.isClosed,
           poll.showResults || anyChosen,
-          anyChosen
+          anyChosen,
+          poll.allowsRevoting
         ));
       });
       if (!targetFound) {
@@ -2131,6 +2138,47 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
       return reduced(
         state.copyWith({ messages: newMessages }),
         [new SetPollAnswerEffect(state.chatId, voteIntent.messageId, nextOptionIds)]
+      );
+    }
+
+    case 'retractPollVote': {
+      const retractIntent: RetractPollVote = intent as RetractPollVote;
+      let targetFound: boolean = false;
+      const newMessages: MessageItem[] = state.messages.map((item: MessageItem): MessageItem => {
+        if (item.messageId !== retractIntent.messageId || item.poll === null) {
+          return item;
+        }
+        const poll: PollView = item.poll;
+        // 已结束或未投票不可撤销
+        if (poll.isClosed || !poll.hasVoted) {
+          return item;
+        }
+        targetFound = true;
+        const nextOptions: PollOptionView[] = [];
+        for (let i: number = 0; i < poll.options.length; i++) {
+          const option: PollOptionView = poll.options[i];
+          nextOptions.push(new PollOptionView(
+            option.index, option.text, option.voterCount, option.votePercentage, false
+          ));
+        }
+        return item.withPoll(new PollView(
+          poll.question,
+          nextOptions,
+          poll.totalVoterCount,
+          poll.isAnonymous,
+          poll.allowsMultipleAnswers,
+          poll.isClosed,
+          poll.showResults,
+          false,
+          poll.allowsRevoting
+        ));
+      });
+      if (!targetFound) {
+        return reduced(state);
+      }
+      return reduced(
+        state.copyWith({ messages: newMessages }),
+        [new SetPollAnswerEffect(state.chatId, retractIntent.messageId, [])]
       );
     }
   }
