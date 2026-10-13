@@ -699,18 +699,18 @@ struct Index {
     req.set_id = setId;
     const result: Result<TdPendingRequest, AppError> =
       this.accountScope.request('getStickerSet', encodeGetStickerSet(req) as TdWireObject);
-    if (result.err) {
+    if (result.ok) {
+      const pending: TdPendingRequest = result.value;
+      pending.promise.then((res: Result<TdWireObject, AppError>) => {
+        if (res.ok) {
+          this.onGlobalStickerSetPreviewResponse(setId, res.value);
+        } else if (res.err) {
+          this.onGlobalStickerSetLoadFailed(setId, res.error.message);
+        }
+      }).catch(() => {});
+    } else if (result.err) {
       this.onGlobalStickerSetLoadFailed(setId, result.error.message);
-      return;
     }
-    const pending: TdPendingRequest = result.value;
-    pending.promise.then((res: Result<TdWireObject, AppError>) => {
-      if (res.ok) {
-        this.onGlobalStickerSetPreviewResponse(setId, res.value);
-      } else if (res.err) {
-        this.onGlobalStickerSetLoadFailed(setId, res.error.message);
-      }
-    }).catch(() => {});
   }
 
   private requestGlobalStickerSetByName(setId: string, setName: string, forceServer: boolean): void {
@@ -722,18 +722,18 @@ struct Index {
     search.ignore_cache = forceServer;
     const result: Result<TdPendingRequest, AppError> =
       this.accountScope.request('searchStickerSet', encodeSearchStickerSet(search) as TdWireObject);
-    if (result.err) {
+    if (result.ok) {
+      const pending: TdPendingRequest = result.value;
+      pending.promise.then((res: Result<TdWireObject, AppError>) => {
+        if (res.ok) {
+          this.onGlobalStickerSetPreviewResponse(setId, res.value);
+        } else if (res.err) {
+          this.onGlobalStickerSetNameRouteFailed(setId, setName, forceServer, res.error.message);
+        }
+      }).catch(() => {});
+    } else if (result.err) {
       this.onGlobalStickerSetNameRouteFailed(setId, setName, forceServer, result.error.message);
-      return;
     }
-    const pending: TdPendingRequest = result.value;
-    pending.promise.then((res: Result<TdWireObject, AppError>) => {
-      if (res.ok) {
-        this.onGlobalStickerSetPreviewResponse(setId, res.value);
-      } else if (res.err) {
-        this.onGlobalStickerSetNameRouteFailed(setId, setName, forceServer, res.error.message);
-      }
-    }).catch(() => {});
   }
 
   private onGlobalStickerSetNameRouteFailed(setId: string, setName: string, forceServer: boolean, message: string): void {
@@ -893,33 +893,33 @@ struct Index {
     req.is_archived = false;
     const result: Result<TdPendingRequest, AppError> =
       this.accountScope.request('changeStickerSet', encodeChangeStickerSet(req) as TdWireObject);
-    if (result.err) {
+    if (result.ok) {
+      const pending: TdPendingRequest = result.value;
+      pending.promise.then((res: Result<TdWireObject, AppError>) => {
+        if (res.ok) {
+          if (this.globalStickerPreview !== null && this.globalStickerPreview.setId === setId) {
+            this.globalStickerPreview = this.globalStickerPreview.copyWith(
+              undefined, undefined, install, undefined, undefined, undefined,
+              undefined, false, null
+            );
+          }
+        } else if (res.err) {
+          if (this.globalStickerPreview !== null && this.globalStickerPreview.setId === setId) {
+            this.globalStickerPreview = this.globalStickerPreview.copyWith(
+              undefined, undefined, undefined, undefined, undefined, undefined,
+              undefined, false, res.error.message
+            );
+          }
+        }
+      }).catch(() => {});
+    } else if (result.err) {
       if (this.globalStickerPreview !== null && this.globalStickerPreview.setId === setId) {
         this.globalStickerPreview = this.globalStickerPreview.copyWith(
           undefined, undefined, undefined, undefined, undefined, undefined,
           undefined, false, result.error.message
         );
       }
-      return;
     }
-    const pending: TdPendingRequest = result.value;
-    pending.promise.then((res: Result<TdWireObject, AppError>) => {
-      if (res.ok) {
-        if (this.globalStickerPreview !== null && this.globalStickerPreview.setId === setId) {
-          this.globalStickerPreview = this.globalStickerPreview.copyWith(
-            undefined, undefined, install, undefined, undefined, undefined,
-            undefined, false, null
-          );
-        }
-      } else if (res.err) {
-        if (this.globalStickerPreview !== null && this.globalStickerPreview.setId === setId) {
-          this.globalStickerPreview = this.globalStickerPreview.copyWith(
-            undefined, undefined, undefined, undefined, undefined, undefined,
-            undefined, false, res.error.message
-          );
-        }
-      }
-    }).catch(() => {});
   }
 
 
