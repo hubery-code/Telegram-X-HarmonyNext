@@ -172,6 +172,9 @@ import {
   encodeChangeStickerSet,
   InputMessageSticker,
   InputSticker,
+  InputMessageAnimation,
+  InputAnimation,
+  FormattedText,
   InputFileId,
   SendMessage,
   encodeSendMessage,
@@ -5169,7 +5172,42 @@ export class ChatCoordinator {
       return;
     }
 
-    this.logger.info(TAG, 'send_animation', `fileId=${sendAnimation.fileId}`);
+    const req: SendMessage = new SendMessage();
+    req.chat_id = sendAnimation.chatId;
+    const inputAnim: InputAnimation = new InputAnimation();
+    const inputFileId: InputFileId = new InputFileId();
+    inputFileId.id = sendAnimation.fileId;
+    inputAnim.animation = inputFileId;
+    inputAnim.width = sendAnimation.width;
+    inputAnim.height = sendAnimation.height;
+    const content: InputMessageAnimation = new InputMessageAnimation();
+    content.animation = inputAnim;
+    if (sendAnimation.caption.length > 0) {
+      const ft: FormattedText = new FormattedText();
+      ft.text = sendAnimation.caption;
+      content.caption = ft;
+    }
+    req.input_message_content = content;
+    const result: Result<TdPendingRequest, AppError> =
+      this.scope.request('sendMessage', encodeSendMessage(req) as TdWireObject);
+    if (result.err) {
+      this.logger.logError(TAG, result.error);
+      this.dispatch(new OnMessageSendFailed(result.error));
+    }
+    if (result.ok) {
+      result.value.promise.then((res: Result<TdWireObject, AppError>) => {
+        if (res.err) {
+          this.logger.logError(TAG, res.error);
+          if (!this.destroyed) {
+            this.dispatch(new OnMessageSendFailed(res.error));
+          }
+        }
+        if (res.ok) {
+          this.logger.info(TAG, 'send_animation_ok', `fileId=${sendAnimation.fileId}`);
+        }
+      }).catch(() => {
+      });
+    }
   }
 
   /** null = 投影侧跳过（正在加载/已到顶端）；请求级与响应级失败都回灌 OnMessagesLoadFailed。 */

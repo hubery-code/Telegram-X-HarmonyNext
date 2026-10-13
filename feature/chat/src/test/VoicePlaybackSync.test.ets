@@ -13,7 +13,8 @@ import {
 } from '@tgx/td-gateway';
 import { ChatCoordinator } from '../main/ets/coordinator/ChatCoordinator';
 import { ChatUiState } from '../main/ets/contract/ChatUiState';
-import { PlayVoiceNote } from '../main/ets/contract/ChatIntent';
+import { PlayVoiceNote, SendGif } from '../main/ets/contract/ChatIntent';
+import { GifItem } from '../main/ets/model/GifItem';
 
 class VoiceTestBridge implements TdNativeBridgeLike {
   version: string = '1.8.67-test';
@@ -97,6 +98,40 @@ export default function voicePlaybackSyncTest(): void {
 
       expect(currentState.playingVoiceMessageId).assertEqual(999);
       expect(fakePlayer.isPlaying()).assertTrue();
+
+      coordinator.destroy();
+    });
+
+    it('sendGif_withRealFileId_sendsInputMessageAnimation', 0, async (): Promise<void> => {
+      const bridge: VoiceTestBridge = new VoiceTestBridge();
+      const scope: AccountScope = createScope(bridge, 'test_send_animation');
+      const coordinator: ChatCoordinator = new ChatCoordinator(
+        scope, 1001, 'Test Chat'
+      );
+
+      const gif: GifItem = {
+        id: 'gif-real-1',
+        title: 'Dancing Dog',
+        tag: '#funny',
+        category: '😂 Funny',
+        fileId: 8888,
+        width: 320,
+        height: 240,
+        duration: 3,
+        previewEmoji: '🐶'
+      };
+
+      coordinator.dispatch(new SendGif(gif));
+      await settle();
+
+      expect(bridge.sent.length).assertEqual(1);
+      const req: Record<string, Object> = JSON.parse(bridge.sent[0]) as Record<string, Object>;
+      expect(req['@type']).assertEqual('sendMessage');
+      const content: Record<string, Object> = req['input_message_content'] as Record<string, Object>;
+      expect(content['@type']).assertEqual('inputMessageAnimation');
+      const anim: Record<string, Object> = content['animation'] as Record<string, Object>;
+      const file: Record<string, Object> = anim['animation'] as Record<string, Object>;
+      expect(file['id']).assertEqual(8888);
 
       coordinator.destroy();
     });

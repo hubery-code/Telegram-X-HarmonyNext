@@ -121,7 +121,8 @@ import {
   ContactsPage,
   ContactsUiState,
   ContactsIntent,
-  ContactsCoordinator
+  ContactsCoordinator,
+  QueryChanged
 } from '@tgx/feature-contact';
 import {
   SelfProfilePage,
@@ -531,6 +532,26 @@ struct Index {
       if (overlayIntent !== null) {
         this.chatListDispatch(overlayIntent);
         return true;
+      }
+      return this.navController.pop();
+    }
+    if (this.currentRoute.name === 'contacts') {
+      // CONTACT-BACK-101：若搜索栏有输入，返回键优先清空搜索并重置全量列表，再次返回才 pop 退出
+      if (this.contactsUiState.query.length > 0) {
+        if (this.contactsCoordinator !== null) {
+          this.contactsCoordinator.dispatch(new QueryChanged(''));
+          return true;
+        }
+      }
+      return this.navController.pop();
+    }
+    if (this.currentRoute.name === 'search') {
+      // SEARCH-BACK-101：若搜索栏有输入，返回键优先清空搜索词，再次返回才 pop 退出
+      if (this.searchUiState.query.length > 0) {
+        if (this.searchCoordinator !== null) {
+          this.searchCoordinator.clearQuery();
+          return true;
+        }
       }
       return this.navController.pop();
     }
@@ -1244,6 +1265,7 @@ struct Index {
       },
       this.logger,
       (target: DrawerNavTarget) => {
+        this.showChatListDrawer = false;
         if (target === 'contacts') {
           this.navController.navigateTo({ name: 'contacts' });
         } else if (target === 'settings') {
