@@ -202,7 +202,9 @@ import {
   ChatPermissions,
   UpdateChatPermissions,
   MessagePoll,
-  MessageContact
+  MessageContact,
+  MessageLocation,
+  MessageVenue
 } from '@tgx/core-td-api-generated';
 import {
   FileRegistry,
@@ -241,6 +243,7 @@ import { PinnedMessageInfo } from '../model/PinnedMessageInfo';
 import { parseFormattedText } from '../model/FormattedTextParser';
 import { pollViewOf, PollView } from '../model/PollView';
 import { ContactCard, formatContactFullName } from '../model/ContactCard';
+import { LocationCard } from '../model/LocationCard';
 import {
   ChatKind,
   chatKindOf,
@@ -453,6 +456,42 @@ export function messageContentText(content: TdMessageContent | null): string {
     default:
       return '';
   }
+}
+
+/** LOCATION-MSG-101：从 TDLib 消息内容解析出 LocationCard。 */
+export function extractLocationCard(content: TdMessageContent | null): LocationCard | null {
+  if (content === null) {
+    return null;
+  }
+  if (content.type === 'messageLocation') {
+    const locContent: MessageLocation = content as MessageLocation;
+    if (locContent.location !== null) {
+      return new LocationCard(
+        locContent.location.latitude,
+        locContent.location.longitude,
+        locContent.location.horizontal_accuracy,
+        '',
+        '',
+        false
+      );
+    }
+  } else if (content.type === 'messageVenue') {
+    const venueContent: MessageVenue = content as MessageVenue;
+    if (venueContent.venue !== null) {
+      const lat: number = venueContent.venue.location !== null ? venueContent.venue.location.latitude : 0;
+      const lon: number = venueContent.venue.location !== null ? venueContent.venue.location.longitude : 0;
+      const acc: number = venueContent.venue.location !== null ? venueContent.venue.location.horizontal_accuracy : 0;
+      return new LocationCard(
+        lat,
+        lon,
+        acc,
+        venueContent.venue.title,
+        venueContent.venue.address,
+        true
+      );
+    }
+  }
+  return null;
 }
 
 /**
@@ -2608,6 +2647,19 @@ export class ChatCoordinator {
           }
           break;
         }
+        case 'messageLocation': {
+          summary = Lang.getInstance().getString('Location');
+          break;
+        }
+        case 'messageVenue': {
+          const venueContent: MessageVenue = message.content as MessageVenue;
+          if (venueContent.venue !== null && venueContent.venue.title.length > 0) {
+            summary = venueContent.venue.title;
+          } else {
+            summary = Lang.getInstance().getString('Venue');
+          }
+          break;
+        }
         default: {
           summary = messageContentText(message.content);
           break;
@@ -2727,6 +2779,11 @@ export class ChatCoordinator {
     return info.hasContent() ? info : null;
   }
 
+  /** LOCATION-MSG-101：映射单条 Message 为 MessageItem。 */
+  public mapMessage(message: Message): MessageItem {
+    return this.mapMessageToItem(message, new Map(), 0);
+  }
+
   private mapMessageToItem(
     message: Message,
     replyInfoById: Map<number, ReplyInfo>,
@@ -2769,6 +2826,8 @@ export class ChatCoordinator {
     const poll: PollView | null = message.content !== null && message.content.type === 'messagePoll'
       ? pollViewOf((message.content as MessagePoll).poll)
       : null;
+    // LOCATION-MSG-101：messageLocation / messageVenue 内容解析为 LocationCard
+    const location: LocationCard | null = extractLocationCard(message.content);
 
     // CONTACT-MSG-101：messageContact 内容解析为 ContactCard
     let contact: ContactCard | null = null;
@@ -2793,6 +2852,8 @@ export class ChatCoordinator {
     if (poll !== null) {
       displayText = '';
     } else if (contact !== null) {
+      displayText = '';
+    } else if (location !== null) {
       displayText = '';
     } else if (media !== null) {
       displayText = media.kind === 'sticker' ? '' : media.caption;
@@ -2871,7 +2932,8 @@ export class ChatCoordinator {
       commentCount,
       message.is_pinned ?? false,
       poll,
-      contact
+      contact,
+      location
     );
   }
 

@@ -30,6 +30,7 @@ import mediaA11yTest from './MediaA11y.test';
 import chatOverlayBackTest from './ChatOverlayBack.test';
 import voicePlaybackSyncTest from './VoicePlaybackSync.test';
 import contactMessageTest from './ContactMessage.test';
+import locationMessageTest from './LocationMessage.test';
 
 export default function testsuite(): void {
   chatReducerTest();
@@ -64,5 +65,6 @@ export default function testsuite(): void {
   chatOverlayBackTest();
   voicePlaybackSyncTest();
   contactMessageTest();
+  locationMessageTest();
 }
 

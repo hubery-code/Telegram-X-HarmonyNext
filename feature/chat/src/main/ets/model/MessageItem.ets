@@ -32,6 +32,7 @@ import { LinkPreviewInfo } from './LinkPreviewInfo';
 import { ReactionChip } from './ReactionChip';
 import { PollView } from './PollView';
 import { ContactCard } from './ContactCard';
+import { LocationCard } from './LocationCard';
 
 /** 发送状态：none=已发送/收到的正常消息；pending=发送中；failed=发送失败。 */
 export type MessageSendState = 'none' | 'pending' | 'failed';
@@ -76,6 +77,8 @@ export class MessageItem {
   readonly poll: PollView | null;
   /** CONTACT-MSG-101：名片内容（messageContact）；null=非名片消息。 */
   readonly contact: ContactCard | null;
+  /** LOCATION-MSG-101：位置与场所卡片（messageLocation / messageVenue）；null=非位置消息。 */
+  readonly location: LocationCard | null;
 
   constructor(
     messageId: number,
@@ -109,7 +112,8 @@ export class MessageItem {
     commentCount: number = 0,
     isPinned: boolean = false,
     poll: PollView | null = null,
-    contact: ContactCard | null = null
+    contact: ContactCard | null = null,
+    location: LocationCard | null = null
   ) {
     this.messageId = messageId;
     this.text = text;
@@ -143,6 +147,7 @@ export class MessageItem {
     this.isPinned = isPinned;
     this.poll = poll;
     this.contact = contact;
+    this.location = location;
   }
 
   /** POLL-101：替换 poll 字段派生副本（投票乐观更新用），其余字段原样保留。 */
@@ -179,7 +184,8 @@ export class MessageItem {
       this.commentCount,
       this.isPinned,
       nextPoll,
-      this.contact
+      this.contact,
+      this.location
     );
   }
 
@@ -217,7 +223,47 @@ export class MessageItem {
       this.commentCount,
       this.isPinned,
       this.poll,
-      nextContact
+      nextContact,
+      this.location
+    );
+  }
+
+  /** LOCATION-MSG-101：替换 location 字段派生副本，其余字段原样保留。 */
+  withLocation(nextLocation: LocationCard | null): MessageItem {
+    return new MessageItem(
+      this.messageId,
+      this.text,
+      this.timestampMs,
+      this.isOutgoing,
+      this.senderName,
+      this.sendState,
+      this.isTextMessage,
+      this.isEdited,
+      this.replyToMessageId,
+      this.replyToSummary,
+      this.spans,
+      this.senderColorIndex,
+      this.isRead,
+      this.media,
+      this.replySenderName,
+      this.replySenderColorIndex,
+      this.replyThumbnailPath,
+      this.replyIsSticker,
+      this.showDateHeader,
+      this.dateHeaderText,
+      this.showUnreadSeparator,
+      this.senderAvatarPath,
+      this.albumItems,
+      this.albumMessageIds,
+      this.linkPreview,
+      this.senderUserId,
+      this.isChannelPost,
+      this.reactionChips,
+      this.commentCount,
+      this.isPinned,
+      this.poll,
+      this.contact,
+      nextLocation
     );
   }
 }
