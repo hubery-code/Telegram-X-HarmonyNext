@@ -212,7 +212,9 @@ import {
   canAutoDownloadMedia,
   DataSaverNetworkType,
   DownloadLimitsByNetwork,
-  isMediaWithinDownloadLimits
+  isMediaWithinDownloadLimits,
+  ChatHeaderCache,
+  ChatHeaderSnapshot
 } from '@tgx/core-domain';
 import { tdRequestAttribution, TdPendingRequest, TdRoutedEvent, TdUpdateFilter, TdUpdateSubscription, TdWireObject, TdWireValue } from '@tgx/td-gateway';
 import { Subscription } from '@tgx/platform-ports';
@@ -837,6 +839,25 @@ export class ChatCoordinator {
       ? options.logger
       : new Logger();
     this.currentState = new ChatUiState(chatId, chatTitle, [], false, true, null, '', null, null, -1, [], 0, 0, false, []);
+    // CHATHEADER-102：从 ChatHeaderCache 恢复历史已知成员数与在线人数（解决重进会话时的副标题双重闪烁与空窗）
+    const headerSnapshot: ChatHeaderSnapshot | null = ChatHeaderCache.get(scope.accountKey, chatId);
+    if (headerSnapshot !== null) {
+      if (headerSnapshot.memberCount > 0) {
+        this.memberCount = headerSnapshot.memberCount;
+      }
+      if (headerSnapshot.onlineMemberCount > 0) {
+        this.onlineMemberCount = headerSnapshot.onlineMemberCount;
+      }
+      if (headerSnapshot.chatKind !== undefined) {
+        this.chatKind = headerSnapshot.chatKind as ChatKind;
+      }
+      if (headerSnapshot.supergroupId !== undefined && headerSnapshot.supergroupId > 0) {
+        this.supergroupId = headerSnapshot.supergroupId;
+      }
+      if (headerSnapshot.basicGroupId !== undefined && headerSnapshot.basicGroupId > 0) {
+        this.basicGroupId = headerSnapshot.basicGroupId;
+      }
+    }
   }
 
   get state(): ChatUiState {
@@ -3012,6 +3033,14 @@ export class ChatCoordinator {
                 this.privatePeerUserId = (chat.type_ as ChatTypeSecret).user_id;
               }
             }
+            ChatHeaderCache.put(this.scope.accountKey, this.currentState.chatId, {
+              memberCount: this.memberCount,
+              onlineMemberCount: this.onlineMemberCount,
+              isChannel: this.chatKind === 'channel',
+              chatKind: this.chatKind,
+              supergroupId: this.supergroupId,
+              basicGroupId: this.basicGroupId
+            });
             this.logger.info(TAG, 'chat_kind_resolved', `kind=${this.chatKind}`);
             // SET-106：同一次 getChat 响应即带 chat.notification_settings，
             // 直接回读静音态，⋮ 菜单首轮渲染就能出正确文案。
@@ -3294,6 +3323,7 @@ export class ChatCoordinator {
           const info: SupergroupFullInfo | null = decodeSupergroupFullInfo(res.value as TdJsonRaw);
           if (info !== null) {
             this.memberCount = info.member_count;
+            ChatHeaderCache.updateMemberCount(this.scope.accountKey, this.currentState.chatId, info.member_count);
             this.publishHeaderSubtitle(false);
           }
         }
@@ -3330,6 +3360,7 @@ export class ChatCoordinator {
           const group: BasicGroup | null = decodeBasicGroup(res.value as TdJsonRaw);
           if (group !== null) {
             this.memberCount = group.member_count;
+            ChatHeaderCache.updateMemberCount(this.scope.accountKey, this.currentState.chatId, group.member_count);
             this.publishHeaderSubtitle(false);
           }
         }
@@ -3365,13 +3396,22 @@ export class ChatCoordinator {
         if (online.chat_id !== this.currentState.chatId) {
           return;
         }
-        if (online.online_member_count !== this.onlineMemberCount) {
-          // 在线数是头部字段集的一部分：不留这一行，「为什么这次没有在线数」就无从可查。
-          this.logger.info(TAG, 'online_member_count',
-            `count=${online.online_member_count},previous=${this.onlineMemberCount}`);
+        if (online.online_member_count > 0) {
+          if (online.online_member_count !== this.onlineMemberCount) {
+            // 在线数是头部字段集的一部分：不留这一行，「为什么这次没有在线数」就无从可查。
+            this.logger.info(TAG, 'online_member_count',
+              `count=${online.online_member_count},previous=${this.onlineMemberCount}`);
+          }
+          this.onlineMemberCount = online.online_member_count;
+          ChatHeaderCache.updateOnlineMemberCount(this.scope.accountKey, this.currentState.chatId, online.online_member_count);
+          this.publishHeaderSubtitle(false);
+        } else if (online.online_member_count === 0 && !this.destroyed) {
+          // TDLib 在关闭会话时会推 0。若 coordinator 活跃且明确收到 0，更新本地实例但保持 Cache 兜底
+          if (this.onlineMemberCount !== 0) {
+            this.onlineMemberCount = 0;
+            this.publishHeaderSubtitle(false);
+          }
         }
-        this.onlineMemberCount = online.online_member_count;
-        this.publishHeaderSubtitle(false);
       }
     );
   }
@@ -4957,7 +4997,10 @@ export class ChatCoordinator {
   /** 两条名字路（允许缓存、强制查服务端）都被拒才换 id； setId 本身就是名字的入口没有 id 可换。 */
   private onStickerSetNameRouteFailed(setId: string, setName: string, forceServer: boolean,
                                        message: string): void {
-    if (!forceServer) {
+    // STICKER-FETCH-105：只有在本地见过这包（短名已在映射表，可能存在过期 hash 缓存）且未强制查过时才升级；
+    // 未知短名第一趟就已经直接向服务端发起查询了，再查一次是重复无效网络往返，直接按 id 兜底或报错。
+    const knownLocally: boolean = stickerSetShortNameOf([this.stickerBoardSets, this.trendingSets], setId).length > 0;
+    if (!forceServer && knownLocally) {
       this.requestStickerSetByName(setId, setName, true);
       return;
     }

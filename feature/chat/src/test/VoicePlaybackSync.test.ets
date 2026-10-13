@@ -11,9 +11,10 @@ import {
   TdNativeBridgeMetrics,
   TdNativeEventSink
 } from '@tgx/td-gateway';
+import { ChatHeaderCache } from '@tgx/core-domain';
 import { ChatCoordinator } from '../main/ets/coordinator/ChatCoordinator';
 import { ChatUiState } from '../main/ets/contract/ChatUiState';
-import { PlayVoiceNote, SendGif } from '../main/ets/contract/ChatIntent';
+import { PlayVoiceNote, SendGif, OpenStickerSet } from '../main/ets/contract/ChatIntent';
 import { GifItem } from '../main/ets/model/GifItem';
 
 class VoiceTestBridge implements TdNativeBridgeLike {
@@ -132,6 +133,49 @@ export default function voicePlaybackSyncTest(): void {
       const anim: Record<string, Object> = content['animation'] as Record<string, Object>;
       const file: Record<string, Object> = anim['animation'] as Record<string, Object>;
       expect(file['id']).assertEqual(8888);
+
+      coordinator.destroy();
+    });
+
+    it('chatHeaderKeepAlive_restoresCachedMemberCountAndOnlineCountOnReentry', 0, async (): Promise<void> => {
+      const bridge: VoiceTestBridge = new VoiceTestBridge();
+      const scope: AccountScope = createScope(bridge, 'test_chat_header_keepalive');
+
+      ChatHeaderCache.put(scope.accountKey, 2001, {
+        memberCount: 888,
+        onlineMemberCount: 66,
+        isChannel: false,
+        chatKind: 'group',
+        supergroupId: 501,
+        basicGroupId: 0
+      });
+
+      const coordinator: ChatCoordinator = new ChatCoordinator(
+        scope, 2001, 'Group Test'
+      );
+      coordinator.start();
+      await settle();
+
+      expect(coordinator.state.headerSubtitle.includes('888')).assertTrue();
+      expect(coordinator.state.headerSubtitle.includes('66')).assertTrue();
+
+      coordinator.destroy();
+    });
+
+    it('unknownStickerSet_doesNotRetryWithForceServer', 0, async (): Promise<void> => {
+      const bridge: VoiceTestBridge = new VoiceTestBridge();
+      const scope: AccountScope = createScope(bridge, 'test_unknown_sticker_set');
+      const coordinator: ChatCoordinator = new ChatCoordinator(
+        scope, 1001, 'Test Chat'
+      );
+      coordinator.start();
+      await settle();
+
+      coordinator.dispatch(new OpenStickerSet('completely_unknown_pack_123'));
+      await settle();
+
+      const firstReqs: string[] = bridge.sent.filter((s: string): boolean => s.includes('searchStickerSet'));
+      expect(firstReqs.length).assertEqual(1);
 
       coordinator.destroy();
     });

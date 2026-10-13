@@ -3,6 +3,7 @@ export * from './chatlist/ChatListProjection';
 export * from './chat/MessageProjection';
 export * from './chat/ChatMute';
 export * from './chat/ChatSendRights';
+export * from './chat/ChatHeaderCache';
 export * from './media/AutoDownloadPolicy';
 export * from './media/DataSaver';
 export * from './media/MediaDownloadLimits';

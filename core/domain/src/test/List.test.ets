@@ -13,6 +13,7 @@ import mediaDownloadLimitsTest from './media/MediaDownloadLimits.test';
 import stickerSettingsTest from './media/StickerSettings.test';
 import appLockTest from './applock/AppLock.test';
 import passcodeFlowTest from './applock/PasscodeFlow.test';
+import chatHeaderCacheTest from './chat/ChatHeaderCache.test';
 
 export default function testsuite() {
   chatRegistryTest();
@@ -20,6 +21,7 @@ export default function testsuite() {
   messageProjectionTest();
   chatMuteTest();
   chatSendRightsTest();
+  chatHeaderCacheTest();
   fileRegistryTest();
   fileStoreTest();
   userRegistryTest();
