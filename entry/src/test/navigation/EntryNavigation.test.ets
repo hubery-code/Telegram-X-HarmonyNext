@@ -195,5 +195,23 @@ export default function entryNavigationTest() {
       expect(callCount).assertEqual(1);
     });
 
+    it('sticker set deep link does not push route to navigation stack', 0, () => {
+      const controller = new EntryNavigationController({ name: 'home' });
+      // 贴纸深链属于浮层弹窗链路，不占用页面栈导航；导航控制器不改变当前栈顶
+      const result = controller.handleDeepLink('https://t.me/addstickers/Animals');
+      expect(result.ok).assertFalse();
+      expect(controller.getCurrentRoute().name).assertEqual('home');
+      expect(controller.getSize()).assertEqual(1);
+    });
+
+    it('pop retains stack root when overlay sheets are active', 0, () => {
+      const controller = new EntryNavigationController({ name: 'home' });
+      // 根页面下 pop 返回 false，交由全局弹层（如 globalStickerPreview）优先拦截关闭
+      const popped = controller.pop();
+      expect(popped).assertFalse();
+      expect(controller.getCurrentRoute().name).assertEqual('home');
+      expect(controller.getSize()).assertEqual(1);
+    });
+
   });
 }

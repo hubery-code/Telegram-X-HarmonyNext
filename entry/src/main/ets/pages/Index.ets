@@ -87,7 +87,10 @@ import {
   CommentsUiState,
   CommentsCoordinator,
   OpenStickerSet,
-  chatOverlayCloseIntent
+  chatOverlayCloseIntent,
+  StickerSetPreviewSheet,
+  StickerSetPreviewState,
+  StickerSetItem
 } from '@tgx/feature-chat';
 import {
   SettingsPage,
@@ -132,15 +135,29 @@ import {
 } from '@tgx/feature-self';
 import type { TdPendingRequest, TdWireObject } from '@tgx/td-gateway';
 import {
+  ChangeStickerSet,
+  decodeStickerSet,
+  encodeChangeStickerSet,
+  encodeGetStickerSet,
+  encodeSearchStickerSet,
+  File,
+  GetStickerSet,
+  SearchStickerSet,
+  Sticker,
+  StickerSet,
+  TdJsonRaw
+} from '@tgx/core-td-api-generated';
+import {
   AutoDownloadPolicy,
   ChatRegistry,
   dataSaverNetworkOfSnapshot,
   DataSaverNetworkType,
   DownloadLimitsByNetwork,
+  FileRegistry,
   isDataSaverActive,
   stickerLoopEnabled
 } from '@tgx/core-domain';
-import { NetworkSnapshot, TgsDecoderPort } from '@tgx/platform-ports';
+import { NetworkSnapshot, Subscription, TgsDecoderPort } from '@tgx/platform-ports';
 import { BootstrapResult } from '../Bootstrap';
 import { ScopeAuthAdapter } from '../ScopeAuthAdapter';
 import { TELEGRAM_CREDENTIALS } from '../config/AppCredentials';
@@ -328,6 +345,10 @@ struct Index {
   private promptKind: string = 'invite';
   private pendingInvite: ((accepted: boolean) => void) | null = null;
   private pendingProxy: ((choice: ProxyPromptChoice) => void) | null = null;
+  // STICKER-PREVIEW-102：全局贴纸包预览弹窗状态与注册表
+  @State globalStickerPreview: StickerSetPreviewState | null = null;
+  private globalFileRegistry: FileRegistry | null = null;
+  private globalStickerFileSubs: Map<number, Subscription> = new Map();
 
 
   aboutToAppear(): void {
@@ -478,6 +499,11 @@ struct Index {
       this.unsubscribeLangFn();
       this.unsubscribeLangFn = null;
     }
+    this.closeGlobalStickerPreview();
+    if (this.globalFileRegistry !== null) {
+      this.globalFileRegistry.stop();
+      this.globalFileRegistry = null;
+    }
   }
 
   onBackPress(): boolean {
@@ -485,6 +511,11 @@ struct Index {
     // 放行一次 pop 就等于绕过了 PIN（Android 侧同理 —— PasscodeView 是独立 window）。
     const lockGate: AppLockGate | null = appLockGate();
     if (lockGate !== null && lockGate.snapshot().stage !== 'unlocked') {
+      return true;
+    }
+    // STICKER-PREVIEW-102：全局贴纸包预览弹窗打开时优先关闭预览，不退出当前页面
+    if (this.globalStickerPreview !== null) {
+      this.closeGlobalStickerPreview();
       return true;
     }
     if (this.currentRoute.name === 'chat') {
@@ -600,16 +631,297 @@ struct Index {
   }
 
   /**
-   * DEEPLINK-STICKER-101：打开贴纸包。
-   * 会话中直接触发弹窗预览；会话外给予友好 Toast 提示。
+   * DEEPLINK-STICKER-101 / STICKER-PREVIEW-102：打开贴纸包。
+   * 会话中直接由会话协调器派发预览；会话外（会话列表、联系人、设置等）由本层宿主拉起全局贴纸预览弹窗。
    */
   private handleOpenStickerSet(stickerSetName: string, _expectCustomEmoji: boolean): void {
     if (this.chatCoordinator !== null) {
       this.chatCoordinator.dispatch(new OpenStickerSet(stickerSetName));
       return;
     }
-    this.toastAdapter.showToast(this.t('Sticker set: %s', stickerSetName));
+    this.fetchGlobalStickerSet(stickerSetName);
   }
+
+  private getOrCreateGlobalFileRegistry(): FileRegistry | null {
+    if (this.globalFileRegistry !== null) {
+      return this.globalFileRegistry;
+    }
+    if (this.accountScope === null) {
+      return null;
+    }
+    this.globalFileRegistry = new FileRegistry(this.accountScope);
+    return this.globalFileRegistry;
+  }
+
+  private closeGlobalStickerPreview(): void {
+    this.globalStickerPreview = null;
+    this.clearGlobalStickerFileSubs();
+  }
+
+  private clearGlobalStickerFileSubs(): void {
+    this.globalStickerFileSubs.forEach((sub: Subscription) => {
+      sub.unsubscribe();
+    });
+    this.globalStickerFileSubs.clear();
+  }
+
+  private fetchGlobalStickerSet(nameOrId: string): void {
+    if (this.accountScope === null) {
+      this.toastAdapter.showToast(this.t('Sticker set: %s', nameOrId));
+      return;
+    }
+    this.clearGlobalStickerFileSubs();
+    this.globalStickerPreview = new StickerSetPreviewState(
+      nameOrId,
+      '',
+      nameOrId,
+      false,
+      false,
+      false,
+      [],
+      true,
+      false,
+      null
+    );
+
+    if (/^-?\d+$/.test(nameOrId)) {
+      this.requestGlobalStickerSetById(nameOrId);
+    } else {
+      this.requestGlobalStickerSetByName(nameOrId, nameOrId, false);
+    }
+  }
+
+  private requestGlobalStickerSetById(setId: string): void {
+    if (this.accountScope === null) {
+      return;
+    }
+    const req: GetStickerSet = new GetStickerSet();
+    req.set_id = setId;
+    const result: Result<TdPendingRequest, AppError> =
+      this.accountScope.request('getStickerSet', encodeGetStickerSet(req) as TdWireObject);
+    if (result.err) {
+      this.onGlobalStickerSetLoadFailed(setId, result.error.message);
+      return;
+    }
+    const pending: TdPendingRequest = result.value;
+    pending.promise.then((res: Result<TdWireObject, AppError>) => {
+      if (res.ok) {
+        this.onGlobalStickerSetPreviewResponse(setId, res.value);
+      } else if (res.err) {
+        this.onGlobalStickerSetLoadFailed(setId, res.error.message);
+      }
+    }).catch(() => {});
+  }
+
+  private requestGlobalStickerSetByName(setId: string, setName: string, forceServer: boolean): void {
+    if (this.accountScope === null) {
+      return;
+    }
+    const search: SearchStickerSet = new SearchStickerSet();
+    search.name = setName;
+    search.ignore_cache = forceServer;
+    const result: Result<TdPendingRequest, AppError> =
+      this.accountScope.request('searchStickerSet', encodeSearchStickerSet(search) as TdWireObject);
+    if (result.err) {
+      this.onGlobalStickerSetNameRouteFailed(setId, setName, forceServer, result.error.message);
+      return;
+    }
+    const pending: TdPendingRequest = result.value;
+    pending.promise.then((res: Result<TdWireObject, AppError>) => {
+      if (res.ok) {
+        this.onGlobalStickerSetPreviewResponse(setId, res.value);
+      } else if (res.err) {
+        this.onGlobalStickerSetNameRouteFailed(setId, setName, forceServer, res.error.message);
+      }
+    }).catch(() => {});
+  }
+
+  private onGlobalStickerSetNameRouteFailed(setId: string, setName: string, forceServer: boolean, message: string): void {
+    if (!forceServer) {
+      this.requestGlobalStickerSetByName(setId, setName, true);
+      return;
+    }
+    if (/^-?\d+$/.test(setId)) {
+      this.requestGlobalStickerSetById(setId);
+      return;
+    }
+    this.onGlobalStickerSetLoadFailed(setId, message);
+  }
+
+  private onGlobalStickerSetLoadFailed(setId: string, message: string): void {
+    if (this.globalStickerPreview !== null && this.globalStickerPreview.setId === setId) {
+      this.globalStickerPreview = this.globalStickerPreview.copyWith(
+        undefined, undefined, undefined, undefined, undefined, undefined,
+        false, false, message.length > 0 ? message : this.t('Failed to load sticker set')
+      );
+    }
+  }
+
+  private onGlobalStickerSetPreviewResponse(setId: string, value: TdWireObject): void {
+    const set: StickerSet | null = decodeStickerSet(value as TdJsonRaw);
+    if (set === null) {
+      this.onGlobalStickerSetLoadFailed(setId, this.t('Failed to load sticker set'));
+      return;
+    }
+    const reg: FileRegistry | null = this.getOrCreateGlobalFileRegistry();
+    const items: StickerSetItem[] = [];
+    for (let i = 0; i < set.stickers.length; i++) {
+      const s: Sticker = set.stickers[i];
+      const targetFile: File | null = s.sticker;
+      const thumbFile: File | null = (s.thumbnail !== null) ? s.thumbnail.file : null;
+      const fileId: number = targetFile !== null ? targetFile.id : 0;
+      const thumbId: number = thumbFile !== null ? thumbFile.id : 0;
+      const localPath: string | null = (reg !== null && fileId > 0) ? reg.getLocalPath(fileId) : null;
+      const thumbPath: string | null = (reg !== null && thumbId > 0) ? reg.getLocalPath(thumbId) : null;
+      const isDownloaded: boolean = (reg !== null && fileId > 0) ? reg.isDownloaded(fileId) : false;
+
+      if (reg !== null) {
+        if (thumbId > 0 && thumbPath === null) {
+          this.subscribeAndDownloadGlobalStickerFile(thumbId, 2);
+        }
+        if (fileId > 0 && !isDownloaded) {
+          this.subscribeAndDownloadGlobalStickerFile(fileId, 1);
+        }
+      }
+
+      items.push({
+        id: fileId,
+        fileId: fileId,
+        emoji: s.emoji,
+        width: s.width,
+        height: s.height,
+        localPath: localPath,
+        thumbnailPath: thumbPath,
+        isDownloaded: isDownloaded,
+        isDownloading: false
+      });
+    }
+
+    const preview: StickerSetPreviewState = new StickerSetPreviewState(
+      setId,
+      set.title,
+      set.name,
+      set.is_installed,
+      set.is_archived,
+      set.is_official,
+      items,
+      false,
+      false,
+      null,
+      set.id !== null && set.id !== undefined ? set.id : ''
+    );
+    this.globalStickerPreview = preview;
+  }
+
+  private subscribeAndDownloadGlobalStickerFile(fileId: number, priority: number): void {
+    const reg: FileRegistry | null = this.getOrCreateGlobalFileRegistry();
+    if (reg === null || fileId <= 0 || reg.isDownloaded(fileId)) {
+      return;
+    }
+    if (!this.globalStickerFileSubs.has(fileId)) {
+      const sub: Subscription = reg.subscribeFile(fileId, (file: File) => {
+        if (file.local !== null && file.local.is_downloading_completed && file.local.path.length > 0) {
+          this.updateGlobalStickerPreviewFilePath(fileId, file.local.path);
+          const existingSub: Subscription | undefined = this.globalStickerFileSubs.get(fileId);
+          if (existingSub !== undefined) {
+            existingSub.unsubscribe();
+            this.globalStickerFileSubs.delete(fileId);
+          }
+        }
+      });
+      this.globalStickerFileSubs.set(fileId, sub);
+    }
+    reg.downloadFile(fileId, priority);
+  }
+
+  private updateGlobalStickerPreviewFilePath(fileId: number, path: string): void {
+    if (this.globalStickerPreview === null) {
+      return;
+    }
+    let changed: boolean = false;
+    const newItems: StickerSetItem[] = [];
+    for (let i = 0; i < this.globalStickerPreview.stickers.length; i++) {
+      const item: StickerSetItem = this.globalStickerPreview.stickers[i];
+      if (item.fileId === fileId) {
+        changed = true;
+        newItems.push({
+          id: item.id,
+          fileId: item.fileId,
+          emoji: item.emoji,
+          width: item.width,
+          height: item.height,
+          localPath: path,
+          thumbnailPath: item.thumbnailPath,
+          isDownloaded: true,
+          isDownloading: false
+        });
+      } else {
+        newItems.push(item);
+      }
+    }
+    if (changed) {
+      this.globalStickerPreview = this.globalStickerPreview.copyWith(
+        undefined, undefined, undefined, undefined, undefined,
+        newItems
+      );
+    }
+  }
+
+  private handleGlobalStickerSetAction(setId: string, install: boolean): void {
+    if (this.globalStickerPreview === null || this.accountScope === null) {
+      return;
+    }
+    this.globalStickerPreview = this.globalStickerPreview.copyWith(
+      undefined, undefined, undefined, undefined, undefined, undefined,
+      undefined, true
+    );
+    const targetId: string = this.globalStickerPreview.tdlibSetId.length > 0
+      ? this.globalStickerPreview.tdlibSetId
+      : setId;
+
+    if (!/^-?\d+$/.test(targetId)) {
+      this.globalStickerPreview = this.globalStickerPreview.copyWith(
+        undefined, undefined, undefined, undefined, undefined, undefined,
+        undefined, false, this.t('Failed to load sticker set')
+      );
+      return;
+    }
+
+    const req: ChangeStickerSet = new ChangeStickerSet();
+    req.set_id = targetId;
+    req.is_installed = install;
+    req.is_archived = false;
+    const result: Result<TdPendingRequest, AppError> =
+      this.accountScope.request('changeStickerSet', encodeChangeStickerSet(req) as TdWireObject);
+    if (result.err) {
+      if (this.globalStickerPreview !== null && this.globalStickerPreview.setId === setId) {
+        this.globalStickerPreview = this.globalStickerPreview.copyWith(
+          undefined, undefined, undefined, undefined, undefined, undefined,
+          undefined, false, result.error.message
+        );
+      }
+      return;
+    }
+    const pending: TdPendingRequest = result.value;
+    pending.promise.then((res: Result<TdWireObject, AppError>) => {
+      if (res.ok) {
+        if (this.globalStickerPreview !== null && this.globalStickerPreview.setId === setId) {
+          this.globalStickerPreview = this.globalStickerPreview.copyWith(
+            undefined, undefined, install, undefined, undefined, undefined,
+            undefined, false, null
+          );
+        }
+      } else if (res.err) {
+        if (this.globalStickerPreview !== null && this.globalStickerPreview.setId === setId) {
+          this.globalStickerPreview = this.globalStickerPreview.copyWith(
+            undefined, undefined, undefined, undefined, undefined, undefined,
+            undefined, false, res.error.message
+          );
+        }
+      }
+    }).catch(() => {});
+  }
+
 
   /**
    * 翻译入口：弹窗构卡要的是当前语言的句子，而 Lang 是全局单例。
@@ -1392,6 +1704,11 @@ struct Index {
       this.coordinator.destroy();
       this.coordinator = null;
     }
+    this.closeGlobalStickerPreview();
+    if (this.globalFileRegistry !== null) {
+      this.globalFileRegistry.stop();
+      this.globalFileRegistry = null;
+    }
 
     // 2. 切换当前 AccountScope 与账号键
     this.accountScope = newScope;
@@ -1454,6 +1771,11 @@ struct Index {
     if (this.coordinator !== null) {
       this.coordinator.destroy();
       this.coordinator = null;
+    }
+    this.closeGlobalStickerPreview();
+    if (this.globalFileRegistry !== null) {
+      this.globalFileRegistry.stop();
+      this.globalFileRegistry = null;
     }
 
     // 2. 切换当前 AccountScope 与账号键
@@ -1891,6 +2213,26 @@ struct Index {
           },
           onCancel: (): void => {
             this.onPromptCancel();
+          }
+        })
+      }
+      // STICKER-PREVIEW-102：全局贴纸包预览弹层（非会话路由如列表/联系人/设置下点击链接呼起）
+      if (this.globalStickerPreview !== null) {
+        StickerSetPreviewSheet({
+          preview: this.globalStickerPreview,
+          onClose: () => {
+            this.closeGlobalStickerPreview();
+          },
+          onInstall: (setId: string) => {
+            this.handleGlobalStickerSetAction(setId, true);
+          },
+          onUninstall: (setId: string) => {
+            this.handleGlobalStickerSetAction(setId, false);
+          },
+          onSelectSticker: (_item: StickerSetItem) => {
+          },
+          onRetry: (setId: string) => {
+            this.fetchGlobalStickerSet(setId);
           }
         })
       }
