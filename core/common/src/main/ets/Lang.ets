@@ -773,6 +773,10 @@ const EN_DICTIONARY: Record<string, string> = {
   // I18N-LITERAL-104 —— 装配层兜底面
   'Bootstrap Error': 'Bootstrap Error',
   // I18N-LITERAL-104 END EN
+  // CONTACT-MSG-101 —— 名片消息
+  'Contact': 'Contact',
+  'Add to Contacts': 'Add to Contacts',
+  'View Profile': 'View Profile',
 };
 
 const ZH_DICTIONARY: Record<string, string> = {
@@ -1393,6 +1397,10 @@ const ZH_DICTIONARY: Record<string, string> = {
   // I18N-LITERAL-104 —— 装配层兜底面
   'Bootstrap Error': '初始化失败',
   // I18N-LITERAL-104 END ZH
+  // CONTACT-MSG-101 —— 名片消息
+  'Contact': '联系人',
+  'Add to Contacts': '添加到联系人',
+  'View Profile': '查看个人资料',
 };
 
 export class Lang {

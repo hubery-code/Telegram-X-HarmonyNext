@@ -1309,7 +1309,8 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
           newChips,
           item.commentCount,
           item.isPinned,
-          item.poll
+          item.poll,
+          item.contact
         );
       });
       if (!targetFound) {

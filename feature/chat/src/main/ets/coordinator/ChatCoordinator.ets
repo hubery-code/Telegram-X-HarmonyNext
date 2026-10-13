@@ -201,7 +201,8 @@ import {
   UpdateChatNotificationSettings,
   ChatPermissions,
   UpdateChatPermissions,
-  MessagePoll
+  MessagePoll,
+  MessageContact
 } from '@tgx/core-td-api-generated';
 import {
   FileRegistry,
@@ -239,6 +240,7 @@ import { ChatSearchResultItem } from '../model/ChatSearchResultItem';
 import { PinnedMessageInfo } from '../model/PinnedMessageInfo';
 import { parseFormattedText } from '../model/FormattedTextParser';
 import { pollViewOf, PollView } from '../model/PollView';
+import { ContactCard, formatContactFullName } from '../model/ContactCard';
 import {
   ChatKind,
   chatKindOf,
@@ -2768,11 +2770,29 @@ export class ChatCoordinator {
       ? pollViewOf((message.content as MessagePoll).poll)
       : null;
 
+    // CONTACT-MSG-101：messageContact 内容解析为 ContactCard
+    let contact: ContactCard | null = null;
+    if (message.content !== null && message.content.type === 'messageContact') {
+      const msgContact: MessageContact = message.content as MessageContact;
+      if (msgContact.contact !== null) {
+        const c = msgContact.contact;
+        const firstName: string = c.first_name !== null && c.first_name !== undefined ? c.first_name : '';
+        const lastName: string = c.last_name !== null && c.last_name !== undefined ? c.last_name : '';
+        const phoneNumber: string = c.phone_number !== null && c.phone_number !== undefined ? c.phone_number : '';
+        const vcard: string = c.vcard !== null && c.vcard !== undefined ? c.vcard : '';
+        const userId: number = c.user_id !== null && c.user_id !== undefined ? c.user_id : 0;
+        const fullName: string = formatContactFullName(firstName, lastName, phoneNumber);
+        contact = new ContactCard(firstName, lastName, fullName, phoneNumber, vcard, userId);
+      }
+    }
+
     let spans: MessageTextSpan[] = [];
     let displayText: string = '';
     let linkPreviewInfo: LinkPreviewInfo | null = null;
 
     if (poll !== null) {
+      displayText = '';
+    } else if (contact !== null) {
       displayText = '';
     } else if (media !== null) {
       displayText = media.kind === 'sticker' ? '' : media.caption;
@@ -2850,7 +2870,8 @@ export class ChatCoordinator {
       reactionChips,
       commentCount,
       message.is_pinned ?? false,
-      poll
+      poll,
+      contact
     );
   }
 
