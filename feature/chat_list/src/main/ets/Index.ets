@@ -74,3 +74,5 @@ export { ChatListUiStateListener, ChatListCoordinator } from './coordinator/Chat
 export { ChatListDataSource, ChatListPage } from './pages/ChatListPage';
 
 export { DrawerMenu } from './pages/DrawerMenu';
+
+export { chatListOverlayCloseIntent } from './model/ChatListOverlayBack';

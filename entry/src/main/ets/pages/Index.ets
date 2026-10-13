@@ -69,7 +69,8 @@ import {
   ChatListIntent,
   ChatListCoordinator,
   ChatListItem,
-  DrawerNavTarget
+  DrawerNavTarget,
+  chatListOverlayCloseIntent
 } from '@tgx/feature-chat-list';
 import {
   ChatPage,
@@ -180,6 +181,8 @@ struct Index {
   @State currentRoute: AppRoute = { name: 'auth' };
   @State uiState: AuthUiState = AuthUiState.initial();
   @State chatListUiState: ChatListUiState = ChatListUiState.initial();
+  /** CHATLIST-BACK-101：会话列表抽屉导航可见性（与 ChatListPage 双向绑定）。 */
+  @State showChatListDrawer: boolean = false;
   @State chatUiState: ChatUiState = ChatUiState.initial();
   @State settingsUiState: SettingsUiState = SettingsUiState.initial();
   /** MSG-106：转发目标选择器是否覆盖显示 + 本次候选目标。 */
@@ -514,6 +517,19 @@ struct Index {
       const overlayIntent: SettingsIntent | null = settingsOverlayCloseIntent(this.settingsUiState);
       if (overlayIntent !== null) {
         this.settingsDispatch(overlayIntent);
+        return true;
+      }
+      return this.navController.pop();
+    }
+    if (this.currentRoute.name === 'home') {
+      // CHATLIST-BACK-101：会话列表页覆盖层按视觉层叠顺序逐层关闭（抽屉 > 单会话操作菜单 > 归档列表视图）
+      if (this.showChatListDrawer) {
+        this.showChatListDrawer = false;
+        return true;
+      }
+      const overlayIntent: ChatListIntent | null = chatListOverlayCloseIntent(this.chatListUiState);
+      if (overlayIntent !== null) {
+        this.chatListDispatch(overlayIntent);
         return true;
       }
       return this.navController.pop();
@@ -1800,6 +1816,7 @@ struct Index {
         } else if (this.currentRoute.name === 'home') {
           ChatListPage({
             uiState: this.chatListUiState,
+            showDrawer: $showChatListDrawer,
             onDispatch: (intent: Object) => {
               this.chatListDispatch(intent as ChatListIntent);
             },

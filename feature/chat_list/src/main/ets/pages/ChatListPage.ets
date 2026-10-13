@@ -193,8 +193,8 @@ export struct ChatListPage {
 
   @State private isRefreshing: boolean = false;
 
-  /** DRAWER-101：≡ 抽屉面板可见性。 */
-  @State private showDrawer: boolean = false;
+  /** DRAWER-101 / CHATLIST-BACK-101：≡ 抽屉面板可见性（与外部装配层双向绑定，支持物理返回键拦截）。 */
+  @Link showDrawer: boolean;
   private dataSource: ChatListDataSource = new ChatListDataSource();
 
   private getFilteredItems(): readonly ChatListItem[] {
