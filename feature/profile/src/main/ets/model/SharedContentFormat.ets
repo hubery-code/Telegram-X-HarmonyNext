@@ -328,7 +328,8 @@ export function fileItemOf(msg: Message): SharedFileItem | null {
   const localPath: string | null =
     (file !== null && file.local !== null && file.local.path.length > 0) ? file.local.path : null;
   const sizeText: string = file !== null ? formatFileSizeText(file.size) : '';
-  const name: string = docMsg.document.file_name.length > 0 ? docMsg.document.file_name : 'File';
+  const name: string =
+    docMsg.document.file_name.length > 0 ? docMsg.document.file_name : Lang.getInstance().getString('File');
   return new SharedFileItem(name, sizeText, formatSharedDate(msg.date), localPath, msg.date);
 }
 

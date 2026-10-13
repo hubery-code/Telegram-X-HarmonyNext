@@ -27,6 +27,7 @@ import stickerMessageTest from './StickerMessage.test';
 import stickerAnimationTest from './StickerAnimation.test';
 import stickerPlaybackTest from './StickerPlayback.test';
 import mediaA11yTest from './MediaA11y.test';
+import chatOverlayBackTest from './ChatOverlayBack.test';
 
 export default function testsuite(): void {
   chatReducerTest();
@@ -58,5 +59,6 @@ export default function testsuite(): void {
   stickerAnimationTest();
   stickerPlaybackTest();
   mediaA11yTest();
+  chatOverlayBackTest();
 }
 

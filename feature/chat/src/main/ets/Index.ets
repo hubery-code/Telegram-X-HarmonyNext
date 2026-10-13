@@ -253,3 +253,5 @@ export {
   CommentItem,
   CommentsUiStateListener
 } from './coordinator/CommentsCoordinator';
+
+export { chatOverlayCloseIntent } from './model/ChatOverlayBack';

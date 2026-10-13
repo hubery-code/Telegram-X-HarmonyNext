@@ -85,7 +85,8 @@ import {
   CommentsPage,
   CommentsUiState,
   CommentsCoordinator,
-  OpenStickerSet
+  OpenStickerSet,
+  chatOverlayCloseIntent
 } from '@tgx/feature-chat';
 import {
   SettingsPage,
@@ -489,6 +490,13 @@ struct Index {
         return true;
       }
       if (this.chatCoordinator !== null) {
+        // CHAT-BACK-101：会话页的弹层、抽屉与多选态全在同一层 Stack 上，
+        // 依照视觉层叠顺序逐层关闭，全部清空后才派发 BackToChatList 退出会话。
+        const overlayIntent: ChatIntent | null = chatOverlayCloseIntent(this.chatUiState);
+        if (overlayIntent !== null) {
+          this.chatDispatch(overlayIntent);
+          return true;
+        }
         this.chatDispatch(new BackToChatList());
         return true;
       }

@@ -16,7 +16,7 @@ class TestMsgStub {
 /** I18N-DATE-101：日期头改成语言驱动，用例必须自己钉语言而不是赌进程当前值。 */
 function useLanguage(language: SupportedLanguage): void {
   Lang.getInstance().reset();
-  Lang.getInstance().setSystemLanguage(language);
+  Lang.getInstance().setLanguage(language);
 }
 
 export default function dateAndUnreadSeparatorTest() {
@@ -41,23 +41,31 @@ export default function dateAndUnreadSeparatorTest() {
     });
 
     it('formatDateHeader_currentYear_formatsMonthDay', 0, () => {
-      useLanguage('zh');
-      const currentYear: number = new Date().getFullYear();
-      const t: number = new Date(currentYear, 8, 11).getTime(); // 9月11日
-      expect(formatDateHeader(t)).assertEqual('9月11日');
-      // 英文界面同一天走长月份名（旧实现无论语言都输出中文日期）。
-      useLanguage('en');
-      expect(formatDateHeader(t)).assertEqual('September 11');
+      try {
+        useLanguage('zh');
+        const currentYear: number = new Date().getFullYear();
+        const t: number = new Date(currentYear, 8, 11).getTime(); // 9月11日
+        expect(formatDateHeader(t)).assertEqual('9月11日');
+        // 英文界面同一天走长月份名（旧实现无论语言都输出中文日期）。
+        useLanguage('en');
+        expect(formatDateHeader(t)).assertEqual('September 11');
+      } finally {
+        useLanguage('zh');
+      }
     });
 
     it('formatDateHeader_differentYear_formatsYearMonthDay', 0, () => {
-      useLanguage('zh');
-      const pastYear: number = 2020;
-      const t: number = new Date(pastYear, 0, 15).getTime(); // 2020年1月15日
-      expect(formatDateHeader(t)).assertEqual('2020年1月15日');
-      // 跨年档仍不缩写月份。
-      useLanguage('en');
-      expect(formatDateHeader(t)).assertEqual('January 15, 2020');
+      try {
+        useLanguage('zh');
+        const pastYear: number = 2020;
+        const t: number = new Date(pastYear, 0, 15).getTime(); // 2020年1月15日
+        expect(formatDateHeader(t)).assertEqual('2020年1月15日');
+        // 跨年档仍不缩写月份。
+        useLanguage('en');
+        expect(formatDateHeader(t)).assertEqual('January 15, 2020');
+      } finally {
+        useLanguage('zh');
+      }
     });
 
     it('MessageItem_defaultValues_areFalseAndEmpty', 0, () => {

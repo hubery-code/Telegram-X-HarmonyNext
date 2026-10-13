@@ -1,5 +1,5 @@
 import { describe, it, expect } from '@ohos/hypium';
-import { ManualClock, SequentialIdGenerator } from '@tgx/core-common';
+import { Lang, ManualClock, SequentialIdGenerator } from '@tgx/core-common';
 import { ReducerEnv, ReducerResult } from '@tgx/feature-template';
 import {
   ChatUiState,
@@ -140,7 +140,7 @@ export default function mediaViewerTest() {
       const viewerItems = buildViewerItems([p1, t1, v1]);
       expect(viewerItems.length).assertEqual(2);
       expect(viewerItems[0].messageId).assertEqual(101);
-      expect(viewerItems[0].senderName).assertEqual('You');
+      expect(viewerItems[0].senderName).assertEqual(Lang.getInstance().getString('You'));
       expect(viewerItems[1].messageId).assertEqual(103);
       expect(viewerItems[1].senderName).assertEqual('Alice');
     });

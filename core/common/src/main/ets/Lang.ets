@@ -654,6 +654,11 @@ const EN_DICTIONARY: Record<string, string> = {
   'GIF': 'GIF',
   'Document': 'Document',
   '[Unsupported message]': '[Unsupported message]',
+  // 附件面板条目（ATTACH-I18N-101）
+  'Gallery': 'Gallery',
+  'Camera': 'Camera',
+  'File': 'File',
+  'Poll': 'Poll',
   // I18N-LITERAL-103 END EN
   // I18N-LITERAL-104 BEGIN EN —— 登录线七页
   'Authorization Failed': 'Authorization Failed',
@@ -1266,6 +1271,11 @@ const ZH_DICTIONARY: Record<string, string> = {
   'GIF': 'GIF',
   'Document': '文档',
   '[Unsupported message]': '[不支持的消息]',
+  // 附件面板条目（ATTACH-I18N-101）
+  'Gallery': '相册',
+  'Camera': '相机',
+  'File': '文件',
+  'Poll': '投票',
   // I18N-LITERAL-103 END ZH
   // I18N-LITERAL-104 BEGIN ZH —— 登录线七页
   'Authorization Failed': '授权失败',

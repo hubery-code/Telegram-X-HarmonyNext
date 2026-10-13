@@ -212,17 +212,19 @@ export default function commentsCoordinatorTest(): void {
       const lang: Lang = Lang.getInstance();
       const originalPreference: LanguagePreference = lang.getPreference();
 
-      coordinator.start();
-      coordinator.setInputText('A comment');
-      coordinator.sendComment();
-      const requestsBefore: number = bridge.sent.length;
-      expect(coordinator.getState().comments[0].senderName).assertEqual('Me');
-
       try {
         lang.setLanguage('zh');
+        coordinator.start();
+        coordinator.setInputText('A comment');
+        coordinator.sendComment();
+        const requestsBefore: number = bridge.sent.length;
+        expect(coordinator.getState().comments[0].senderName).assertEqual('我');
+        expect(coordinator.getState().channelTitle).assertEqual('频道帖子');
+
+        lang.setLanguage('en');
         const state: CommentsUiState = coordinator.getState();
-        expect(state.comments[0].senderName).assertEqual('我');
-        expect(state.channelTitle).assertEqual('频道帖子');
+        expect(state.comments[0].senderName).assertEqual('Me');
+        expect(state.channelTitle).assertEqual('Channel post');
         expect(bridge.sent.length).assertEqual(requestsBefore);
       } finally {
         lang.setLanguage(originalPreference);

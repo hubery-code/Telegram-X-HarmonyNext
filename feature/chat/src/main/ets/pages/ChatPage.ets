@@ -3736,7 +3736,7 @@ export struct ChatPage {
               .alignItems(HorizontalAlign.Center)
               .margin({ bottom: this.T.spacing.xs })
 
-              Text(this.attachmentLabel(entry.key))
+              Text(this.t(this.attachmentLabelKey(entry.key)))
                 .fontSize(this.T.typography.footnote.fontSize)
                 .fontColor(entry.enabled ? this.T.colors.textPrimary : this.T.colors.textSecondary)
             }
@@ -3792,7 +3792,7 @@ export struct ChatPage {
     return $r('app.media.ic_poll');
   }
 
-  private attachmentLabel(key: string): string {
+  private attachmentLabelKey(key: string): string {
     if (key === ATTACHMENT_GALLERY) {
       return 'Gallery';
     }
