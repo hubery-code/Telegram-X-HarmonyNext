@@ -73,10 +73,11 @@ import {
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { common } from '@kit.AbilityKit';
 import { display } from '@kit.ArkUI';
-import { BusinessError } from '@kit.BasicServicesKit';
+import { BusinessError, pasteboard } from '@kit.BasicServicesKit';
 import { fileUri } from '@kit.CoreFileKit';
 import { mediaCircleA11ySlot } from '../model/MediaA11y';
 import { MessageItem } from '../model/MessageItem';
+import { LocationCard } from '../model/LocationCard';
 import { ReactionChip } from '../model/ReactionChip';
 import { MessageTextSpan } from '../model/MessageTextSpan';
 import { MediaAttachment, MediaFullSource, formatFileSize, normalizeWaveform } from '../model/MediaAttachment';
@@ -339,11 +340,17 @@ function messageRowKey(
     }
     pollSig = `${item.poll.totalVoterCount}|${item.poll.hasVoted}|${item.poll.isClosed}|${item.poll.showResults}|${optParts.join(';')}`;
   }
+  // LOCATION-MSG-101：位置与场所卡片参与签名。
+  let locationSig: string = '';
+  if (item.location !== null) {
+    const loc: LocationCard = item.location;
+    locationSig = `${loc.latitude}|${loc.longitude}|${loc.horizontalAccuracy}|${loc.title}|${loc.address}|${loc.isVenue}`;
+  }
   const signature: string =
     `${item.sendState}|${item.isRead}|${item.isEdited}|${item.senderColorIndex}|` +
     `${item.text}|${item.senderName}|${item.senderAvatarPath !== null ? item.senderAvatarPath : ''}|` +
     `${item.replyToSummary}|${mediaSig}|${replySig}|${linkPreviewSig}|${selected}|` +
-    `${pollSig}|` +
+    `${pollSig}|${locationSig}|` +
     `${item.showDateHeader ? item.dateHeaderText : ''}|${item.showUnreadSeparator}|` +
     `${reactionSig}|${item.commentCount}|${item.isChannelPost}|${item.isPinned}|` +
     // SEARCH-102：高亮态参与 key，落位后该行才会局部重绘。
@@ -1640,6 +1647,11 @@ export struct ChatPage {
           this.PollBubble(item.messageId, item.poll)
         }
 
+        // LOCATION-MSG-101：位置与场所卡片（messageLocation / messageVenue）。
+        if (item.location !== null) {
+          this.LocationBubble(item.messageId, item.location)
+        }
+
         // 链接预览卡片（MSG-107）：showAboveText 为 true 时在正文上方渲染
         if (item.linkPreview !== null && item.linkPreview.showAboveText) {
           this.LinkPreviewBubble(item.linkPreview)
@@ -1736,7 +1748,7 @@ export struct ChatPage {
         top: this.T.spacing.sm,
         bottom: this.T.spacing.xs
       }))
-      .width(item.isChannelPost ? '100%' : (item.linkPreview !== null ? BUBBLE_MAX_WIDTH : undefined))
+      .width(item.isChannelPost ? '100%' : ((item.linkPreview !== null || item.location !== null) ? BUBBLE_MAX_WIDTH : undefined))
       .constraintSize({ maxWidth: item.isChannelPost ? '100%' : BUBBLE_MAX_WIDTH })
       .onClick(() => {
         // MSG-106：多选态下点击气泡 = 切换勾选（不再触发重发）。
@@ -3999,6 +4011,154 @@ export struct ChatPage {
     .constraintSize({ maxWidth: 360 })
     .alignItems(HorizontalAlign.Start)
     .padding({ top: this.T.spacing.xs, bottom: this.T.spacing.xs })
+  }
+
+  /**
+   * LOCATION-MSG-101：位置与场所卡片气泡。
+   * 地图图钉视觉头部 + 经纬度角标 + 场所/位置标题 + 地址/坐标文本 + 底部操作栏（在地图中打开 / 复制坐标）。
+   */
+  @Builder
+  LocationBubble(messageId: number, location: LocationCard) {
+    Column() {
+      // 1. 地图图钉视觉卡片 / 标头与经纬度呈现
+      Stack() {
+        Column()
+          .width('100%')
+          .height(110)
+          .backgroundColor(this.T.colors.surfaceVariant)
+          .borderRadius(this.T.radius.sm)
+
+        Column() {
+          Column() {
+            Image($r('app.media.ic_pin'))
+              .width(26)
+              .height(26)
+              .fillColor(Color.White)
+          }
+          .width(44)
+          .height(44)
+          .borderRadius(this.T.radius.full)
+          .backgroundColor(this.T.colors.accent)
+          .justifyContent(FlexAlign.Center)
+          .alignItems(HorizontalAlign.Center)
+          .shadow({ radius: 8, color: '#33000000', offsetY: 2 })
+        }
+        .alignSelf(ItemAlign.Center)
+
+        // 经纬度浮层角标
+        Row() {
+          Text(`${location.latitude.toFixed(4)}°, ${location.longitude.toFixed(4)}°`)
+            .fontSize(10)
+            .fontColor(Color.White)
+            .backgroundColor(this.T.colors.scrim)
+            .padding({ left: 6, right: 6, top: 2, bottom: 2 })
+            .borderRadius(4)
+        }
+        .width('100%')
+        .height('100%')
+        .alignItems(VerticalAlign.Bottom)
+        .justifyContent(FlexAlign.Start)
+        .padding(6)
+      }
+      .width('100%')
+      .height(110)
+      .borderRadius(this.T.radius.sm)
+      .clip(true)
+      .onClick(() => {
+        this.openLocationInMaps(location);
+      })
+
+      // 2. 文本详情区（标题与地址/坐标）
+      Column() {
+        Text(location.title.length > 0 ? location.title : (location.isVenue ? this.t('Venue') : this.t('Location')))
+          .fontSize(this.chatText(this.T.typography.body.fontSize))
+          .fontWeight(FontWeight.Bold)
+          .fontColor(this.T.colors.chatText)
+          .maxLines(2)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+
+        Text(location.address.length > 0 ? location.address : `${location.latitude.toFixed(6)}, ${location.longitude.toFixed(6)}`)
+          .fontSize(this.chatText(this.T.typography.footnote.fontSize))
+          .fontColor(this.T.colors.textSecondary)
+          .maxLines(2)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .margin({ top: 4 })
+      }
+      .width('100%')
+      .alignItems(HorizontalAlign.Start)
+      .padding({ top: this.T.spacing.xs, bottom: this.T.spacing.xs })
+
+      // 3. 底部操作栏（在地图中打开 / 复制坐标）
+      Row() {
+        Row() {
+          Image($r('app.media.ic_pin'))
+            .width(16)
+            .height(16)
+            .fillColor(this.T.colors.accent)
+            .margin({ right: 4 })
+          Text(this.t('Open in Maps'))
+            .fontSize(this.chatText(this.T.typography.caption.fontSize))
+            .fontColor(this.T.colors.accent)
+            .fontWeight(FontWeight.Medium)
+        }
+        .layoutWeight(1)
+        .justifyContent(FlexAlign.Center)
+        .padding({ top: 8, bottom: 8 })
+        .onClick(() => {
+          this.openLocationInMaps(location);
+        })
+
+        Row()
+          .width(1)
+          .height(16)
+          .backgroundColor(this.T.colors.divider)
+
+        Row() {
+          Image($r('app.media.ic_copy'))
+            .width(16)
+            .height(16)
+            .fillColor(this.T.colors.accent)
+            .margin({ right: 4 })
+          Text(this.t('Copy Coordinates'))
+            .fontSize(this.chatText(this.T.typography.caption.fontSize))
+            .fontColor(this.T.colors.accent)
+            .fontWeight(FontWeight.Medium)
+        }
+        .layoutWeight(1)
+        .justifyContent(FlexAlign.Center)
+        .padding({ top: 8, bottom: 8 })
+        .onClick(() => {
+          this.copyCoordinatesToClipboard(location);
+        })
+      }
+      .width('100%')
+      .border({ width: { top: 1 }, color: this.T.colors.divider })
+      .margin({ top: this.T.spacing.xs })
+    }
+    .width('100%')
+    .constraintSize({ maxWidth: 360 })
+    .alignItems(HorizontalAlign.Start)
+    .padding({ top: this.T.spacing.xs, bottom: this.T.spacing.xs })
+  }
+
+  private openLocationInMaps(location: LocationCard): void {
+    const mapUrl: string = `https://maps.google.com/?q=${location.latitude},${location.longitude}`;
+    this.openLink(mapUrl);
+  }
+
+  private copyCoordinatesToClipboard(location: LocationCard): void {
+    const text: string = `${location.latitude}, ${location.longitude}`;
+    try {
+      const pasteData: pasteboard.PasteData = pasteboard.createData(pasteboard.MIMETYPE_TEXT_PLAIN, text);
+      const systemPasteboard: pasteboard.SystemPasteboard = pasteboard.getSystemPasteboard();
+      systemPasteboard.setData(pasteData).then(() => {
+        this.showHintToast(this.t('Coordinates copied'));
+      }).catch(() => {
+        this.showHintToast(this.t('Coordinates copied'));
+      });
+    } catch (_err) {
+      this.showHintToast(this.t('Coordinates copied'));
+    }
   }
 
   /**

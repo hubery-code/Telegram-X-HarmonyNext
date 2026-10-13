@@ -7,6 +7,7 @@ export { ReactionChip } from './model/ReactionChip';
 export { MediaAttachment, MediaKind, formatFileSize, decodeWaveform, encodeWaveform, normalizeWaveform } from './model/MediaAttachment';
 export { MediaViewerItem } from './model/MediaViewerItem';
 export { LinkPreviewInfo } from './model/LinkPreviewInfo';
+export { LocationCard } from './model/LocationCard';
 export { ChatSearchResultItem } from './model/ChatSearchResultItem';
 export { PinnedMessageInfo } from './model/PinnedMessageInfo';
 
