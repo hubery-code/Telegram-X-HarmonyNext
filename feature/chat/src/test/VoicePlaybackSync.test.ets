@@ -125,7 +125,7 @@ export default function voicePlaybackSyncTest(): void {
       coordinator.dispatch(new SendGif(gif));
       await settle();
 
-      expect(bridge.sent.length).assertEqual(1);
+      expect(bridge.sent.length).assertEqual(2);
       const req: Record<string, Object> = JSON.parse(bridge.sent[0]) as Record<string, Object>;
       expect(req['@type']).assertEqual('sendMessage');
       const content: Record<string, Object> = req['input_message_content'] as Record<string, Object>;
@@ -133,6 +133,9 @@ export default function voicePlaybackSyncTest(): void {
       const anim: Record<string, Object> = content['animation'] as Record<string, Object>;
       const file: Record<string, Object> = anim['animation'] as Record<string, Object>;
       expect(file['id']).assertEqual(8888);
+
+      const addReq: Record<string, Object> = JSON.parse(bridge.sent[1]) as Record<string, Object>;
+      expect(addReq['@type']).assertEqual('addSavedAnimation');
 
       coordinator.destroy();
     });

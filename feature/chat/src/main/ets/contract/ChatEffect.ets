@@ -356,6 +356,31 @@ export class RemoveRecentStickerInTdlib implements Effect {
   }
 }
 
+/** GIF-SAVED-101：向 TDLib 取保存的动图列表（getSavedAnimations）。 */
+export class FetchSavedAnimationsEffect implements Effect {
+  readonly kind: 'fetchSavedAnimations' = 'fetchSavedAnimations';
+}
+
+/** GIF-SAVED-101：把保存动图写回 TDLib（addSavedAnimation）。 */
+export class AddSavedAnimationInTdlib implements Effect {
+  readonly kind: 'addSavedAnimationInTdlib' = 'addSavedAnimationInTdlib';
+  readonly fileId: number;
+
+  constructor(fileId: number) {
+    this.fileId = fileId;
+  }
+}
+
+/** GIF-SAVED-101：把移出保存动图写回 TDLib（removeSavedAnimation）。 */
+export class RemoveSavedAnimationInTdlib implements Effect {
+  readonly kind: 'removeSavedAnimationInTdlib' = 'removeSavedAnimationInTdlib';
+  readonly fileId: number;
+
+  constructor(fileId: number) {
+    this.fileId = fileId;
+  }
+}
+
 export class FetchStickerSet implements Effect {
   readonly kind: 'fetchStickerSet' = 'fetchStickerSet';
   readonly setId: string;
@@ -538,6 +563,9 @@ export type ChatEffect =
   | ChangeStickerSetEffect
   | SendStickerMessage
   | SendAnimationMessage
+  | FetchSavedAnimationsEffect
+  | AddSavedAnimationInTdlib
+  | RemoveSavedAnimationInTdlib
   | StartVoiceRecordEffect
   | StopAndSendVoiceRecordEffect
   | CancelVoiceRecordEffect

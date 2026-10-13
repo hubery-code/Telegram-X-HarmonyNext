@@ -163,9 +163,18 @@ import {
   encodeRemoveFavoriteSticker,
   RemoveRecentSticker as TdRemoveRecentSticker,
   encodeRemoveRecentSticker,
+  GetSavedAnimations,
+  encodeGetSavedAnimations,
+  Animations,
+  decodeAnimations,
+  AddSavedAnimation as TdAddSavedAnimation,
+  encodeAddSavedAnimation,
+  RemoveSavedAnimation as TdRemoveSavedAnimation,
+  encodeRemoveSavedAnimation,
   UpdateRecentStickers,
   UpdateFavoriteStickers,
   UpdateInstalledStickerSets,
+  UpdateSavedAnimations,
   StickerSetInfo,
   StickerTypeRegular,
   ChangeStickerSet,
@@ -285,6 +294,9 @@ import {
   OnFavoriteStickersLoaded,
   OnFavoriteStickerIdsChanged,
   OnFavoriteStickersFailed,
+  FetchSavedAnimations,
+  OnSavedAnimationsLoaded,
+  OnSavedAnimationsFailed,
   StartVoiceRecord,
   StopAndSendVoiceRecord,
   CancelVoiceRecord,
@@ -333,6 +345,9 @@ import {
   ChangeStickerSetEffect,
   SendStickerMessage,
   SendAnimationMessage,
+  FetchSavedAnimationsEffect,
+  AddSavedAnimationInTdlib,
+  RemoveSavedAnimationInTdlib,
   StartVoiceRecordEffect,
   StopAndSendVoiceRecordEffect,
   CancelVoiceRecordEffect,
@@ -341,6 +356,7 @@ import {
   SendPollEffect,
   SetPollAnswerEffect
 } from '../contract/ChatEffect';
+import { GifItem } from '../model/GifItem';
 import { StickerSetPreviewState, StickerSetItem, isUnicodeEmojiSticker } from '../model/StickerSetPreviewState';
 import { stickerSetChangeTargetId, stickerSetFetchFailureLogKey } from '../model/StickerSetFetch';
 import {
@@ -742,6 +758,8 @@ export class ChatCoordinator {
   private favoriteStickersSubscription: TdUpdateSubscription | null = null;
   /** STICKER-BOARD-103：`updateInstalledStickerSets` 订阅（已装盘读到空也要能自己活过来）。 */
   private installedStickerSetsSubscription: TdUpdateSubscription | null = null;
+  /** GIF-SAVED-101：`updateSavedAnimations` 订阅（发出去动图或加/删收藏动图后实时更新）。 */
+  private savedAnimationsSubscription: TdUpdateSubscription | null = null;
   /**
    * MEDIA-105：待发送视频的**本地缩略图**缓存，key = 送进 TDLib 的视频沙箱物理路径。
    *
@@ -917,6 +935,8 @@ export class ChatCoordinator {
     this.subscribeFavoriteStickers();
     // STICKER-BOARD-103：已装盘实时同步（冷启动读到空盘、其它端装/卸包都会推 updateInstalledStickerSets）。
     this.subscribeInstalledStickerSets();
+    // GIF-SAVED-101：保存动图实时同步（updateSavedAnimations 推送）。
+    this.subscribeSavedAnimations();
     // MSG-109：先按已知信息补一次副标题（chatKind 未回前为 no-op），
     // getChat 回包 / 用户状态订阅 / 在线人数订阅到达后各自重算。
     this.publishHeaderSubtitle(true);
@@ -1267,6 +1287,11 @@ export class ChatCoordinator {
     if (this.installedStickerSetsSubscription !== null) {
       this.installedStickerSetsSubscription.unsubscribe();
       this.installedStickerSetsSubscription = null;
+    }
+    // GIF-SAVED-101：退订保存动图推送。
+    if (this.savedAnimationsSubscription !== null) {
+      this.savedAnimationsSubscription.unsubscribe();
+      this.savedAnimationsSubscription = null;
     }
     if (this.recordTimerId !== -1) {
       clearInterval(this.recordTimerId);
@@ -3998,6 +4023,23 @@ export class ChatCoordinator {
         break;
       }
 
+      case 'fetchSavedAnimations': {
+        this.handleFetchSavedAnimations();
+        break;
+      }
+
+      case 'addSavedAnimationInTdlib': {
+        const addSaved: AddSavedAnimationInTdlib = effect as AddSavedAnimationInTdlib;
+        this.handleAddSavedAnimation(addSaved.fileId);
+        break;
+      }
+
+      case 'removeSavedAnimationInTdlib': {
+        const remSaved: RemoveSavedAnimationInTdlib = effect as RemoveSavedAnimationInTdlib;
+        this.handleRemoveSavedAnimation(remSaved.fileId);
+        break;
+      }
+
       case 'startVoiceRecordEffect': {
         this.handleStartVoiceRecord();
         break;
@@ -4903,6 +4945,158 @@ export class ChatCoordinator {
         // 据此判断「本次变更已经读到过了」（订阅收不到时编号不推进，兜底照旧）。
         this.stickerBoardFetchGate.markAuthoritativeChange();
         this.handleFetchStickerBoard();
+      }
+    );
+  }
+
+  /**
+   * GIF-SAVED-101：拉「保存的动图列表」（`getSavedAnimations`）。
+   */
+  private handleFetchSavedAnimations(): void {
+    const req: GetSavedAnimations = new GetSavedAnimations();
+    const result: Result<TdPendingRequest, AppError> =
+      this.scope.request('getSavedAnimations', encodeGetSavedAnimations(req) as TdWireObject);
+    if (result.err) {
+      this.logRequestError('getSavedAnimations', result.error);
+      this.dispatch(new OnSavedAnimationsFailed(result.error.message));
+      return;
+    }
+    if (result.ok) {
+      const pending: TdPendingRequest = result.value;
+      pending.promise.then((res: Result<TdWireObject, AppError>) => {
+        if (this.destroyed) {
+          return;
+        }
+        if (res.err) {
+          this.logRequestError('getSavedAnimations', res.error, pending);
+          this.dispatch(new OnSavedAnimationsFailed(res.error.message));
+          return;
+        }
+        if (res.ok) {
+          const anims: Animations | null = decodeAnimations(res.value as TdJsonRaw);
+          if (anims === null) {
+            this.dispatch(new OnSavedAnimationsFailed('Failed decode'));
+            return;
+          }
+          this.logger.info(TAG, 'saved_animations_loaded', `count=${anims.animations.length}`);
+          const items: GifItem[] = this.mapSavedAnimations(anims.animations);
+          this.dispatch(new OnSavedAnimationsLoaded(items));
+        }
+      }).catch(() => {});
+    }
+  }
+
+  private mapSavedAnimations(animations: Animation[]): GifItem[] {
+    const out: GifItem[] = [];
+    for (let i = 0; i < animations.length; i++) {
+      const anim: Animation = animations[i];
+      const fileId: number = anim.animation !== null ? anim.animation.id : 0;
+      const title: string = anim.file_name.length > 0 ? anim.file_name : 'GIF'; // i18n-allow 动图默认回落标题
+      out.push({
+        id: `td_saved_anim_${fileId}_${i}`,
+        title: title,
+        tag: '#saved',
+        category: '🕒 Recent',
+        fileId: fileId,
+        width: anim.width > 0 ? anim.width : 320,
+        height: anim.height > 0 ? anim.height : 240,
+        duration: anim.duration,
+        previewEmoji: '🎬'
+      });
+    }
+    return out;
+  }
+
+  /**
+   * GIF-SAVED-101：保存动图到 TDLib（`addSavedAnimation`）。
+   */
+  private handleAddSavedAnimation(fileId: number): void {
+    if (fileId <= 0) {
+      return;
+    }
+    const req: TdAddSavedAnimation = new TdAddSavedAnimation();
+    const inputFile: InputFileId = new InputFileId();
+    inputFile.id = fileId;
+    req.animation = inputFile;
+    const result: Result<TdPendingRequest, AppError> =
+      this.scope.request('addSavedAnimation', encodeAddSavedAnimation(req) as TdWireObject);
+    if (result.err) {
+      this.logRequestError('addSavedAnimation', result.error);
+      return;
+    }
+    if (result.ok) {
+      const pending: TdPendingRequest = result.value;
+      pending.promise.then((res: Result<TdWireObject, AppError>) => {
+        if (this.destroyed) {
+          return;
+        }
+        if (res.err) {
+          this.logRequestError('addSavedAnimation', res.error, pending);
+          return;
+        }
+        this.logger.info(TAG, 'saved_animation_added', `fileId=${fileId}`);
+      }).catch(() => {});
+    }
+  }
+
+  /**
+   * GIF-SAVED-101：从 TDLib 移除保存动图（`removeSavedAnimation`）。
+   */
+  private handleRemoveSavedAnimation(fileId: number): void {
+    if (fileId <= 0) {
+      return;
+    }
+    const req: TdRemoveSavedAnimation = new TdRemoveSavedAnimation();
+    const inputFile: InputFileId = new InputFileId();
+    inputFile.id = fileId;
+    req.animation = inputFile;
+    const result: Result<TdPendingRequest, AppError> =
+      this.scope.request('removeSavedAnimation', encodeRemoveSavedAnimation(req) as TdWireObject);
+    if (result.err) {
+      this.logRequestError('removeSavedAnimation', result.error);
+      this.handleFetchSavedAnimations();
+      return;
+    }
+    if (result.ok) {
+      const pending: TdPendingRequest = result.value;
+      pending.promise.then((res: Result<TdWireObject, AppError>) => {
+        if (this.destroyed) {
+          return;
+        }
+        if (res.err) {
+          this.logRequestError('removeSavedAnimation', res.error, pending);
+          this.handleFetchSavedAnimations();
+          return;
+        }
+        this.logger.info(TAG, 'saved_animation_removed', `fileId=${fileId}`);
+      }).catch(() => {});
+    }
+  }
+
+  /**
+   * GIF-SAVED-101：订阅 `updateSavedAnimations`。
+   * 只在已请求过保存动图之后才重读。
+   */
+  private subscribeSavedAnimations(): void {
+    if (this.destroyed || this.savedAnimationsSubscription !== null) {
+      return;
+    }
+    const filter: TdUpdateFilter = {
+      clientId: this.scope.clientId,
+      types: ['updateSavedAnimations']
+    };
+    this.savedAnimationsSubscription = this.scope.gatewayInstance.subscribeUpdates(
+      filter,
+      (event: TdRoutedEvent): void => {
+        const update: TdUpdate | null = decodeTdUpdate(event.payload as TdJsonRaw);
+        if (update === null || update.type !== 'updateSavedAnimations') {
+          return;
+        }
+        this.logger.info(TAG, 'saved_animations_update', 'updateSavedAnimations received');
+        if (!this.currentState.savedAnimationsRequested) {
+          return;
+        }
+        this.handleFetchSavedAnimations();
       }
     );
   }

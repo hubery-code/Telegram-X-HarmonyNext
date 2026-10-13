@@ -108,6 +108,9 @@ import {
   OnFavoriteStickersFailed,
   OnTrendingLoaded,
   OnTrendingFailed,
+  FetchSavedAnimations,
+  OnSavedAnimationsLoaded,
+  OnSavedAnimationsFailed,
   OnStickerSetLoaded,
   OnStickerSetLoadFailed,
   CloseStickerSetPreview,
@@ -186,6 +189,9 @@ import {
   ChangeStickerSetEffect,
   SendStickerMessage,
   SendAnimationMessage,
+  FetchSavedAnimationsEffect,
+  AddSavedAnimationInTdlib,
+  RemoveSavedAnimationInTdlib,
   StartVoiceRecordEffect,
   StopAndSendVoiceRecordEffect,
   CancelVoiceRecordEffect,
@@ -1348,7 +1354,8 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
       const needTrending: boolean = !board.trendingRequested;
       const needRecent: boolean = !board.recentRequested;
       const needFavorite: boolean = !board.favoriteRequested;
-      if (!needBoard && !needTrending && !needRecent && !needFavorite) {
+      const needSavedAnimations: boolean = !state.savedAnimationsRequested;
+      if (!needBoard && !needTrending && !needRecent && !needFavorite && !needSavedAnimations) {
         return reduced(state);
       }
       const effects: ChatEffect[] = [];
@@ -1364,8 +1371,12 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
       if (needFavorite) {
         effects.push(new FetchFavoriteStickers());
       }
+      if (needSavedAnimations) {
+        effects.push(new FetchSavedAnimationsEffect());
+      }
       return reduced(
         state.copyWith({
+          savedAnimationsRequested: true,
           stickerBoard: board.copyWith({
             isLoading: needBoard || board.isLoading,
             errorMessage: needBoard ? null : board.errorMessage,
@@ -1376,6 +1387,25 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
         }),
         effects
       );
+    }
+
+    case 'fetchSavedAnimations': {
+      return reduced(
+        state.copyWith({ savedAnimationsRequested: true }),
+        [new FetchSavedAnimationsEffect()]
+      );
+    }
+
+    case 'onSavedAnimationsLoaded': {
+      const loadedSavedAnims: OnSavedAnimationsLoaded = intent as OnSavedAnimationsLoaded;
+      return reduced(state.copyWith({
+        recentGifs: loadedSavedAnims.items,
+        savedAnimationsRequested: true
+      }));
+    }
+
+    case 'onSavedAnimationsFailed': {
+      return reduced(state.copyWith({ savedAnimationsRequested: true }));
     }
 
     case 'onRecentStickersLoaded': {
@@ -1708,16 +1738,29 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
         (g: GifItem): boolean => g.id !== gifItem.id && g.fileId !== gifItem.fileId
       );
       const nextRecents: GifItem[] = [gifItem, ...filtered].slice(0, 32);
+      const effects: ChatEffect[] = [
+        new SendAnimationMessage(state.chatId, gifItem.fileId, gifItem.width, gifItem.height, gifItem.title)
+      ];
+      if (gifItem.fileId > 0) {
+        effects.push(new AddSavedAnimationInTdlib(gifItem.fileId));
+      }
       return reduced(
         state.copyWith({ recentGifs: nextRecents }),
-        [new SendAnimationMessage(state.chatId, gifItem.fileId, gifItem.width, gifItem.height, gifItem.title)]
+        effects
       );
     }
 
     case 'clearRecentGifs': {
+      const effects: ChatEffect[] = [];
+      for (let i = 0; i < state.recentGifs.length; i++) {
+        const fileId: number = state.recentGifs[i].fileId;
+        if (fileId > 0) {
+          effects.push(new RemoveSavedAnimationInTdlib(fileId));
+        }
+      }
       return reduced(state.copyWith({
         recentGifs: []
-      }));
+      }), effects);
     }
 
     case 'searchGifs': {

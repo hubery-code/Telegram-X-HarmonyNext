@@ -83,10 +83,13 @@ import {
   InstallStickerSet,
   OpenStickerBoard,
   OpenStickerSet,
-  RemoveFavoriteSticker
+  RemoveFavoriteSticker,
+  SendGif,
+  ClearRecentGifs
 } from '../main/ets/contract/ChatIntent';
 import { StickerBoardPack, StickerTrendingPack } from '../main/ets/model/StickerBoard';
 import { StickerSetItem, StickerSetPreviewState } from '../main/ets/model/StickerSetPreviewState';
+import { GifItem } from '../main/ets/model/GifItem';
 
 interface SentBridgeRequest {
   readonly clientId: number;
@@ -430,6 +433,39 @@ function favoriteUpdateFields(stickerIds: number[]): Record<string, TdWireValue>
   const fields: Record<string, TdWireValue> = {};
   fields['@type'] = 'updateFavoriteStickers';
   fields['sticker_ids'] = stickerIds;
+  return fields;
+}
+
+function animationsFields(animations: Record<string, TdWireValue>[]): Record<string, TdWireValue> {
+  const fields: Record<string, TdWireValue> = {};
+  fields['@type'] = 'animations';
+  fields['animations'] = animations;
+  return fields;
+}
+
+function testAnimationFields(fileId: number, name: string): Record<string, TdWireValue> {
+  const file: Record<string, TdWireValue> = {};
+  file['@type'] = 'file';
+  file['id'] = fileId;
+  file['size'] = 1000;
+  file['expected_size'] = 1000;
+
+  const anim: Record<string, TdWireValue> = {};
+  anim['@type'] = 'animation';
+  anim['duration'] = 2;
+  anim['width'] = 320;
+  anim['height'] = 240;
+  anim['file_name'] = name;
+  anim['mime_type'] = 'image/gif';
+  anim['has_stickers'] = false;
+  anim['animation'] = file;
+  return anim;
+}
+
+function updateSavedAnimationsFields(animationIds: number[]): Record<string, TdWireValue> {
+  const fields: Record<string, TdWireValue> = {};
+  fields['@type'] = 'updateSavedAnimations';
+  fields['animation_ids'] = animationIds;
   return fields;
 }
 
@@ -1624,6 +1660,115 @@ export default function stickerBoardFetchTest(): void {
       expect(String(changes[0]['set_id'])).assertEqual('77');
 
       unsubscribe();
+      coordinator.destroy();
+    });
+
+    // ---------- GIF-SAVED-101：保存动图接 getSavedAnimations 与 updateSavedAnimations ----------
+    it('openStickerBoard_requestsSavedAnimationsOnce', 0, async (): Promise<void> => {
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const scope: AccountScope = createScope(bridge);
+      const coordinator: ChatCoordinator = new ChatCoordinator(scope, 42, 'Test Chat');
+
+      coordinator.dispatch(new OpenStickerBoard());
+      coordinator.dispatch(new OpenStickerBoard());
+      await settle();
+
+      const reqs: Record<string, TdWireValue>[] = requestsOfType(bridge, 'getSavedAnimations');
+      expect(reqs.length).assertEqual(1);
+
+      coordinator.destroy();
+    });
+
+    it('savedAnimationsResponse_populatesRecentGifs', 0, async (): Promise<void> => {
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const scope: AccountScope = createScope(bridge);
+      const coordinator: ChatCoordinator = new ChatCoordinator(scope, 42, 'Test Chat');
+
+      const recorder: StateRecorder = new StateRecorder();
+      const unsubscribe: () => void = coordinator.subscribe((state: ChatUiState): void => {
+        recorder.seen.push(state);
+      });
+
+      coordinator.dispatch(new OpenStickerBoard());
+      await settle();
+
+      const requestId: string = lastRequestIdOfType(bridge, 'getSavedAnimations');
+      bridge.respondTo(requestId, animationsFields([
+        testAnimationFields(7001, 'Cool Cat'),
+        testAnimationFields(7002, 'Happy Dog')
+      ]));
+      await settle();
+
+      const items: readonly GifItem[] = recorder.last().recentGifs;
+      expect(items.length).assertEqual(2);
+      expect(items[0].fileId).assertEqual(7001);
+      expect(items[0].title).assertEqual('Cool Cat');
+      expect(items[1].fileId).assertEqual(7002);
+      expect(items[1].title).assertEqual('Happy Dog');
+      expect(recorder.last().savedAnimationsRequested).assertTrue();
+
+      unsubscribe();
+      coordinator.destroy();
+    });
+
+    it('updateSavedAnimations_refetchesOnlyWhenAlreadyRequested', 0, async (): Promise<void> => {
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const scope: AccountScope = createScope(bridge);
+      const coordinator: ChatCoordinator = new ChatCoordinator(scope, 42, 'Test Chat');
+      coordinator.start();
+      await settle();
+
+      // 没开过板卡时推送 updateSavedAnimations 不许重读
+      expect(countRequestsOfType(bridge, 'getSavedAnimations')).assertEqual(0);
+      bridge.pushUpdate(updateSavedAnimationsFields([7001, 7002]));
+      await settle();
+      expect(countRequestsOfType(bridge, 'getSavedAnimations')).assertEqual(0);
+
+      // 开板之后
+      coordinator.dispatch(new OpenStickerBoard());
+      await settle();
+      expect(countRequestsOfType(bridge, 'getSavedAnimations')).assertEqual(1);
+
+      // 开过板卡后推送 updateSavedAnimations 触发重读
+      bridge.pushUpdate(updateSavedAnimationsFields([7001, 7002, 7003]));
+      await settle();
+      expect(countRequestsOfType(bridge, 'getSavedAnimations')).assertEqual(2);
+
+      coordinator.destroy();
+    });
+
+    it('sendGif_and_clearRecentGifs_writeToTdlib', 0, async (): Promise<void> => {
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const scope: AccountScope = createScope(bridge);
+      const coordinator: ChatCoordinator = new ChatCoordinator(scope, 42, 'Test Chat');
+
+      const testGif: GifItem = {
+        id: 'g_1',
+        title: 'Dance',
+        tag: '#party',
+        category: '🕒 Recent',
+        fileId: 8888,
+        width: 320,
+        height: 240,
+        duration: 2,
+        previewEmoji: '🎬'
+      };
+
+      coordinator.dispatch(new SendGif(testGif));
+      await settle();
+
+      const addReqs: Record<string, TdWireValue>[] = requestsOfType(bridge, 'addSavedAnimation');
+      expect(addReqs.length).assertEqual(1);
+      const inputAnim = addReqs[0]['animation'] as Record<string, TdWireValue>;
+      expect(inputAnim['@type']).assertEqual('inputFileId');
+      expect(inputAnim['id']).assertEqual(8888);
+
+      coordinator.dispatch(new ClearRecentGifs());
+      await settle();
+
+      const remReqs: Record<string, TdWireValue>[] = requestsOfType(bridge, 'removeSavedAnimation');
+      expect(remReqs.length >= 1).assertTrue();
+
       coordinator.destroy();
     });
   });

@@ -100,6 +100,9 @@ import {
   SendGif,
   ClearRecentGifs,
   SearchGifs,
+  FetchSavedAnimations,
+  OnSavedAnimationsLoaded,
+  OnSavedAnimationsFailed,
   OnStickerPreviewFileUpdated,
   StartVoiceRecord,
   StopAndSendVoiceRecord,
@@ -162,6 +165,9 @@ import {
   ChangeStickerSetEffect,
   SendStickerMessage,
   SendAnimationMessage,
+  FetchSavedAnimationsEffect,
+  AddSavedAnimationInTdlib,
+  RemoveSavedAnimationInTdlib,
   StartVoiceRecordEffect,
   StopAndSendVoiceRecordEffect,
   CancelVoiceRecordEffect,
@@ -2152,21 +2158,24 @@ export default function chatReducerTest() {
       );
 
       expect(result.state.stickerBoard.isLoading).assertTrue();
-      // 盘、榜、最近使用、收藏是四次独立的问价：同一次开板一起发出，之后各自按自己的标志位去重
-      expect(result.effects.length).assertEqual(4);
+      // 盘、榜、最近使用、收藏、动图是五次独立的问价：同一次开板一起发出，之后各自按自己的标志位去重
+      expect(result.effects.length).assertEqual(5);
       expect(result.effects[0].kind).assertEqual('fetchStickerBoard');
       expect(result.effects[1].kind).assertEqual('fetchTrendingStickerSets');
       expect(result.effects[2].kind).assertEqual('fetchRecentStickers');
       expect(result.effects[3].kind).assertEqual('fetchFavoriteStickers');
+      expect(result.effects[4].kind).assertEqual('fetchSavedAnimations');
       expect(result.state.stickerBoard.trendingRequested).assertTrue();
       expect(result.state.stickerBoard.recentRequested).assertTrue();
       expect(result.state.stickerBoard.favoriteRequested).assertTrue();
+      expect(result.state.savedAnimationsRequested).assertTrue();
     });
 
     it('openStickerBoard_onlyRecentUnasked_emitsOnlyRecentFetch', 0, () => {
       // 「最近使用」和榜、收藏一样要能被去重：切页签不是重读列表的理由。
-      // 这里盘已装好、榜已问过、收藏已问过，只有最近使用没读过 —— 必须只发那一条。
+      // 这里盘已装好、榜已问过、收藏已问过、动图已问过，只有最近使用没读过 —— 必须只发那一条。
       const unasked: ChatUiState = makeState('').copyWith({
+        savedAnimationsRequested: true,
         stickerBoard: new StickerBoardState([makeBoardPack('21')], false, true, null, [], true, null, false, true)
       });
       const res: ReducerResult<ChatUiState, ChatEffect> = chatReducer(unasked, new OpenStickerBoard(), makeEnv());
@@ -2179,6 +2188,7 @@ export default function chatReducerTest() {
 
     it('openStickerBoard_onlyFavoriteUnasked_emitsOnlyFavoriteFetch', 0, () => {
       const unasked: ChatUiState = makeState('').copyWith({
+        savedAnimationsRequested: true,
         stickerBoard: new StickerBoardState([makeBoardPack('21')], false, true, null, [], true, null, true, false)
       });
       const res: ReducerResult<ChatUiState, ChatEffect> = chatReducer(unasked, new OpenStickerBoard(), makeEnv());
@@ -2188,8 +2198,20 @@ export default function chatReducerTest() {
       expect(res.state.stickerBoard.favoriteRequested).assertTrue();
     });
 
+    it('openStickerBoard_onlySavedAnimationsUnasked_emitsOnlySavedAnimationsFetch', 0, () => {
+      const unasked: ChatUiState = makeState('').copyWith({
+        savedAnimationsRequested: false,
+        stickerBoard: new StickerBoardState([makeBoardPack('21')], false, true, null, [], true, null, true, true)
+      });
+      const res: ReducerResult<ChatUiState, ChatEffect> = chatReducer(unasked, new OpenStickerBoard(), makeEnv());
+      expect(res.effects.length).assertEqual(1);
+      expect(res.effects[0].kind).assertEqual('fetchSavedAnimations');
+      expect(res.state.savedAnimationsRequested).assertTrue();
+    });
+
     it('openStickerBoard_whileLoadingOrLoaded_doesNotRefetch', 0, () => {
       const loading: ChatUiState = makeState('').copyWith({
+        savedAnimationsRequested: true,
         stickerBoard: new StickerBoardState([], true, false, null, [], true, null, true, true)
       });
       const loadingRes: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
@@ -2199,6 +2221,7 @@ export default function chatReducerTest() {
       expect(loadingRes.effects.length).assertEqual(0);
 
       const loaded: ChatUiState = makeState('').copyWith({
+        savedAnimationsRequested: true,
         stickerBoard: new StickerBoardState([makeBoardPack('21')], false, true, null, [], true, null, true, true)
       });
       const loadedRes: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
@@ -2207,8 +2230,9 @@ export default function chatReducerTest() {
       expect(loadedRes.effects.length).assertEqual(0);
       expect(loadedRes.state.stickerBoard.packs.length).assertEqual(1);
 
-      // 四个来源的去重各自独立：盘已装好、最近与收藏已问过，但榜还没问过 —— 这一次只补榜
+      // 五个来源的去重各自独立：盘已装好、最近与收藏与动图已问过，但榜还没问过 —— 这一次只补榜
       const boardOnly: ChatUiState = makeState('').copyWith({
+        savedAnimationsRequested: true,
         stickerBoard: new StickerBoardState([makeBoardPack('21')], false, true, null, [], false, null, true, true)
       });
       const boardOnlyRes: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
@@ -2737,11 +2761,14 @@ export default function chatReducerTest() {
 
       expect(result.state.recentGifs.length > 0).assertTrue();
       expect(result.state.recentGifs[0].id).assertEqual('test_gif');
-      expect(result.effects.length).assertEqual(1);
+      expect(result.effects.length).assertEqual(2);
       expect(result.effects[0].kind).assertEqual('sendAnimationMessage');
       const effect: SendAnimationMessage = result.effects[0] as SendAnimationMessage;
       expect(effect.fileId).assertEqual(2050);
       expect(effect.caption).assertEqual('Dancing Dog');
+      expect(result.effects[1].kind).assertEqual('addSavedAnimationInTdlib');
+      const addSaved: AddSavedAnimationInTdlib = result.effects[1] as AddSavedAnimationInTdlib;
+      expect(addSaved.fileId).assertEqual(2050);
     });
 
     it('sendGif_capsRecentGifsAt32', 0, () => {
@@ -2790,6 +2817,46 @@ export default function chatReducerTest() {
         makeEnv()
       );
       expect(result.state.recentGifs.length).assertEqual(0);
+      expect(result.effects.length).assertEqual(initial.recentGifs.length);
+      expect(result.effects[0].kind).assertEqual('removeSavedAnimationInTdlib');
+    });
+
+    it('onSavedAnimationsLoaded_updatesRecentGifsAndLatch', 0, () => {
+      const initial: ChatUiState = makeState('');
+      const loaded: GifItem[] = [
+        {
+          id: 'anim_1',
+          title: 'Custom GIF',
+          tag: '#saved',
+          category: '🕒 Recent',
+          fileId: 5001,
+          width: 320,
+          height: 240,
+          duration: 2,
+          previewEmoji: '🎬'
+        }
+      ];
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        initial,
+        new OnSavedAnimationsLoaded(loaded),
+        makeEnv()
+      );
+      expect(result.state.recentGifs.length).assertEqual(1);
+      expect(result.state.recentGifs[0].fileId).assertEqual(5001);
+      expect(result.state.savedAnimationsRequested).assertTrue();
+      expect(result.effects.length).assertEqual(0);
+    });
+
+    it('onSavedAnimationsFailed_setsLatchSilently', 0, () => {
+      const initial: ChatUiState = makeState('');
+      expect(initial.savedAnimationsRequested).assertFalse();
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        initial,
+        new OnSavedAnimationsFailed('NETWORK_ERROR'),
+        makeEnv()
+      );
+      expect(result.state.savedAnimationsRequested).assertTrue();
+      expect(result.state.errorMessage).assertNull();
     });
 
     it('searchGifs_updatesGifSearchQuery', 0, () => {

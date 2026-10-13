@@ -226,6 +226,8 @@ export interface ChatUiStateOptions {
   readonly pollComposer?: PollComposerState | null;
   /** SET-106：本会话是否已静音（TDLib chat.notification_settings.mute_for > 0）。 */
   readonly isMuted?: boolean;
+  /** GIF-SAVED-101：是否已请求过 TDLib 保存动图列表（getSavedAnimations）。 */
+  readonly savedAnimationsRequested?: boolean;
 }
 
 export const DEFAULT_RECENT_EMOJIS: readonly string[] = [
@@ -323,6 +325,8 @@ export class ChatUiState implements UiState {
    * 一颗早已收藏的贴纸会一直显示「Add to Favorites」，点下去什么也不变。
    */
   readonly favoriteStickerIds: readonly number[];
+  /** GIF-SAVED-101：是否已请求过 TDLib 保存动图列表（getSavedAnimations）。 */
+  readonly savedAnimationsRequested: boolean;
 
   constructor(
     chatId: number,
@@ -371,7 +375,8 @@ export class ChatUiState implements UiState {
     pollComposer: PollComposerState | null = null,
     isMuted: boolean = false,
     favoriteStickers: readonly StickerSetItem[] = [],
-    favoriteStickerIds: readonly number[] = []
+    favoriteStickerIds: readonly number[] = [],
+    savedAnimationsRequested: boolean = false
   ) {
     this.chatId = chatId;
     this.chatTitle = chatTitle;
@@ -418,6 +423,7 @@ export class ChatUiState implements UiState {
     this.isMuted = isMuted;
     this.favoriteStickers = favoriteStickers;
     this.favoriteStickerIds = favoriteStickerIds;
+    this.savedAnimationsRequested = savedAnimationsRequested;
   }
 
   static initial(): ChatUiState {
@@ -470,7 +476,8 @@ export class ChatUiState implements UiState {
       options.pollComposer !== undefined ? options.pollComposer : this.pollComposer,
       options.isMuted !== undefined ? options.isMuted : this.isMuted,
       options.favoriteStickers !== undefined ? options.favoriteStickers : this.favoriteStickers,
-      options.favoriteStickerIds !== undefined ? options.favoriteStickerIds : this.favoriteStickerIds
+      options.favoriteStickerIds !== undefined ? options.favoriteStickerIds : this.favoriteStickerIds,
+      options.savedAnimationsRequested !== undefined ? options.savedAnimationsRequested : this.savedAnimationsRequested
     );
   }
 }

@@ -783,6 +783,9 @@ export type ChatIntent =
   | OnFavoriteStickersFailed
   | OnTrendingLoaded
   | OnTrendingFailed
+  | FetchSavedAnimations
+  | OnSavedAnimationsLoaded
+  | OnSavedAnimationsFailed
   | StartVoiceRecord
   | StopAndSendVoiceRecord
   | CancelVoiceRecord
@@ -1005,6 +1008,37 @@ export class OnFavoriteStickerIdsChanged implements Intent {
  */
 export class OnFavoriteStickersFailed implements Intent {
   readonly kind: 'onFavoriteStickersFailed' = 'onFavoriteStickersFailed';
+  readonly error: string;
+
+  constructor(error: string) {
+    this.error = error;
+  }
+}
+
+/** GIF-SAVED-101：向 TDLib 请求保存动图列表（getSavedAnimations）。 */
+export class FetchSavedAnimations implements Intent {
+  readonly kind: 'fetchSavedAnimations' = 'fetchSavedAnimations';
+}
+
+/**
+ * GIF-SAVED-101：保存动图回灌（TDLib `getSavedAnimations` 的整串 animation 映射为 GifItem）。
+ * 整串替换本地列表：这一行是 TDLib 的视图，不是本地累加器。
+ */
+export class OnSavedAnimationsLoaded implements Intent {
+  readonly kind: 'onSavedAnimationsLoaded' = 'onSavedAnimationsLoaded';
+  readonly items: GifItem[];
+
+  constructor(items: GifItem[]) {
+    this.items = items;
+  }
+}
+
+/**
+ * GIF-SAVED-101：保存动图读取失败。
+ * 静默处理：不写 errorMessage，避免反复切页签反复打网络。
+ */
+export class OnSavedAnimationsFailed implements Intent {
+  readonly kind: 'onSavedAnimationsFailed' = 'onSavedAnimationsFailed';
   readonly error: string;
 
   constructor(error: string) {
