@@ -31,6 +31,7 @@ import { MediaAttachment } from './MediaAttachment';
 import { LinkPreviewInfo } from './LinkPreviewInfo';
 import { ReactionChip } from './ReactionChip';
 import { PollView } from './PollView';
+import { ContactCard } from './ContactCard';
 
 /** 发送状态：none=已发送/收到的正常消息；pending=发送中；failed=发送失败。 */
 export type MessageSendState = 'none' | 'pending' | 'failed';
@@ -73,6 +74,8 @@ export class MessageItem {
   readonly isPinned: boolean;
   /** POLL-101：投票内容（messagePoll）；null=非投票消息。 */
   readonly poll: PollView | null;
+  /** CONTACT-MSG-101：名片内容（messageContact）；null=非名片消息。 */
+  readonly contact: ContactCard | null;
 
   constructor(
     messageId: number,
@@ -105,7 +108,8 @@ export class MessageItem {
     reactionChips: ReactionChip[] = [],
     commentCount: number = 0,
     isPinned: boolean = false,
-    poll: PollView | null = null
+    poll: PollView | null = null,
+    contact: ContactCard | null = null
   ) {
     this.messageId = messageId;
     this.text = text;
@@ -138,6 +142,7 @@ export class MessageItem {
     this.commentCount = commentCount;
     this.isPinned = isPinned;
     this.poll = poll;
+    this.contact = contact;
   }
 
   /** POLL-101：替换 poll 字段派生副本（投票乐观更新用），其余字段原样保留。 */
@@ -173,7 +178,46 @@ export class MessageItem {
       this.reactionChips,
       this.commentCount,
       this.isPinned,
-      nextPoll
+      nextPoll,
+      this.contact
+    );
+  }
+
+  /** CONTACT-MSG-101：替换 contact 字段派生副本，其余字段原样保留。 */
+  withContact(nextContact: ContactCard | null): MessageItem {
+    return new MessageItem(
+      this.messageId,
+      this.text,
+      this.timestampMs,
+      this.isOutgoing,
+      this.senderName,
+      this.sendState,
+      this.isTextMessage,
+      this.isEdited,
+      this.replyToMessageId,
+      this.replyToSummary,
+      this.spans,
+      this.senderColorIndex,
+      this.isRead,
+      this.media,
+      this.replySenderName,
+      this.replySenderColorIndex,
+      this.replyThumbnailPath,
+      this.replyIsSticker,
+      this.showDateHeader,
+      this.dateHeaderText,
+      this.showUnreadSeparator,
+      this.senderAvatarPath,
+      this.albumItems,
+      this.albumMessageIds,
+      this.linkPreview,
+      this.senderUserId,
+      this.isChannelPost,
+      this.reactionChips,
+      this.commentCount,
+      this.isPinned,
+      this.poll,
+      nextContact
     );
   }
 }

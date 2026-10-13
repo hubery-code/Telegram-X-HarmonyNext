@@ -77,6 +77,7 @@ import { BusinessError } from '@kit.BasicServicesKit';
 import { fileUri } from '@kit.CoreFileKit';
 import { mediaCircleA11ySlot } from '../model/MediaA11y';
 import { MessageItem } from '../model/MessageItem';
+import { ContactCard } from '../model/ContactCard';
 import { ReactionChip } from '../model/ReactionChip';
 import { MessageTextSpan } from '../model/MessageTextSpan';
 import { MediaAttachment, MediaFullSource, formatFileSize, normalizeWaveform } from '../model/MediaAttachment';
@@ -339,11 +340,17 @@ function messageRowKey(
     }
     pollSig = `${item.poll.totalVoterCount}|${item.poll.hasVoted}|${item.poll.isClosed}|${item.poll.showResults}|${optParts.join(';')}`;
   }
+  // CONTACT-MSG-101：名片消息内容参与签名。
+  let contactSig: string = '';
+  if (item.contact !== null) {
+    const c: ContactCard = item.contact;
+    contactSig = `${c.userId}|${c.fullName}|${c.phoneNumber}|${c.vcard}`;
+  }
   const signature: string =
     `${item.sendState}|${item.isRead}|${item.isEdited}|${item.senderColorIndex}|` +
     `${item.text}|${item.senderName}|${item.senderAvatarPath !== null ? item.senderAvatarPath : ''}|` +
     `${item.replyToSummary}|${mediaSig}|${replySig}|${linkPreviewSig}|${selected}|` +
-    `${pollSig}|` +
+    `${pollSig}|${contactSig}|` +
     `${item.showDateHeader ? item.dateHeaderText : ''}|${item.showUnreadSeparator}|` +
     `${reactionSig}|${item.commentCount}|${item.isChannelPost}|${item.isPinned}|` +
     // SEARCH-102：高亮态参与 key，落位后该行才会局部重绘。
@@ -1640,6 +1647,11 @@ export struct ChatPage {
           this.PollBubble(item.messageId, item.poll)
         }
 
+        // CONTACT-MSG-101：名片卡片（messageContact）
+        if (item.contact !== null) {
+          this.ContactBubble(item.messageId, item.contact)
+        }
+
         // 链接预览卡片（MSG-107）：showAboveText 为 true 时在正文上方渲染
         if (item.linkPreview !== null && item.linkPreview.showAboveText) {
           this.LinkPreviewBubble(item.linkPreview)
@@ -1736,7 +1748,7 @@ export struct ChatPage {
         top: this.T.spacing.sm,
         bottom: this.T.spacing.xs
       }))
-      .width(item.isChannelPost ? '100%' : (item.linkPreview !== null ? BUBBLE_MAX_WIDTH : undefined))
+      .width(item.isChannelPost ? '100%' : (item.linkPreview !== null || item.poll !== null || item.contact !== null ? BUBBLE_MAX_WIDTH : undefined))
       .constraintSize({ maxWidth: item.isChannelPost ? '100%' : BUBBLE_MAX_WIDTH })
       .onClick(() => {
         // MSG-106：多选态下点击气泡 = 切换勾选（不再触发重发）。
@@ -3994,6 +4006,97 @@ export struct ChatPage {
       .width('100%')
       .alignItems(VerticalAlign.Center)
       .margin({ top: this.T.spacing.sm })
+    }
+    .width(BUBBLE_MAX_WIDTH)
+    .constraintSize({ maxWidth: 360 })
+    .alignItems(HorizontalAlign.Start)
+    .padding({ top: this.T.spacing.xs, bottom: this.T.spacing.xs })
+  }
+
+  /**
+   * CONTACT-MSG-101：名片消息气泡。
+   * - 圆形头像或联系人图标（ic_contacts）与姓名首字母；
+   * - 姓名：fullName（fontWeight medium，正文字号）；
+   * - 电话：phoneNumber（footnote 字号，textSecondary）；
+   * - 底部操作按钮：userId > 0 显示“查看个人资料”（可点击导航），否则“添加到联系人”。
+   */
+  @Builder
+  ContactBubble(messageId: number, contact: ContactCard) {
+    Column() {
+      Row() {
+        Stack({ alignContent: Alignment.Center }) {
+          if (avatarLettersForName(contact.fullName) !== '?') {
+            Text(avatarLettersForName(contact.fullName))
+              .fontSize(this.chatText(this.T.typography.subheadline.fontSize))
+              .fontWeight(FontWeight.Medium)
+              .fontColor(this.T.colors.textOnAccent)
+          } else {
+            Image($r('app.media.ic_contacts'))
+              .width(22)
+              .height(22)
+              .fillColor(this.T.colors.textOnAccent)
+          }
+        }
+        .width(42)
+        .height(42)
+        .borderRadius(this.T.radius.full)
+        .backgroundColor(this.T.colors.accent)
+        .margin({ right: this.T.spacing.sm })
+
+        Column() {
+          Text(contact.fullName)
+            .fontSize(this.chatText(this.T.typography.body.fontSize))
+            .fontWeight(FontWeight.Medium)
+            .fontColor(this.T.colors.chatText)
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+
+          if (contact.phoneNumber.length > 0) {
+            Text(contact.phoneNumber)
+              .fontSize(this.chatText(this.T.typography.footnote.fontSize))
+              .fontColor(this.T.colors.textSecondary)
+              .maxLines(1)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+              .margin({ top: this.T.spacing.hairline })
+          }
+        }
+        .alignItems(HorizontalAlign.Start)
+        .layoutWeight(1)
+      }
+      .width('100%')
+      .alignItems(VerticalAlign.Center)
+
+      Divider()
+        .color(this.T.colors.divider)
+        .margin({ top: this.T.spacing.sm, bottom: this.T.spacing.xs })
+
+      Row() {
+        if (contact.userId > 0) {
+          Text(this.t('View Profile'))
+            .fontSize(this.chatText(this.T.typography.subheadline.fontSize))
+            .fontWeight(FontWeight.Medium)
+            .fontColor(this.T.colors.accent)
+            .textAlign(TextAlign.Center)
+            .width('100%')
+            .padding({ top: this.T.spacing.xs, bottom: this.T.spacing.xs })
+            .onClick(() => {
+              this.onDispatch(new OpenUserProfile(contact.userId));
+            })
+        } else {
+          Text(this.t('Add to Contacts'))
+            .fontSize(this.chatText(this.T.typography.subheadline.fontSize))
+            .fontWeight(FontWeight.Medium)
+            .fontColor(this.T.colors.accent)
+            .textAlign(TextAlign.Center)
+            .width('100%')
+            .padding({ top: this.T.spacing.xs, bottom: this.T.spacing.xs })
+            .onClick(() => {
+              hilog.info(DOMAIN, TAG, 'add_contact_clicked phone=%{public}s', contact.phoneNumber);
+            })
+        }
+      }
+      .width('100%')
+      .justifyContent(FlexAlign.Center)
     }
     .width(BUBBLE_MAX_WIDTH)
     .constraintSize({ maxWidth: 360 })

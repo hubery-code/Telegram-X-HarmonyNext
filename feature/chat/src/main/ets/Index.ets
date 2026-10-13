@@ -11,6 +11,7 @@ export { ChatSearchResultItem } from './model/ChatSearchResultItem';
 export { PinnedMessageInfo } from './model/PinnedMessageInfo';
 
 export { MessageTextSpan } from './model/MessageTextSpan';
+export { ContactCard, formatContactFullName } from './model/ContactCard';
 
 export { parseFormattedText } from './model/FormattedTextParser';
 
