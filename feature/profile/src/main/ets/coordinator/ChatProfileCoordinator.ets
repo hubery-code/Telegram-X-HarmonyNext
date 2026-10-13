@@ -671,7 +671,20 @@ export class ChatProfileCoordinator {
           this.dispatch(new OnSharedAudioPlaying(0));
         }
       },
-      metadata
+      metadata,
+      (playing: boolean): void => {
+        if (!this.destroyed) {
+          if (!playing) {
+            if (this.state.sharedPlayingFileId === fileId) {
+              this.dispatch(new OnSharedAudioPlaying(0));
+            }
+          } else {
+            if (this.state.sharedPlayingFileId === 0) {
+              this.dispatch(new OnSharedAudioPlaying(fileId));
+            }
+          }
+        }
+      }
     ).catch((e: Error): void => {
       this.logger.error(TAG, 'shared_audio_play_failed', String(e));
       if (!this.destroyed) {

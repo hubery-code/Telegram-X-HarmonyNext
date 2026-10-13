@@ -493,6 +493,16 @@ export default function chatProfileSharedContentTest(): void {
       expect((player as FakeAudioPlayer).getCurrentUri()).assertEqual(path);
       expect((player as FakeAudioPlayer).isPlaying()).assertTrue();
 
+      // AUDIO-BG-102：外部播控（锁屏/耳机）暂停，状态双向同步归零
+      await (player as FakeAudioPlayer).pause();
+      await settle();
+      expect(coordinator.getState().sharedPlayingFileId).assertEqual(0);
+
+      // AUDIO-BG-102：外部播控恢复播放，状态双向恢复
+      await (player as FakeAudioPlayer).resume();
+      await settle();
+      expect(coordinator.getState().sharedPlayingFileId).assertEqual(fileId);
+
       coordinator.dispatch(new ToggleSharedAudio(fileId));
       await settle();
       expect(coordinator.getState().sharedPlayingFileId).assertEqual(0);

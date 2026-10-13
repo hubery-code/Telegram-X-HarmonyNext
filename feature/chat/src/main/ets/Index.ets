@@ -146,6 +146,8 @@ export {
   VoicePlaybackProgress,
   VoicePlaybackCompleted,
   VoicePlaybackFailed,
+  VoicePlaybackPaused,
+  VoicePlaybackResumed,
   OpenPollComposer,
   ClosePollComposer,
   PollQuestionChanged,

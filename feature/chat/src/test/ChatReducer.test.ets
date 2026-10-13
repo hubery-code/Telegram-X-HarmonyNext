@@ -110,6 +110,8 @@ import {
   VoicePlaybackProgress,
   VoicePlaybackCompleted,
   VoicePlaybackFailed,
+  VoicePlaybackPaused,
+  VoicePlaybackResumed,
   ConfirmMenuAction,
   DismissMenuConfirmDialog,
   OpenPollComposer,
@@ -2924,6 +2926,40 @@ export default function chatReducerTest() {
       expect(result.state.playingVoiceMessageId).assertNull();
       expect(result.state.voicePlaybackProgress).assertEqual(0);
       expect(result.state.voicePlaybackTimeSec).assertEqual(0);
+    });
+
+    it('voicePlaybackPaused_and_resumed_toggleStateWithoutSideEffects', 0, () => {
+      const playing: ChatUiState = makeState('').copyWith({
+        playingVoiceMessageId: 100,
+        voicePlaybackProgress: 0.45,
+        voicePlaybackTimeSec: 3
+      });
+      const pausedRes: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        playing,
+        new VoicePlaybackPaused(100),
+        makeEnv()
+      );
+      expect(pausedRes.state.playingVoiceMessageId).assertNull();
+      expect(pausedRes.state.voicePlaybackProgress).assertEqual(0.45);
+      expect(pausedRes.state.voicePlaybackTimeSec).assertEqual(3);
+      expect(pausedRes.effects.length).assertEqual(0);
+
+      const resumedRes: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        pausedRes.state,
+        new VoicePlaybackResumed(100),
+        makeEnv()
+      );
+      expect(resumedRes.state.playingVoiceMessageId).assertEqual(100);
+      expect(resumedRes.effects.length).assertEqual(0);
+
+      const completedRes: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        pausedRes.state,
+        new VoicePlaybackCompleted(100),
+        makeEnv()
+      );
+      expect(completedRes.state.playingVoiceMessageId).assertNull();
+      expect(completedRes.state.voicePlaybackProgress).assertEqual(0);
+      expect(completedRes.state.voicePlaybackTimeSec).assertEqual(0);
     });
 
     it('sendSticker_prependsAndDedupesRecentStickers', 0, () => {

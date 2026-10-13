@@ -288,7 +288,9 @@ import {
   PauseVoiceNote,
   VoicePlaybackProgress,
   VoicePlaybackCompleted,
-  VoicePlaybackFailed
+  VoicePlaybackFailed,
+  VoicePlaybackPaused,
+  VoicePlaybackResumed
 } from '../contract/ChatIntent';
 import {
   ChatEffect,
@@ -760,6 +762,8 @@ export class ChatCoordinator {
   private pendingJumpMessageId: number = 0;
   /** 待定位目标的围绕历史是否已在飞，防止重复请求。 */
   private pendingJumpInFlight: boolean = false;
+  /** AUDIO-BG-102：当前活跃的语音消息 id（用于外部播控 pause/resume/seek 状态双向回灌）。 */
+  private activeVoiceMessageId: number = 0;
 
   constructor(
     scope: AccountScope,
@@ -1245,6 +1249,7 @@ export class ChatCoordinator {
       this.recordTimerId = -1;
     }
     this.audioRecorderPort.cancelRecord().catch(() => {});
+    this.activeVoiceMessageId = 0;
     this.audioPlayerPort.stop().catch(() => {});
     this.fileRegistry.stop();
     this.userRegistry.stop();
@@ -5318,26 +5323,37 @@ export class ChatCoordinator {
         return;
       }
 
+      this.activeVoiceMessageId = effect.messageId;
       await this.audioPlayerPort.play(
         localPath,
         (currentMs: number, totalMs: number): void => {
-          if (!this.destroyed && this.currentState.playingVoiceMessageId === effect.messageId) {
+          if (!this.destroyed && this.activeVoiceMessageId === effect.messageId) {
             this.dispatch(new VoicePlaybackProgress(effect.messageId, currentMs, totalMs));
           }
         },
         (): void => {
-          if (!this.destroyed && this.currentState.playingVoiceMessageId === effect.messageId) {
+          if (!this.destroyed && this.activeVoiceMessageId === effect.messageId) {
             this.dispatch(new VoicePlaybackCompleted(effect.messageId));
           }
         },
         (errMsg: string): void => {
-          if (!this.destroyed && this.currentState.playingVoiceMessageId === effect.messageId) {
+          if (!this.destroyed && this.activeVoiceMessageId === effect.messageId) {
             this.dispatch(new VoicePlaybackFailed(effect.messageId, errMsg));
           }
         },
         // AUDIO-BG-101：锁屏卡片显「语音消息 — 会话名」。时长留 0，由播放器 prepared 后回填。
         new AudioPlaybackMetadata(`${effect.messageId}`,
-          Lang.getInstance().getString('Voice message'), this.currentState.chatTitle, 0)
+          Lang.getInstance().getString('Voice message'), this.currentState.chatTitle, 0),
+        // AUDIO-BG-102：外部播控（锁屏/控制中心/耳机）状态双向同步
+        (isPlaying: boolean): void => {
+          if (!this.destroyed && this.activeVoiceMessageId === effect.messageId) {
+            if (!isPlaying && this.currentState.playingVoiceMessageId === effect.messageId) {
+              this.dispatch(new VoicePlaybackPaused(effect.messageId));
+            } else if (isPlaying && this.currentState.playingVoiceMessageId !== effect.messageId) {
+              this.dispatch(new VoicePlaybackResumed(effect.messageId));
+            }
+          }
+        }
       );
     } catch (e) {
       this.logger.error(TAG, 'play_voice_note_failed', String(e));

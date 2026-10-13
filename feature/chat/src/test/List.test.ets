@@ -28,6 +28,7 @@ import stickerAnimationTest from './StickerAnimation.test';
 import stickerPlaybackTest from './StickerPlayback.test';
 import mediaA11yTest from './MediaA11y.test';
 import chatOverlayBackTest from './ChatOverlayBack.test';
+import voicePlaybackSyncTest from './VoicePlaybackSync.test';
 
 export default function testsuite(): void {
   chatReducerTest();
@@ -60,5 +61,6 @@ export default function testsuite(): void {
   stickerPlaybackTest();
   mediaA11yTest();
   chatOverlayBackTest();
+  voicePlaybackSyncTest();
 }
 

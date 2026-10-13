@@ -792,6 +792,8 @@ export type ChatIntent =
   | VoicePlaybackProgress
   | VoicePlaybackCompleted
   | VoicePlaybackFailed
+  | VoicePlaybackPaused
+  | VoicePlaybackResumed
   | OpenPollComposer
   | ClosePollComposer
   | PollQuestionChanged
@@ -1184,6 +1186,26 @@ export class VoicePlaybackFailed implements Intent {
   constructor(messageId: number, error: string) {
     this.messageId = messageId;
     this.error = error;
+  }
+}
+
+/** AUDIO-BG-102：外部播控/音频焦点暂停回灌。 */
+export class VoicePlaybackPaused implements Intent {
+  readonly kind: 'voicePlaybackPaused' = 'voicePlaybackPaused';
+  readonly messageId: number;
+
+  constructor(messageId: number) {
+    this.messageId = messageId;
+  }
+}
+
+/** AUDIO-BG-102：外部播控/音频焦点恢复播放回灌。 */
+export class VoicePlaybackResumed implements Intent {
+  readonly kind: 'voicePlaybackResumed' = 'voicePlaybackResumed';
+  readonly messageId: number;
+
+  constructor(messageId: number) {
+    this.messageId = messageId;
   }
 }
 

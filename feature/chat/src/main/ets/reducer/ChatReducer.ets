@@ -134,6 +134,8 @@ import {
   VoicePlaybackProgress,
   VoicePlaybackCompleted,
   VoicePlaybackFailed,
+  VoicePlaybackPaused,
+  VoicePlaybackResumed,
   ChatMenuAction,
   OpenPollComposer,
   ClosePollComposer,
@@ -1847,7 +1849,7 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
 
     case 'voicePlaybackCompleted': {
       const compIntent: VoicePlaybackCompleted = intent as VoicePlaybackCompleted;
-      if (state.playingVoiceMessageId === compIntent.messageId) {
+      if (state.playingVoiceMessageId === compIntent.messageId || state.playingVoiceMessageId === null) {
         return reduced(
           state.copyWith({
             playingVoiceMessageId: null,
@@ -1861,7 +1863,7 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
 
     case 'voicePlaybackFailed': {
       const failIntent: VoicePlaybackFailed = intent as VoicePlaybackFailed;
-      if (state.playingVoiceMessageId === failIntent.messageId) {
+      if (state.playingVoiceMessageId === failIntent.messageId || state.playingVoiceMessageId === null) {
         return reduced(
           state.copyWith({
             playingVoiceMessageId: null,
@@ -1872,6 +1874,27 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
         );
       }
       return reduced(state);
+    }
+
+    case 'voicePlaybackPaused': {
+      const pausedIntent: VoicePlaybackPaused = intent as VoicePlaybackPaused;
+      if (state.playingVoiceMessageId === pausedIntent.messageId) {
+        return reduced(
+          state.copyWith({
+            playingVoiceMessageId: null
+          })
+        );
+      }
+      return reduced(state);
+    }
+
+    case 'voicePlaybackResumed': {
+      const resumedIntent: VoicePlaybackResumed = intent as VoicePlaybackResumed;
+      return reduced(
+        state.copyWith({
+          playingVoiceMessageId: resumedIntent.messageId
+        })
+      );
     }
 
     // openChatProfile：纯导航意图，reducer 原样透传。
