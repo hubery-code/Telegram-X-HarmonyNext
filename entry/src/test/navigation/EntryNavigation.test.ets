@@ -1,6 +1,6 @@
 import { describe, it, expect } from '@ohos/hypium';
 import { EntryNavigationController } from '../../main/ets/navigation/EntryNavigationController';
-import { AppRoute, ChatRoute, SearchRoute } from '@tgx/core-navigation';
+import { AppRoute, ChatRoute, SearchRoute, MediaViewerRoute } from '@tgx/core-navigation';
 
 export default function entryNavigationTest() {
   describe('EntryNavigationController', () => {
@@ -211,6 +211,98 @@ export default function entryNavigationTest() {
       expect(popped).assertFalse();
       expect(controller.getCurrentRoute().name).assertEqual('home');
       expect(controller.getSize()).assertEqual(1);
+    });
+
+    it('popping from drawer routes (contacts, selfProfile, settings) correctly returns to home and retains proper stack size', 0, () => {
+      const controller = new EntryNavigationController({ name: 'home' });
+
+      // 1. Navigate to contacts from drawer
+      controller.navigateTo({ name: 'contacts' });
+      expect(controller.getSize()).assertEqual(2);
+      expect(controller.getCurrentRoute().name).assertEqual('contacts');
+      expect(controller.hasRoute('contacts')).assertTrue();
+
+      // Pop contacts -> returns to home, size 1
+      const poppedContacts: boolean = controller.pop();
+      expect(poppedContacts).assertTrue();
+      expect(controller.getSize()).assertEqual(1);
+      expect(controller.getCurrentRoute().name).assertEqual('home');
+      expect(controller.hasRoute('contacts')).assertFalse();
+
+      // 2. Navigate to selfProfile from drawer
+      controller.navigateTo({ name: 'selfProfile' });
+      expect(controller.getSize()).assertEqual(2);
+      expect(controller.getCurrentRoute().name).assertEqual('selfProfile');
+      expect(controller.hasRoute('selfProfile')).assertTrue();
+
+      // Pop selfProfile -> returns to home, size 1
+      const poppedSelfProfile: boolean = controller.pop();
+      expect(poppedSelfProfile).assertTrue();
+      expect(controller.getSize()).assertEqual(1);
+      expect(controller.getCurrentRoute().name).assertEqual('home');
+      expect(controller.hasRoute('selfProfile')).assertFalse();
+
+      // 3. Navigate to settings from drawer
+      controller.navigateTo({ name: 'settings' });
+      expect(controller.getSize()).assertEqual(2);
+      expect(controller.getCurrentRoute().name).assertEqual('settings');
+      expect(controller.hasRoute('settings')).assertTrue();
+
+      // Pop settings -> returns to home, size 1
+      const poppedSettings: boolean = controller.pop();
+      expect(poppedSettings).assertTrue();
+      expect(controller.getSize()).assertEqual(1);
+      expect(controller.getCurrentRoute().name).assertEqual('home');
+      expect(controller.hasRoute('settings')).assertFalse();
+    });
+
+    it('system back handling correctly pops nested routes and rejects popping root', 0, () => {
+      const controller = new EntryNavigationController({ name: 'home' });
+
+      // Build a nested stack: home -> chat -> mediaViewer
+      controller.navigateTo({ name: 'chat', chatId: 1001 });
+      const mediaViewerRoute: MediaViewerRoute = { name: 'mediaViewer', chatId: 1001, messageId: 9001 };
+      controller.navigateTo(mediaViewerRoute);
+
+      expect(controller.getSize()).assertEqual(3);
+      expect(controller.getCurrentRoute().name).assertEqual('mediaViewer');
+
+      // First back press (on mediaViewer) pops to chat
+      const popMedia: boolean = controller.pop();
+      expect(popMedia).assertTrue();
+      expect(controller.getSize()).assertEqual(2);
+      expect(controller.getCurrentRoute().name).assertEqual('chat');
+
+      // Second back press (on chat) pops to home
+      const popChat: boolean = controller.pop();
+      expect(popChat).assertTrue();
+      expect(controller.getSize()).assertEqual(1);
+      expect(controller.getCurrentRoute().name).assertEqual('home');
+
+      // Third back press on home: pop returns false, system back delegates to app-level behavior
+      const popHome: boolean = controller.pop();
+      expect(popHome).assertFalse();
+      expect(controller.getSize()).assertEqual(1);
+      expect(controller.getCurrentRoute().name).assertEqual('home');
+    });
+
+    it('drawer route transitions notify listeners with accurate previous and current routes', 0, () => {
+      const controller = new EntryNavigationController({ name: 'home' });
+      let currentRouteName: string = '';
+      let previousRouteName: string = '';
+
+      controller.subscribe((curr: AppRoute, prev: AppRoute | null) => {
+        currentRouteName = curr.name;
+        previousRouteName = prev !== null ? prev.name : '';
+      });
+
+      controller.navigateTo({ name: 'contacts' });
+      expect(currentRouteName).assertEqual('contacts');
+      expect(previousRouteName).assertEqual('home');
+
+      controller.pop();
+      expect(currentRouteName).assertEqual('home');
+      expect(previousRouteName).assertEqual('contacts');
     });
 
   });

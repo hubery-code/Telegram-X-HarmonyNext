@@ -586,6 +586,12 @@ struct Index {
       }
       return this.navController.pop();
     }
+    if (this.currentRoute.name === 'selfProfile') {
+      return this.navController.pop();
+    }
+    if (this.currentRoute.name === 'mediaViewer') {
+      return this.navController.pop();
+    }
     return this.navController.pop();
   }
 
@@ -1112,6 +1118,9 @@ struct Index {
   }
 
   private onRouteChanged(route: AppRoute, _prev: AppRoute | null): void {
+    // NAV-BACK-101：路由切换时确保抽屉关闭，特别是从 contacts/settings/selfProfile 等页面 pop 回 home 时抽屉保持关闭
+    this.showChatListDrawer = false;
+
     // 1. 关闭栈中已不存在的页面的协调器
     if (!this.navController.hasRoute('chat') && this.chatCoordinator !== null) {
       this.closeChat();
@@ -2165,12 +2174,15 @@ struct Index {
               this.chatListDispatch(intent as ChatListIntent);
             },
             onOpenSettings: () => {
+              this.showChatListDrawer = false;
               this.navController.navigateTo({ name: 'settings' });
             },
             onOpenSearch: () => {
+              this.showChatListDrawer = false;
               this.navController.navigateTo({ name: 'search' });
             },
             onCompose: () => {
+              this.showChatListDrawer = false;
               this.navController.navigateTo({ name: 'contacts' });
             },
             // DRAWER-101：账号头（getMe + 头像）与菜单去向都由 chat_list 的

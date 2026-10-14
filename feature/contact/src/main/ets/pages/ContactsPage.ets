@@ -268,7 +268,11 @@ export struct ContactsPage {
           .margin({ left: this.T.spacing.xs, right: this.T.spacing.md })
         .accessibilityText(a11y(A11y.BACK))
           .onClick(() => {
-            this.onBack();
+            if (this.uiState.query.length > 0) {
+              this.handleQueryChange('');
+            } else {
+              this.onBack();
+            }
           })
 
         Text(this.t('Contacts'))
