@@ -480,4 +480,8 @@ export class ChatUiState implements UiState {
       options.savedAnimationsRequested !== undefined ? options.savedAnimationsRequested : this.savedAnimationsRequested
     );
   }
+
+  withHeaderSubtitle(headerSubtitle: string): ChatUiState {
+    return this.copyWith({ headerSubtitle: headerSubtitle });
+  }
 }

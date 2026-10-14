@@ -900,6 +900,7 @@ export class ChatCoordinator {
     this.currentState = new ChatUiState(chatId, chatTitle, [], false, true, null, '', null, null, -1, [], 0, 0, false, []);
     // CHATHEADER-102：从 ChatHeaderCache 恢复历史已知成员数与在线人数（解决重进会话时的副标题双重闪烁与空窗）
     const headerSnapshot: ChatHeaderSnapshot | null = ChatHeaderCache.get(scope.accountKey, chatId);
+    let initialSubtitle: string = '';
     if (headerSnapshot !== null) {
       if (headerSnapshot.memberCount > 0) {
         this.memberCount = headerSnapshot.memberCount;
@@ -916,6 +917,17 @@ export class ChatCoordinator {
       if (headerSnapshot.basicGroupId !== undefined && headerSnapshot.basicGroupId > 0) {
         this.basicGroupId = headerSnapshot.basicGroupId;
       }
+      if (headerSnapshot.headerSubtitle !== undefined && headerSnapshot.headerSubtitle.length > 0) {
+        initialSubtitle = headerSnapshot.headerSubtitle;
+      } else if (headerSnapshot.chatKind === 'group' || headerSnapshot.chatKind === 'channel') {
+        initialSubtitle = groupHeaderSubtitle(headerSnapshot.chatKind === 'channel', headerSnapshot.memberCount, headerSnapshot.onlineMemberCount);
+      }
+    }
+    if (initialSubtitle.length > 0) {
+      this.currentState = this.currentState.withHeaderSubtitle(initialSubtitle);
+    }
+    if (this.chatKind !== 'unknown') {
+      this.currentState = this.currentState.copyWith({ chatKind: this.chatKind });
     }
   }
 
@@ -3147,7 +3159,8 @@ export class ChatCoordinator {
               isChannel: this.chatKind === 'channel',
               chatKind: this.chatKind,
               supergroupId: this.supergroupId,
-              basicGroupId: this.basicGroupId
+              basicGroupId: this.basicGroupId,
+              headerSubtitle: this.currentState.headerSubtitle.length > 0 ? this.currentState.headerSubtitle : undefined
             });
             this.logger.info(TAG, 'chat_kind_resolved', `kind=${this.chatKind}`);
             // SET-106：同一次 getChat 响应即带 chat.notification_settings，
@@ -3336,12 +3349,18 @@ export class ChatCoordinator {
     if (this.chatKind === 'private') {
       const chatId: number = this.currentState.chatId;
       if (chatId === 777000) {
-        this.dispatch(new OnHeaderSubtitleChanged(Lang.getInstance().getString('Service Notifications')));
+        const sub: string = Lang.getInstance().getString('Service Notifications');
+        ChatHeaderCache.updateHeaderSubtitle(this.scope.accountKey, chatId, sub);
+        this.dispatch(new OnHeaderSubtitleChanged(sub));
         return;
       }
       const user: User | null = this.userRegistry.getUser(chatId);
       if (user !== null && user.status !== null) {
-        this.dispatch(new OnHeaderSubtitleChanged(this.formatUserStatus(user.status)));
+        const sub: string = this.formatUserStatus(user.status);
+        if (sub.length > 0) {
+          ChatHeaderCache.updateHeaderSubtitle(this.scope.accountKey, chatId, sub);
+        }
+        this.dispatch(new OnHeaderSubtitleChanged(sub));
         return;
       }
       if (allowFetch) {
@@ -3359,8 +3378,14 @@ export class ChatCoordinator {
           this.requestBasicGroupMemberCount();
         }
       }
-      this.dispatch(new OnHeaderSubtitleChanged(
-        groupHeaderSubtitle(this.chatKind === 'channel', this.memberCount, this.onlineMemberCount)));
+      const sub: string = groupHeaderSubtitle(this.chatKind === 'channel', this.memberCount, this.onlineMemberCount);
+      if (sub.length > 0) {
+        const snapshot: ChatHeaderSnapshot | null = ChatHeaderCache.get(this.scope.accountKey, this.currentState.chatId);
+        if (this.chatKind === 'channel' || this.onlineMemberCount > 0 || snapshot === null || snapshot.onlineMemberCount <= 0) {
+          ChatHeaderCache.updateHeaderSubtitle(this.scope.accountKey, this.currentState.chatId, sub);
+        }
+      }
+      this.dispatch(new OnHeaderSubtitleChanged(sub));
     }
   }
 
