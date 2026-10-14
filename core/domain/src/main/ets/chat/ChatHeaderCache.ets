@@ -16,6 +16,7 @@ export interface ChatHeaderSnapshot {
   chatKind?: string;
   supergroupId?: number;
   basicGroupId?: number;
+  headerSubtitle?: string;
 }
 
 export class ChatHeaderCache {
@@ -31,7 +32,13 @@ export class ChatHeaderCache {
   }
 
   public static put(accountKey: string, chatId: number, snapshot: ChatHeaderSnapshot): void {
-    ChatHeaderCache.snapshots.set(ChatHeaderCache.key(accountKey, chatId), snapshot);
+    const k: string = ChatHeaderCache.key(accountKey, chatId);
+    const existing: ChatHeaderSnapshot | undefined = ChatHeaderCache.snapshots.get(k);
+    if (existing !== undefined && (snapshot.headerSubtitle === undefined || snapshot.headerSubtitle.length === 0) &&
+        existing.headerSubtitle !== undefined && existing.headerSubtitle.length > 0) {
+      snapshot.headerSubtitle = existing.headerSubtitle;
+    }
+    ChatHeaderCache.snapshots.set(k, snapshot);
   }
 
   public static updateMemberCount(accountKey: string, chatId: number, memberCount: number): void {
@@ -64,6 +71,24 @@ export class ChatHeaderCache {
         memberCount: 0,
         onlineMemberCount: onlineMemberCount,
         isChannel: false
+      });
+    }
+  }
+
+  public static updateHeaderSubtitle(accountKey: string, chatId: number, headerSubtitle: string): void {
+    if (headerSubtitle.length === 0) {
+      return;
+    }
+    const k: string = ChatHeaderCache.key(accountKey, chatId);
+    const existing: ChatHeaderSnapshot | undefined = ChatHeaderCache.snapshots.get(k);
+    if (existing !== undefined) {
+      existing.headerSubtitle = headerSubtitle;
+    } else {
+      ChatHeaderCache.snapshots.set(k, {
+        memberCount: 0,
+        onlineMemberCount: 0,
+        isChannel: false,
+        headerSubtitle: headerSubtitle
       });
     }
   }

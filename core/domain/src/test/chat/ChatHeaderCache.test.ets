@@ -80,6 +80,36 @@ export default function chatHeaderCacheTest(): void {
       expect(ChatHeaderCache.get('acc2', 1001)?.memberCount).assertEqual(200);
     });
 
+    it('updateHeaderSubtitle_createsOrUpdatesPreservingExistingData', 0, (): void => {
+      ChatHeaderCache.updateHeaderSubtitle('acc1', 1001, '500 members, 25 online');
+      let res: ChatHeaderSnapshot | null = ChatHeaderCache.get('acc1', 1001);
+      expect(res).not().assertNull();
+      expect(res?.headerSubtitle).assertEqual('500 members, 25 online');
+
+      // Update subtitle on existing snapshot
+      ChatHeaderCache.updateHeaderSubtitle('acc1', 1001, '500 members, 30 online');
+      res = ChatHeaderCache.get('acc1', 1001);
+      expect(res?.headerSubtitle).assertEqual('500 members, 30 online');
+
+      // Empty string should be ignored
+      ChatHeaderCache.updateHeaderSubtitle('acc1', 1001, '');
+      res = ChatHeaderCache.get('acc1', 1001);
+      expect(res?.headerSubtitle).assertEqual('500 members, 30 online');
+    });
+
+    it('put_preservesExistingHeaderSubtitleWhenNewSnapshotDoesNotSpecify', 0, (): void => {
+      ChatHeaderCache.updateHeaderSubtitle('acc1', 1001, 'last seen recently');
+      ChatHeaderCache.put('acc1', 1001, {
+        memberCount: 0,
+        onlineMemberCount: 0,
+        isChannel: false,
+        chatKind: 'private'
+      });
+      const res: ChatHeaderSnapshot | null = ChatHeaderCache.get('acc1', 1001);
+      expect(res?.headerSubtitle).assertEqual('last seen recently');
+      expect(res?.chatKind).assertEqual('private');
+    });
+
     it('remove_removesSpecificChat', 0, (): void => {
       ChatHeaderCache.updateMemberCount('acc1', 1001, 100);
       ChatHeaderCache.updateMemberCount('acc1', 1002, 200);

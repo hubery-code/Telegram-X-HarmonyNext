@@ -20,6 +20,7 @@ import {
 } from '@tgx/td-gateway';
 import { ChatCoordinator, ChatCoordinatorOptions } from '../main/ets/coordinator/ChatCoordinator';
 import { OpenChatProfile } from '../main/ets/contract/ChatIntent';
+import { ChatHeaderCache } from '@tgx/core-domain';
 
 class TestNativeBridge implements TdNativeBridgeLike {
   version: string = '1.8.67-test';
@@ -241,6 +242,43 @@ export default function privateChatHeaderProfileTest(): void {
       expect(chatProfileCalls.length).assertEqual(1);
       expect(profileCalls.length).assertEqual(0);
       await settle();
+
+      coordinator.destroy();
+    });
+
+    it('chatHeaderSnapshot_restoresInitialSubtitleImmediatelyOnConstructor', 0, (): void => {
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const scope: AccountScope = createScope(bridge, 'test_private_snapshot_subtitle');
+      ChatHeaderCache.updateHeaderSubtitle(scope.accountKey, 888123, 'last seen recently');
+
+      const coordinator: ChatCoordinator = new ChatCoordinator(
+        scope, 888123, 'Snapshot User'
+      );
+
+      // 验证在没有调用 start()、没有网络回包前，状态首帧即带副标题
+      expect(coordinator.state.headerSubtitle).assertEqual('last seen recently');
+
+      coordinator.destroy();
+    });
+
+    it('groupHeaderSnapshot_restoresInitialSubtitleImmediatelyOnConstructor', 0, (): void => {
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const scope: AccountScope = createScope(bridge, 'test_group_snapshot_subtitle');
+      ChatHeaderCache.put(scope.accountKey, 999456, {
+        memberCount: 500,
+        onlineMemberCount: 42,
+        isChannel: false,
+        chatKind: 'group'
+      });
+
+      const coordinator: ChatCoordinator = new ChatCoordinator(
+        scope, 999456, 'Snapshot Group'
+      );
+
+      // 验证构造后状态首帧立即包含成员数与在线人数
+      expect(coordinator.state.headerSubtitle.length > 0).assertTrue();
+      expect(coordinator.state.headerSubtitle.includes('500')).assertTrue();
+      expect(coordinator.state.headerSubtitle.includes('42')).assertTrue();
 
       coordinator.destroy();
     });
