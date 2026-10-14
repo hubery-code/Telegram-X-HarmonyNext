@@ -17,6 +17,7 @@ import {
   FormattedText,
   TextEntity,
   TextEntityTypeTextUrl,
+  TextEntityTypeMentionName,
   TdTextEntityType
 } from '@tgx/core-td-api-generated';
 import { MessageTextSpan } from './MessageTextSpan';
@@ -99,10 +100,30 @@ class SpanStyleAccumulator {
         }
         this.isAccent = true;
         break;
-      case 'textEntityTypeMention':
-      case 'textEntityTypeMentionName':
+      case 'textEntityTypeMention': {
+        const username: string = segmentText.startsWith('@') ? segmentText.substring(1) : segmentText;
+        if (this.linkUrl === null && username.length > 0) {
+          this.linkUrl = `https://t.me/${username}`;
+        }
+        this.isAccent = true;
+        break;
+      }
+      case 'textEntityTypeMentionName': {
+        const userId: number = (entityType as TextEntityTypeMentionName).user_id;
+        if (this.linkUrl === null && userId > 0) {
+          this.linkUrl = `tg://user?id=${userId}`;
+        }
+        this.isAccent = true;
+        break;
+      }
       case 'textEntityTypeHashtag':
-      case 'textEntityTypeCashtag':
+      case 'textEntityTypeCashtag': {
+        if (this.linkUrl === null && segmentText.length > 0) {
+          this.linkUrl = `tg://search?query=${encodeURIComponent(segmentText)}`;
+        }
+        this.isAccent = true;
+        break;
+      }
       case 'textEntityTypeBotCommand':
       case 'textEntityTypeBankCardNumber':
       case 'textEntityTypeMediaTimestamp':

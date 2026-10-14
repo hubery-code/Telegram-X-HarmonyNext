@@ -9,7 +9,11 @@ import {
   TextEntityTypeItalic,
   TextEntityTypeSpoiler,
   TextEntityTypeTextUrl,
-  TextEntityTypeUrl
+  TextEntityTypeUrl,
+  TextEntityTypeMention,
+  TextEntityTypeMentionName,
+  TextEntityTypeHashtag,
+  TextEntityTypeCashtag
 } from '@tgx/core-td-api-generated';
 import { MessageTextSpan } from '../main/ets/model/MessageTextSpan';
 import { parseFormattedText } from '../main/ets/model/FormattedTextParser';
@@ -168,6 +172,50 @@ export default function formattedTextParserTest() {
       expect(spans.length).assertEqual(1);
       expect(spans[0].text).assertEqual('hello world');
       expectPlain(spans[0]);
+    });
+
+    it('mention_setsLinkUrlAndAccent', 0, () => {
+      const spans: MessageTextSpan[] = parseFormattedText(
+        makeFormatted('contact @ThatTallFamily today', [makeEntity(8, 15, new TextEntityTypeMention())])
+      );
+      expect(spans.length).assertEqual(3);
+      expect(spans[0].text).assertEqual('contact ');
+      expectPlain(spans[0]);
+      expect(spans[1].text).assertEqual('@ThatTallFamily');
+      expect(spans[1].linkUrl).assertEqual('https://t.me/ThatTallFamily');
+      expect(spans[1].isAccent).assertTrue();
+      expect(spans[2].text).assertEqual(' today');
+      expectPlain(spans[2]);
+    });
+
+    it('mentionName_setsTgUserLinkUrlAndAccent', 0, () => {
+      const mentionName = new TextEntityTypeMentionName();
+      mentionName.user_id = 12345;
+      const spans: MessageTextSpan[] = parseFormattedText(
+        makeFormatted('hello Alice', [makeEntity(6, 5, mentionName)])
+      );
+      expect(spans.length).assertEqual(2);
+      expect(spans[0].text).assertEqual('hello ');
+      expectPlain(spans[0]);
+      expect(spans[1].text).assertEqual('Alice');
+      expect(spans[1].linkUrl).assertEqual('tg://user?id=12345');
+      expect(spans[1].isAccent).assertTrue();
+    });
+
+    it('hashtagAndCashtag_setsSearchLinkUrlAndAccent', 0, () => {
+      const spans: MessageTextSpan[] = parseFormattedText(
+        makeFormatted('check #news and $TSLA now', [
+          makeEntity(6, 5, new TextEntityTypeHashtag()),
+          makeEntity(16, 5, new TextEntityTypeCashtag())
+        ])
+      );
+      expect(spans.length).assertEqual(5);
+      expect(spans[1].text).assertEqual('#news');
+      expect(spans[1].linkUrl).assertEqual('tg://search?query=%23news');
+      expect(spans[1].isAccent).assertTrue();
+      expect(spans[3].text).assertEqual('$TSLA');
+      expect(spans[3].linkUrl).assertEqual('tg://search?query=%24TSLA');
+      expect(spans[3].isAccent).assertTrue();
     });
   });
 }

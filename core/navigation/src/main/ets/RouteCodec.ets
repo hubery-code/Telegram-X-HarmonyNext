@@ -561,6 +561,15 @@ export function defaultDeepLinkRules(): DeepLinkRule[] {
       queryParams: [{ from: 'query', to: 'query' }]
     },
     {
+      scheme: 'tg',
+      host: 'user',
+      route: 'userProfile',
+      queryParams: [
+        { from: 'id', to: 'userId' },
+        { from: 'userId', to: 'userId' }
+      ]
+    },
+    {
       scheme: 'https',
       host: 't.me',
       pathTemplate: 'chat/{chatId}',

@@ -167,6 +167,17 @@ export default function routeCodecTest() {
       expect(search.query).assertEqual('hello world');
     });
 
+    it('deepLink_tgUser_resolved', 0, () => {
+      const route: AppRoute = mustOk(codec().parseDeepLink('tg://user?id=12345', defaultDeepLinkRules()));
+      const profile: UserProfileRoute = route as UserProfileRoute;
+      expect(profile.name).assertEqual('userProfile');
+      expect(profile.userId).assertEqual(12345);
+
+      const routeWithUserId: AppRoute = mustOk(codec().parseDeepLink('tg://user?userId=67890', defaultDeepLinkRules()));
+      const profile2: UserProfileRoute = routeWithUserId as UserProfileRoute;
+      expect(profile2.userId).assertEqual(67890);
+    });
+
     // SEARCH-102：会话路由可携带目标消息 id（全局搜索结果 → 会话内定位）。
     it('chatRoute_withMessageId_roundTrips', 0, () => {
       roundTrip({ name: 'chat', chatId: 42, messageId: 60817408 });
