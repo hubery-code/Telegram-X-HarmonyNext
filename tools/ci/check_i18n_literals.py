@@ -149,8 +149,18 @@ import tempfile
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 LANG_FILE = ROOT / 'core' / 'common' / 'src' / 'main' / 'ets' / 'Lang.ets'
 
+# 仓库内所有路径一律归一成 `/` 分隔再比较。
+# 为什么需要这一步：`path.relative_to()` 在 Windows 上产出的是原生分隔符
+# （`core\common\...\DateFormat.ets`），而本文件所有射程常量与豁免表都按 `/` 写
+# （脚本从 macOS/CLI 环境带来）。不归一的话 `rel in (DATE_FORM_SOURCE, …)` 恒为 False ——
+# R8 的「唯一合法出处」豁免在 Windows 上整体失效，形态表本体被当成违规源报出 43 条，
+# 而 SKIP_PARTS / VIEW_SEGMENTS 的子串匹配同样静默失真（build 缓存目录因此既扫不干净
+# 也跳不掉）。归一放在这一处，下面每个 rel 都受益。
+def repo_rel(path: pathlib.Path) -> str:
+    return str(path.relative_to(ROOT)).replace('\\', '/')
+
 VIEW_DIRS = ['entry/src/main/ets'] + [
-    str(p.relative_to(ROOT)) for p in ROOT.glob('feature/*/src/main/ets')
+    repo_rel(p) for p in ROOT.glob('feature/*/src/main/ets')
 ]
 VIEW_SEGMENTS = ('/pages/', '/components/')
 SKIP_PARTS = ('/oh_modules/', '/build/', '/.test/', '/.preview/')
@@ -426,7 +436,7 @@ def partitioned_files(view: bool):
         if not base.is_dir():
             continue
         for path in sorted(base.rglob('*.ets')):
-            rel = str(path.relative_to(ROOT))
+            rel = repo_rel(path)
             if any(part in SKIP_PARTS for part in rel):
                 continue
             in_view = any(seg in rel for seg in VIEW_SEGMENTS)
@@ -450,7 +460,7 @@ def date_form_files():
         if not base.is_dir():
             continue
         for path in sorted(base.rglob('*.ets')):
-            rel = str(path.relative_to(ROOT))
+            rel = repo_rel(path)
             if any(part in rel for part in SKIP_PARTS):
                 continue
             out.append((rel, path))
@@ -683,7 +693,7 @@ def build_ctor_index():
     index = {}
     for pattern in INDEX_GLOBS:
         for path in sorted(ROOT.glob(pattern)):
-            rel = str(path.relative_to(ROOT))
+            rel = repo_rel(path)
             if any(part in rel for part in SKIP_PARTS):
                 continue
             try:

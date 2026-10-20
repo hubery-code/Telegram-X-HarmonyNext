@@ -46,4 +46,10 @@ signing/
 native/tdcore/soak/native_soak
 native/tdcore/soak/native_soak_arm64
 
+# Python 缓存（跑 tools/ci 下任何守卫都会产生；主开发环境是 macOS 时没这一项，
+# 换到 Windows 上跑守卫后 `tools/ci/__pycache__/` 会以未跟踪文件冒出来）
+__pycache__/
+**/__pycache__/
+*.pyc
+
 

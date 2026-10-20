@@ -2919,6 +2919,79 @@
 > TDLib、而 UI 仍是英文 —— 这是**照抄 Android** 的行为（它也不按词典裁剪），但值得记：TDLib 可能返回
 > 本端没有对应文案的本地化贴纸包；④ 三段证据全在 HVD 上取的，真机标签未取。
 
+### 消息类型补齐批（2026-10-13/14，11 个提交的台账补登记）
+
+> **为什么有这一节**：2026-10-13 至 10-14 有 14 个提交（`4084ef1f` 之后到 `23864f7a`）
+> 只落代码与单测，**没有回写本表与 `PROGRESS.md`** —— 状态漂移。本节按提交逐条补登记，
+> 证据来源是 git 提交本身（diff 与 commit message）与本轮的静态守卫实跑；
+> **各包的单测条数与设备取证未在本轮复跑**，相应位置如实标「未复跑」而不是填数字。
+
+| 提交 | 工作包 | 落点（依 `git show --stat`） | 状态 |
+|---|---|---|---|
+| `07f0dec3` | CHATLIST-BACK-101 | `feature/chat_list/model/ChatListOverlayBack.ets` 新文件 + 覆盖层物理返回键逐层收口；`List.test.ets` 同步 | Accepted |
+| `4084ef1f` | CHAT-BACK-101 | 平板/折叠双栏挂起准则写入 AGENTS.md/PROGRESS.md/本表；附件面板本地化（Gallery/Camera/Video/File/Poll 五词条）；新增 `feature/chat/model/ChatOverlayBack.ets` 会话页返回键八层优先级 | Accepted |
+| `e15e33d8` | AUDIO-BG-102 | `feature/chat` 的 Intent/Reducer/Coordinator + `feature/profile` 两协调器，后台与外部播控双向播放状态同步 | Accepted |
+| `08ff7fbf` | （nav + GIF 发送） | `entry/.../Index.ets` 返回键搜索态处理；`ChatCoordinator` TDLib 真实 GIF 动图发送链路 | Accepted |
+| `54c6cabc` | STICKER-PREVIEW-102 | `entry/.../Index.ets` 全局贴纸预览 sheet 与深链宿主 | Accepted |
+| `991ea700` | （ChatHeaderCache 保活） | `core/domain/chat/ChatHeaderCache.ets` keep-alive + 未知贴纸取数优化 | Accepted |
+| `ea910c31` | GIF-SAVED-101 | `feature/chat` 的 Intent/Effect/UiState/Reducer/Coordinator，接入 TDLib 真实 saved animations 与实时更新 | Accepted |
+| `f8a542cf` | POLL-102 | `model/PollView.ets` + `ChatPage.ets` 投票交互与撤回投票，本地化 UI；新增 `ic_checkbox_empty.svg` 资源 | Accepted |
+| `7cc78bb8` | LOCATION-MSG-101 | `model/LocationCard.ets` 位置与 venue 消息气泡及模型映射 | Accepted |
+| `d061224b` | CONTACT-MSG-101 | `model/ContactCard.ets` 名片消息气泡及模型映射 | Accepted |
+| `94c017eb` | （ArkTS Result 收窄） | `entry/.../Index.ets` 贴纸请求显式收窄 `Result` 类型（对应 AGENTS.md 第 3.1 条防坑点） | Accepted |
+| `0b12758c` | （富文本点击） | `core/navigation/RouteCodec.ets` + `model/FormattedTextParser.ets`，mention/mentionName/hashtag 可点导航 | Accepted |
+| `a4692d89` | （抽屉返回） | `entry/.../Index.ets` + `feature/contact/pages/ContactsPage.ets` 抽屉路由与联系人页返回键 | Accepted |
+| `84a8960f` | （头部副标题快照） | `core/domain/chat/ChatHeaderCache.ets` 从快照恢复头部副标题，消除重进闪烁 | Accepted |
+
+> **待补的取证**：这批提交的设备 A/B 证据与各模块单测条数未随本节复跑。按本仓口径，
+> 「BUILD SUCCESSFUL 不是证据，必须读 `coverage_data/test_result.txt`」—— 下轮有设备时
+> 优先补 POLL-102 与 CONTACT-MSG-101 两包的取证（新气泡是纯 UI 面，只有设备能证排版）。
+
+### FEAT-UI-003 / GUARD-WIN-101 i18n 守卫的 Windows 路径分隔符缺陷（2026-10-20）
+
+> **定性**：这不是产品缺陷，是**守卫在 Windows 上整体失真**，且失真方向是最坏的那种 ——
+> 「报出一堆改不掉的幽灵」与「静默漏判真违规」同时存在。
+
+> **一、成因**：`check_i18n_literals.py` 所有射程常量与豁免表都按 `/` 写（脚本从 macOS/CLI
+> 环境带来），而 `rel` 来自 `str(path.relative_to(ROOT))` —— 在 Windows 上产出的是原生
+> 反斜杠。于是三处比较同时失效：① `rel in (DATE_FORM_SOURCE, DATE_DICT_SOURCE)` 恒为 False，
+> **R8 的「唯一合法出处」豁免永不生效**，`DateFormat.ets` 本体被当成违规源报出 43 条
+> （35 条月份/星期名 + 2 条时钟字段 + 6 条中文日期排布）；② `SKIP_PARTS` 子串匹配失效，
+> `build/` 缓存目录既跳不掉也扫不干净；③ `VIEW_SEGMENTS` 匹配失效，`in_view` 判定整体颠倒 ——
+> 视图层文件数从 30 掉到 0，148 个数据层文件被错认成 178 个。
+>
+> **二、连带效应（本轮才看清的一层）**：分层颠倒还让 `ChatPage.ets`/`SearchPage.ets`/
+> `SettingsPage.ets`/`PrivacyKeySubPage.ets` 从 `scan_display_slots`（R4'）掉进
+> `scan_data_layer`（R5b）。R4' 有 `key_carrier_exemption` 豁免，R5b 的函数名判据更窄
+> （只认函数名以 `Key` 结尾），于是 `attachmentLabelKey`/`getTabLabelKey`/`alwaysLabel`
+> 这批**正确形状**被打成 16 条 DATA-ENGLISH。修好分隔符后这 16 条与 43 条 R8 一并归零 ——
+> 一处根因，两类假阳性。
+>
+> **三、修法**：新增 `repo_rel(path)`，把 `relative_to` 的结果统一 `.replace('\\', '/')`，
+> 四处 `rel` 赋值点（`partitioned_files` / `date_form_files` / `build_ctor_index`）与
+> `VIEW_DIRS` 全部改走它。**守卫语义一条没改**，改的只是路径形状 —— 这是最小改动的判据。
+>
+> **四、验证**：`--self-test` 30 项对照仍全符（证明规则本身没被改坏），全仓扫描从
+> FAILED 变 OK，R8 43 条与 DATA-ENGLISH 16 条同时清零。
+>
+> **五、顺带修掉的两处真实问题**（修守卫时暴露出来的，不是修守卫顺手带的）：
+> ① `ChatPage.ets` 的 `documentSubtitle`/`audioSubtitle` 里 `return 'File'`、
+> `return 'Failed · Tap to retry'`、`return \`Uploading ${pct}%\`` 三处**写死英文会直接上屏**。
+> 它们此前四条规则一起放行的原因是：位于 `pages/` 下的页面类私有函数，R4' 按设计只判文案槽位、
+> **不判 `return` 位置**，而 R5b 只覆盖数据层 —— 这是**射程缺口**，本轮补词典
+> （`'Uploading {0}%'` 与 `'File'`，EN/ZH 对等）并改接 `this.t(...)`。
+> 同函数里 `this.t('Unknown artist')` 证明作者知道要接词典，属漏而不是反对。
+> ② `ContactBubble` 的占位头像首字母漏 `.accessibilityLevel('no')`（R6 真报，同文件
+> `senderAvatarLetter` 处已有）—— CONTACT-MSG-101 新引入，补齐。
+>
+> **六、Windows 构建链路（devecocli 1.3.0 + DevEco Studio）**：`entry/hvigorfile.ts` 原先
+> 写死 `execFileSync('python3', …)`，Windows 上必炸且报错指不回原因。改为三层解析：
+> `PYTHON`/`PYTHON3` 环境变量 → PATH 上的 `python3`/`python` → 常见安装目录绝对路径
+> （含 **DevEco 自带的 `plugins/app-analyzer/lib/python/python.exe`**，本机实测系统里
+> 没有任何独立 Python，PATH 上只有 Microsoft Store 的零字节占位桩）。
+> 关键实测：**hvigor 的守护进程会重建 PATH**，shell 里临时 `export PATH=…python` 对已起来的
+> daemon 完全不生效，所以第三层绝对路径探测是必需的，不是装饰。
+
 
 | 功能 ID | 功能名 |
 |---|---|

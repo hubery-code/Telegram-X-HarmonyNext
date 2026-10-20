@@ -2226,7 +2226,7 @@ export struct ChatPage {
   private documentSubtitle(media: MediaAttachment): string {
     if (media.isUploading) {
       const pct: number = Math.round(media.uploadProgress * 100);
-      return `Uploading ${pct}%`;
+      return this.t('Uploading {0}%', pct);
     }
     if (media.isDownloading) {
       return `${formatFileSize(media.fileSize * media.progress)} / ${formatFileSize(media.fileSize)}`;
@@ -2234,7 +2234,7 @@ export struct ChatPage {
     if (media.fileSize > 0) {
       return formatFileSize(media.fileSize);
     }
-    return 'File';
+    return this.t('File');
   }
 
   /** 语音消息气泡渲染（VOICE-101）：播放控制、波形条可视化、时长与未收听标记。 */
@@ -2458,11 +2458,11 @@ export struct ChatPage {
 
   private audioSubtitle(media: MediaAttachment, isFailed: boolean = false, messageId?: number): string {
     if (isFailed) {
-      return 'Failed · Tap to retry';
+      return this.t('Failed · Tap to retry');
     }
     if (media.isUploading) {
       const pct: number = Math.round(media.uploadProgress * 100);
-      return `Uploading ${pct}%`;
+      return this.t('Uploading {0}%', pct);
     }
     if (media.isDownloading) {
       return `${formatFileSize(media.fileSize * media.progress)} / ${formatFileSize(media.fileSize)}`;
@@ -4039,6 +4039,7 @@ export struct ChatPage {
         Stack({ alignContent: Alignment.Center }) {
           if (avatarLettersForName(contact.fullName) !== '?') {
             Text(avatarLettersForName(contact.fullName))
+              .accessibilityLevel('no')
               .fontSize(this.chatText(this.T.typography.subheadline.fontSize))
               .fontWeight(FontWeight.Medium)
               .fontColor(this.T.colors.textOnAccent)

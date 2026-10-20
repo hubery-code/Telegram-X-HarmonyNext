@@ -49,6 +49,10 @@
    UI 组件不要直接依赖私有字段的变化驱动渲染，状态变更必须经规范的 `@State`、`@Prop` 或 Reducer 状态流。
 3. **分层架构红线**：
    `feature/*` 之间严禁直接相互依赖；业务功能与系统能力之间严禁直接穿透，必须经 `platform/*` 隔离；所有改动必须通过 `check_architecture.py` 检验。
+4. **跨平台路径红线（Windows 上踩过，2026-10-20）**：
+   仓库的主开发环境是 macOS，但构建与守卫**必须在 Windows 上同样成立**。任何按路径比对/豁免的脚本（守卫、代码生成器、`hvigorfile.ts`）**不许把 `/` 写死在与 `relative_to()` 结果比较的地方** —— 统一走归一化（如 `check_i18n_literals.py` 的 `repo_rel()`）。同一条红线适用于 `hvigorfile.ts` 里解析外部可执行文件：不许写死 `python3`（Windows 上不存在，只有 Microsoft Store 的零字节占位桩），要走「环境变量 → PATH → 常见安装目录绝对路径」三层解析，且**必须包含 DevEco 自带的 `plugins/app-analyzer/lib/python/python.exe`**（本机没有任何独立 Python 安装）。
+5. **hvigor 守护进程不继承 shell 的 PATH 改动**：
+   `hvigor` 的 daemon 一旦起来就沿用启动时的环境，shell 里事后 `export PATH=…` 对它完全无效（实测 daemon 内 PATH 只剩 DevEco `jbr/bin` + 系统目录）。改完 PATH 后要 `hvigorw --stop-daemon`，或直接用绝对路径，否则会出现「shell 里明明能跑、构建却找不到」的假象。
 
 ---
 
