@@ -128,7 +128,7 @@
 |---|---|---|---|---|---|---|---|---|
 | FEAT-UI-001 | 深色/浅色主题 | P1 | `theme/ThemeManager.java:48`（DEFAULT_DARK_THEME = NIGHT_BLUE）, `theme/Theme.java` | —（平台侧） | 跟随系统/手动切换，关键页面（列表/聊天/设置）色值正确；偏好（system/light/dark）跨进程持久，系统深浅色经 `onConfigurationUpdate` 实时参与解析 | — | Accepted | 迁移组, APPSTORAGE-PAIR-101 |
 | FEAT-UI-002 | 大字体（聊天字号调节） | P1 | `unsorted/Settings.java:791`（CHAT_FONT_SIZES）, `ui/SettingsController.java:218`（getChatFontSize） | —（平台侧） | 大字号模式下气泡/列表不截断不重叠 | 字体缩放 | Accepted | SET-105 |
-| FEAT-UI-003 | 中/英文案资源 | P1 | `core/Lang.java`, `ui/SettingsLanguageController.java` | — | 关键路径文案中英齐全，无硬编码遗漏（视图层与 coordinator/model 数据层的写死文案、词典缺项由 `check_i18n_literals.py` 九条规则强制（R1–R9，判定单位是**逻辑行**：跨行调用与「字面量先赋给 const、再把 const 传进槽位」都在射程内，且每次扫描前先跑一遍负向对照自证））；日期形态与文案分治 —— 月份名/星期名/`年月日`排布只许出自 `core/common/…/DateFormat.ets` 一个文件（同守卫第八条规则 R8）；语言偏好跨进程持久且系统语言参与解析；送进 TDLib 的 `system_language_code` 不许是字面量，只许出自 `tdlibSystemLanguageCode()`（同守卫第九条规则 R9）；写进 AppStorage 的键必须有读者（`check_appstorage_pairs.py` R1） | — | Accepted | I18N-LITERAL-101/102/103/104, I18N-HOTSWITCH-101/102, LANG-PERSIST-101, APPSTORAGE-PAIR-101, I18N-DATE-101, I18N-DATE-102, I18N-GUARDSPAN-101, I18N-SYSLANG-101 |
+| FEAT-UI-003 | 中/英文案资源 | P1 | `core/Lang.java`, `ui/SettingsLanguageController.java` | — | 关键路径文案中英齐全，无硬编码遗漏（视图层与 coordinator/model 数据层的写死文案、词典缺项由 `check_i18n_literals.py` 九条规则强制（R1–R9，判定单位是**逻辑行**：跨行调用与「字面量先赋给 const、再把 const 传进槽位」都在射程内，且每次扫描前先跑一遍负向对照自证；路径一律归一成 `/` 再比较，否则 Windows 上豁免与分层整体失效）；日期形态与文案分治 —— 月份名/星期名/`年月日`排布只许出自 `core/common/…/DateFormat.ets` 一个文件（同守卫第八条规则 R8）；语言偏好跨进程持久且系统语言参与解析；送进 TDLib 的 `system_language_code` 不许是字面量，只许出自 `tdlibSystemLanguageCode()`（同守卫第九条规则 R9）；写进 AppStorage 的键必须有读者（`check_appstorage_pairs.py` R1）；`subprocess` 捕获输出必须显式 `encoding='utf-8'`，否则中文 Windows 按 GBK 解码直接崩 | — | Accepted | I18N-LITERAL-101/102/103/104, I18N-HOTSWITCH-101/102, LANG-PERSIST-101, APPSTORAGE-PAIR-101, I18N-DATE-101, I18N-DATE-102, I18N-GUARDSPAN-101, I18N-SYSLANG-101, GUARD-WIN-101 |
 | FEAT-UI-004 | 抽屉主导航（≡ 账号头 + 联系人/通话/我的收藏/设置/邀请朋友/帮助 + 夜间模式开关） | P1 | `navigation/DrawerController.java`, `MainActivity.java` | —（平台侧） | 会话列表抽屉导航，账号头展示在线状态，入口路由正确 | — | Accepted | DRAWER-101 |
 
 ---
@@ -2952,10 +2952,11 @@
 > 「BUILD SUCCESSFUL 不是证据，必须读 `coverage_data/test_result.txt`」—— 下轮有设备时
 > 优先补 POLL-102 与 CONTACT-MSG-101 两包的取证（新气泡是纯 UI 面，只有设备能证排版）。
 
-### FEAT-UI-003 / GUARD-WIN-101 i18n 守卫的 Windows 路径分隔符缺陷（2026-10-20）
+### FEAT-UI-003 / GUARD-WIN-101 Windows 守卫跨平台缺陷（i18n / design_tokens / codegen / secret_scan，2026-10-20）
 
-> **定性**：这不是产品缺陷，是**守卫在 Windows 上整体失真**，且失真方向是最坏的那种 ——
-> 「报出一堆改不掉的幽灵」与「静默漏判真违规」同时存在。
+> **定性**：这不是产品缺陷，是**守卫脚本在中文 Windows 上整体失效**，且失效方向是最坏的那种 ——
+> 「报出一堆改不掉的幽灵」与「直接崩掉/静默漏判」同时存在。共三批、四个脚本，
+> 修完后七个守卫在 Windows 上首次全绿（`0a7b4770` + `f3110680` + `af62c1f4`）。
 
 > **一、成因**：`check_i18n_literals.py` 所有射程常量与豁免表都按 `/` 写（脚本从 macOS/CLI
 > 环境带来），而 `rel` 来自 `str(path.relative_to(ROOT))` —— 在 Windows 上产出的是原生
@@ -2996,7 +2997,8 @@
 > **守卫为什么没拦住值得记**：R3 只判 EN/ZH **键集合对等**，而重复 key 在集合里天然只剩一个，
 > 所以 R3 结构上看不见它；`--self-test` 的对照集也没有「同词典内重名」这一形状。
 > 也就是说「词典一致性」目前由编译器兜底而不是守卫兜底 —— 记为本仓待办
-> （给 R3 或新增一条补重复 key 判定），不在本轮扩规则。
+> **I18N-DUPKEY-101**（给 R3 或新增一条补「同词典内重复 key」判定 + 一条 `--self-test`
+> 负向对照），不在本轮扩规则。
 >
 > **六、Windows 构建链路（devecocli 1.3.0 + DevEco Studio）**：`entry/hvigorfile.ts` 原先
 > 写死 `execFileSync('python3', …)`，Windows 上必炸且报错指不回原因。改为三层解析：
@@ -3005,6 +3007,30 @@
 > 没有任何独立 Python，PATH 上只有 Microsoft Store 的零字节占位桩）。
 > 关键实测：**hvigor 的守护进程会重建 PATH**，shell 里临时 `export PATH=…python` 对已起来的
 > daemon 完全不生效，所以第三层绝对路径探测是必需的，不是装饰。
+>
+> **七、第二批：构建跑通后复验守卫，又抓出三个脚本的同类问题**（提交 `f3110680`）：
+> ① `check_design_tokens.py` 构建后**必现 FileNotFoundError** —— 与 i18n 完全同一条根因
+> （`relative_to()` 出反斜杠而 `SKIP_PARTS` 按 `/` 写，`/build/` 过滤失效），但后果更重：
+> `rglob` 会追进 hvigor 在 `entry/oh_modules/` 下生成的**嵌套符号链接**（实测路径深到
+> `entry/oh_modules/@tgx/feature-chat/oh_modules/@tgx/core-domain/.../build/default/cache/...`），
+> 读不到文件直接崩，而不是报幽灵违规。
+> ② **订正一处此前的错误归因**：`check_codegen.py` 的 `AttributeError` 曾被记为「本会话沙箱限制」，
+> 真实根因是 `subprocess.run(text=True)` 未指定 `encoding`，中文 Windows 按 locale 用 **GBK**
+> 解 stdout，而生成器输出含 UTF-8 字符（em dash 等），读线程抛 `UnicodeDecodeError` 后
+> `r.stdout` 变 None，下一行 `res.stdout.strip()` 才炸。症状极具误导性：明明 up to date 却报崩，
+> 且栈指向脚本而非生成器。修法是显式 `encoding='utf-8', errors='replace'`。
+> ③ `secret_scan.py` 有同款**潜伏项**（`git ls-files` 输出在仓库含非 ASCII 文件名时必崩，
+> 而它是 CI 第 2 步、一崩全链路停；本仓当前文件名全 ASCII 所以没爆）。
+>
+> **八、方法论（值得后来者先看）**：守卫类脚本的跨平台问题会**分批**暴露 ——
+> 第一批是「扫过了但判错」，第二批是「扫到不存在的东西直接崩」，第三批可能是「压根没扫那一类」。
+> 所以修完第一批**不能收工**，必须真跑一遍全量守卫才算数。本轮正是靠这条才在
+> design_tokens 崩掉时意识到「还有第二批」。
+>
+> **九、最终状态**：七个守卫（architecture / codegen / design_tokens / a11y_labels /
+> i18n_literals / appstorage_pairs / secret_scan）在中文 Windows 上**全部 exit=0**，
+> 为本项目首次。三个受影响模块单测实测：`core_common` 86/86、`feature_chat` 514/514
+> （35 个测试类）、`entry` 160/160。
 
 
 | 功能 ID | 功能名 |
