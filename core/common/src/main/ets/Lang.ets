@@ -700,11 +700,13 @@ const EN_DICTIONARY: Record<string, string> = {
   'edited': 'edited',
   '{0} selected': '{0} selected',
   'Failed · Tap to retry': 'Failed · Tap to retry',
-  // GUARD-WIN-101 —— 媒体气泡脚注：这三串原先写死在 ChatPage 的
+  // GUARD-WIN-101 —— 媒体气泡脚注：`Uploading {0}%` 原先写死在 ChatPage 的
   // documentSubtitle / audioSubtitle 里（页面类私有函数 return 英文串，R4' 按设计
   // 只判文案槽位、不判 return，所以四条规则一起放行，中文界面会原样出英文）。
+  // 同段的 'File' 不在这里重复建 —— CHAT-BACK-101 已为附件面板建过（见上方
+  // Gallery/Camera/Video/File/Poll 那批），直接复用；重复 key 会被 ArkTS
+  // 编译器以 10505001 直接拒掉。
   'Uploading {0}%': 'Uploading {0}%',
-  'File': 'File',
   'Edit Message': 'Edit Message',
   'Reply to {0}': 'Reply to {0}',
   'Resend': 'Resend',
@@ -1338,7 +1340,6 @@ const ZH_DICTIONARY: Record<string, string> = {
   '{0} selected': '已选择 {0} 条',
   'Failed · Tap to retry': '发送失败 · 点击重试',
   'Uploading {0}%': '上传中 {0}%',
-  'File': '文件',
   'Edit Message': '编辑消息',
   'Reply to {0}': '回复 {0}',
   'Resend': '重新发送',
