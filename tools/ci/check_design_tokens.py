@@ -29,6 +29,14 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 DS = ROOT / 'core' / 'design_system' / 'src' / 'main' / 'ets'
 
+# 与 check_i18n_literals.py 的 repo_rel() 同一条跨平台红线：`relative_to()` 在 Windows 上
+# 产出反斜杠，而 SKIP_PARTS 按 `/` 写 —— 不归一的话 `/build/`、`/oh_modules/` 过滤整体失效，
+# `rglob('*.ets')` 会追进 hvigor 在 `entry/oh_modules/` 下生成的**嵌套符号链接**（实测路径深到
+# `entry/oh_modules/@tgx/feature-chat/oh_modules/@tgx/core-domain/.../build/default/cache/...`），
+# 读不到文件就直接 FileNotFoundError 崩掉，而不是「扫出一堆幽灵违规」。归一放在这一处。
+def repo_rel(path: pathlib.Path) -> str:
+    return '/' + str(path.relative_to(ROOT)).replace('\\', '/')
+
 # 每个命名空间对应的定义文件与成员声明形状。
 NAMESPACES = {
     'typography': ('Typography.ets', r'^\s+([A-Za-z0-9_]+):\s*TextStyle;'),
@@ -69,7 +77,7 @@ def main() -> int:
 
     violations = {}
     for path in sorted(ROOT.rglob('*.ets')):
-        rel = '/' + str(path.relative_to(ROOT))
+        rel = repo_rel(path)
         if any(part in rel for part in SKIP_PARTS):
             continue
         text = path.read_text(encoding='utf-8', errors='ignore')
@@ -77,7 +85,7 @@ def main() -> int:
             ns, name = match.group(1), match.group(2)
             if name not in defined[ns]:
                 line = text[:match.start()].count('\n') + 1
-                violations.setdefault(f'{ns}.{name}', []).append(f'{path.relative_to(ROOT)}:{line}')
+                violations.setdefault(f'{ns}.{name}', []).append(f'{repo_rel(path)}:{line}')
 
     if not violations:
         print('[tokens] OK: 未发现未定义的 design token')

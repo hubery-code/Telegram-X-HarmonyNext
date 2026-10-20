@@ -2924,7 +2924,12 @@
 > **为什么有这一节**：2026-10-13 至 10-14 有 14 个提交（`4084ef1f` 之后到 `23864f7a`）
 > 只落代码与单测，**没有回写本表与 `PROGRESS.md`** —— 状态漂移。本节按提交逐条补登记，
 > 证据来源是 git 提交本身（diff 与 commit message）与本轮的静态守卫实跑；
-> **各包的单测条数与设备取证未在本轮复跑**，相应位置如实标「未复跑」而不是填数字。
+> **单测条数（2026-10-20 补跑，读 `coverage_data/test_result.txt` 而非信 BUILD SUCCESSFUL）**：
+> `core_common` **86/86**、`feature_chat` **514/514**（35 个测试类）、`entry` **160/160**，
+> 三个受影响模块全绿。`feature_chat` 与 `entry` 高于 PROGRESS.md 旧记录的 471/155 ——
+> 差额正是本批 14 个提交自带的新用例，反过来印证台账漂移确实存在。
+> **设备取证仍未补**：POLL-102 / CONTACT-MSG-101 / LOCATION-MSG-101 三包的新气泡是纯 UI 面，
+> 只有设备能证排版；本轮模拟器镜像未下载（`devecocli emulator image download` 待用户执行）。
 
 | 提交 | 工作包 | 落点（依 `git show --stat`） | 状态 |
 |---|---|---|---|
@@ -2979,10 +2984,19 @@
 > `return 'Failed · Tap to retry'`、`return \`Uploading ${pct}%\`` 三处**写死英文会直接上屏**。
 > 它们此前四条规则一起放行的原因是：位于 `pages/` 下的页面类私有函数，R4' 按设计只判文案槽位、
 > **不判 `return` 位置**，而 R5b 只覆盖数据层 —— 这是**射程缺口**，本轮补词典
-> （`'Uploading {0}%'` 与 `'File'`，EN/ZH 对等）并改接 `this.t(...)`。
+> （新增 `'Uploading {0}%'`；`'File'` 复用 CHAT-BACK-101 已为附件面板建过的条目）并改接 `this.t(...)`。
 > 同函数里 `this.t('Unknown artist')` 证明作者知道要接词典，属漏而不是反对。
 > ② `ContactBubble` 的占位头像首字母漏 `.accessibilityLevel('no')`（R6 真报，同文件
 > `senderAvatarLetter` 处已有）—— CONTACT-MSG-101 新引入，补齐。
+>
+> **七、补词条时踩到的坑：重复 key 只有编译器抓得到**。上面那步加词条时没先查重，
+> 而 `'File'` 早已由 CHAT-BACK-101 建过（EN `:666` / ZH `:1304`）—— ArkTS 编译器以
+> **10505001 `An object literal cannot have multiple properties with the same name`**
+> 直接拒掉 `core_common` 的 `HarCompileArkTS`，构建失败（提交 `718f88fe` 修）。
+> **守卫为什么没拦住值得记**：R3 只判 EN/ZH **键集合对等**，而重复 key 在集合里天然只剩一个，
+> 所以 R3 结构上看不见它；`--self-test` 的对照集也没有「同词典内重名」这一形状。
+> 也就是说「词典一致性」目前由编译器兜底而不是守卫兜底 —— 记为本仓待办
+> （给 R3 或新增一条补重复 key 判定），不在本轮扩规则。
 >
 > **六、Windows 构建链路（devecocli 1.3.0 + DevEco Studio）**：`entry/hvigorfile.ts` 原先
 > 写死 `execFileSync('python3', …)`，Windows 上必炸且报错指不回原因。改为三层解析：

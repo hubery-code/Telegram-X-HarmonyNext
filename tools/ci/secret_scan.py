@@ -27,12 +27,20 @@ def get_root_dir():
 
 def get_tracked_files(root):
     try:
+        # encoding='utf-8' + errors='replace' 与 check_codegen.py 同一条理由：中文 Windows 的
+        # locale 默认 GBK，`text=True` 若不显式指定就用 GBK 解 stdout。`git ls-files` 的输出
+        # 在**仓库含非 ASCII 文件名**时必然含 UTF-8 字节，届时读线程抛 UnicodeDecodeError、
+        # 整个 secret 扫描以 exit 2 收场 —— 而它是 CI 的第 2 步，一崩全链路停。
+        # 本仓当前文件名全是 ASCII 所以没爆，属于潜伏项；换成 check_codegen 那种
+        # 「子进程一定输出非 ASCII」的形状才会当场现形。
         res = subprocess.run(
             ["git", "ls-files"],
             cwd=root,
             capture_output=True,
             text=True,
-            check=True
+            check=True,
+            encoding="utf-8",
+            errors="replace"
         )
         files = res.stdout.splitlines()
         return [f for f in files if f.strip()]

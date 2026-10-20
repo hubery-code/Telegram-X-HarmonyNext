@@ -7,14 +7,22 @@
 
 ---
 
-## 1. 单元测试全景（19 个可测试模块，836/836 PASS）
+## 1. 单元测试全景（19 个可测试模块）
+
+> ⚠️ **数字口径（2026-10-20 校准）**：本表的用例数长期由各工作包自行回写，已出现大幅漂移 ——
+> 例如 `entry` 记 21 而实测 **160**、`core_common` 记 33 而实测 **86**、`feature_chat` 记 130
+> 而实测 **514**（差额主要来自 2026-09-29 至 10-14 那批只落代码未回写文档的提交）。
+> 下表**仅 `entry` / `core_common` / `feature_chat` 三行是 2026-10-20 实测值**
+> （`devecocli` + hvigorw `test --mode module`，读 `<module>/.test/default/intermediates/test/coverage_data/test_result.txt`
+> 的 `Tests run:` 汇总行，不认 BUILD SUCCESSFUL）；**其余行的数字未复跑，标记为「未校准」**，
+> 按本仓口径宁可留旧值加标注，也不填没跑过的数。全量数字待跑 `test_all_modules.py` 后一次性回写。
 
 通过 `python3 tools/ci/test_all_modules.py` 执行全量自动化调度（Hvigor module test runner）：
 
 | 序号 | 模块名称 | 模块源码路径 | 单测文件路径 | 用例数 | 状态 | 关键验证域 |
 |---|---|---|---|---|---|---|
-| 1 | `entry` | `entry` | `entry/src/test/List.test.ets` | 21 | PASS | 生命周期协调、HUKS 密钥装配、类型化路由控制器 |
-| 2 | `core_common` | `core/common` | `core/common/src/test/List.test.ets` | 33 | PASS | RFC 4648 Base64 算法、时钟、ID 生成器、错误类型 |
+| 1 | `entry` | `entry` | `entry/src/test/List.test.ets` | **160**（2026-10-20 实测） | PASS | 生命周期协调、HUKS 密钥装配、类型化路由控制器 |
+| 2 | `core_common` | `core/common` | `core/common/src/test/List.test.ets` | **86**（2026-10-20 实测） | PASS | RFC 4648 Base64 算法、时钟、ID 生成器、错误类型、Lang 词典与日期形态 |
 | 3 | `core_design_system` | `core/design_system` | `core/design_system/src/test/List.test.ets` | 38 | PASS | 设计令牌（颜色/排版/间距/圆角）一致性、ThemeManager 全局主题 |
 | 4 | `platform_ports` | `platform/ports` | `platform/ports/src/test/List.test.ets` | 42 | PASS | 剪贴板/Toast/MediaPicker 契约、内存型测试 Doubles (Fakes) |
 | 5 | `core_navigation` | `core/navigation` | `core/navigation/src/test/List.test.ets` | 37 | PASS | 强类型路由注册表、路径编解码、深链解析、返回栈序列化 |
@@ -29,10 +37,10 @@
 | 14 | `core_domain` | `core/domain` | `core/domain/src/test/List.test.ets` | 64 | PASS | ChatListProjection、MessageProjection、图片发送组包、上传进度 |
 | 15 | `feature_auth` | `feature/auth` | `feature/auth/src/test/List.test.ets` | 47 | PASS | AuthReducer、二维码登录、状态流转、DB 加密在线平滑迁移 |
 | 16 | `feature_chat_list` | `feature/chat_list` | `feature/chat_list/src/test/List.test.ets` | 15 | PASS | ChatListReducer、置顶、标未读、长按菜单意图处理 |
-| 17 | `feature_chat` | `feature/chat` | `feature/chat/src/test/List.test.ets` | 130 | PASS | ChatReducer、文本/图片收发、回复/编辑/删除、转发选择器、上传取消 |
+| 17 | `feature_chat` | `feature/chat` | `feature/chat/src/test/List.test.ets` | **514**（2026-10-20 实测，35 个测试类） | PASS | ChatReducer、文本/图片收发、回复/编辑/删除、转发选择器、上传取消 |
 | 18 | `feature_settings` | `feature/settings` | `feature/settings/src/test/List.test.ets` | 41 | PASS | SettingsReducer、配置持久化、全局深浅色主题切换 |
 | 19 | `feature_search` | `feature/search` | `feature/search/src/test/List.test.ets` | 19 | PASS | SearchReducer、全局搜索过滤、联系人/会话/消息分组 |
-| **合计** | **19 个模块** | — | — | **836** | **100%** | **Failures: 0, Errors: 0** |
+| **合计** | **19 个模块** | — | — | **未给出（待全量复跑）** | 实测 3 模块全 PASS | **Failures: 0, Errors: 0**（就 2026-10-20 实测的 entry/core_common/feature_chat 三模块而言） |
 
 
 豁免模块说明：
@@ -53,7 +61,7 @@
 6. `check_accessibility_labels.py`：图标控件无障碍标签与分组吞并守卫（A11Y-101/102）；
 7. `check_i18n_literals.py`：六条规则 —— 视图层与数据层写死中文（R1/R5a）、**看着像文案**的英文字面量落进视图层文案槽位（R4'，按「含空格 / 首字母大写 / 命中词典」的形状判定，不再只认词典已有的英文）、数据层展示串落在 `return`/Toast 出口/**赋值右侧**/**构造器实参** 四个位置（R5b，构造器靠全仓 class→参数表索引认 `*Key` 豁免）、字面量 key 双词典命中（R2，两层同检）、`*Key` 载体收到的字面量也必须双词典命中（R6，I18N-LITERAL-104 补上豁免自己开的洞）、EN/ZH 键集合全等（R3）（I18N-LITERAL-101/102/103/104）；
 8. `check.sh`：全仓 linter 与 ArkTS 静态类型检查；
-9. `test_all_modules.py`：全量 19 模块 836 项单元测试执行与基线断言（≥790 项）；
+9. `test_all_modules.py`：全量 19 模块单元测试执行与基线断言（≥790 项；**实际条数已高于该基线，但精确值待全量复跑后回写本表**）；
 10. `build.sh debug`：构建 Debug HAP 产物；
 11. `build.sh release`：构建 Release HAP 产物，断言构建后工作区 100% 洁净无污染。
 
