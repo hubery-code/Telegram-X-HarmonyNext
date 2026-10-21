@@ -27,7 +27,13 @@ if(NOT EXISTS "${OHOS_NDK_PATH}/build/cmake/ohos.toolchain.cmake")
   message(FATAL_ERROR "OHOS NDK toolchain not found at ${OHOS_NDK_PATH}; set OHOS_NDK_PATH or TDX_OHOS_NDK")
 endif()
 
-set(OHOS_ARCH arm64-v8a CACHE STRING "Target ABI (ADR-001: arm64-v8a first)" FORCE)
+# ADR-001 的默认目标是 arm64-v8a（真机），但**不强制** —— 模拟器镜像只有 x86_64，
+# 要能在模拟器上验证 native 链路就必须允许覆盖。原先这里是 `FORCE`，于是
+# `-DOHOS_ARCH=x86_64` 被静默覆盖成 arm64，编译出 aarch64 目标、链接 x86_64 的
+# OpenSSL，报 `incompatible with aarch64linux` —— 报错指向库，指向不了这个 FORCE。
+if(NOT DEFINED OHOS_ARCH)
+  set(OHOS_ARCH arm64-v8a CACHE STRING "Target ABI (ADR-001: arm64-v8a first; x86_64 for emulator)" FORCE)
+endif()
 set(OHOS_STL c++_static CACHE STRING "Static libc++" FORCE)
 
 include("${OHOS_NDK_PATH}/build/cmake/ohos.toolchain.cmake")

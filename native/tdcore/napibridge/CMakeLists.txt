@@ -58,10 +58,13 @@ target_link_libraries(tdcore_napi PUBLIC ace_napi)
 #   into the hap, and DT_NEEDED carries the .so.3 soname; basename must match.
 add_library(tdjson SHARED IMPORTED)
 set_target_properties(tdjson PROPERTIES
-    IMPORTED_LOCATION "${TDCORE_BUILD}/arm64-v8a/stripped/libtdjson.so")
+    IMPORTED_LOCATION "${TDCORE_BUILD}/${OHOS_ARCH}/stripped/libtdjson.so")
 target_link_libraries(tdcore_napi PRIVATE tdjson)
 
-set(OPENSSL_DIR "${TDCORE_BUILD}/deps/openssl/arm64-v8a")
+# OpenSSL 前缀同样按 ABI 取，不写死 arm64-v8a：模拟器镜像（HarmonyOS 7.0.0 phone）
+# 是 x86_64，而 ADR-001 的产线目标是 arm64-v8a —— 两个 ABI 都要能构建，
+# 否则「在模拟器上验证」这件事对 native 链路永远做不到。
+set(OPENSSL_DIR "${TDCORE_BUILD}/deps/openssl/${OHOS_ARCH}")
 foreach(ssl_lib crypto ssl)
   add_library(openssl_${ssl_lib} SHARED IMPORTED)
   set_target_properties(openssl_${ssl_lib} PROPERTIES
