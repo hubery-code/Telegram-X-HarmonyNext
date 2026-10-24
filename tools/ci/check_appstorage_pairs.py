@@ -116,6 +116,15 @@ def strip_comments(text: str) -> str:
     return ''.join(out)
 
 
+def repo_rel(path: pathlib.Path) -> str:
+    """仓库内相对路径，一律归一成 `/` 分隔（与 check_i18n_literals.py 同一口径）。
+
+    Windows 上 `relative_to()` 产出反斜杠，而本文件的 SKIP_PARTS 与消息文本都按 `/` 写。
+    不归一的话过滤静默失效 —— 老写法 `part in str(p)` 在 Windows 上永远匹配不到 `/build/`。
+    """
+    return str(path.relative_to(ROOT)).replace('\\', '/')
+
+
 def collect_files():
     files = []
     for rel_dir in SCAN_DIRS:
@@ -123,7 +132,7 @@ def collect_files():
         if not d.is_dir():
             continue
         for p in sorted(d.rglob('*.ets')):
-            if any(part in str(p) for part in SKIP_PARTS):
+            if any(part in repo_rel(p) for part in SKIP_PARTS):
                 continue
             files.append(p)
     return files
@@ -152,7 +161,7 @@ def main() -> int:
     bodies = {}
     raw_lines = {}
     for path in files:
-        rel = str(path.relative_to(ROOT))
+        rel = repo_rel(path)
         try:
             text = path.read_text(encoding='utf-8')
         except OSError as exc:

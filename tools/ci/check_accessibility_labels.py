@@ -49,11 +49,24 @@ ROOT = pathlib.Path(__file__).resolve().parents[2]
 A11Y_FILE = ROOT / 'core' / 'common' / 'src' / 'main' / 'ets' / 'A11y.ets'
 LANG_FILE = ROOT / 'core' / 'common' / 'src' / 'main' / 'ets' / 'Lang.ets'
 
+def repo_rel(path: pathlib.Path) -> str:
+    """仓库内相对路径，一律归一成 `/`（与 check_i18n_literals.py 同一口径）。
+
+    本文件里的 rel 目前只进报错消息、不参与过滤，所以旧写法（原生分隔符）
+    没有造成功能缺陷；但报错路径在 Windows 上会是反斜杠，复制进编辑器跳转不便，
+    而且四个守卫各写一套口径本身就是隐患 —— 统一走这里。
+    """
+    return str(path.relative_to(ROOT)).replace('\\', '/')
+
+
 SCAN_DIRS = ['entry/src/main/ets'] + [
     str(p.relative_to(ROOT)) for p in ROOT.glob('feature/*/src/main/ets')
 ]
 
-SKIP_PARTS = ('/oh_modules/', '/build/', '/.test/', '/.preview/')
+# 构建/依赖产物目录的**目录名**（不带斜杠）—— 与 pathlib 的 `Path.parts` 直接比较。
+# 不要写成 `/oh_modules/` 那种带斜杠的子串：`p.parts` 里是 `'oh_modules'`，
+# 两者永不相等，过滤会从上线起就失效（实测 179 个文件一个都没被跳过）。
+BUILD_DIR_NAMES = frozenset(('oh_modules', 'build', '.test', '.preview', '.cxx'))
 
 # 组件调用：行首缩进后紧跟大写开头的标识符和左括号。
 OPENER_RE = re.compile(r'^([A-Z][A-Za-z0-9_]*)\s*\(')
@@ -213,7 +226,7 @@ def scan_coverage(files):
     """R1：图标-only 的可点击组件必须有 accessibilityText。"""
     violations = []
     for path in files:
-        rel = path.relative_to(ROOT)
+        rel = repo_rel(path)
         lines = path.read_text(encoding='utf-8').splitlines()
         for idx, line in enumerate(lines):
             stripped = line.strip()
@@ -270,7 +283,7 @@ def scan_grouping(files):
     """
     problems = []
     for path in files:
-        rel = path.relative_to(ROOT)
+        rel = repo_rel(path)
         lines = path.read_text(encoding='utf-8').splitlines()
         for idx, line in enumerate(lines):
             stripped = line.strip()
@@ -301,7 +314,7 @@ def scan_decorative_letters(files):
     """R6：占位头像首字母必须对读屏隐藏。"""
     problems = []
     for path in files:
-        rel = path.relative_to(ROOT)
+        rel = repo_rel(path)
         lines = path.read_text(encoding='utf-8').splitlines()
         for idx, line in enumerate(lines):
             if is_comment(line.strip()) or DECORATIVE_LETTER_RE.search(line) is None:
@@ -369,7 +382,7 @@ def scan_routing(files, slots):
     used = set()
     slot_name_re = re.compile(r'\bA11y\.([A-Z0-9_]+)')
     for path in files:
-        rel = str(path.relative_to(ROOT))
+        rel = repo_rel(path)
         text = path.read_text(encoding='utf-8')
         lines = text.split('\n')
         for m in re.finditer(r'\.accessibilityText\(([^\n]*)', text):
@@ -409,7 +422,14 @@ def main() -> int:
         if not base.is_dir():
             continue
         for p in sorted(base.rglob('*.ets')):
-            if any(part in SKIP_PARTS for part in p.parts):
+            # 按**目录名**判，不按路径子串判。
+            # 旧写法是 `any(part in SKIP_PARTS for part in p.parts)`，而 SKIP_PARTS 的
+            # 元素带斜杠（`/oh_modules/`）—— `p.parts` 里只可能是 `'oh_modules'`，
+            # 永远不相等，于是这个过滤从上线起就是死代码（实测 179 个文件一个都没被跳过）。
+            # 当前 SCAN_DIRS 只到 `src/main/ets`，那里本来没有这些目录，所以**没有造成实际
+            # 违规**；但它是一道失效的防线：一旦射程扩大、或 hvigor 往源码树里写缓存，
+            # 它会静默放行而不是拦住。这里改成与目录名比较。
+            if any(part in BUILD_DIR_NAMES for part in p.parts):
                 continue
             files.append(p)
 

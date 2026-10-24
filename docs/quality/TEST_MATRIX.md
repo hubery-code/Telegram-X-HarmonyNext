@@ -51,7 +51,7 @@
 
 ## 2. CI 门禁验证流水线 (`./tools/ci/ci.sh`)
 
-全量 11 步静态与动态防线：
+全量 13 步静态与动态防线：
 
 1. `setup-check.sh`：工具链自动探测与 DevEco/Node/SDK 26 版本锁定；
 2. `secret-scan.sh`：全仓严格凭据与签名扫描，严禁密钥字面量入库；
@@ -59,11 +59,13 @@
 4. `check_architecture.py`：核心域、Reducer 及 Coordinator 100% Kit-free 架构防线；
 5. `check_codegen.py`：3205 个 DTO 类与 154 个敏感字段代码生成一致性字节比对；
 6. `check_accessibility_labels.py`：图标控件无障碍标签与分组吞并守卫（A11Y-101/102）；
-7. `check_i18n_literals.py`：六条规则 —— 视图层与数据层写死中文（R1/R5a）、**看着像文案**的英文字面量落进视图层文案槽位（R4'，按「含空格 / 首字母大写 / 命中词典」的形状判定，不再只认词典已有的英文）、数据层展示串落在 `return`/Toast 出口/**赋值右侧**/**构造器实参** 四个位置（R5b，构造器靠全仓 class→参数表索引认 `*Key` 豁免）、字面量 key 双词典命中（R2，两层同检）、`*Key` 载体收到的字面量也必须双词典命中（R6，I18N-LITERAL-104 补上豁免自己开的洞）、EN/ZH 键集合全等（R3）（I18N-LITERAL-101/102/103/104）；
-8. `check.sh`：全仓 linter 与 ArkTS 静态类型检查；
-9. `test_all_modules.py`：全量 19 模块单元测试执行与基线断言（≥790 项；**实际条数已高于该基线，但精确值待全量复跑后回写本表**）；
-10. `build.sh debug`：构建 Debug HAP 产物；
-11. `build.sh release`：构建 Release HAP 产物，断言构建后工作区 100% 洁净无污染。
+7. `check_i18n_literals.py`：十条规则 —— 视图层与数据层写死中文（R1/R5a）、**看着像文案**的英文字面量落进视图层文案槽位（R4'，按「含空格 / 首字母大写 / 命中词典」的形状判定，不再只认词典已有的英文；I18N-RETSPAN-101 起还覆盖**页面类方法里的 `return` 操作数**）、数据层展示串落在 `return`/Toast 出口/**赋值右侧**/**构造器实参** 四个位置（R5b，构造器靠全仓 class→参数表索引认 `*Key` 豁免）、字面量 key 双词典命中（R2，两层同检）、`*Key` 载体收到的字面量也必须双词典命中（R6，I18N-LITERAL-104 补上豁免自己开的洞）、EN/ZH 键集合全等（R3）、日期形态单文件（R8）、TDLib 语言档（R9）、**同一本词典内不许重名**（R10，I18N-DUPKEY-101 —— R3 的集合口径天然去重，结构上看不见重复）、视图层方法 return（R4' 扩展）（I18N-LITERAL-101~104）；
+8. `check_appstorage_pairs.py`：`AppStorage` 键读写配对（APPSTORAGE-PAIR-101）；
+9. `check_path_portability.py`：**守卫脚本自身的路径口径自检**（PATH-PORTABLE-101）—— 归一化 / `Path.parts` 比较 / `subprocess` 编码三类；它守的是前 8 步的元数据层，那一层坏掉时前面几个会静默失真（带 `--self-test`，8 项负向对照）；
+10. `check.sh`：全仓 linter 与 ArkTS 静态类型检查；
+11. `test_all_modules.py`：全量 19 模块单元测试执行与基线断言（≥790 项；**实际条数已高于该基线，但精确值待全量复跑后回写本表**）；
+12. `build.sh debug`：构建 Debug HAP 产物；
+13. `build.sh release`：构建 Release HAP 产物，断言构建后工作区 100% 洁净无污染。
 
 ---
 

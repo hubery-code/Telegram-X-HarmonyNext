@@ -45,18 +45,22 @@ run_step() {
   fi
 }
 
-run_step "1/12 toolchain gate (GOV-002)"       "${ROOT}/tools/ci/setup-check.sh"
-run_step "2/12 secret scan (GOV-007)"          "${ROOT}/tools/ci/secret-scan.sh"
-run_step "3/12 design tokens (INTEG-002)"      python3 "${ROOT}/tools/ci/check_design_tokens.py"
-run_step "4/12 architecture guard (QA-002)"    python3 "${ROOT}/tools/ci/check_architecture.py"
-run_step "5/12 codegen verify (QA-002)"        python3 "${ROOT}/tools/ci/check_codegen.py"
-run_step "6/12 a11y label guard (A11Y-101)"    python3 "${ROOT}/tools/ci/check_accessibility_labels.py"
-run_step "7/12 i18n literal guard (I18N-101/102/103/104, I18N-DATE-101/102, GUARDSPAN-101)" python3 "${ROOT}/tools/ci/check_i18n_literals.py"
-run_step "8/12 appstorage pair guard (APPSTORAGE-PAIR-101)" python3 "${ROOT}/tools/ci/check_appstorage_pairs.py"
-run_step "9/12 lint + typecheck (GOV-006)"     "${ROOT}/tools/ci/check.sh"
-run_step "10/12 unit test all modules (QA-002)" python3 "${ROOT}/tools/ci/test_all_modules.py"
-run_step "11/12 build debug (GOV-001)"         "${ROOT}/tools/ci/build.sh" debug
-run_step "12/12 build release (GOV-001)"       "${ROOT}/tools/ci/build.sh" release
+run_step "1/13 toolchain gate (GOV-002)"       "${ROOT}/tools/ci/setup-check.sh"
+run_step "2/13 secret scan (GOV-007)"          "${ROOT}/tools/ci/secret-scan.sh"
+run_step "3/13 design tokens (INTEG-002)"      python3 "${ROOT}/tools/ci/check_design_tokens.py"
+run_step "4/13 architecture guard (QA-002)"    python3 "${ROOT}/tools/ci/check_architecture.py"
+run_step "5/13 codegen verify (QA-002)"        python3 "${ROOT}/tools/ci/check_codegen.py"
+run_step "6/13 a11y label guard (A11Y-101)"    python3 "${ROOT}/tools/ci/check_accessibility_labels.py"
+run_step "7/13 i18n literal guard (I18N-101/102/103/104, I18N-DATE-101/102, GUARDSPAN-101, DUPKEY-101, RETSPAN-101)" python3 "${ROOT}/tools/ci/check_i18n_literals.py"
+run_step "8/13 appstorage pair guard (APPSTORAGE-PAIR-101)" python3 "${ROOT}/tools/ci/check_appstorage_pairs.py"
+# PATH-PORTABLE-101：守卫脚本**自身**的路径口径自检（归一化 / parts 比较 / 子进程编码）。
+# 它守的不是产品代码，而是前面那几个守卫的元数据层 —— 那一层坏掉时前面几个会静默失真，
+# 而「静默失真」在输出里与「代码干净」长得一模一样。
+run_step "9/13 path portability guard (PATH-PORTABLE-101)" python3 "${ROOT}/tools/ci/check_path_portability.py"
+run_step "10/13 lint + typecheck (GOV-006)"     "${ROOT}/tools/ci/check.sh"
+run_step "11/13 unit test all modules (QA-002)" python3 "${ROOT}/tools/ci/test_all_modules.py"
+run_step "12/13 build debug (GOV-001)"         "${ROOT}/tools/ci/build.sh" debug
+run_step "13/13 build release (GOV-001)"       "${ROOT}/tools/ci/build.sh" release
 
 echo ""
 echo "[ci] ALL STEPS PASSED"

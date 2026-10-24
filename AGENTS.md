@@ -49,8 +49,9 @@
    UI 组件不要直接依赖私有字段的变化驱动渲染，状态变更必须经规范的 `@State`、`@Prop` 或 Reducer 状态流。
 3. **分层架构红线**：
    `feature/*` 之间严禁直接相互依赖；业务功能与系统能力之间严禁直接穿透，必须经 `platform/*` 隔离；所有改动必须通过 `check_architecture.py` 检验。
-4. **跨平台路径红线（Windows 上踩过，2026-10-20）**：
-   仓库的主开发环境是 macOS，但构建与守卫**必须在 Windows 上同样成立**。任何按路径比对/豁免的脚本（守卫、代码生成器、`hvigorfile.ts`）**不许把 `/` 写死在与 `relative_to()` 结果比较的地方** —— 统一走归一化（如 `check_i18n_literals.py` 的 `repo_rel()`）。同一条红线适用于 `hvigorfile.ts` 里解析外部可执行文件：不许写死 `python3`（Windows 上不存在，只有 Microsoft Store 的零字节占位桩），要走「环境变量 → PATH → 常见安装目录绝对路径」三层解析，且**必须包含 DevEco 自带的 `plugins/app-analyzer/lib/python/python.exe`**（本机没有任何独立 Python 安装）。
+4. **跨平台路径红线（Windows 上踩过，2026-10-20 / 10-24）**：
+   仓库的主开发环境是 macOS，但构建与守卫**必须在 Windows 上同样成立**。任何按路径比对/豁免的脚本（守卫、代码生成器、`hvigorfile.ts`）**不许把 `/` 写死在与 `relative_to()` 结果比较的地方** —— 统一走归一化（`repo_rel()`，四个守卫已全部接入）。同一条红线适用于 `hvigorfile.ts` 里解析外部可执行文件：不许写死 `python3`（Windows 上不存在，只有 Microsoft Store 的零字节占位桩），要走「环境变量 → PATH → 常见安装目录绝对路径」三层解析，且**必须包含 DevEco 自带的 `plugins/app-analyzer/lib/python/python.exe`**（本机没有任何独立 Python 安装）。
+   **这条红线现在有机械守卫**：`tools/ci/check_path_portability.py`（PATH-PORTABLE-101，CI 第 9 步）会扫 `tools/ci/*.py` 自身，拦三类口径问题 —— ① `relative_to(ROOT)` 未归一；② 拿**带斜杠的常量**去和 `Path.parts` 比较（`parts` 里是裸目录名 `'oh_modules'`，与 `'/oh_modules/'` 永不相等，过滤等于没有）；③ `subprocess.run(text=True)` 未给 `encoding`（中文 Windows 的 locale 是 GBK，解 UTF-8 输出会抛 `UnicodeDecodeError`，症状是「明明成功却报崩」）。**新增/修改任何 CI 脚本后都要跑它** —— 它带 `--self-test` 自证（8 项负向对照），每次执行前先自证。
 5. **hvigor 守护进程不继承 shell 的 PATH 改动**：
    `hvigor` 的 daemon 一旦起来就沿用启动时的环境，shell 里事后 `export PATH=…` 对它完全无效（实测 daemon 内 PATH 只剩 DevEco `jbr/bin` + 系统目录）。改完 PATH 后要 `hvigorw --stop-daemon`，或直接用绝对路径，否则会出现「shell 里明明能跑、构建却找不到」的假象。
 6. **native 产物不入库，且 `third_party/openssl` 里有一批历史误提交的 `.o`**：
