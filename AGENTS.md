@@ -59,6 +59,11 @@
    - **绝不要**在 `third_party/openssl` 里 `git clean -fdx`：那会删掉未被跟踪但被需要的 `doc/man/`；恢复手段是 `git checkout -- <该目录>`。
 7. **模拟器是 x86_64，真机是 arm64-v8a**：
    两者 ABI 不同，`hdc install` 报 `code:9568347 install parse native so failed` 时**先查 ABI 而不是怀疑签名**（`hdc shell param get const.product.cpu.abilist`）。`entry/build-profile.json5` 的 `abiFilters` 两个都要列；`native/tdcore/cmake/ohos-toolchain.cmake` 的 `OHOS_ARCH` **不许用 `FORCE`**（会静默覆盖命令行传入的 ABI）。完整流程与八个坑见 `docs/runbooks/tdlib-native-build-windows.md`。
+8. **TDLib 的 RPC `_ok` 不等于消息投递成功（2026-10-24 踩过）**：
+   `send_poll_ok` / `send_message_ok` / `send_*` 这类日志只表示 **TDLib 受理了 RPC 请求**，服务端随后会**异步**判定并回灌 `messageSendingStateFailed`。所以「日志里 ok」与「气泡上红标」**并不矛盾**，不要一看到红标就去怀疑 `sendState` 的渲染链路。
+   定性方法：看 `MessageSendingStateFailed` 的四个判别字段（`error` / `can_retry` / `need_another_sender` / `retry_after`）—— `MessageItem` 组装处已对出站 failed 消息记 `outgoing_msg_failed cause=…`。真实观测到过 `400:USER_BANNED_IN_CHANNEL`（账号在某群被限制发言），此时红标是**正确行为**。
+   推论：**「某功能在群里测失败」先确认该账号在该群有没有发言权**，再查代码；私聊能发不等于群能发（反之亦然）。
+
 
 ---
 
