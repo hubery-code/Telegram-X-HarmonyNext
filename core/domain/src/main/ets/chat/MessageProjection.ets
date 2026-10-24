@@ -35,6 +35,8 @@
  */
 
 import {
+  GetForumTopics,
+  encodeGetForumTopics,
   decodeTdUpdate,
   decodeMessage,
   decodeChat,
@@ -440,6 +442,34 @@ export class MessageProjection {
     reactionType.emoji = emoji;
     req.reaction_type = reactionType;
     return this.scope.request('removeMessageReaction', encodeRemoveMessageReaction(req) as TdWireObject);
+  }
+
+  /**
+   * FORUM-101：取一页论坛话题（GetForumTopics）。
+   *
+   * 三个 offset 必须一起传 —— TDLib 的话题分页是
+   * （offset_date, offset_message_id, offset_forum_topic_id）三元组，
+   * 只推进其中一个会从错误位置开始（实测少传 offset_forum_topic_id 时
+   * 会在两个话题之间来回跳）。
+   *
+   * query 非空时是服务端过滤，本端不做本地筛选 —— 话题可能上千条，
+   * 本地筛选只能筛到已加载的那一页，语义上会骗人。
+   */
+  fetchForumTopics(
+    offsetDate: number,
+    offsetMessageId: number,
+    offsetForumTopicId: number,
+    query: string,
+    limit: number
+  ): Result<TdPendingRequest, AppError> {
+    const req: GetForumTopics = new GetForumTopics();
+    req.chat_id = this.chatId;
+    req.query = query;
+    req.offset_date = offsetDate;
+    req.offset_message_id = offsetMessageId;
+    req.offset_forum_topic_id = offsetForumTopicId;
+    req.limit = limit;
+    return this.scope.request('getForumTopics', encodeGetForumTopics(req) as TdWireObject);
   }
 
   /**

@@ -205,8 +205,12 @@ import {
   MessagePoll,
   MessageContact,
   MessageLocation,
-  MessageVenue
-} from '@tgx/core-td-api-generated';
+  MessageVenue,
+  ForumTopics,
+  decodeForumTopics,
+  ForumTopic,
+  ForumTopicInfo,
+  ForumTopicIcon} from '@tgx/core-td-api-generated';
 import {
   FileRegistry,
   formatFullName,
@@ -313,8 +317,10 @@ import {
   VoicePlaybackCompleted,
   VoicePlaybackFailed,
   VoicePlaybackPaused,
-  VoicePlaybackResumed
-} from '../contract/ChatIntent';
+  VoicePlaybackResumed,
+  OnForumTopicsLoaded,
+  OnMoreForumTopicsLoaded,
+  OnForumTopicsFailed} from '../contract/ChatIntent';
 import {
   ChatEffect,
   SendTextMessage,
@@ -360,9 +366,10 @@ import {
   PlayVoiceNoteEffect,
   PauseVoiceNoteEffect,
   SendPollEffect,
-  SetPollAnswerEffect
-} from '../contract/ChatEffect';
+  SetPollAnswerEffect,
+  FetchForumTopicsEffect} from '../contract/ChatEffect';
 import { GifItem } from '../model/GifItem';
+import { ForumTopicItem } from '../model/ForumTopic';
 import { StickerSetPreviewState, StickerSetItem, isUnicodeEmojiSticker } from '../model/StickerSetPreviewState';
 import { stickerSetChangeTargetId, stickerSetFetchFailureLogKey } from '../model/StickerSetFetch';
 import {
@@ -4152,6 +4159,12 @@ export class ChatCoordinator {
         break;
       }
 
+      case 'fetchForumTopics': {
+        const fetchFt: FetchForumTopicsEffect = effect as FetchForumTopicsEffect;
+        this.handleFetchForumTopics(fetchFt);
+        break;
+      }
+
       case 'fetchSavedAnimations': {
         this.handleFetchSavedAnimations();
         break;
@@ -5081,6 +5094,166 @@ export class ChatCoordinator {
   /**
    * GIF-SAVED-101：拉「保存的动图列表」（`getSavedAnimations`）。
    */
+  /**
+   * FORUM-101：拉一页话题（getForumTopics）。
+   *
+   * 两个细节值得写下来：
+   * ① 回灌时用 effect 自带的 offset 而不是 state 里的 cursor ——
+   *    请求在飞的时候用户可能又改了搜索词，用 state 会把旧页的结果
+   *    错当成新结果集的下一页；
+   * ② `next_offset_*` 全 0 且条数正好等于 limit 时，TDLib 无从上区分
+   *    「刚好最后一页」与「还有但没算出来」，所以「是否还有更多」的判定
+   *    统一收在 reducer 的 `nextForumCursor` 里（纯函数、可单测），
+   *    这里只负责把服务端原样的三元组回灌，不做二次推断。
+   */
+  private handleFetchForumTopics(effect: FetchForumTopicsEffect): void {
+    const result: Result<TdPendingRequest, AppError> = this.projection.fetchForumTopics(
+      effect.offsetDate,
+      effect.offsetMessageId,
+      effect.offsetForumTopicId,
+      effect.query,
+      effect.limit
+    );
+    if (result.err) {
+      this.logRequestError('getForumTopics', result.error);
+      this.dispatch(new OnForumTopicsFailed(result.error.message));
+      return;
+    }
+    if (result.ok) {
+      const pending: TdPendingRequest = result.value;
+      const isFirstPage: boolean = effect.offsetDate === 0
+        && effect.offsetMessageId === 0
+        && effect.offsetForumTopicId === 0;
+      pending.promise.then((res: Result<TdWireObject, AppError>) => {
+        if (this.destroyed) {
+          return;
+        }
+        if (res.err) {
+          this.logRequestError('getForumTopics', res.error, pending);
+          this.dispatch(new OnForumTopicsFailed(res.error.message));
+          return;
+        }
+        if (res.ok) {
+          const topics: ForumTopics | null = decodeForumTopics(res.value as TdJsonRaw);
+          if (topics === null) {
+            this.dispatch(new OnForumTopicsFailed('Failed decode'));
+            return;
+          }
+          this.logger.info(
+            TAG,
+            'forum_topics_loaded',
+            `count=${topics.topics.length},total=${topics.total_count},first=${isFirstPage}`
+          );
+          const items: ForumTopicItem[] = this.mapForumTopics(topics.topics);
+          if (isFirstPage) {
+            this.dispatch(new OnForumTopicsLoaded(
+              items,
+              topics.total_count,
+              topics.next_offset_date,
+              topics.next_offset_message_id,
+              topics.next_offset_forum_topic_id
+            ));
+          } else {
+            this.dispatch(new OnMoreForumTopicsLoaded(
+              items,
+              topics.next_offset_date,
+              topics.next_offset_message_id,
+              topics.next_offset_forum_topic_id
+            ));
+          }
+        }
+      }).catch(() => {
+      });
+    }
+  }
+
+  /**
+   * TDLib `forumTopic` → 视图模型。
+   *
+   * 预览文本刻意只取一层：`last_message.content` 的结构化内容
+   * （相册/投票/文件……）在这里一律折算成一句占位，
+   * 因为话题行只有一行高度，展开渲染既放不下也没意义；
+   * 真正的富内容在话题内部的消息流里。
+   */
+  private mapForumTopics(topics: ForumTopic[]): ForumTopicItem[] {
+    const out: ForumTopicItem[] = [];
+    for (let i = 0; i < topics.length; i++) {
+      const t: ForumTopic = topics[i];
+      const info: ForumTopicInfo | null = t.info;
+      if (info === null) {
+        continue;
+      }
+      const icon: ForumTopicIcon | null = info.icon;
+      const last: Message | null = t.last_message;
+      out.push({
+        topicId: info.forum_topic_id,
+        name: info.name,
+        iconEmojiId: icon !== null && icon.custom_emoji_id.length > 0
+          ? icon.custom_emoji_id
+          : '',
+        iconColor: icon !== null ? icon.color : 0,
+        unreadCount: t.unread_count,
+        unreadMentionCount: t.unread_mention_count,
+        isPinned: t.is_pinned,
+        isClosed: info.is_closed,
+        isGeneral: info.is_general,
+        preview: last !== null ? this.forumTopicPreviewKey(last) : '',
+        lastMessageDate: last !== null ? last.date : info.creation_date
+      });
+    }
+    return out;
+  }
+
+  /**
+   * 话题行的一行预览，返回**词条 key**（名字以 `Key` 结尾 = 契约，不是风格）。
+   *
+   * 为什么不在这里 `t()` 成已解析文本：这个值要进 `ForumTopicItem.preview`
+   * 存进 UiState，而 UiState 是纯数据 —— 一旦存了已解析文本，用户在设置里
+   * 切换语言后，列表里旧条目会保留旧语言的文案，直到重新拉一次。
+   * 存 key、渲染时 `t()` 才能随语言热切换。
+   * 与 `ChatListPage.getEmptyTitleKey` 是同一约定。
+   */
+  private forumTopicPreviewKey(message: Message): string {
+    const content: TdMessageContent | null = message.content;
+    if (content === null) {
+      return '';
+    }
+    const type: string = content.type;
+    switch (type) {
+      case 'messageText': {
+        const mt: MessageText = content as MessageText;
+        // `MessageText.text` 是 `FormattedText | null`（TDLib 允许空文本），
+        // 直接 `.text` 会被 ArkTS 判为「可能为 null」。
+        const ftText: FormattedText | null = mt.text;
+        return ftText !== null ? ftText.text : '';
+      }
+      case 'messagePhoto':
+        return 'Photo';
+      case 'messageVideo':
+        return 'Video';
+      case 'messageAnimation':
+        return 'GIF';
+      case 'messageDocument':
+        return 'File';
+      case 'messageAudio':
+        return 'Audio';
+      case 'messageVoiceNote':
+        return 'Voice message';
+      case 'messageVideoNote':
+        return 'Video message';
+      case 'messageSticker':
+        return 'Sticker';
+      case 'messagePoll':
+        return 'Poll';
+      case 'messageLocation':
+        return 'Location';
+      case 'messageContact':
+        return 'Contact';
+      default:
+        return 'Message';
+    }
+  }
+
   private handleFetchSavedAnimations(): void {
     const req: GetSavedAnimations = new GetSavedAnimations();
     const result: Result<TdPendingRequest, AppError> =

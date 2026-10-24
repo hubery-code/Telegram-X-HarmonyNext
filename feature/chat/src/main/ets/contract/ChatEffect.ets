@@ -572,7 +572,8 @@ export type ChatEffect =
   | PlayVoiceNoteEffect
   | PauseVoiceNoteEffect
   | SendPollEffect
-  | SetPollAnswerEffect;
+  | SetPollAnswerEffect
+  | FetchForumTopicsEffect;
 
 
 /** POLL-101：发送投票消息（messagePoll）。 */
@@ -604,5 +605,35 @@ export class SetPollAnswerEffect implements Effect {
     this.chatId = chatId;
     this.messageId = messageId;
     this.optionIds = optionIds;
+  }
+}
+
+/**
+ * FORUM-101：拉取话题列表的一页（`getForumTopics`）。
+ *
+ * 为什么是整个游标而非单一 offset：TDLib 的分页是三元组
+ * （`offset_date` + `offset_message_id` + `offset_forum_topic_id`），
+ * 少传一个就会从错误位置开始。首屏三个都是 0。
+ */
+export class FetchForumTopicsEffect implements Effect {
+  readonly kind: 'fetchForumTopics' = 'fetchForumTopics';
+  readonly offsetDate: number;
+  readonly offsetMessageId: number;
+  readonly offsetForumTopicId: number;
+  readonly query: string;
+  readonly limit: number;
+
+  constructor(
+    offsetDate: number,
+    offsetMessageId: number,
+    offsetForumTopicId: number,
+    query: string,
+    limit: number
+  ) {
+    this.offsetDate = offsetDate;
+    this.offsetMessageId = offsetMessageId;
+    this.offsetForumTopicId = offsetForumTopicId;
+    this.query = query;
+    this.limit = limit;
   }
 }

@@ -31,6 +31,7 @@ import chatOverlayBackTest from './ChatOverlayBack.test';
 import voicePlaybackSyncTest from './VoicePlaybackSync.test';
 import contactMessageTest from './ContactMessage.test';
 import locationMessageTest from './LocationMessage.test';
+import forumTopicTest from './ForumTopic.test';
 
 export default function testsuite(): void {
   chatReducerTest();
@@ -66,5 +67,6 @@ export default function testsuite(): void {
   voicePlaybackSyncTest();
   contactMessageTest();
   locationMessageTest();
+  forumTopicTest();
 }
 

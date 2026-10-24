@@ -32,6 +32,7 @@ import { PinnedMessageInfo } from '../model/PinnedMessageInfo';
 import { AppError } from '@tgx/core-common';
 import { MessageItem } from '../model/MessageItem';
 import { ChatSearchResultItem } from '../model/ChatSearchResultItem';
+import { ForumTopicItem } from '../model/ForumTopic';
 import { ChatKind } from '../model/SenderInfo';
 import { StickerSetPreviewState, StickerSetItem } from '../model/StickerSetPreviewState';
 import { GifItem } from '../model/GifItem';
@@ -807,7 +808,16 @@ export type ChatIntent =
   | TogglePollComposerMultiple
   | SubmitPollComposer
   | VotePollOption
-  | RetractPollVote;
+  | RetractPollVote
+  | OpenForumTopics
+  | CloseForumTopics
+  | LoadMoreForumTopics
+  | RetryForumTopics
+  | SearchForumTopics
+  | OpenForumTopic
+  | OnForumTopicsLoaded
+  | OnMoreForumTopicsLoaded
+  | OnForumTopicsFailed;
 
 /** STICKER-PREVIEW-101：打开贴纸包预览弹窗。 */
 export class OpenStickerSet implements Intent {
@@ -1339,5 +1349,108 @@ export class OpenAppLink implements Intent {
 
   constructor(url: string) {
     this.url = url;
+  }
+}
+
+/**
+ * FORUM-101：打开话题列表（forum 超级群的头条入口）。
+ *
+ * 只改状态（`showForumTopics = true`）并触发首屏拉取；
+ * 是否为 forum 由 `ChatUiState.isForum` 决定，入口本身在页面侧按它显隐，
+ * 所以这里不再重复校验 —— reducer 保持「意图到了就执行」的单一职责。
+ */
+export class OpenForumTopics implements Intent {
+  readonly kind: 'openForumTopics' = 'openForumTopics';
+}
+
+/** FORUM-101：关闭话题列表。 */
+export class CloseForumTopics implements Intent {
+  readonly kind: 'closeForumTopics' = 'closeForumTopics';
+}
+
+/** FORUM-101：滚到底部时拉下一页（reducer 在 `hasMore` 为假或正在加载时直接吞掉）。 */
+export class LoadMoreForumTopics implements Intent {
+  readonly kind: 'loadMoreForumTopics' = 'loadMoreForumTopics';
+}
+
+/** FORUM-101：重试上一页（失败后点「重试」）。 */
+export class RetryForumTopics implements Intent {
+  readonly kind: 'retryForumTopics' = 'retryForumTopics';
+}
+
+/** FORUM-101：搜索话题名（TDLib 侧过滤，防抖在页面侧做）。 */
+export class SearchForumTopics implements Intent {
+  readonly kind: 'searchForumTopics' = 'searchForumTopics';
+  readonly query: string;
+
+  constructor(query: string) {
+    this.query = query;
+  }
+}
+
+/** FORUM-101：点开某个话题（导航到该话题的消息流；本包只做列表，跳转交给装配层）。 */
+export class OpenForumTopic implements Intent {
+  readonly kind: 'openForumTopic' = 'openForumTopic';
+  readonly topicId: number;
+  readonly name: string;
+
+  constructor(topicId: number, name: string) {
+    this.topicId = topicId;
+    this.name = name;
+  }
+}
+
+/** FORUM-101：回灌第一页（成功）。 */
+export class OnForumTopicsLoaded implements Intent {
+  readonly kind: 'onForumTopicsLoaded' = 'onForumTopicsLoaded';
+  readonly items: ForumTopicItem[];
+  readonly totalCount: number;
+  readonly offsetDate: number;
+  readonly offsetMessageId: number;
+  readonly offsetForumTopicId: number;
+
+  constructor(
+    items: ForumTopicItem[],
+    totalCount: number,
+    offsetDate: number,
+    offsetMessageId: number,
+    offsetForumTopicId: number
+  ) {
+    this.items = items;
+    this.totalCount = totalCount;
+    this.offsetDate = offsetDate;
+    this.offsetMessageId = offsetMessageId;
+    this.offsetForumTopicId = offsetForumTopicId;
+  }
+}
+
+/** FORUM-101：回灌下一页（追加，不替换）。 */
+export class OnMoreForumTopicsLoaded implements Intent {
+  readonly kind: 'onMoreForumTopicsLoaded' = 'onMoreForumTopicsLoaded';
+  readonly items: ForumTopicItem[];
+  readonly offsetDate: number;
+  readonly offsetMessageId: number;
+  readonly offsetForumTopicId: number;
+
+  constructor(
+    items: ForumTopicItem[],
+    offsetDate: number,
+    offsetMessageId: number,
+    offsetForumTopicId: number
+  ) {
+    this.items = items;
+    this.offsetDate = offsetDate;
+    this.offsetMessageId = offsetMessageId;
+    this.offsetForumTopicId = offsetForumTopicId;
+  }
+}
+
+/** FORUM-101：拉取失败（保留已有条目，只置错误态）。 */
+export class OnForumTopicsFailed implements Intent {
+  readonly kind: 'onForumTopicsFailed' = 'onForumTopicsFailed';
+  readonly message: string;
+
+  constructor(message: string) {
+    this.message = message;
   }
 }

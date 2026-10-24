@@ -150,7 +150,16 @@ import {
   TogglePollComposerMultiple,
   SubmitPollComposer,
   VotePollOption,
-  RetractPollVote
+  RetractPollVote,
+  OpenForumTopics,
+  CloseForumTopics,
+  LoadMoreForumTopics,
+  RetryForumTopics,
+  SearchForumTopics,
+  OpenForumTopic,
+  OnForumTopicsLoaded,
+  OnMoreForumTopicsLoaded,
+  OnForumTopicsFailed
 } from '../contract/ChatIntent';
 import {
   ChatEffect,
@@ -199,12 +208,21 @@ import {
   PlayVoiceNoteEffect,
   PauseVoiceNoteEffect,
   SendPollEffect,
-  SetPollAnswerEffect
+  SetPollAnswerEffect,
+  FetchForumTopicsEffect
 } from '../contract/ChatEffect';
 import { StickerSetPreviewState, StickerSetItem } from '../model/StickerSetPreviewState';
 import { StickerBoardState, stickerSetInstalledLocally, stickerTrendingWithInstalled } from '../model/StickerBoard';
 import { GifItem } from '../model/GifItem';
+
 import {
+  ForumTopicsState,
+  ForumTopicItem,
+  EMPTY_FORUM_CURSOR,
+  nextForumCursor,
+  mergeForumTopics,
+  ForumCursorStep
+} from '../model/ForumTopic';import {
   PollComposerState,
   PollOptionView,
   PollView,
@@ -331,6 +349,15 @@ export function removeLastEmojiChar(text: string): string {
   }
   return '';
 }
+
+/**
+ * FORUM-101：话题列表每页条数。
+ *
+ * 取 20 而不是 TDLib 允许的 100：话题行比会话行高（带图标与未读徽标），
+ * 一屏只能放 8~10 行，100 条会让首屏 JSON 解析明显变慢；
+ * 20 条刚好够两屏、也让「滚到底」有可见的翻页反馈。
+ */
+const FORUM_TOPICS_PAGE_SIZE: number = 20;
 
 export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
   state: ChatUiState,
@@ -2182,6 +2209,178 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
         state.copyWith({ messages: newMessages }),
         [new SetPollAnswerEffect(state.chatId, retractIntent.messageId, [])]
       );
+    }
+
+    // ================= FORUM-101：论坛话题列表 =================
+    //
+    // 这一组只做三件事：开/关覆盖层、把分页游标推进、把回包合并进列表。
+    // 刻意不在这里做「是否 forum」的判断 —— 那个位来自 TDLib 的
+    // `supergroup.is_forum`，由 coordinator 回灌成 `isForum`，
+    // reducer 只信 state（单一真相）。
+    case 'openForumTopics': {
+      if (!state.isForum) {
+        return reduced(state);
+      }
+      const ft: ForumTopicsState = state.forumTopics !== undefined
+        ? state.forumTopics
+        : ForumTopicsState.initial();
+      // 已经有数据就不再重拉（用户反复开关列表时不该每次都打网络）。
+      const needFetch: boolean = ft.items.length === 0 && !ft.isLoading;
+      const nextFt: ForumTopicsState = ft.copyWith({
+        isLoading: needFetch ? true : ft.isLoading,
+        errorMessage: needFetch ? '' : ft.errorMessage
+      });
+      return reduced(
+        state.copyWith({ showForumTopics: true, forumTopics: nextFt }),
+        needFetch
+          ? [new FetchForumTopicsEffect(
+              ft.cursor.offsetDate,
+              ft.cursor.offsetMessageId,
+              ft.cursor.offsetForumTopicId,
+              ft.query,
+              FORUM_TOPICS_PAGE_SIZE
+            )]
+          : []
+      );
+    }
+
+    case 'closeForumTopics': {
+      if (!state.showForumTopics) {
+        return reduced(state);
+      }
+      return reduced(state.copyWith({ showForumTopics: false }));
+    }
+
+    case 'loadMoreForumTopics': {
+      const ftm: ForumTopicsState = state.forumTopics !== undefined
+        ? state.forumTopics
+        : ForumTopicsState.initial();
+      // 三条闸门：没开列表、没更多、正在加载 —— 任一成立就吞掉，
+      // 避免滚动回调把同一页连发多次。
+      if (!state.showForumTopics || !ftm.hasMore || ftm.isLoading) {
+        return reduced(state);
+      }
+      return reduced(
+        state.copyWith({ forumTopics: ftm.copyWith({ isLoading: true, errorMessage: '' }) }),
+        [new FetchForumTopicsEffect(
+          ftm.cursor.offsetDate,
+          ftm.cursor.offsetMessageId,
+          ftm.cursor.offsetForumTopicId,
+          ftm.query,
+          FORUM_TOPICS_PAGE_SIZE
+        )]
+      );
+    }
+
+    case 'retryForumTopics': {
+      const ftr: ForumTopicsState = state.forumTopics !== undefined
+        ? state.forumTopics
+        : ForumTopicsState.initial();
+      if (ftr.isLoading) {
+        return reduced(state);
+      }
+      return reduced(
+        state.copyWith({ forumTopics: ftr.copyWith({ isLoading: true, errorMessage: '' }) }),
+        [new FetchForumTopicsEffect(
+          ftr.cursor.offsetDate,
+          ftr.cursor.offsetMessageId,
+          ftr.cursor.offsetForumTopicId,
+          ftr.query,
+          FORUM_TOPICS_PAGE_SIZE
+        )]
+      );
+    }
+
+    case 'searchForumTopics': {
+      const fts: SearchForumTopics = intent as SearchForumTopics;
+      const current: ForumTopicsState = state.forumTopics !== undefined
+        ? state.forumTopics
+        : ForumTopicsState.initial();
+      if (current.query === fts.query) {
+        return reduced(state);
+      }
+      // 换关键词等于换结果集：清空游标与旧条目，重新拉第一页。
+      const fresh: ForumTopicsState = new ForumTopicsState(
+        [],
+        EMPTY_FORUM_CURSOR,
+        0,
+        true,
+        true,
+        '',
+        fts.query
+      );
+      if (!state.showForumTopics) {
+        // 面板没开时只记关键词，不发请求。
+        return reduced(state.copyWith({ forumTopics: fresh.copyWith({ isLoading: false }) }));
+      }
+      return reduced(
+        state.copyWith({ forumTopics: fresh }),
+        [new FetchForumTopicsEffect(
+          0, 0, 0, fts.query, FORUM_TOPICS_PAGE_SIZE
+        )]
+      );
+    }
+
+    case 'onForumTopicsLoaded': {
+      const fl: OnForumTopicsLoaded = intent as OnForumTopicsLoaded;
+      const paged: ForumCursorStep = nextForumCursor(
+        fl.items.length,
+        FORUM_TOPICS_PAGE_SIZE,
+        fl.offsetDate,
+        fl.offsetMessageId,
+        fl.offsetForumTopicId
+      );
+      return reduced(state.copyWith({
+        forumTopics: new ForumTopicsState(
+          mergeForumTopics([], fl.items),
+          paged.cursor,
+          fl.totalCount,
+          paged.hasMore,
+          false,
+          ''
+        )
+      }));
+    }
+
+    case 'onMoreForumTopicsLoaded': {
+      const fm: OnMoreForumTopicsLoaded = intent as OnMoreForumTopicsLoaded;
+      const cur: ForumTopicsState = state.forumTopics !== undefined
+        ? state.forumTopics
+        : ForumTopicsState.initial();
+      const pagedMore: ForumCursorStep = nextForumCursor(
+        fm.items.length,
+        FORUM_TOPICS_PAGE_SIZE,
+        fm.offsetDate,
+        fm.offsetMessageId,
+        fm.offsetForumTopicId
+      );
+      return reduced(state.copyWith({
+        forumTopics: cur.copyWith({
+          items: mergeForumTopics(cur.items, fm.items),
+          cursor: pagedMore.cursor,
+          hasMore: pagedMore.hasMore,
+          isLoading: false,
+          errorMessage: ''
+        })
+      }));
+    }
+
+    case 'onForumTopicsFailed': {
+      const ff: OnForumTopicsFailed = intent as OnForumTopicsFailed;
+      const curFail: ForumTopicsState = state.forumTopics !== undefined
+        ? state.forumTopics
+        : ForumTopicsState.initial();
+      // 失败只置错误位、**保留已有条目** —— 翻页失败不该把第一页也清掉。
+      return reduced(state.copyWith({
+        forumTopics: curFail.copyWith({ isLoading: false, errorMessage: ff.message })
+      }));
+    }
+
+    case 'openForumTopic': {
+      // 本包只做列表；「打开某话题的消息流」是导航，交给装配层
+      // （coordinator 把这个意图转成回调，reducer 只负责关掉列表覆盖层）。
+      const ftOpen: OpenForumTopic = intent as OpenForumTopic;
+      return reduced(state.copyWith({ showForumTopics: false, jumpToMessageId: 0 }));
     }
   }
 

@@ -34,6 +34,7 @@ import { PinnedMessageInfo } from '../model/PinnedMessageInfo';
 import { StickerSetPreviewState, StickerSetItem } from '../model/StickerSetPreviewState';
 import { StickerBoardState } from '../model/StickerBoard';
 import { GifItem, EMPTY_GIFS } from '../model/GifItem';
+import { ForumTopicsState } from '../model/ForumTopic';
 import { PollComposerState } from '../model/PollView';
 
 /** 输入栏模式：回复某条消息。 */
@@ -228,6 +229,12 @@ export interface ChatUiStateOptions {
   readonly isMuted?: boolean;
   /** GIF-SAVED-101：是否已请求过 TDLib 保存动图列表（getSavedAnimations）。 */
   readonly savedAnimationsRequested?: boolean;
+  /** FORUM-101：本会话是否是 forum 超级群（决定头条是否显示「话题」入口）。 */
+  readonly isForum?: boolean;
+  /** FORUM-101：话题列表子状态；只在 forum 群里有意义。 */
+  readonly forumTopics?: ForumTopicsState;
+  /** FORUM-101：话题列表覆盖层是否显示。 */
+  readonly showForumTopics?: boolean;
 }
 
 export const DEFAULT_RECENT_EMOJIS: readonly string[] = [
@@ -327,6 +334,12 @@ export class ChatUiState implements UiState {
   readonly favoriteStickerIds: readonly number[];
   /** GIF-SAVED-101：是否已请求过 TDLib 保存动图列表（getSavedAnimations）。 */
   readonly savedAnimationsRequested: boolean;
+  /** FORUM-101：本会话是否是 forum 超级群（`supergroup.is_forum`）。 */
+  readonly isForum: boolean;
+  /** FORUM-101：话题列表子状态。 */
+  readonly forumTopics: ForumTopicsState;
+  /** FORUM-101：话题列表覆盖层是否显示。 */
+  readonly showForumTopics: boolean;
 
   constructor(
     chatId: number,
@@ -376,7 +389,12 @@ export class ChatUiState implements UiState {
     isMuted: boolean = false,
     favoriteStickers: readonly StickerSetItem[] = [],
     favoriteStickerIds: readonly number[] = [],
-    savedAnimationsRequested: boolean = false
+    savedAnimationsRequested: boolean = false,
+    // FORUM-101：三个都可选，加在末尾是为了不动前面 50 个位置参数
+    // （`initial()` 与 `copyWith()` 都按位置传，中间插一个就会整体错位）。
+    isForum: boolean = false,
+    forumTopics: ForumTopicsState = ForumTopicsState.initial(),
+    showForumTopics: boolean = false
   ) {
     this.chatId = chatId;
     this.chatTitle = chatTitle;
@@ -424,6 +442,9 @@ export class ChatUiState implements UiState {
     this.favoriteStickers = favoriteStickers;
     this.favoriteStickerIds = favoriteStickerIds;
     this.savedAnimationsRequested = savedAnimationsRequested;
+    this.isForum = isForum;
+    this.forumTopics = forumTopics;
+    this.showForumTopics = showForumTopics;
   }
 
   static initial(): ChatUiState {
@@ -477,7 +498,10 @@ export class ChatUiState implements UiState {
       options.isMuted !== undefined ? options.isMuted : this.isMuted,
       options.favoriteStickers !== undefined ? options.favoriteStickers : this.favoriteStickers,
       options.favoriteStickerIds !== undefined ? options.favoriteStickerIds : this.favoriteStickerIds,
-      options.savedAnimationsRequested !== undefined ? options.savedAnimationsRequested : this.savedAnimationsRequested
+      options.savedAnimationsRequested !== undefined ? options.savedAnimationsRequested : this.savedAnimationsRequested,
+      options.isForum !== undefined ? options.isForum : this.isForum,
+      options.forumTopics !== undefined ? options.forumTopics : this.forumTopics,
+      options.showForumTopics !== undefined ? options.showForumTopics : this.showForumTopics
     );
   }
 
