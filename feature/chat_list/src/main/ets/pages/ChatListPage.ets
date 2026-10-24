@@ -919,13 +919,13 @@ export struct ChatListPage {
         .opacity(0.5)
         .margin({ bottom: this.T.spacing.md })
 
-      Text(this.getEmptyTitle())
+      Text(this.t(this.getEmptyTitleKey()))
         .fontSize(this.T.typography.title.fontSize)
         .fontWeight(this.T.typography.title.fontWeight)
         .fontColor(this.T.colors.textPrimary)
         .margin({ bottom: this.T.spacing.xs })
 
-      Text(this.getEmptySubtitle())
+      Text(this.t(this.getEmptySubtitleKey()))
         .fontSize(this.T.typography.body.fontSize)
         .fontColor(this.T.colors.textSecondary)
         .textAlign(TextAlign.Center)
@@ -957,7 +957,16 @@ export struct ChatListPage {
     }
   }
 
-  private getEmptyTitle(): string {
+  /**
+   * 空态标题/副标题的**词条 key**（I18N-RETSPAN-101）。
+   *
+   * 这两个方法原先返回**已解析的英文串**（`return 'No chats yet'`），而十二个串
+   * 一个都没进 `Lang` 词典 —— 于是中文界面上空态永远是英文，四条规则也一起静默：
+   * R4' 当时不判 `return` 位置，`pages/` 下的页面类私有方法两头够不着。
+   * 现在按本仓「传 key 不传串」的约定收口：方法名以 `Key` 结尾、返回 key，
+   * 由调用点 `this.t(...)` 现取 —— 换语言时随渲染重算，不需要额外订阅。
+   */
+  private getEmptyTitleKey(): string {
     if (this.uiState.listKind === 'archive') {
       return 'No archived chats';
     }
@@ -976,7 +985,7 @@ export struct ChatListPage {
     }
   }
 
-  private getEmptySubtitle(): string {
+  private getEmptySubtitleKey(): string {
     if (this.uiState.listKind === 'archive') {
       return 'Chats you archive will appear here.';
     }

@@ -716,5 +716,60 @@ export default function langTest(): void {
       expect(tdlibSystemLanguageCode('system', 'not a tag!')).assertEqual(TDLIB_LANGUAGE_CODE_FALLBACK);
       expect(TDLIB_LANGUAGE_CODE_FALLBACK).assertEqual('zh-Hans');
     });
+
+    /**
+     * I18N-RETSPAN-101：会话列表空态的十二个词条必须双语成在。
+     *
+     * 为什么值得单列一条：这十二个串此前**一个都不在词典里**，而它们是
+     * `ChatListPage.getEmptyTitleKey / getEmptySubtitleKey` 的全部返回值 ——
+     * 中文界面的空态永远显示英文。四条 i18n 规则当时一起静默，因为它们的载体是
+     * `pages/` 下页面类的**私有方法 return**，既不在 R4' 的文案槽位口径里，
+     * 也不在 R5b 的数据层射程内。
+     *
+     * 这条用例钉两件事：① 每个 key 在两本词典里都能解出**非 key 本身**的值
+     * （防「词典里有这一项但值是空串或就是 key」那种假命中）；
+     * ② 中文侧确实与英文侧不同（防「补了词条但照抄英文」——
+     * 那在界面上与没补一模一样）。
+     */
+    it('chatListEmptyStateKeys_resolveDifferentlyInBothLanguages', 0, () => {
+      Lang.getInstance().reset();
+      const emptyStateKeys: string[] = [
+        'No archived chats',
+        'No personal chats',
+        'No groups yet',
+        'No channels yet',
+        'All caught up',
+        'No chats yet',
+        'Chats you archive will appear here.',
+        'Your direct messages with people will appear here.',
+        'Group conversations will appear here.',
+        'Channels you subscribe to will appear here.',
+        'You have read all incoming messages.',
+        'Start a conversation using the button below.'
+      ];
+
+      Lang.getInstance().setLanguage('en');
+      const english: string[] = emptyStateKeys.map((key: string): string =>
+        Lang.getInstance().getString(key));
+
+      Lang.getInstance().setLanguage('zh');
+      const chinese: string[] = emptyStateKeys.map((key: string): string =>
+        Lang.getInstance().getString(key));
+
+      for (let i: number = 0; i < emptyStateKeys.length; i++) {
+        const key: string = emptyStateKeys[i];
+        // ① 两本词典都必须有真值。
+        //    注意：**英文侧的值天然等于 key**（EN 词典就是 key→key 的映射，
+        //    本仓所有英文词条都这么写），所以这里只断言非空，不能断言
+        //    `english[i] !== key` —— 那会把每一本英文词典都判成缺项。
+        expect(english[i].length > 0).assertTrue();
+        // ② 中文侧必须是**真的翻译过**：既非空、也不等于 key、还不等于英文。
+        //    这三条缺一不可：只查非空放得过「照抄 key」；只查 !== key 放得过
+        //    「照抄英文」（那在中文界面上与没补词条完全一样，正是本轮修的缺陷形态）。
+        expect(chinese[i].length > 0).assertTrue();
+        expect(chinese[i] === key).assertFalse();
+        expect(chinese[i] === english[i]).assertFalse();
+      }
+    });
   });
 }

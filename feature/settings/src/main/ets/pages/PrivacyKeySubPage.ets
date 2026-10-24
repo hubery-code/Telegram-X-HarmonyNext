@@ -195,7 +195,13 @@ export struct PrivacyKeySubPage {
     return detail !== null && detail.showReadDate !== null;
   }
 
-  private extraToggleDescription(): string {
+  /**
+   * 额外开关的说明文字 key（I18N-RETSPAN-101）。
+   * 与 `alwaysLabelKey` 同一条约定：**名字以 `Key` 结尾 = 返回值是词条 key**，
+   * 由调用点 `t()` 现取。原先叫 `extraToggleDescription`，两臂都是已有词条的 key，
+   * 但函数名读起来像「已解析串」，于是被新增的 return 规则误报。
+   */
+  private extraToggleDescriptionKey(): string {
     return this.premiumRowShown() ? 'Allow Premium Invite Desc' : 'Hide Read Time Desc';
   }
 
@@ -233,13 +239,19 @@ export struct PrivacyKeySubPage {
   /**
    * 例外行的标题：只有「最后上线时间」这一项在 Android 上读作「分享给谁」
    * （`SettingsPrivacyKeyController:494-517`），其余项是「允许谁」。
+   *
+   * 名字以 `Key` 结尾是**契约**不是风格（I18N-RETSPAN-101）：这两个方法返回的是
+   * 词条 key（三元另一臂直接调 `privacyAlwaysAllowLabelKey()`），由调用点 `t()` 现取。
+   * 原先叫 `alwaysLabel` / `neverLabel`，字面上像「已解析串」，于是新增的
+   * 「视图层 return 不许写死英文」规则把它们误报成写死文案 —— 改成 `*Key` 后
+   * 形状与语义一致，规则也能正确豁免。
    */
-  private alwaysLabel(): string {
+  private alwaysLabelKey(): string {
     const detail: PrivacyDetailState | null = this.detail();
     return detail === null ? 'Always Allow' : privacyAlwaysAllowLabelKey(detail.key);
   }
 
-  private neverLabel(): string {
+  private neverLabelKey(): string {
     const detail: PrivacyDetailState | null = this.detail();
     return detail === null ? 'Never Allow' : privacyNeverAllowLabelKey(detail.key);
   }
@@ -280,9 +292,9 @@ export struct PrivacyKeySubPage {
   private pickerTitle(): string {
     const detail: PrivacyDetailState | null = this.detail();
     if (detail !== null && detail.pickerTarget === 'never') {
-      return this.t(this.neverLabel());
+      return this.t(this.neverLabelKey());
     }
-    return this.t(this.alwaysLabel());
+    return this.t(this.alwaysLabelKey());
   }
 
   /** 分支判定统一收在方法里：build 里不写 `detail()!.x`，ArkTS 禁止非空断言。 */
@@ -520,7 +532,7 @@ export struct PrivacyKeySubPage {
         Column() {
           if (this.showAlwaysRow()) {
             Row() {
-              Text(this.t(this.alwaysLabel()))
+              Text(this.t(this.alwaysLabelKey()))
                 .fontSize(this.getTheme().typography.body.fontSize)
                 .fontColor(this.getTheme().colors.textPrimary)
                 .layoutWeight(1)
@@ -547,7 +559,7 @@ export struct PrivacyKeySubPage {
 
           if (this.showNeverRow()) {
             Row() {
-              Text(this.t(this.neverLabel()))
+              Text(this.t(this.neverLabelKey()))
                 .fontSize(this.getTheme().typography.body.fontSize)
                 .fontColor(this.getTheme().colors.textPrimary)
                 .layoutWeight(1)
@@ -642,7 +654,7 @@ export struct PrivacyKeySubPage {
       .backgroundColor(this.getTheme().colors.surface)
       .borderRadius(this.getTheme().radius.md)
 
-      Text(this.t(this.extraToggleDescription()))
+      Text(this.t(this.extraToggleDescriptionKey()))
         .fontSize(this.getTheme().typography.footnote.fontSize)
         .fontColor(this.getTheme().colors.textSecondary)
         .margin({

@@ -370,6 +370,53 @@ Stmt = collections.namedtuple('Stmt', 'text first line_no raw_lines fn')
 # 也不能把从这一行到文件末尾并成一条语句 —— 那样报错的行号会指向整个页面。
 MAX_STMT_LINES = 60
 
+# ---- 「当前在哪个函数里」的识别（I18N-RETSPAN-101）----------------------------------
+# 为什么单独抽出来：`statements()` 需要它算 `fn`，而 `fn` 是 R5b/R4 的
+# 「函数名以 Key 结尾 ⇒ 返回值就是 key」这条豁免的判据。旧口径只认
+# `function name(`，**类方法与 @Builder 方法一律不更新 fn** ——
+# 实测 ChatPage.ets 全文只解析出 6 个 fn 值，`toSandboxUri`（文件里最后一个
+# 顶层 function）一个就占了 3581 条语句，之后所有方法内语句全挂在它名下。
+# 于是 `attachmentLabelKey()` 里的 `return 'Gallery'` 看见的 fn 是 `toSandboxUri`，
+# 豁免自然不生效（GUARD-WIN-101 那一轮把它当成了「R4' 不判 return」，其实是 fn 错位）。
+FUNCTION_RE = re.compile(r'\bfunction\s+([A-Za-z_$][\w$]*)\s*\(')
+METHOD_HEAD_RE = re.compile(
+    r'^[ \t]*(?:@[A-Za-z]\w*\s+)*'
+    r'(?:(?:public|private|protected|static|async|readonly|override)\s+)*'
+    r'([A-Za-z_$][\w$]*)\s*\([^()]*\)\s*'
+    r'(?::\s*[^{;]+)?\{\s*$')
+# 控制结构在形状上与方法头难以区分（`if (x) {` 完全符合 METHOD_HEAD_RE），必须排除。
+CONTROL_KEYWORDS = frozenset((
+    'if', 'for', 'while', 'switch', 'catch', 'else', 'do', 'try', 'finally', 'with',
+))
+# ArkUI 容器组件同理：`Column() {` / `Row() {` / `Stack() {` 在形状上与
+# 「无参数方法定义」完全一样，而且它们在页面里出现得极密（实测 ChatPage.ets
+# 里 `Row` 占 1266 条语句、`Column` 占 993 条），一旦当成方法名就会把真正的
+# 方法体整片淹掉 —— 那比旧口径（只认 function）更糟。这里列全 ArkUI 的
+# 「带花括号块体的容器」，让它们不更新 fn。
+ARKUI_BLOCK_COMPONENTS = frozenset((
+    'Column', 'Row', 'Stack', 'Flex', 'Grid', 'GridItem', 'List', 'ListItem',
+    'ListItemGroup', 'Scroll', 'Swiper', 'Tabs', 'TabContent', 'RelativeContainer',
+    'SideBarContainer', 'Navigation', 'NavDestination', 'Refresh', 'Button', 'Toggle',
+    'Text', 'Image', 'Divider', 'Blank', 'Progress', 'LoadingProgress', 'Badge',
+    'If', 'Else', 'ForEach', 'LazyForEach', 'Repeat', 'WithTheme',
+    'SymbolGlyph', 'TextInput', 'TextArea', 'Menu', 'MenuItem', 'MenuItemGroup',
+    'Dialog', 'AlertDialog', 'CustomDialog', 'ActionSheet', 'Sheet', 'Panel',
+))
+
+
+def owner_name_of(code_line: str):
+    """这一行是不是一个「函数/方法定义头」，是则返回名字，否则 None。"""
+    m = FUNCTION_RE.search(code_line)
+    if m is not None:
+        return m.group(1)
+    m = METHOD_HEAD_RE.match(code_line)
+    if m is None:
+        return None
+    name = m.group(1)
+    if name in CONTROL_KEYWORDS or name in ARKUI_BLOCK_COMPONENTS:
+        return None
+    return name
+
 
 def statements(path):
     """整文件括号栈：把 `(` 换行才闭合的语句并成一项（GUARDSPAN-101 的跨行收口）。
@@ -403,9 +450,11 @@ def statements(path):
         if is_comment(stripped):
             continue
         code = strip_inline_comments(raw)
-        m = FUNCTION_RE.search(code)
-        if m is not None:
-            fn = m.group(1)
+        # 函数/方法定义头一律更新 fn —— 类方法与 @Builder 方法也要认，否则
+        # 方法内所有语句会挂在文件里上一个顶层 function 名下（见 owner_name_of 的注释）。
+        owner = owner_name_of(code)
+        if owner is not None:
+            fn = owner
         for ch in code:
             if ch in '([':
                 depth += 1
@@ -659,6 +708,9 @@ def scan_line_literals(line, locals_map=None):
 
 
 FUNCTION_RE = re.compile(r'\bfunction\s+([A-Za-z_$][\w$]*)\s*\(')
+# 注：METHOD_HEAD_RE / CONTROL_KEYWORDS / owner_name_of() 定义在 `statements()` 之前
+# （那里要用它们算 fn），此处不再重复定义 —— 早先这里另有一份同样的 METHOD_HEAD_RE，
+# 被测序覆盖过一次，删掉以免两处漂移。
 CLASS_HEAD_RE = re.compile(r'(?m)^[ \t]*(?:export[ \t]+)?(?:default[ \t]+)?'
                            r'class[ \t]+([A-Za-z_$][\w$]*)')
 CTOR_HEAD_RE = re.compile(r'(?m)^[ \t]*(?:(?:public|private|protected|readonly)[ \t]+)?'
@@ -794,6 +846,19 @@ def display_slot_reason(hit, stripped_line, fn, dicts, ctor_index):
             return f'@Builder {name}('
     if field is not None and field in DISPLAY_FIELDS:
         return f'{field}:'
+    # I18N-RETSPAN-101：视图层的 `return` 直接操作数也要判（此前是整类缺口）。
+    # 为什么此前漏了：`data_slot_reason`（R5b）判 return，但它只跑在**数据层**
+    # （coordinator/model）；`display_slot_reason`（R4'）跑视图层却只判调用栈与字段。
+    # 于是 `pages/` 下页面类私有方法里 `return 'File'` 这类写法两头都够不着 ——
+    # GUARD-WIN-101 那一轮真的漏过去了（`documentSubtitle` / `audioSubtitle` 三处
+    # 英文串直接上屏），当时把它归因成「R4' 按设计不判 return」，其实是不该有的缺口。
+    # 判据与 R5b 完全对齐（同一套「传 key 不传串」约定）：
+    #   - 外层没有任何调用（有调用就是构造器实参/别的槽位，不冒充 return 操作数）；
+    #   - 函数名以 `Key` 结尾 → 返回值按定义就是 key，豁免。
+    if not hit.callers and (stripped_line.startswith('return ') or stripped_line.startswith('return(')):
+        if fn is not None and fn.endswith(KEY_CARRIER_SUFFIX):
+            return None
+        return 'return'
     return None
 
 
@@ -1496,6 +1561,50 @@ function buildParams(): TdlibParametersConfig {
 
 function fallbackParams(): TdlibParametersConfig {
   return { systemLanguageCode: AppStorage.get<string>('tdlibLanguageCode') }
+}
+"""),
+    # R4'/return（I18N-RETSPAN-101）三条对照。这一组钉的是「视图层页面类的**类方法**里
+    # return 英文串」这个形状 —— 此前是整类缺口（旧口径 fn 只认顶层 function，
+    # 类方法内语句全挂在文件里上一个顶层 function 名下，`*Key` 豁免因此失效）。
+    SelfCase('r4-return-literal-in-method', (
+        ('R4', 'fire', 'return'),
+    ), """
+@Component
+struct Page {
+  private subtitle(): string {
+    return 'Failed to load'
+  }
+
+  build() {
+    Text(this.subtitle())
+  }
+}
+"""),
+    SelfCase('r4-return-in-key-suffixed-method', (
+        ('R4', 'clean', None),
+    ), """
+@Component
+struct Page {
+  private subtitleKey(): string {
+    if (this.kind === 'a') {
+      return 'Devices'
+    }
+    return 'Online'
+  }
+
+  build() {
+    Text(this.t(this.subtitleKey()))
+  }
+}
+"""),
+    SelfCase('r4-return-literal-with-call-is-not-return-slot', (
+        ('R4', 'clean', None),
+    ), """
+@Component
+struct Page {
+  private label(): string {
+    return this.t('Devices')
+  }
 }
 """),
     # R10（I18N-DUPKEY-101）三条对照，覆盖「该拦的两侧 + 不该报的一侧」。

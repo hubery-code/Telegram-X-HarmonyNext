@@ -1068,7 +1068,10 @@ export struct SettingsPage {
     if (this.uiState.languagePreference === 'zh') {
       return '简体中文'; // i18n-allow 本族名
     }
-    return 'English';
+    // 与上面两条同一条产品口径：语言名是本族名，不随界面语言翻译。
+    // 这一行此前漏了标记，I18N-RETSPAN-101 把「视图层 return 不许写死英文」
+    // 的判定扩到 return 位置后才发现 —— 三行同义而只有两行带标记。
+    return 'English'; // i18n-allow 本族名
   }
 
   @Builder

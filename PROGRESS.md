@@ -113,6 +113,29 @@
 
 > 📌 交付更新（2026-09-29 QODER 第三十八轮）：补上一行没拿到的那一格 —— **TGS-104 设备 A/B 已拿到**（候选 ⑤ 结掉）。**先说环境，因为它不是应用缺陷**：上一轮那台僵住的 HVD 按主人授权 `kill -TERM` 后重启，第一次起来能连、装完 HAP 截到一帧全黑，约 5 分钟后客机自己崩 —— `kernel.log` 是 `Kernel panic - not syncing: sysrq triggered crash`（uptime 291 s），`qemu.log` 刷 `hvf vcpu exec exit reason code: 3`，`crash_server.log` 走完 `FreezeCrash → WriteMinidump → KillEmulator`，产物 `crash_report-2026-09-29T180322.zip`。应用不可能触发 sysrq，所以这归为宿主/HVD 不稳定；第二次重启后 `tconn` 连上，取证一次跑完。**取证口径**（127.0.0.1:5555 同一台同一账号、只重装 HAP 不清数据，`.hvigor/outputs/tgs-104/`；grep 不带 `-T` 的原始 `hilog -x`，否则 `AnimatedSticker` 那两条线会被整体过滤掉）：**开（默认档，`p5-loopon-raw.txt`）= 7 条 `tgs_mount` + 7 条 `tgs_lap` + 27 条 lottie `loopComplete`、`animation completed` 零条**；**关（`p3-loopoff-raw.txt`）= 11 条 `tgs_mount`、14 条 `animation completed. playing 1 times`、`loopComplete` 与 `tgs_lap` 双零**。两档都是**新挂载**的对比（各自 `aa force-stop` 后重进 Saved Messages），因为这一位按 Android 语义是构造时读，正在演的那张不会因勾动而变 —— 这一条此前只有单测断言，现在有设备侧同框。**顺带证到持久化**：拨 off 后 force-stop 再启动，副标题与行为都还是「播一次停末帧」，说明整数键读盘确实跨进程生效（`p2-toggled.json` / `p4-settings.json` 两次的 dumpLayout 都在 off 态）。**UI 面**：设置主页滚到 `STICKERS AND EMOJI` 分组、`Loop Animated Stickers` 一行 + `Toggle`（bounds `[1026,562][1152,632]`）渲染正常，副标题随勾选在两句话之间翻面（`p2-row-on.png` / `p2-row-off.png` / `p4-row-on.png`）。**账号与用户设置已还原**：收尾拨回 on（`p4-restored-on.json` 副标题回到 `Animated stickers keep playing.`），全程未向任何群/频道发送任何东西。**本轮新增的一条经验值得记**：`uitest uiInput click` 在这台 HVD 上会静默失效 —— 屏幕熄了或华为屏幕朗读（`com.huawei.hmos.screenreader`）在跑时，命令一律回 `No Error` 但 layout 一字不变；先 `power-shell wakeup` + `aa force-stop com.huawei.hmos.screenreader` 再点才有反应，且判断「点没点动」的唯一办法是重打 dumpLayout 比对，不能信 uiInput 的返回值。
 
+> 📌 交付更新（2026-10-24 DSH 第六十八轮）：本轮的目标是上一轮的候选 ①「换一个可发言的群把投票正向打通」，
+> **结论是这条路在当前账号条件下走不通，如实记账并转向另一条**。**一、先排除的不是一个群，是全部**：
+> 在 REDMI Note 15 群（1439 人）发文本，同样拿到
+> `cause=400:USER_BANNED_IN_CHANNEL`（`chatId=-1001249986527`）——与上一轮 El CLUB 群的
+> 失败**同一个分类**。加上频道本来就不允许普通成员发言，已加入的 6 个会话里没有一个能发消息。
+> 同时私聊（Rose bot，`chatId=609517172`）`send_message_ok` 且无失败事件 —— 所以不是账号被整体封禁，
+> 而是**对这批公开群的发言权限制**（这类超万人技术群常设「仅管理员可发言」或对本账号单独限制）。
+> **二、因此「投票投递成功」这一格仍然空着**，而且**不能靠换群解决** —— 需要一个该账号有发言权的群
+> （自己创建的群、或管理员给了发言权的群）。这属于账号侧的前置条件，不是代码能解决的，
+> 所以从「待认领候选」里**撤下**，改为「需外部条件」登记，避免下一轮再花一轮去试第三个群。
+> **三、这一轮的净产出是把一个「看起来还能试」的候选判死**：上一轮把它列为候选 ① 时，
+> 判断依据是「只在一个群上观测到，也许换个群就行」；本轮用第二个群做了对照，
+> 证伪了这个假设。**代价是两次设备往返，收益是后续不再重复这个动作。**
+> **四、仍未变的两条**：① UI 渲染侧已证（标题/选项/百分比/进度条/「0 票 · 匿名投票 · 最终结果」
+> 全中文、12 小时制时间戳）；② 失败归因链路已证（`outgoing_msg_failed cause=…` 能直接读出服务端理由）。
+> 也就是说**除了「服务端回一个成功」这一步，POLL 从取数到渲染到失败归因全通了**。
+> **当前待认领候选**：① **R4'/R5b 的 `return` 射程缺口**（`pages/` 下页面类私有函数的 `return`
+> 英文串仍无守卫覆盖 —— 上一轮 GUARD-WIN-101 只补了词条没扩规则，这是纯代码工作、不依赖账号）；
+> ② 整包预览 406 native 半边、RTL-101、APPLOCK-103、PRIVACY 收尾、GIF 实际发送链路、
+> 代理扫码导入、板卡动效静帧、lottie Release 与全量 CI 收口。
+> **需外部条件（非代码）**：投票投递成功取证（需一个有发言权的群）；测试消息清理
+> （群里 3 条失败消息 + 私聊 1 条 diag2，这一版 UI 的 uitest 长按弹不出菜单，需手工清）。
+
 > 📌 交付更新（2026-10-24 DSH 第六十七轮）：接着上一轮的设备取证往下查那枚**红色感叹号**，交付 **POLL-104**（出站消息失败可归因），并**更正上一轮两个判断**。**一、先补的是诊断能力**：`messageSendingStateFailed` 自带四个可判别字段（`error` / `can_retry` / `need_another_sender` / `retry_after`，见 `TdTypes_M.ets`），此前一处都没记，于是「发送失败」在日志里只剩一句 `tdlib/bad_request`。现在在 `MessageItem` 组装处（`messageSendStateOf` 的调用点）对出站且 failed 的消息记一条定点日志，四个字段全带上；`error.message` 是协议层固定英文串、不含用户正文，只记它不记文本。**二、真因与上一轮的假设相反**：`cause=400:USER_BANNED_IN_CHANNEL canRetry=false needAnotherSender=false retryAfter=0` —— 该账号在 El CLUB 群被限制发言。所以红感叹号是**正确行为**，不是渲染缺陷。更要紧的是这里藏着一个语义陷阱：**`send_poll_ok` / `send_message_ok` 只表示 TDLib 受理了 RPC 请求，不表示消息投递成功** —— 服务端随后异步判定失败并回灌 `messageSendingStateFailed`。上一轮把这句 ok 当成了投递成功，因此把「服务端拒绝」误读成「渲染层读错 sendState」。**三、对照实验（同机同账号同构建，证明不是普遍性缺陷）**：El CLUB 群里发投票 → `send_poll_ok` + `USER_BANNED_IN_CHANNEL` + 红标；同群发文本 → `send_message_ok` + 同一条 `USER_BANNED_IN_CHANNEL` + 红标；Rose 私聊发文本 → `send_message_ok` 且**无失败事件**、气泡**无红标**。同一份构建两种结果，红标忠实反映了服务端状态。**四、更正上一轮的取证结论**：上一轮写「POLL-102 拿到设备实证（气泡完整渲染）」，渲染层面成立（标题/选项/百分比/进度条/「0 票 · 匿名投票 · 最终结果」全中文、12 小时制时间戳），但**那条投票并未真正投递成功** —— 应改为「UI 渲染已证；投递成功未证，被群权限挡住」。**五、方法学**：本轮与 POLL-103 是同一个模式的两次应用 —— 先把「查不到」变成「查得到」（补定点日志），再据日志定性；两次都因此推翻了上一轮的猜测（一次是「私聊能发投票」，一次是「红标是渲染缺陷」）。**盲区，如实记**：① 测试产生的失败消息（El CLUB 群里两条、Rose 私聊一条 `diag2`）未在界面删除 —— 这一版 UI 的 uitest `longClick` 没能弹出菜单，留待有设备时手工清；② `USER_BANNED_IN_CHANNEL` 只在一个群上观测到，未验证「换一个能发言的群投票是否成功」，所以「投票真能投递」这一步仍然**没有正向证据**。**当前待认领候选**：① **换一个可发言的群把投票正向打通**（补上「投递成功」这一格，是本轮盲区 ② 的直接后续）；② R4'/R5b 的 `return` 射程缺口（`pages/` 下页面类私有函数的 `return` 英文串仍无守卫覆盖）；③ I18N-DUPKEY-101 已完成（R10 已落地并变异验证）；④ 整包预览 406 native 半边、RTL-101、APPLOCK-103、PRIVACY 收尾、GIF 实际发送链路、代理扫码导入、板卡动效静帧、lottie Release 与全量 CI 收口。
 
 > 📌 交付更新（2026-10-24 DSH 第六十六轮）：结掉上一轮自己登记的那条待办 —— **I18N-DUPKEY-101**（`check_i18n_literals.py` 新增第十条规则 R10：同一本词典内不许重名）。**为什么这条必须补**：上一轮把 `'File'` 重复加进词典时，七条规则**全部静默**，最后靠 ArkTS 编译器 10505001（`An object literal cannot have multiple properties with the same name`）在 `HarCompileArkTS` 阶段把构建打挂才发现。根因是口径设计上的一个盲点：R3 判的是两本词典**之间**的键集合对等，而 `load_dicts()` 用 `set()` 收集 key —— **重复 key 在集合里天然只剩一个**，所以 R3 从结构上就看不见它；`--self-test` 的对照集当时也没有「同词典内重名」这一形状。也就是说那之前「词典一致性」是由编译器兜底而不是守卫兜底，而编译器只在你真跑到构建时才会说话。**落地**：`load_dicts()` 额外统计每个 key 的出现次数并记进 `DUPLICATE_KEYS`；解析抽成 `_parse_dict_block()`（自证与生产**共用同一个解析器**，避免「自证一套、生产一套」的假绿灯）；新增 `scan_duplicate_keys()` 接入 `main()` 的判定链与失败汇总行；报错文本点明后果（ArkTS 会以 10505001 拒绝整个对象字面量）而不只是「重复了」。**自证补三条对照（现 34 项 / 23 样例，原 30 项 / 20 样例）**：同词典内重名必拦且消息点到 key 与次数、两本词典同时重名必拦（两侧各报一条）、无重名的干净词典不许报。**变异测试实证规则真的会拦**：临时往 `Lang.ets` 的 EN 词典插入一条重复的 `'File'`，守卫输出 `DUP-KEY EN_DICTIONARY 里 key 'File' 重复 2 次（ArkTS 会以 10505001 拒绝整个对象字面量）` 且 exit 1，失败汇总行多出「词典内重复 key 1」；还原后立即回 `[i18n] OK` exit 0。**测试**：七守卫全绿（architecture / codegen / design_tokens / a11y_labels / i18n_literals / appstorage_pairs / secret_scan），词典仍 EN/ZH **572/572** 对等且无重复。**文档同步**：`FEATURE_MATRIX` 的 FEAT-UI-003 行从「九条规则（R1–R9）」改为「十条（R1–R10）」并补上 R10 的一条约束；GUARD-WIN-101 小节里那段「记为本仓待办、不在本轮扩规则」改为已交付，附变异测试的实测输出。**一条方法论**：守卫的「看不见」有两种 —— 射程不够（扫不到）和口径不够（扫到了但在集合语义里被吃掉）；前者靠补射程解决，后者必须换一种承载（这里是「集合 + 计数表」两套并存）。R3 与 R10 是同一份数据的两个视图，缺一个就有一类缺陷只能等编译器。
