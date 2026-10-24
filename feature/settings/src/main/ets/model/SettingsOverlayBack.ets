@@ -3,7 +3,7 @@
  *
  * 设置页的每一种子页/弹层都是 `SettingsPage.build()` 里叠在同一层 Stack 上的**覆盖层**，
  * 不是导航栈里的页面 —— 所以硬件返回键不会自动关它们。之前 `entry` 里手写了一串
- * `if (showX) dispatch(new CloseX())`，漏了代理、自动下载和隐私详情页三层，
+ * `if (showX) dispatch(new CloseX())`，漏了自动下载和隐私详情页两层，
  * 后果不是「退多了」而是**丢数据**：隐私详情页的写回时机在 `closePrivacyKeyPage`
  * 上（Android 是 `SettingsPrivacyKeyController.onBlur() → saveChanges()`），
  * 而 `closePrivacyPage` 只把 `privacyDetail` 置 null，于是一按返回，未提交的规则改动
@@ -23,8 +23,7 @@ import {
   ClosePasscodePage,
   ClosePrivacyKeyPage,
   ClosePrivacyPage,
-  ClosePrivacyPicker,
-  CloseProxyPage
+  ClosePrivacyPicker
 } from '../contract/SettingsIntent';
 import { SettingsUiState } from '../contract/SettingsUiState';
 import { PrivacyDetailState } from './PrivacyDetail';
@@ -40,9 +39,6 @@ export function settingsOverlayCloseIntent(state: SettingsUiState): SettingsInte
   }
   if (state.showAutoDownloadPage) {
     return new CloseAutoDownloadPage();
-  }
-  if (state.showProxyPage) {
-    return new CloseProxyPage();
   }
   const detail: PrivacyDetailState | null = state.privacyDetail;
   if (detail !== null) {

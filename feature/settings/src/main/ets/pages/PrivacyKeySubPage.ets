@@ -132,7 +132,7 @@ export struct PrivacyKeySubPage {
 
   /**
    * 以下取数全部走方法而不是 @Builder 入参：按值传进 @Builder 的结果不参与状态观察，
-   * 点完档位文字会停在旧值（SET-106 / PROXY-102 同一条坑）。
+   * 点完档位文字会停在旧值（SET-106 的坑）。
    */
   private detail(): PrivacyDetailState | null {
     return this.uiState.privacyDetail;

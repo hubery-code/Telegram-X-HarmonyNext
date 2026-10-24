@@ -15,7 +15,6 @@ import { ActiveSessionItem } from '../model/ActiveSessionItem';
 import { SettingsSectionKey } from '../model/SettingsSection';
 import { PrivacySettingItem, PrivacySettingKey } from '../model/PrivacySettings';
 import { PrivacyDetailState } from '../model/PrivacyDetail';
-import { ProxyItem, ProxyConnectionState } from '../model/ProxySettings';
 import { AutoDownloadPolicy, DataSaverSettings, DownloadLimitsByNetwork, StickerSettings } from '@tgx/core-domain';
 import { AutoLockChoice, PasscodeFlowStage, AUTO_LOCK_DEFAULT } from '@tgx/core-domain';
 
@@ -66,14 +65,6 @@ export interface SettingsUiStateOptions {
   readonly isLoadingPrivacy?: boolean;
   /** SELF-102：正在写回的隐私项；null 表示空闲。 */
   readonly updatingPrivacyKey?: PrivacySettingKey | null;
-  /** PROXY-101：是否展示「代理」子页。 */
-  readonly showProxyPage?: boolean;
-  /** PROXY-101：已添加的代理列表（TDLib addedProxies 的页面投影）。 */
-  readonly proxyItems?: ProxyItem[];
-  /** PROXY-101：是否正在读取代理列表。 */
-  readonly isLoadingProxies?: boolean;
-  /** PROXY-101：正在写回的代理 id；null 表示空闲，0 是「不使用代理」行。 */
-  readonly updatingProxyId?: number | null;
   /** AUTODL-101：是否展示「自动媒体下载」子页。 */
   readonly showAutoDownloadPage?: boolean;
   /** AUTODL-101：已读到的自动下载策略；null 表示还没读盘（行副标题显 Loading）。 */
@@ -82,20 +73,6 @@ export interface SettingsUiStateOptions {
   readonly dataSaverSettings?: DataSaverSettings | null;
   /** AUTODL-103：按网络档的自动下载限制；null 表示还没读盘（三行副标题显 Loading）。 */
   readonly downloadLimits?: DownloadLimitsByNetwork | null;
-  /**
-   * PROXY-102：各行连通性探测结果（毫秒或模型层哨兵）。
-   * key 是 TDLib 代理 id，`PROXY_NONE_ID`（0）是「不使用代理」行的直连探测。
-   * 刻意不放进 `ProxyItem`：列表每次写回都要重读 `getProxies` 并整批重建行，
-   * 挂在行上的在途探测会被那次重建抹掉。
-   */
-  readonly proxyPingMs?: Map<number, number>;
-  /**
-   * PROXY-103：各行探测失败原因（Lang key）；缺条目即「这一行没有可说的失败」。
-   * 与延迟表分开存：`PROXY_PING_FAILED` 只有一个值，说不出是拒连还是查不到地址。
-   */
-  readonly proxyPingFailure?: Map<number, string>;
-  /** PROXY-102：TDLib 连接态；'unknown' 表示还没收到 `updateConnectionState`。 */
-  readonly proxyConnection?: ProxyConnectionState;
   /** APPLOCK-101：是否展示「屏幕锁定」子页。 */
   readonly showPasscodePage?: boolean;
   /** APPLOCK-101：本机是否已设应用锁 PIN；未读到盘时为 false（等同于「没开启」）。 */
@@ -174,14 +151,6 @@ export class SettingsUiState implements UiState {
   readonly isLoadingPrivacy: boolean;
   /** SELF-102：正在写回的隐私项。 */
   readonly updatingPrivacyKey: PrivacySettingKey | null;
-  /** PROXY-101：是否展示「代理」子页。 */
-  readonly showProxyPage: boolean;
-  /** PROXY-101：代理列表（TDLib addedProxies 的页面投影）。 */
-  readonly proxyItems: ProxyItem[];
-  /** PROXY-101：是否正在读取代理列表。 */
-  readonly isLoadingProxies: boolean;
-  /** PROXY-101：正在写回的代理 id；null 表示空闲，0 是「不使用代理」行。 */
-  readonly updatingProxyId: number | null;
   /** AUTODL-101：是否展示「自动媒体下载」子页。 */
   readonly showAutoDownloadPage: boolean;
   /** AUTODL-101：自动下载策略；null 表示尚未读盘。 */
@@ -190,12 +159,6 @@ export class SettingsUiState implements UiState {
   readonly dataSaverSettings: DataSaverSettings | null;
   /** AUTODL-103：按网络档的自动下载限制；null 表示尚未读盘。 */
   readonly downloadLimits: DownloadLimitsByNetwork | null;
-  /** PROXY-102：各行连通性探测结果；空 Map 表示一行都没测过。 */
-  readonly proxyPingMs: Map<number, number>;
-  /** PROXY-103：各行探测失败原因（Lang key）；空 Map 表示一行都没有失败可说。 */
-  readonly proxyPingFailure: Map<number, string>;
-  /** PROXY-102：TDLib 连接态。 */
-  readonly proxyConnection: ProxyConnectionState;
   /** APPLOCK-101：是否展示「屏幕锁定」子页。 */
   readonly showPasscodePage: boolean;
   /** APPLOCK-101：本机是否已设应用锁 PIN。 */
@@ -250,17 +213,10 @@ export class SettingsUiState implements UiState {
     privacyItems: readonly PrivacySettingItem[] = [],
     isLoadingPrivacy: boolean = false,
     updatingPrivacyKey: PrivacySettingKey | null = null,
-    showProxyPage: boolean = false,
-    proxyItems: ProxyItem[] = [],
-    isLoadingProxies: boolean = false,
-    updatingProxyId: number | null = null,
     showAutoDownloadPage: boolean = false,
     autoDownloadPolicy: AutoDownloadPolicy | null = null,
     dataSaverSettings: DataSaverSettings | null = null,
     downloadLimits: DownloadLimitsByNetwork | null = null,
-    proxyPingMs: Map<number, number> = new Map(),
-    proxyPingFailure: Map<number, string> = new Map(),
-    proxyConnection: ProxyConnectionState = 'unknown',
     showPasscodePage: boolean = false,
     passcodeIsSet: boolean = false,
     autoLockChoice: AutoLockChoice = AUTO_LOCK_DEFAULT,
@@ -305,17 +261,10 @@ export class SettingsUiState implements UiState {
     this.privacyItems = privacyItems;
     this.isLoadingPrivacy = isLoadingPrivacy;
     this.updatingPrivacyKey = updatingPrivacyKey;
-    this.showProxyPage = showProxyPage;
-    this.proxyItems = proxyItems;
-    this.isLoadingProxies = isLoadingProxies;
-    this.updatingProxyId = updatingProxyId;
     this.showAutoDownloadPage = showAutoDownloadPage;
     this.autoDownloadPolicy = autoDownloadPolicy;
     this.dataSaverSettings = dataSaverSettings;
     this.downloadLimits = downloadLimits;
-    this.proxyPingMs = proxyPingMs;
-    this.proxyPingFailure = proxyPingFailure;
-    this.proxyConnection = proxyConnection;
     this.showPasscodePage = showPasscodePage;
     this.passcodeIsSet = passcodeIsSet;
     this.autoLockChoice = autoLockChoice;
@@ -414,18 +363,11 @@ export class SettingsUiState implements UiState {
       options.privacyItems !== undefined ? options.privacyItems : this.privacyItems,
       options.isLoadingPrivacy !== undefined ? options.isLoadingPrivacy : this.isLoadingPrivacy,
       options.updatingPrivacyKey !== undefined ? options.updatingPrivacyKey : this.updatingPrivacyKey,
-      options.showProxyPage !== undefined ? options.showProxyPage : this.showProxyPage,
-      options.proxyItems !== undefined ? options.proxyItems : this.proxyItems,
-      options.isLoadingProxies !== undefined ? options.isLoadingProxies : this.isLoadingProxies,
-      options.updatingProxyId !== undefined ? options.updatingProxyId : this.updatingProxyId,
       options.showAutoDownloadPage !== undefined ? options.showAutoDownloadPage : this.showAutoDownloadPage,
       options.autoDownloadPolicy !== undefined ? options.autoDownloadPolicy : this.autoDownloadPolicy,
       // 显式传 null 表示「清空为未读盘」，与 undefined（不改动）区分开。
       options.dataSaverSettings !== undefined ? options.dataSaverSettings : this.dataSaverSettings,
       options.downloadLimits !== undefined ? options.downloadLimits : this.downloadLimits,
-      options.proxyPingMs !== undefined ? options.proxyPingMs : this.proxyPingMs,
-      options.proxyPingFailure !== undefined ? options.proxyPingFailure : this.proxyPingFailure,
-      options.proxyConnection !== undefined ? options.proxyConnection : this.proxyConnection,
       options.showPasscodePage !== undefined ? options.showPasscodePage : this.showPasscodePage,
       options.passcodeIsSet !== undefined ? options.passcodeIsSet : this.passcodeIsSet,
       options.autoLockChoice !== undefined ? options.autoLockChoice : this.autoLockChoice,

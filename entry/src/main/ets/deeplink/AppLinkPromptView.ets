@@ -1,12 +1,12 @@
 /**
  * entry/src/main/ets/deeplink/AppLinkPromptView.ets — 链接确认弹窗的视图（DEEPLINK-102）。
  *
- * 只认 `PromptCard`（已经翻译好的三段文案 + 两/三个按钮），不认识「邀请」「代理」这些业务概念：
+ * 只认 `PromptCard`（已经翻译好的三段文案 + 两/三个按钮），不认识「邀请」这些业务概念：
  * 构卡的纯函数在 `AppLinkPrompt.ets` 里，视图这边零分支，也就不会出现「新加一类链接忘了加按钮」。
  *
  * 为什么挂在 entry 而不是某个 feature：弹窗可能盖在任何页面之上（冷启动深链落在 home、
- * 气泡里的链接在 chat），而 entry 是唯一的路由与装配所有者。视觉口径抄的
- * `ProxySubPage.DeleteConfirmDialog`（scrim + 82% 卡片），保持全工程一种弹窗。
+ * 气泡里的链接在 chat），而 entry 是唯一的路由与装配所有者。视觉口径抄的是工程内的确认弹窗
+ * （scrim + 82% 卡片），保持全工程一种弹窗。
  */
 
 import { Theme, LightTheme } from '@tgx/core-design-system';

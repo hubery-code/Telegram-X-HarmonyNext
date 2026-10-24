@@ -5604,11 +5604,13 @@ export class ChatCoordinator {
   }
 
   private handleSendAnimation(sendAnimation: SendAnimationMessage): void {
-    if (sendAnimation.fileId >= 2001 && sendAnimation.fileId <= 2040) {
-      this.projection.sendTextMessage(`🎬 ${sendAnimation.caption || 'GIF'}`, 0);
-      return;
-    }
-
+    // GIF-SEND-101：这里原先有一段按 fileId 号段兜底的假发送 ——
+    // `if (fileId >= 2001 && fileId <= 2040) { sendTextMessage('🎬 ' + title, 0); return; }`
+    // 那个号段对应 `GifItem.ets` 里 25 个**没有任何真实文件**的「预置动图」，
+    // 于是「发一张动图」被悄悄替换成「发一句带 emoji 的文本」，连 chatId 传的都是 0。
+    // 同轮把假库整个删掉、面板改为只显示 TDLib 的真实 saved animations，
+    // 所以这条兜底不再有对象 —— 留着它反而会让**将来任何** fileId 落进这个区间的
+    // 真实动图被静默降级成文本（2001-2040 不是保留段，只是当时瞎定的）。
     const req: SendMessage = new SendMessage();
     req.chat_id = sendAnimation.chatId;
     const inputAnim: InputAnimation = new InputAnimation();

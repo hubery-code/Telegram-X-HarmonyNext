@@ -11,7 +11,6 @@ import { Effect } from '@tgx/feature-template';
 import { NotificationScopeKey } from '../model/NotificationSettings';
 import { PrivacySettingKey } from '../model/PrivacySettings';
 import { TdUserPrivacySettingRule } from '@tgx/core-td-api-generated';
-import { ProxyForm } from '../model/ProxySettings';
 import {
   AutoDownloadPolicy,
   AutoLockChoice,
@@ -157,54 +156,6 @@ export class SetReadDatePrivacyEffect implements Effect {
   constructor(showReadDate: boolean) {
     this.showReadDate = showReadDate;
   }
-}
-
-/** PROXY-101：读取代理列表（getProxies）。 */
-export class LoadProxiesEffect implements Effect {
-  readonly kind: 'loadProxies' = 'loadProxies';
-}
-
-/** PROXY-101：启用代理（enableProxy），随后回读列表校正单选态。 */
-export class EnableProxyEffect implements Effect {
-  readonly kind: 'enableProxy' = 'enableProxy';
-  readonly proxyId: number;
-
-  constructor(proxyId: number) {
-    this.proxyId = proxyId;
-  }
-}
-
-/** PROXY-101：停用当前代理（disableProxy）。 */
-export class DisableProxyEffect implements Effect {
-  readonly kind: 'disableProxy' = 'disableProxy';
-}
-
-/** PROXY-101：保存代理；`form.id === PROXY_NEW_ID` 走 addProxy，否则走 editProxy。 */
-export class SaveProxyEffect implements Effect {
-  readonly kind: 'saveProxy' = 'saveProxy';
-  readonly form: ProxyForm;
-
-  constructor(form: ProxyForm) {
-    this.form = form;
-  }
-}
-
-/** PROXY-101：删除代理（removeProxy）。 */
-export class RemoveProxyEffect implements Effect {
-  readonly kind: 'removeProxy' = 'removeProxy';
-  readonly proxyId: number;
-
-  constructor(proxyId: number) {
-    this.proxyId = proxyId;
-  }
-}
-
-/**
- * PROXY-102：探测列表里每一行的连通性（含「不使用代理」行的直连探测）。
- * 与 TGX 同规则：列表每次（重）建都要 ping 一遍，这样「可用性」是测出来的，不是猜的。
- */
-export class PingProxiesEffect implements Effect {
-  readonly kind: 'pingProxies' = 'pingProxies';
 }
 
 /** AUTODL-101：读取自动下载策略（本地偏好，同步返回）。 */
@@ -377,12 +328,6 @@ export type SettingsEffect =
   | LoadPrivacyDetailEffect
   | SetPrivacySettingEffect
   | SetReadDatePrivacyEffect
-  | LoadProxiesEffect
-  | EnableProxyEffect
-  | DisableProxyEffect
-  | SaveProxyEffect
-  | RemoveProxyEffect
-  | PingProxiesEffect
   | LoadAutoDownloadPolicyEffect
   | PersistAutoDownloadPolicyEffect
   | LoadDataSaverSettingsEffect

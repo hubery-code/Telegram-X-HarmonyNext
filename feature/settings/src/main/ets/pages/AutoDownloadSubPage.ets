@@ -795,7 +795,7 @@ export struct AutoDownloadSubPage {
 
   /**
    * 尺寸档位单选。圆点直接内联：@Builder 的按值入参不参与状态观察，
-   * 抽成 `Radio(selected)` 会点完不变（同 `ProxySubPage` 的单选列表）。
+   * 抽成 `Radio(selected)` 会点完不变。
    */
   @Builder
   LimitSizeRow(code: number) {

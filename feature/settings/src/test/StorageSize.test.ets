@@ -8,7 +8,7 @@
  */
 
 import { describe, it, expect } from '@ohos/hypium';
-import { Lang, SupportedLanguage } from '@tgx/core-common';
+import { Lang, LanguagePreference, SupportedLanguage } from '@tgx/core-common';
 import { formatBytes, formatStorageLabel } from '../main/ets/model/StorageSize';
 
 export default function storageSizeTest() {
@@ -52,9 +52,32 @@ export default function storageSizeTest() {
     });
 
     it('formatStorageLabel_appendsFileCountWithPluralization', 0, () => {
-      expect(formatStorageLabel(1536, 1)).assertEqual('1.5 KB · 1 file');
-      expect(formatStorageLabel(1536, 2)).assertEqual('1.5 KB · 2 files');
-      expect(formatStorageLabel(1024 * 1024 * 3.5, 128)).assertEqual('3.5 MB · 128 files');
+      // 这条用例原先直接断言英文串（`1.5 KB · 1 file`），**没有声明语言** ——
+      // 它依赖「跑这条之前 Lang 恰好是 en」这个环境状态。2026-10-12 把默认语言
+      // 改成中文之后它就必然失败（实测实际值是 `1.5 KB · 1 个文件`），
+      // 只是从那以后没人在干净进程里单独跑过 feature_settings，一直没人发现。
+      //
+      // 修法不是「把期望的英文改成中文」，而是**显式声明语言、两个语档都断言**：
+      //   ① 测试不再依赖执行顺序（这是缺陷的根因，不是表面现象）；
+      //   ② 顺带把中英两侧的单复数都钉住 —— 本仓单测以中文为第一基准，
+      //      但单复数这种 locale 相关行为必须两侧都验，否则「只在中文本地化对了」
+      //      这类偏差永远看不见。
+      const savedPref: LanguagePreference = Lang.getInstance().getPreference();
+      try {
+        Lang.getInstance().setLanguage('en');
+        expect(formatStorageLabel(1536, 1)).assertEqual('1.5 KB · 1 file');
+        expect(formatStorageLabel(1536, 2)).assertEqual('1.5 KB · 2 files');
+        expect(formatStorageLabel(1024 * 1024 * 3.5, 128)).assertEqual('3.5 MB · 128 files');
+
+        Lang.getInstance().setLanguage('zh');
+        expect(formatStorageLabel(1536, 1)).assertEqual('1.5 KB · 1 个文件');
+        expect(formatStorageLabel(1536, 2)).assertEqual('1.5 KB · 2 个文件');
+        expect(formatStorageLabel(1024 * 1024 * 3.5, 128)).assertEqual('3.5 MB · 128 个文件');
+      } finally {
+        // 还原，别把语言状态泄给后面的用例（本文件排在 SettingsReducer 之后，
+        // 它自己也会存还偏好，这里同样守规矩）。
+        Lang.getInstance().setLanguage(savedPref);
+      }
     });
 
     it('formatStorageLabel_ignoresInvalidFileCount', 0, () => {

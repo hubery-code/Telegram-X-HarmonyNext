@@ -177,8 +177,7 @@ export {
 export {
   GifItem,
   GIF_CATEGORIES,
-  DEFAULT_RECENT_GIFS,
-  DEFAULT_GIF_PACKS
+  EMPTY_GIFS
 } from './model/GifItem';
 
 export {

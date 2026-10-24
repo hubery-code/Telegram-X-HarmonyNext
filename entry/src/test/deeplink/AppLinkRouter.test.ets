@@ -26,25 +26,20 @@ import {
   ChatTypeBasicGroup,
   ChatTypePrivate,
   ChatTypeSupergroup,
-  ProxyValue,
   TdJsonRaw,
-  decodeChatInviteLinkInfo,
-  decodeProxyValue
+  decodeChatInviteLinkInfo
 } from '@tgx/core-td-api-generated';
 import {
   AppLinkResult,
   AppLinkRouter,
   AppLinkTdPort,
   invitePromptOf,
-  proxyPromptOf,
   routeForChat,
   stripAtSign
 } from '../../main/ets/deeplink/AppLinkRouter';
 import {
   AppLinkPromptPort,
-  InvitePromptData,
-  ProxyPromptChoice,
-  ProxyPromptData
+  InvitePromptData
 } from '../../main/ets/deeplink/AppLinkPrompt';
 
 function publicChatWire(username: string, openProfile: boolean): TdWireObject {
@@ -63,13 +58,6 @@ function linkTypeWire(typeName: string): TdWireObject {
   payload['invite_link'] = 'https://t.me/inv/abc';
   payload['url'] = 'https://t.me/c/1/2';
   payload['link'] = 'https://t.me/x';
-  return payload;
-}
-
-/** TDLib 写请求的空应答（`Ok` 对象）。 */
-function okWire(): TdWireObject {
-  const payload: TdWireObject = {};
-  payload['@type'] = 'ok';
   return payload;
 }
 
@@ -121,23 +109,6 @@ function joinResultWire(typeName: string, chatId: number): TdWireObject {
   const payload: TdWireObject = {};
   payload['@type'] = typeName;
   payload['chat_id'] = chatId;
-  return payload;
-}
-
-/** `internalLinkTypeProxy`；`server` 传空串即模拟 TDLib 回「不支持的代理类型」。 */
-function proxyLinkWire(server: string, port: number, typeName: string): TdWireObject {
-  const payload: TdWireObject = {};
-  payload['@type'] = 'internalLinkTypeProxy';
-  if (server.length > 0) {
-    const proxyType: TdWireObject = {};
-    proxyType['@type'] = typeName;
-    const proxy: TdWireObject = {};
-    proxy['@type'] = 'proxy';
-    proxy['server'] = server;
-    proxy['port'] = port;
-    proxy['type'] = proxyType;
-    payload['proxy'] = proxy;
-  }
   return payload;
 }
 
@@ -237,12 +208,6 @@ function wireNumber(params: TdWireObject, key: string): number {
   return typeof value === 'number' ? value : 0;
 }
 
-function wireBool(params: TdWireObject, key: string): boolean {
-  const record: TdWireObject = params;
-  const value: TdWireValue | undefined = record[key];
-  return value === true;
-}
-
 function testError(message: string): AppError {
   return AppErrors.unknown('test', message);
 }
@@ -252,14 +217,13 @@ class FakeAppLinkPort implements AppLinkTdPort {
   readonly calls: string[] = [];
   /** 归一化后送进 getInternalLinkType 的链接（断言子域改写用）。 */
   readonly links: string[] = [];
-  /** 每次请求的入参，与 calls 同序 —— 断言 `addProxy.enable` 这类写语义。 */
+  /** 每次请求的入参，与 calls 同序 —— 断言写语义用。 */
   readonly sentParams: TdWireObject[] = [];
   linkTypeResult: Result<TdWireObject, AppError> = err(testError('no canned link type'));
   chatResult: Result<TdWireObject, AppError> = err(testError('no canned chat'));
   inviteResult: Result<TdWireObject, AppError> = err(testError('no canned invite info'));
   joinResult: Result<TdWireObject, AppError> = err(testError('no canned join result'));
   messageLinkResult: Result<TdWireObject, AppError> = err(testError('no canned message link'));
-  proxyWriteResult: Result<TdWireObject, AppError> = ok(okWire());
   userResult: Result<TdWireObject, AppError> = err(testError('no canned user'));
   gate: Promise<Result<TdWireObject, AppError>> | null = null;
   requestCount: number = 0;
@@ -294,10 +258,6 @@ class FakeAppLinkPort implements AppLinkTdPort {
     if (method === 'createPrivateChat') {
       return this.chatResult;
     }
-    if (method === 'addProxy') {
-      // TDLib 的 addProxy 回 `ok`；这里只关心「有没有发出去、enable 是什么」。
-      return this.proxyWriteResult;
-    }
     return err(testError(`unexpected method ${method}`));
   }
 
@@ -330,19 +290,13 @@ class FakeAppLinkPort implements AppLinkTdPort {
 /** 记录「弹窗问了什么、用户答了什么」的假端口。 */
 class PromptRecorder {
   readonly invites: InvitePromptData[] = [];
-  readonly proxies: ProxyPromptData[] = [];
   inviteAnswer: boolean = false;
-  proxyAnswer: ProxyPromptChoice = 'cancel';
 
   asPort(): AppLinkPromptPort {
     return {
       confirmInvite: (data: InvitePromptData): Promise<boolean> => {
         this.invites.push(data);
         return Promise.resolve(this.inviteAnswer);
-      },
-      chooseProxy: (data: ProxyPromptData): Promise<ProxyPromptChoice> => {
-        this.proxies.push(data);
-        return Promise.resolve(this.proxyAnswer);
       }
     };
   }
@@ -741,95 +695,6 @@ export default function appLinkRouterTest() {
       expect(data.createsJoinRequest).assertFalse();
       // 视图模型里没有哈希的位置：InvitePromptData 只有这四个字段。
       expect(data.description).assertEqual('for link routing test');
-    });
-
-    // ---------- DEEPLINK-102：代理 ----------
-
-    it('proxy_enable_sendsOneAddProxyWithEnableTrue', 0, async (): Promise<void> => {
-      const port: FakeAppLinkPort = new FakeAppLinkPort();
-      port.linkTypeResult = ok(proxyLinkWire('1.2.3.4', 8443, 'proxyTypeSocks5'));
-      const prompt: PromptRecorder = new PromptRecorder();
-      prompt.proxyAnswer = 'enable';
-      const nav: NavRecorder = new NavRecorder();
-      const res: AppLinkResult = await makeRouter(port, nav, true, prompt.asPort())
-        .handle('https://t.me/proxy?server=1.2.3.4&port=8443');
-      expect(res.outcome).assertEqual('notified');
-      expect(res.reason).assertEqual('proxy_enabled');
-      expect(port.calls.join(',')).assertEqual('getInternalLinkType,addProxy');
-      expect(wireBool(port.paramsOf('addProxy'), 'enable')).assertTrue();
-      // 代理是账号级动作，不压栈。
-      expect(nav.routes.length).assertEqual(0);
-    });
-
-    it('proxy_save_sendsSameAddProxyWithEnableFalse', 0, async (): Promise<void> => {
-      // 「稍后使用」与「启用」是同一条 addProxy，只差 enable —— 也不许补一次 enableProxy。
-      const port: FakeAppLinkPort = new FakeAppLinkPort();
-      port.linkTypeResult = ok(proxyLinkWire('1.2.3.4', 8443, 'proxyTypeSocks5'));
-      const prompt: PromptRecorder = new PromptRecorder();
-      prompt.proxyAnswer = 'save';
-      const nav: NavRecorder = new NavRecorder();
-      const res: AppLinkResult = await makeRouter(port, nav, true, prompt.asPort())
-        .handle('https://t.me/proxy?server=1.2.3.4&port=8443');
-      expect(res.outcome).assertEqual('notified');
-      expect(res.reason).assertEqual('proxy_saved');
-      expect(port.callsOf('addProxy')).assertEqual(1);
-      expect(port.callsOf('enableProxy')).assertEqual(0);
-      expect(wireBool(port.paramsOf('addProxy'), 'enable')).assertFalse();
-      expect(nav.routes.length).assertEqual(0);
-    });
-
-    it('proxy_cancel_writesNothing', 0, async (): Promise<void> => {
-      const port: FakeAppLinkPort = new FakeAppLinkPort();
-      port.linkTypeResult = ok(proxyLinkWire('1.2.3.4', 8443, 'proxyTypeSocks5'));
-      const prompt: PromptRecorder = new PromptRecorder();
-      prompt.proxyAnswer = 'cancel';
-      const nav: NavRecorder = new NavRecorder();
-      const res: AppLinkResult = await makeRouter(port, nav, true, prompt.asPort())
-        .handle('https://t.me/proxy?server=1.2.3.4&port=8443');
-      expect(res.outcome).assertEqual('cancelled');
-      expect(res.reason).assertEqual('proxy_declined');
-      expect(port.callsOf('addProxy')).assertEqual(0);
-    });
-
-    it('proxy_withoutPromptPort_writesNothing', 0, async (): Promise<void> => {
-      const port: FakeAppLinkPort = new FakeAppLinkPort();
-      port.linkTypeResult = ok(proxyLinkWire('1.2.3.4', 8443, 'proxyTypeSocks5'));
-      const nav: NavRecorder = new NavRecorder();
-      const res: AppLinkResult = await makeRouter(port, nav)
-        .handle('https://t.me/proxy?server=1.2.3.4&port=8443');
-      expect(res.outcome).assertEqual('cancelled');
-      expect(port.callsOf('addProxy')).assertEqual(0);
-    });
-
-    it('proxy_unsupportedType_reportsUnsupportedAndNeverAsks', 0, async (): Promise<void> => {
-      // TDLib 回 proxy:null 表示这个代理类型不支持（Android 的 ProxyLinkUnsupported）。
-      const port: FakeAppLinkPort = new FakeAppLinkPort();
-      port.linkTypeResult = ok(proxyLinkWire('', 0, 'proxyTypeSocks5'));
-      const prompt: PromptRecorder = new PromptRecorder();
-      prompt.proxyAnswer = 'enable';
-      const nav: NavRecorder = new NavRecorder();
-      const res: AppLinkResult = await makeRouter(port, nav, true, prompt.asPort())
-        .handle('https://t.me/proxy?server=1.2.3.4&port=8443');
-      expect(res.outcome).assertEqual('unsupported');
-      expect(res.reason).assertEqual('proxy_unsupported');
-      expect(prompt.proxies.length).assertEqual(0);
-      expect(port.callsOf('addProxy')).assertEqual(0);
-    });
-
-    it('proxyPromptOf_stripsProxyTypePrefix', 0, () => {
-      const wired: TdWireObject = {};
-      wired['@type'] = 'proxy';
-      wired['server'] = 'proxy.example.com';
-      wired['port'] = 8443;
-      const proxyType: TdWireObject = {};
-      proxyType['@type'] = 'proxyTypeMtproto';
-      wired['type'] = proxyType;
-      const proxy = decodeProxyValue(wired as TdJsonRaw);
-      expect(proxy !== null).assertTrue();
-      const data: ProxyPromptData = proxyPromptOf(proxy as ProxyValue);
-      expect(data.server).assertEqual('proxy.example.com');
-      expect(data.port).assertEqual(8443);
-      expect(data.kind).assertEqual('mtproto');
     });
 
     // ---------- DEEPLINK-102：消息深链 ----------

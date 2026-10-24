@@ -96,29 +96,6 @@ import {
   encodeGetContacts,
   Users,
   decodeUsers,
-  AddedProxies,
-  AddedProxy,
-  DisableProxy,
-  EditProxy,
-  EnableProxy,
-  GetProxies,
-  RemoveProxy,
-  AddProxy,
-  ProxyValue,
-  PingProxy,
-  Seconds,
-  TdConnectionState,
-  UpdateConnectionState,
-  decodeAddedProxies,
-  decodeSeconds,
-  decodeUpdateConnectionState,
-  encodeAddProxy,
-  encodeDisableProxy,
-  encodeEditProxy,
-  encodeEnableProxy,
-  encodeGetProxies,
-  encodePingProxy,
-  encodeRemoveProxy,
   Chat,
   ChatTypeBasicGroup,
   ChatTypeSupergroup,
@@ -132,9 +109,6 @@ import {
 } from '@tgx/core-td-api-generated';
 import {
   TdPendingRequest,
-  TdRoutedEvent,
-  TdUpdateFilter,
-  TdUpdateSubscription,
   TdWireObject
 } from '@tgx/td-gateway';
 import { ReducerEnv, ReducerResult } from '@tgx/feature-template';
@@ -163,25 +137,6 @@ import {
   privacyContactRows
 } from '../model/PrivacyDetail';
 import {
-  classifyProxyFailureKey,
-  pingProxyRequestFromItem,
-  PROXY_NONE_ID,
-  PROXY_PING_FAILED,
-  PROXY_PING_LOADING,
-  PROXY_PING_TIMEOUT_KEY,
-  PROXY_PING_TIMEOUT_MS,
-  ProxyForm,
-  ProxyItem,
-  PROXY_NEW_ID,
-  proxyConnectionStateOfType,
-  proxyEnabledCount,
-  proxyItemFromAdded,
-  proxyPingMsOfSeconds,
-  proxyPingOf,
-  proxyTdlibCodeOf,
-  proxyValueFromForm
-} from '../model/ProxySettings';
-import {
   ActiveSessionsLoaded,
   ActiveSessionsLoadFailed,
   CacheCleared,
@@ -207,9 +162,6 @@ import {
   SettingsIntent,
   StorageStatsLoaded,
   UserProfileData,
-  ProxiesLoaded,
-  ProxyPingUpdated,
-  ProxyConnectionStateChanged,
   LoadAutoDownloadPolicy,
   AutoDownloadPolicyLoaded,
   DataSaverSettingsLoaded,
@@ -246,11 +198,6 @@ import {
   LoadPrivacyDetailEffect,
   SetPrivacySettingEffect,
   SetReadDatePrivacyEffect,
-  LoadProxiesEffect,
-  EnableProxyEffect,
-  DisableProxyEffect,
-  SaveProxyEffect,
-  RemoveProxyEffect,
   LoadAutoDownloadPolicyEffect,
   PersistAutoDownloadPolicyEffect,
   LoadDataSaverSettingsEffect,
@@ -340,13 +287,6 @@ export class SettingsCoordinator {
    * 没注入时开关显 Android 默认档（循环播），与 TGMessageSticker 的默认口径一致。
    */
   private stickerSettingsStore: StickerSettingsStore | null = null;
-  /**
-   * PROXY-102：探测轮次令牌。TDLib 不会取消已经发出去的 `pingProxy`，所以晚到的
-   * 旧轮回包只能靠世代号丢 —— 不丢就会出现「代理已删除，那一行又亮起来」。
-   */
-  private pingGeneration: number = 0;
-  /** PROXY-102：`updateConnectionState` 订阅；首次读代理列表时建立，destroy 时退订。 */
-  private connectionSubscription: TdUpdateSubscription | null = null;
   private destroyed: boolean = false;
 
   /** 注入策略存储；必须在 start() 之前调用。 */
@@ -494,10 +434,6 @@ export class SettingsCoordinator {
       this.unsubscribeLang();
       this.unsubscribeLang = null;
     }
-    if (this.connectionSubscription !== null) {
-      this.connectionSubscription.unsubscribe();
-      this.connectionSubscription = null;
-    }
     if (this.groupRegistry !== null) {
       this.groupRegistry.stop();
       this.groupRegistry = null;
@@ -634,36 +570,6 @@ export class SettingsCoordinator {
         this.handleSetReadDatePrivacy(readDateEffect.showReadDate);
         break;
       }
-
-      case 'loadProxies':
-        this.handleLoadProxies();
-        break;
-
-      case 'enableProxy': {
-        const enableEffect: EnableProxyEffect = effect as EnableProxyEffect;
-        this.handleEnableProxy(enableEffect.proxyId);
-        break;
-      }
-
-      case 'disableProxy':
-        this.handleDisableProxy();
-        break;
-
-      case 'saveProxy': {
-        const saveEffect: SaveProxyEffect = effect as SaveProxyEffect;
-        this.handleSaveProxy(saveEffect.form);
-        break;
-      }
-
-      case 'removeProxy': {
-        const removeEffect: RemoveProxyEffect = effect as RemoveProxyEffect;
-        this.handleRemoveProxy(removeEffect.proxyId);
-        break;
-      }
-
-      case 'pingProxies':
-        this.handlePingProxies();
-        break;
 
       case 'loadAutoDownloadPolicy':
         this.handleLoadAutoDownloadPolicy();
@@ -2099,348 +2005,6 @@ export class SettingsCoordinator {
       return `Unable to ${action} privacy settings. Check your connection.`;
     }
     return `Unable to ${action} privacy settings. Please try again.`;
-  }
-
-  // ---- PROXY-101 网络代理 ----
-
-  private handleLoadProxies(): void {
-    this.loadProxies();
-  }
-
-  /**
-   * 读列表。
-   * 单条识别不出代理类型时丢掉那一行而不是整屏报错：TDLib 的 `proxyType` 是联合，
-   * 版本差异只会让一条行变未知，其余行照常可用。
-   */
-  private async loadProxies(): Promise<void> {
-    try {
-      const result: Result<ProxyItem[], AppError> = await this.fetchProxyItems();
-      if (this.destroyed) {
-        return;
-      }
-      if (result.ok) {
-        this.dispatch(new ProxiesLoaded(result.value));
-        return;
-      }
-      if (result.err) {
-        this.logger.logError(TAG, result.error);
-        this.dispatch(new ProxiesLoaded([]));
-        this.dispatch(new SetErrorMessage(this.proxyErrorMessage(result.error, 'load')));
-      }
-    } catch (e) {
-      if (this.destroyed) {
-        return;
-      }
-      const cause: string = e instanceof Error ? e.name : 'non-error';
-      const error: AppError = AppErrors.unknown(
-        'settings-proxy-load',
-        'Unexpected proxy list load failure',
-        cause
-      );
-      this.logger.logError(TAG, error);
-      this.dispatch(new ProxiesLoaded([]));
-      this.dispatch(new SetErrorMessage(this.proxyErrorMessage(error, 'load')));
-    }
-  }
-
-  private handleEnableProxy(proxyId: number): void {
-    const request: EnableProxy = new EnableProxy();
-    request.proxy_id = proxyId;
-    this.writeProxies('enableProxy', encodeEnableProxy(request) as TdWireObject, `id=${proxyId}`);
-  }
-
-  private handleDisableProxy(): void {
-    const request: DisableProxy = new DisableProxy();
-    this.writeProxies('disableProxy', encodeDisableProxy(request) as TdWireObject, 'none');
-  }
-
-  private handleRemoveProxy(proxyId: number): void {
-    const request: RemoveProxy = new RemoveProxy();
-    request.proxy_id = proxyId;
-    this.writeProxies('removeProxy', encodeRemoveProxy(request) as TdWireObject, `id=${proxyId}`);
-  }
-
-  /**
-   * 新增 / 编辑共用一条路径：表单里带 id 就是 editProxy，PROXY_NEW_ID 就是 addProxy。
-   * `enable` 取表单的「立即启用」，所以「添加并启用」是一条 addProxy(enable=true)，
-   * 不需要再补一发 enableProxy（TDLib 保证两者原子）。
-   */
-  private handleSaveProxy(form: ProxyForm): void {
-    const proxy: ProxyValue = proxyValueFromForm(form);
-    if (form.id === PROXY_NEW_ID) {
-      const request: AddProxy = new AddProxy();
-      request.proxy = proxy;
-      request.enable = form.enable;
-      request.comment = form.comment.trim();
-      this.writeProxies(
-        'addProxy',
-        encodeAddProxy(request) as TdWireObject,
-        `${proxy.server}:${proxy.port},enable=${request.enable}`
-      );
-      return;
-    }
-    const edit: EditProxy = new EditProxy();
-    edit.proxy_id = form.id;
-    edit.proxy = proxy;
-    edit.enable = form.enable;
-    edit.comment = form.comment.trim();
-    this.writeProxies(
-      'editProxy',
-      encodeEditProxy(edit) as TdWireObject,
-      `id=${edit.proxy_id},${proxy.server}:${proxy.port},enable=${edit.enable}`
-    );
-  }
-
-  /** 一条写请求 + 回读列表：单选态只有 TDLib 知道真相，不做乐观更新。 */
-  private async writeProxies(
-    op: string,
-    payload: TdWireObject,
-    detail: string
-  ): Promise<void> {
-    this.logger.info(TAG, 'proxy_write', `${op} ${detail}`);
-    try {
-      const pendingResult: Result<TdPendingRequest, AppError> = this.scope.request(op, payload);
-      if (pendingResult.err) {
-        if (!this.destroyed) {
-          this.logger.logError(TAG, pendingResult.error);
-          this.dispatch(new SetErrorMessage(this.proxyErrorMessage(pendingResult.error, op)));
-        }
-        return;
-      }
-      if (!pendingResult.ok) {
-        if (!this.destroyed) {
-          this.dispatch(new SetErrorMessage(`Unable to ${op}. Please try again.`));
-        }
-        return;
-      }
-      const response: Result<TdWireObject, AppError> = await pendingResult.value.promise;
-      if (response.err) {
-        if (!this.destroyed) {
-          this.logger.logError(TAG, response.error);
-          this.dispatch(new SetErrorMessage(this.proxyErrorMessage(response.error, op)));
-        }
-        return;
-      }
-      if (this.destroyed) {
-        return;
-      }
-      await this.loadProxies();
-    } catch (e) {
-      if (this.destroyed) {
-        return;
-      }
-      const cause: string = e instanceof Error ? e.name : 'non-error';
-      const error: AppError = AppErrors.unknown(
-        'settings-proxy-write',
-        `Unexpected ${op} failure`,
-        cause
-      );
-      this.logger.logError(TAG, error);
-      this.dispatch(new SetErrorMessage(this.proxyErrorMessage(error, op)));
-    }
-  }
-
-  private async fetchProxyItems(): Promise<Result<ProxyItem[], AppError>> {
-    const request: GetProxies = new GetProxies();
-    const pendingResult: Result<TdPendingRequest, AppError> = this.scope.request(
-      'getProxies',
-      encodeGetProxies(request) as TdWireObject
-    );
-    if (pendingResult.ok) {
-      const response: Result<TdWireObject, AppError> = await pendingResult.value.promise;
-      if (response.ok) {
-        const added: AddedProxies | null = decodeAddedProxies(response.value as TdJsonRaw);
-        if (added === null) {
-          return err<ProxyItem[], AppError>(
-            AppErrors.internal('settings_proxy_decode', 'TDLib proxy list could not be decoded')
-          );
-        }
-        const items: ProxyItem[] = [];
-        let skipped: number = 0;
-        for (let i = 0; i < added.proxies.length; i++) {
-          const row: AddedProxy = added.proxies[i];
-          const item: ProxyItem | null = proxyItemFromAdded(row);
-          if (item === null) {
-            skipped = skipped + 1;
-            continue;
-          }
-          items.push(item);
-        }
-        this.logger.info(
-          TAG,
-          'proxy_list_read',
-          `count=${items.length},skipped=${skipped},enabled=${proxyEnabledCount(items)}`
-        );
-        return ok<ProxyItem[], AppError>(items);
-      }
-      if (response.err) {
-        return err<ProxyItem[], AppError>(response.error);
-      }
-      return err<ProxyItem[], AppError>(
-        AppErrors.internal('settings_proxy_response', 'TDLib returned no proxy list result')
-      );
-    }
-    if (pendingResult.err) {
-      return err<ProxyItem[], AppError>(pendingResult.error);
-    }
-    return err<ProxyItem[], AppError>(
-      AppErrors.internal('settings_proxy_request', 'TDLib proxy list request was not created')
-    );
-  }
-
-  private proxyErrorMessage(error: AppError, action: string): string {
-    if (error.kind === 'tdlib' && error.code === 'too_many_requests') {
-      return 'Too many requests. Please wait and try again.';
-    }
-    if (error.kind === 'network') {
-      return `Unable to ${action} proxy. Check your connection.`;
-    }
-    return `Unable to ${action} proxy. Please try again.`;
-  }
-
-  // ---- PROXY-102 连通性探测与连接态 ----
-
-  /**
-   * 一轮探测：列表里每行各发一次 `pingProxy`，外加「不使用代理」行的直连探测
-   * （TDLib 语义：`proxy` 留空即绕开代理发）。各行并行，谁先回来谁先亮。
-   */
-  private handlePingProxies(): void {
-    if (this.destroyed || !this.currentState.showProxyPage) {
-      return;
-    }
-    this.subscribeConnectionState();
-    this.pingGeneration = this.pingGeneration + 1;
-    const generation: number = this.pingGeneration;
-    const items: ProxyItem[] = this.currentState.proxyItems;
-    this.pingProxyRow(generation, PROXY_NONE_ID, null);
-    for (let i = 0; i < items.length; i++) {
-      this.pingProxyRow(generation, items[i].id, items[i]);
-    }
-    this.logger.info(TAG, 'proxy_ping', `round=${generation},rows=${items.length + 1}`);
-  }
-
-  private async pingProxyRow(
-    generation: number,
-    proxyId: number,
-    item: ProxyItem | null
-  ): Promise<void> {
-    const request: PingProxy = pingProxyRequestFromItem(item);
-    this.dispatch(new ProxyPingUpdated(proxyId, PROXY_PING_LOADING));
-    this.schedulePingTimeout(generation, proxyId);
-    const startedAt: number = Date.now();
-    const pendingResult: Result<TdPendingRequest, AppError> = this.scope.request(
-      'pingProxy',
-      encodePingProxy(request) as TdWireObject
-    );
-    if (pendingResult.err) {
-      this.logger.logError(TAG, pendingResult.error);
-      // 请求根本没发出去（本地失败），原因同样按分类给一句话。
-      this.applyPing(generation, proxyId, PROXY_PING_FAILED, classifyProxyFailureKey(pendingResult.error, 0));
-      return;
-    }
-    if (!pendingResult.ok) {
-      this.applyPing(generation, proxyId, PROXY_PING_FAILED, 'Proxy error');
-      return;
-    }
-    try {
-      const response: Result<TdWireObject, AppError> = await pendingResult.value.promise;
-      if (response.err) {
-        // PROXY-103：TDLib 原文只进得了分类器、进不了屏幕与日志
-        // （`AppError` 刻意把 message 留作诊断、原文放 cause，别的请求的原文里可能出现手机号），
-        // 行上说的是本端分类出来的一句话，数字码只留给日志。
-        const reason: string = classifyProxyFailureKey(response.error, Date.now() - startedAt);
-        this.logger.info(
-          TAG,
-          'proxy_ping_error',
-          `id=${proxyId},kind=${response.error.kind},reason=${reason},` +
-            `code=${proxyTdlibCodeOf(response.error)},elapsed=${Date.now() - startedAt}`
-        );
-        this.applyPing(generation, proxyId, PROXY_PING_FAILED, reason);
-        return;
-      }
-      if (!response.ok) {
-        this.applyPing(generation, proxyId, PROXY_PING_FAILED, 'Proxy error');
-        return;
-      }
-      const seconds: Seconds | null = decodeSeconds(response.value as TdJsonRaw);
-      if (seconds === null) {
-        this.applyPing(generation, proxyId, PROXY_PING_FAILED, 'Proxy error');
-        return;
-      }
-      const pingMs: number = proxyPingMsOfSeconds(seconds.seconds);
-      // 成功（含 0 秒当失败）都不该留着上一次的原因 —— 空串即擦除。
-      this.applyPing(
-        generation,
-        proxyId,
-        pingMs,
-        pingMs === PROXY_PING_FAILED ? 'Proxy error' : ''
-      );
-    } catch (e) {
-      this.applyPing(generation, proxyId, PROXY_PING_FAILED, 'Proxy error');
-    }
-  }
-
-  /**
-   * 本地超时兜底：TDLib 的 `pingProxy` 挂在一个不可达地址上可以几分钟不回包，
-   * 而那一行会一直停在「Checking…」—— 用户读到的是「还在测」，真相是「没人在测」。
-   *
-   * 只对**还在途**的那一行说话：模拟器实测到 `127.0.0.1:989` 的拒连 7ms 就回来了，
-   * 10s 后定时器照样到点，把已经落定的「Connection refused」盖成了「Connection timed out」。
-   * 世代号挡不住这种覆盖（还是同一轮），所以必须按行的当前探测态判。
-   */
-  private schedulePingTimeout(generation: number, proxyId: number): void {
-    const self: SettingsCoordinator = this;
-    setTimeout((): void => {
-      if (proxyPingOf(self.currentState.proxyPingMs, proxyId) !== PROXY_PING_LOADING) {
-        return;
-      }
-      self.applyPing(generation, proxyId, PROXY_PING_FAILED, PROXY_PING_TIMEOUT_KEY);
-    }, PROXY_PING_TIMEOUT_MS);
-  }
-
-  /** 回包只认当轮：旧轮晚到、页面已经关掉，都不该再改那一行说什么。 */
-  private applyPing(generation: number, proxyId: number, pingMs: number, failureKey: string): void {
-    if (this.destroyed || generation !== this.pingGeneration || !this.currentState.showProxyPage) {
-      return;
-    }
-    this.dispatch(new ProxyPingUpdated(proxyId, pingMs, failureKey));
-  }
-
-  /**
-   * 连接态走 gateway 的过滤订阅，而不是 `scope.subscribeEvents` —— 后者是单槽监听，
-   * 装配层已经把它交给 auth 事件了。整个协调器只建一次，destroy 时退订。
-   */
-  private subscribeConnectionState(): void {
-    if (this.connectionSubscription !== null) {
-      return;
-    }
-    const filter: TdUpdateFilter = {
-      clientId: this.scope.clientId,
-      types: ['updateConnectionState']
-    };
-    const self: SettingsCoordinator = this;
-    this.connectionSubscription = this.scope.gatewayInstance.subscribeUpdates(
-      filter,
-      (event: TdRoutedEvent): void => {
-        self.handleConnectionStateEvent(event);
-      }
-    );
-  }
-
-  private handleConnectionStateEvent(event: TdRoutedEvent): void {
-    if (this.destroyed) {
-      return;
-    }
-    const update: UpdateConnectionState | null = decodeUpdateConnectionState(
-      event.payload as TdJsonRaw
-    );
-    if (update === null) {
-      return;
-    }
-    const state: TdConnectionState | null = update.state;
-    const type: string = state === null ? '' : state.type;
-    this.logger.info(TAG, 'proxy_connection', type);
-    this.dispatch(new ProxyConnectionStateChanged(proxyConnectionStateOfType(type)));
   }
 
   // ---- AUTODL-101 自动媒体下载 ----

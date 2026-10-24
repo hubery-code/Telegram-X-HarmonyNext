@@ -9,7 +9,7 @@
  * 由 `getInternalLinkType` 说，而不是由这里猜 —— 这里的每一条规则只在
  * 「省一次 IPC」的意义上存在，规则错了最坏结果也只是多问一次 TDLib。
  *
- * 因此本文件刻意**不做**：用户名长度/字符集校验、`joinchat`/`proxy`/`+hash` 形态区分、
+ * 因此本文件刻意**不做**：用户名长度/字符集校验、`joinchat`/`+hash` 形态区分、
  * `/c/<id>` 内部 id 反解 —— 那些都在 `getInternalLinkType` 的答案里，重复一遍就是两套真相。
  */
 
@@ -98,7 +98,7 @@ function hostIsTelegram(host: string): boolean {
 
 /**
  * 「这条链接值不值得去问 TDLib」。判据只有 scheme 与 host 两样，**不看 path**：
- * `t.me/s/durov`、`t.me/+abc`、`t.me/proxy?...` 都算候选，具体是会话、邀请还是代理，
+ * `t.me/s/durov`、`t.me/+abc` 都算候选，具体是会话还是邀请，
  * 由 `getInternalLinkType` 回答。
  */
 export function isTelegramLinkCandidate(uri: string): boolean {

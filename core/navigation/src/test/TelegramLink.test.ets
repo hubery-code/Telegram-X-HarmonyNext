@@ -92,9 +92,9 @@ export default function telegramLinkTest() {
       expect(normalizeTelegramLink('https://durov.t.me/1')).assertEqual('https://t.me/durov/1');
       // 改写保留原子域（TGX 的 preProcessTelegramUrl 只把用户名挪到 path 上）。
       expect(normalizeTelegramLink('durov.telegram.me')).assertEqual('https://telegram.me/durov');
-      // query 必须留在改写后的链接上（代理链接靠它）。
-      expect(normalizeTelegramLink('https://u.t.me/proxy?server=1.2.3.4&port=80'))
-        .assertEqual('https://t.me/u/proxy?server=1.2.3.4&port=80');
+      // query 必须留在改写后的链接上。
+      expect(normalizeTelegramLink('https://u.t.me/s/durov?before=3'))
+        .assertEqual('https://t.me/u/s/durov?before=3');
     });
 
     it('normalize_leavesSiteAliasesAndPlainHostsAlone', 0, () => {

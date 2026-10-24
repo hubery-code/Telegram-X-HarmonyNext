@@ -45,12 +45,9 @@ import { AppLinkResult, AppLinkRouter } from '../deeplink/AppLinkRouter';
 import {
   InvitePromptData,
   PromptCard,
-  ProxyPromptChoice,
-  ProxyPromptData,
   EMPTY_PROMPT_CARD,
   appLinkReasonKey,
-  invitePromptCard,
-  proxyPromptCard
+  invitePromptCard
 } from '../deeplink/AppLinkPrompt';
 import { AppLinkPromptLayer } from '../deeplink/AppLinkPromptView';
 import { ScopeAppLinkPort } from '../deeplink/ScopeAppLinkPort';
@@ -342,9 +339,7 @@ struct Index {
    */
   @State promptVisible: boolean = false;
   @State promptCard: PromptCard = EMPTY_PROMPT_CARD;
-  private promptKind: string = 'invite';
   private pendingInvite: ((accepted: boolean) => void) | null = null;
-  private pendingProxy: ((choice: ProxyPromptChoice) => void) | null = null;
   // STICKER-PREVIEW-102：全局贴纸包预览弹窗状态与注册表
   @State globalStickerPreview: StickerSetPreviewState | null = null;
   private globalFileRegistry: FileRegistry | null = null;
@@ -617,8 +612,7 @@ struct Index {
         },
         isReady: (): boolean => this.navController.hasRoute('home'),
         prompt: {
-          confirmInvite: (data: InvitePromptData): Promise<boolean> => this.askInvite(data),
-          chooseProxy: (data: ProxyPromptData): Promise<ProxyPromptChoice> => this.askProxy(data)
+          confirmInvite: (data: InvitePromptData): Promise<boolean> => this.askInvite(data)
         },
         onOpenStickerSet: (stickerSetName: string, expectCustomEmoji: boolean): void => {
           this.handleOpenStickerSet(stickerSetName, expectCustomEmoji);
@@ -950,18 +944,7 @@ struct Index {
     this.settlePrompt();
     return new Promise<boolean>((resolve: (accepted: boolean) => void): void => {
       this.pendingInvite = resolve;
-      this.promptKind = 'invite';
       this.promptCard = invitePromptCard(data, (key: string, ...args: (string | number)[]): string => this.t(key, ...args));
-      this.promptVisible = true;
-    });
-  }
-
-  private askProxy(data: ProxyPromptData): Promise<ProxyPromptChoice> {
-    this.settlePrompt();
-    return new Promise<ProxyPromptChoice>((resolve: (choice: ProxyPromptChoice) => void): void => {
-      this.pendingProxy = resolve;
-      this.promptKind = 'proxy';
-      this.promptCard = proxyPromptCard(data, (key: string, ...args: (string | number)[]): string => this.t(key, ...args));
       this.promptVisible = true;
     });
   }
@@ -974,30 +957,13 @@ struct Index {
       this.pendingInvite = null;
       resolve(false);
     }
-    if (this.pendingProxy !== null) {
-      const resolveChoice: (choice: ProxyPromptChoice) => void = this.pendingProxy;
-      this.pendingProxy = null;
-      resolveChoice('cancel');
-    }
   }
 
   private onPromptPrimary(): void {
-    if (this.promptKind === 'proxy') {
-      this.settleWithChoice('enable');
-      return;
-    }
     this.settleWithAnswer(true);
   }
 
-  private onPromptSecondary(): void {
-    this.settleWithChoice('save');
-  }
-
   private onPromptCancel(): void {
-    if (this.promptKind === 'proxy') {
-      this.settleWithChoice('cancel');
-      return;
-    }
     this.settleWithAnswer(false);
   }
 
@@ -1007,15 +973,6 @@ struct Index {
       const resolve: (accepted: boolean) => void = this.pendingInvite;
       this.pendingInvite = null;
       resolve(accepted);
-    }
-  }
-
-  private settleWithChoice(choice: ProxyPromptChoice): void {
-    this.promptVisible = false;
-    if (this.pendingProxy !== null) {
-      const resolve: (value: ProxyPromptChoice) => void = this.pendingProxy;
-      this.pendingProxy = null;
-      resolve(choice);
     }
   }
 
@@ -2219,9 +2176,6 @@ struct Index {
           card: this.promptCard,
           onPrimary: (): void => {
             this.onPromptPrimary();
-          },
-          onSecondary: (): void => {
-            this.onPromptSecondary();
           },
           onCancel: (): void => {
             this.onPromptCancel();

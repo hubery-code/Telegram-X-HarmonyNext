@@ -2812,15 +2812,26 @@ export default function chatReducerTest() {
     });
 
     it('clearRecentGifs_emptiesRecentGifsList', 0, () => {
-      const initial: ChatUiState = makeState('');
-      expect(initial.recentGifs.length > 0).assertTrue();
+      // GIF-SEND-101：默认 `recentGifs` 现在是**空列表**（占位假动图已删，
+      // 真实数据由 `onSavedAnimationsLoaded` 从 TDLib 回灌）。
+      // 所以这条用例不能再靠「默认就有几条」来准备数据 —— 那恰好是在钉假数据，
+      // 数据一删它就失去意义。改成显式种两条，钉的仍是「清空行为」本身：
+      // 列表归零 + 逐条向 TDLib 发 removeSavedAnimation。
+      const seeded: GifItem[] = [
+        { id: 'g1', title: 'A', tag: '#a', category: '🕒 Recent', fileId: 5001,
+          width: 320, height: 240, duration: 2, previewEmoji: '👍' },
+        { id: 'g2', title: 'B', tag: '#b', category: '🕒 Recent', fileId: 5002,
+          width: 320, height: 240, duration: 3, previewEmoji: '🔥' }
+      ];
+      const initial: ChatUiState = makeState('').copyWith({ recentGifs: seeded });
+      expect(initial.recentGifs.length).assertEqual(2);
       const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
         initial,
         new ClearRecentGifs(),
         makeEnv()
       );
       expect(result.state.recentGifs.length).assertEqual(0);
-      expect(result.effects.length).assertEqual(initial.recentGifs.length);
+      expect(result.effects.length).assertEqual(2);
       expect(result.effects[0].kind).assertEqual('removeSavedAnimationInTdlib');
     });
 

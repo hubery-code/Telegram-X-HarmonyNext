@@ -2,7 +2,7 @@
  * feature/settings — 「自动媒体下载」子页的纯展示映射（AUTODL-101）。
  *
  * 策略本体在 `@tgx/core-domain`（设置页写、聊天页读），这里只负责把策略翻成行文案，
- * 且**只返回 i18n 键**，翻译交给页面（与 `ProxySettings.proxyKindLabel` 同一口径）。
+ * 且**只返回 i18n 键**，翻译交给页面。
  *
  * 行文案的三条规矩（照 Android TGX 的 Data and Storage）：
  * 1. 三个分区勾得完全一样 → 直接列媒体类型，用户不必点进去就知道现状；

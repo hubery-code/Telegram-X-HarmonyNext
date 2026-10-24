@@ -16,7 +16,7 @@
 import { LightTheme, Theme } from '@tgx/core-design-system';
 import { A11y, a11y, Lang, SupportedLanguage } from '@tgx/core-common';
 import { StickerSetItem } from '../model/StickerSetPreviewState';
-import { GifItem, GIF_CATEGORIES, DEFAULT_RECENT_GIFS, DEFAULT_GIF_PACKS } from '../model/GifItem';
+import { GifItem, GIF_CATEGORIES } from '../model/GifItem';
 import {
   StickerBoardPack,
   StickerTrendingPack,
@@ -969,28 +969,34 @@ export struct EmojiBoard {
     return stickerBoardBlocks(this.stickerPacks, this.favoriteStickers, this.recentStickers);
   }
 
+  /**
+   * GIF 面板当前要显示的动图。
+   *
+   * GIF-SEND-101 起这里**只有一份真实数据源**：`recentGifs`（由
+   * `onSavedAnimationsLoaded` 从 TDLib 的 `getSavedAnimations` 回灌，
+   * 每条都带真实 fileId）。
+   *
+   * 原先还有第二个来源 `DEFAULT_GIF_PACKS` —— 25 个只有标题和 emoji、
+   * 没有任何真实文件的「预置动图」。它们必然发不出去，而
+   * `ChatCoordinator.handleSendAnimation` 为这个假号段写了兜底：命中就发一句
+   * 「🎬 <标题>」文本。也就是说**点了假图会发出一条文本**，用户无从察觉。
+   * 删掉假库之后，「面板上能点的 = 一定发得出去」成为不变量，
+   * 那条按 fileId 号段兜底的分支也就不需要了（同轮一并删除）。
+   */
   private getActiveGifs(): GifItem[] {
     const query: string = this.gifSearchQuery.trim().toLowerCase();
-    if (query.length > 0) {
-      const allGifs: GifItem[] = [];
-      const categories: string[] = Object.keys(DEFAULT_GIF_PACKS);
-      for (let i = 0; i < categories.length; i++) {
-        const items: GifItem[] = DEFAULT_GIF_PACKS[categories[i]];
-        for (let j = 0; j < items.length; j++) {
-          const it: GifItem = items[j];
-          if (it.title.toLowerCase().includes(query) || it.tag.toLowerCase().includes(query)) {
-            allGifs.push(it);
-          }
-        }
+    const source: GifItem[] = this.recentGifs.slice();
+    if (query.length === 0) {
+      return source;
+    }
+    const matched: GifItem[] = [];
+    for (let i = 0; i < source.length; i++) {
+      const it: GifItem = source[i];
+      if (it.title.toLowerCase().includes(query) || it.tag.toLowerCase().includes(query)) {
+        matched.push(it);
       }
-      return allGifs;
     }
-
-    if (this.currentGifCategoryIndex === 0) {
-      return this.recentGifs.slice();
-    }
-    const catName: string = GIF_CATEGORIES[this.currentGifCategoryIndex];
-    return DEFAULT_GIF_PACKS[catName] !== undefined ? DEFAULT_GIF_PACKS[catName].slice() : [];
+    return matched;
   }
 
   /** GIF-101：GIF 动图搜索面板与动图发送 */

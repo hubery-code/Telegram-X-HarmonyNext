@@ -1771,5 +1771,50 @@ export default function stickerBoardFetchTest(): void {
 
       coordinator.destroy();
     });
+
+    /**
+     * GIF-SEND-101：**任何** fileId 都必须走真实的 inputMessageAnimation，
+     * 不许再被降级成一条文本。
+     *
+     * 背景：`handleSendAnimation` 原先有一段按号段兜底的假发送 ——
+     * `if (fileId >= 2001 && fileId <= 2040) { sendTextMessage('🎬 ' + title, 0); return; }`。
+     * 那个号段对应已删除的「预置动图」（没有任何真实文件），于是用户点一张动图，
+     * 实际发出去的是一句带 emoji 的文本，连 chatId 都是 0。
+     *
+     * 这条用例专门拿**旧号段内的** 2003 做输入：修复前它会变成 text，
+     * 修复后必须是 animation。这样即使将来有人「好心」把那段兜底加回来，也会被拦。
+     */
+    it('sendAnimation_neverDegradesToText_evenInsideOldFakeFileIdRange', 0, async (): Promise<void> => {
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const scope: AccountScope = createScope(bridge);
+      const coordinator: ChatCoordinator = new ChatCoordinator(scope, 42, 'Test Chat');
+
+      const legacyFakeId: number = 2003;
+      const item: GifItem = {
+        id: 'legacy_1',
+        title: 'Mind Blown',
+        tag: '#trending',
+        category: '🕒 Recent',
+        fileId: legacyFakeId,
+        width: 320,
+        height: 240,
+        duration: 3,
+        previewEmoji: '🤯'
+      };
+
+      coordinator.dispatch(new SendGif(item));
+      await settle();
+
+      // 必须发出 sendMessage，且内容类型是 inputMessageAnimation。
+      const sendReqs: Record<string, TdWireValue>[] = requestsOfType(bridge, 'sendMessage');
+      expect(sendReqs.length).assertEqual(1);
+      const content: Record<string, TdWireValue> =
+        sendReqs[0]['input_message_content'] as Record<string, TdWireValue>;
+      expect(content['@type']).assertEqual('inputMessageAnimation');
+      // 且 chatId 必须是真实会话，不许是 0。
+      expect(sendReqs[0]['chat_id']).assertEqual(42);
+
+      coordinator.destroy();
+    });
   });
 }

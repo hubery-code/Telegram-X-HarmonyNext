@@ -40,7 +40,6 @@ import {
   normalizeTelegramLink
 } from '@tgx/core-navigation';
 import {
-  AddProxy,
   Chat,
   ChatTypeBasicGroup,
   ChatTypePrivate,
@@ -58,7 +57,6 @@ import {
   InternalLinkTypeContactsPage,
   InternalLinkTypeMessage,
   InternalLinkTypeMyProfilePage,
-  InternalLinkTypeProxy,
   InternalLinkTypePublicChat,
   InternalLinkTypeSavedMessages,
   InternalLinkTypeSettings,
@@ -66,7 +64,6 @@ import {
   InternalLinkTypeUserPhoneNumber,
   JoinChatByInviteLink,
   MessageLinkInfo,
-  ProxyValue,
   SearchPublicChat,
   SearchUserByPhoneNumber,
   SendBotStartMessage,
@@ -82,7 +79,6 @@ import {
   decodeTdChatJoinResult,
   decodeTdInternalLinkType,
   decodeUser,
-  encodeAddProxy,
   encodeCheckChatInviteLink,
   encodeCreatePrivateChat,
   encodeGetInternalLinkType,
@@ -98,10 +94,7 @@ import { TdWireObject } from '@tgx/td-gateway';
 import {
   AppLinkPromptPort,
   DECLINING_APP_LINK_PROMPT,
-  InvitePromptData,
-  ProxyPromptChoice,
-  ProxyPromptData,
-  proxyChoiceEnables
+  InvitePromptData
 } from './AppLinkPrompt';
 
 /** TDLib 请求端口；生产实现包 `AccountScope.request`，测试里给假应答。 */
@@ -260,9 +253,6 @@ export class AppLinkRouter {
     if (discriminator === 'internalLinkTypeChatInvite') {
       return await this.openChatInvite(discriminator, linkType as InternalLinkTypeChatInvite);
     }
-    if (discriminator === 'internalLinkTypeProxy') {
-      return await this.openProxyLink(discriminator, linkType as InternalLinkTypeProxy);
-    }
     if (discriminator === 'internalLinkTypeMessage') {
       return await this.openMessageLink(discriminator, linkType as InternalLinkTypeMessage);
     }
@@ -398,45 +388,6 @@ export class AppLinkRouter {
     // declined / guardbot / 未来新增的分支：说不出会话，就老实报错。
     this.log('warn', `outcome=failed stage=join,reason=${joinType.length === 0 ? 'undecodable' : joinType}`);
     return result('failed', discriminator, 0, 'join_failed');
-  }
-
-  /**
-   * `tg://proxy?...`、`t.me/proxy?...` —— 代理链接（DEEPLINK-102，结掉 PROXY-101 的遗留）。
-   *
-   * Android 是一个三选菜单（`openProxyAlert`：启用 / 稍后使用 / 取消），落到 TDLib 侧
-   * 是**同一条** `addProxy`，只差 `enable` 这个 bool —— 所以「稍后使用」绝不可能顺手改路由。
-   * 不自己发 `enableProxy`：PROXY-101 的口径是「单选态只有 TDLib 知道真相」，
-   * addProxy(enable=true) 已经原子，代理页下次回读 `getProxies` 就会显出这一行。
-   */
-  private async openProxyLink(
-    discriminator: string,
-    linkType: InternalLinkTypeProxy
-  ): Promise<AppLinkResult> {
-    const proxy: ProxyValue | null = linkType.proxy;
-    if (proxy === null || proxy.server.length === 0 || proxy.port <= 0) {
-      // TDLib 明确回 null 表示「这个代理类型本端不支持」（Android 的 ProxyLinkUnsupported）。
-      return result('unsupported', discriminator, 0, 'proxy_unsupported');
-    }
-    const choice: ProxyPromptChoice = await this.prompt.chooseProxy(proxyPromptOf(proxy));
-    const enable: boolean | null = proxyChoiceEnables(choice);
-    if (enable === null) {
-      this.log('info', 'outcome=cancelled stage=proxy_choice');
-      return result('cancelled', discriminator, 0, 'proxy_declined');
-    }
-    const request: AddProxy = new AddProxy();
-    request.proxy = proxy;
-    request.enable = enable;
-    request.comment = '';
-    const response: Result<TdWireObject, AppError> = await this.port.request(
-      'addProxy',
-      encodeAddProxy(request) as TdWireObject
-    );
-    if (response.err) {
-      this.log('warn', `outcome=failed stage=add_proxy,kind=${response.error.kind}`);
-      return result('failed', discriminator, 0, 'proxy_add_failed');
-    }
-    this.log('info', `outcome=notified stage=add_proxy,enable=${enable}`);
-    return result('notified', discriminator, 0, enable ? 'proxy_enabled' : 'proxy_saved');
   }
 
   /**
@@ -756,20 +707,6 @@ export function invitePromptOf(info: ChatInviteLinkInfo): InvitePromptData {
     isChannel: kind === 'inviteLinkChatTypeChannel',
     createsJoinRequest: info.creates_join_request
   };
-}
-
-/**
- * DEEPLINK-102：`proxy` → 弹窗视图模型。
- * `type_` 的判别式剥掉 `proxyType` 前缀就是用户看得懂的种类名（socks5 / http / mtproto）；
- * 认不出来的种类留空串，弹窗照常显示地址，只是不多那句 mtproto 提示。
- */
-export function proxyPromptOf(proxy: ProxyValue): ProxyPromptData {
-  const type = proxy.type_;
-  const discriminator: string = type === null ? '' : type.type;
-  const kind: string = discriminator.startsWith('proxyType')
-    ? discriminator.substring('proxyType'.length).toLowerCase()
-    : '';
-  return { server: proxy.server, port: proxy.port, kind: kind };
 }
 
 /**

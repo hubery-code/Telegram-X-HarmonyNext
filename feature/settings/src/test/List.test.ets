@@ -6,7 +6,6 @@ import privacySettingsTest from './PrivacySettings.test';
 import devicesSubPageTest from './DevicesSubPage.test';
 import settingsSectionTest from './SettingsSection.test';
 import settingsOverlayBackTest from './SettingsOverlayBack.test';
-import proxySettingsTest from './ProxySettings.test';
 import autoDownloadRowsTest from './AutoDownloadRows.test';
 import dataSaverRowsTest from './DataSaverRows.test';
 import downloadLimitRowsTest from './DownloadLimitRows.test';
@@ -21,7 +20,6 @@ export default function testsuite(): void {
   devicesSubPageTest();
   settingsSectionTest();
   settingsOverlayBackTest();
-  proxySettingsTest();
   autoDownloadRowsTest();
   dataSaverRowsTest();
   downloadLimitRowsTest();

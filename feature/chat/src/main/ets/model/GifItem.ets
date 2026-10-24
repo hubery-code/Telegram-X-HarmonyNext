@@ -1,7 +1,30 @@
 /**
  * Telegram X HarmonyOS NEXT
- * GIF-101：GIF 动图模型与预置动图库（FEAT-P2-004）
+ * GIF 动图模型（FEAT-P2-004）
  * 100% Kit-free 纯 ArkTS
+ *
+ * ## 这个文件为什么只剩模型（GIF-SEND-101，2026-10-24）
+ *
+ * 这里原先还有 `DEFAULT_GIF_PACKS`（5 个分类、25 个「预置动图」）与
+ * `DEFAULT_RECENT_GIFS`（4 项），每项只有 `title` / `previewEmoji` /
+ * 一个 **2001-2040 的假 fileId**，**没有任何真实文件**。
+ *
+ * 它们造成的后果不是「少一个功能」，而是**发出去的东西是假的**：
+ * `ChatCoordinator.handleSendAnimation` 里有一段专门为这个号段写的分支 ——
+ * 一旦命中就 `sendTextMessage('🎬 ' + title, 0)`，也就是**把「发 GIF」悄悄
+ * 变成「发一句带 emoji 的文本」，连 chatId 都传的是 0**。用户在面板上点一张
+ * 动图，以为发出去的是动图。
+ *
+ * 真正能发的动图一直都有：GIF-SAVED-101 已经把 TDLib 的 `getSavedAnimations`
+ * 接进 `recentGifs`（`onSavedAnimationsLoaded` 写的就是这个字段），那些条目带
+ * **真实 fileId**，走的是正常的 `inputMessageAnimation` 路径。
+ *
+ * 所以修法是删掉占位库，让面板**只显示真实动图**：这样「面板上能点的，就一定
+ * 发得出去」成为一条不变量，而不是靠一个号段判断去兜。代价是首次打开面板时
+ * 若 TDLib 还没回包，列表是空的 —— 那是**诚实的空**，比一排点了发文本的假图好。
+ *
+ * 分类也相应收成「最近」一项：远端没有「热门动图」接口（Telegram 的 GIF 搜索
+ * 走 `searchAnimation`，本端未接），凭空造 5 个分类等于又造一次假数据。
  */
 
 export interface GifItem {
@@ -9,6 +32,7 @@ export interface GifItem {
   title: string;
   tag: string;
   category: string;
+  /** TDLib 的 animation file id；**必须是真实文件**，否则发不出去。 */
   fileId: number;
   width: number;
   height: number;
@@ -16,107 +40,17 @@ export interface GifItem {
   previewEmoji: string;
 }
 
-/** 预置 GIF 分类 */
+/**
+ * GIF 面板的分类。
+ *
+ * 只有「最近」一项，因为它是唯一有真实数据来源的分类（TDLib 的
+ * `getSavedAnimations`）。热门/搞笑/派对那些分类在 Telegram 上要么走
+ * `searchAnimation`（本端未接），要么由服务端下发的 GIF 集合提供 ——
+ * 都不在本端能力内，写死分类只会导向又一批假条目。
+ */
 export const GIF_CATEGORIES: string[] = [
-  '🕒 Recent',
-  '🔥 Trending',
-  '😂 Funny',
-  '🎉 Party',
-  '❤️ Love',
-  '🐱 Animals',
-  '👏 Applause'
+  '🕒 Recent'
 ];
 
-/** 预置初始最近使用 GIF 列表（4 项） */
-export const DEFAULT_RECENT_GIFS: GifItem[] = [
-  {
-    id: 'gif_rec_1',
-    title: 'Thumbs Up',
-    tag: '#trending',
-    category: '🔥 Trending',
-    fileId: 2001,
-    width: 320,
-    height: 240,
-    duration: 2,
-    previewEmoji: '👍'
-  },
-  {
-    id: 'gif_rec_2',
-    title: 'Party Hard',
-    tag: '#party',
-    category: '🎉 Party',
-    fileId: 2011,
-    width: 320,
-    height: 240,
-    duration: 3,
-    previewEmoji: '🎉'
-  },
-  {
-    id: 'gif_rec_3',
-    title: 'LOL Face',
-    tag: '#funny',
-    category: '😂 Funny',
-    fileId: 2006,
-    width: 320,
-    height: 240,
-    duration: 2,
-    previewEmoji: '😂'
-  },
-  {
-    id: 'gif_rec_4',
-    title: 'Cat Vibe',
-    tag: '#animals',
-    category: '🐱 Animals',
-    fileId: 2021,
-    width: 320,
-    height: 240,
-    duration: 4,
-    previewEmoji: '🐱'
-  }
-];
-
-/** 预置各分类动图字典（fileId 2001 - 2040） */
-export const DEFAULT_GIF_PACKS: Record<string, GifItem[]> = {
-  '🔥 Trending': [
-    { id: 'gif_t1', title: 'Thumbs Up', tag: '#trending', category: '🔥 Trending', fileId: 2001, width: 320, height: 240, duration: 2, previewEmoji: '👍' },
-    { id: 'gif_t2', title: 'Fire Flame', tag: '#trending', category: '🔥 Trending', fileId: 2002, width: 320, height: 240, duration: 3, previewEmoji: '🔥' },
-    { id: 'gif_t3', title: 'Mind Blown', tag: '#trending', category: '🔥 Trending', fileId: 2003, width: 320, height: 240, duration: 3, previewEmoji: '🤯' },
-    { id: 'gif_t4', title: 'Cool Vibes', tag: '#trending', category: '🔥 Trending', fileId: 2004, width: 320, height: 240, duration: 2, previewEmoji: '😎' },
-    { id: 'gif_t5', title: 'Victory Sign', tag: '#trending', category: '🔥 Trending', fileId: 2005, width: 320, height: 240, duration: 2, previewEmoji: '✌️' }
-  ],
-  '😂 Funny': [
-    { id: 'gif_f1', title: 'LOL Face', tag: '#funny', category: '😂 Funny', fileId: 2006, width: 320, height: 240, duration: 2, previewEmoji: '😂' },
-    { id: 'gif_f2', title: 'Rolling Floor', tag: '#funny', category: '😂 Funny', fileId: 2007, width: 320, height: 240, duration: 3, previewEmoji: '🤣' },
-    { id: 'gif_f3', title: 'Silly Clown', tag: '#funny', category: '😂 Funny', fileId: 2008, width: 320, height: 240, duration: 2, previewEmoji: '🤡' },
-    { id: 'gif_f4', title: 'Awkward Smile', tag: '#funny', category: '😂 Funny', fileId: 2009, width: 320, height: 240, duration: 2, previewEmoji: '😬' },
-    { id: 'gif_f5', title: 'Sneaky Grin', tag: '#funny', category: '😂 Funny', fileId: 2010, width: 320, height: 240, duration: 2, previewEmoji: '😏' }
-  ],
-  '🎉 Party': [
-    { id: 'gif_p1', title: 'Party Popper', tag: '#party', category: '🎉 Party', fileId: 2011, width: 320, height: 240, duration: 3, previewEmoji: '🎉' },
-    { id: 'gif_p2', title: 'Dancing Queen', tag: '#party', category: '🎉 Party', fileId: 2012, width: 320, height: 240, duration: 4, previewEmoji: '💃' },
-    { id: 'gif_p3', title: 'Disco Ball', tag: '#party', category: '🎉 Party', fileId: 2013, width: 320, height: 240, duration: 3, previewEmoji: '🪩' },
-    { id: 'gif_p4', title: 'Cheers Drinks', tag: '#party', category: '🎉 Party', fileId: 2014, width: 320, height: 240, duration: 2, previewEmoji: '🥂' },
-    { id: 'gif_p5', title: 'Confetti Rain', tag: '#party', category: '🎉 Party', fileId: 2015, width: 320, height: 240, duration: 3, previewEmoji: '🎊' }
-  ],
-  '❤️ Love': [
-    { id: 'gif_l1', title: 'Sparkling Heart', tag: '#love', category: '❤️ Love', fileId: 2016, width: 320, height: 240, duration: 2, previewEmoji: '💖' },
-    { id: 'gif_l2', title: 'Heart Eyes', tag: '#love', category: '❤️ Love', fileId: 2017, width: 320, height: 240, duration: 3, previewEmoji: '😍' },
-    { id: 'gif_l3', title: 'Blowing Kiss', tag: '#love', category: '❤️ Love', fileId: 2018, width: 320, height: 240, duration: 2, previewEmoji: '😘' },
-    { id: 'gif_l4', title: 'Red Rose', tag: '#love', category: '❤️ Love', fileId: 2019, width: 320, height: 240, duration: 3, previewEmoji: '🌹' },
-    { id: 'gif_l5', title: 'Big Hug', tag: '#love', category: '❤️ Love', fileId: 2020, width: 320, height: 240, duration: 3, previewEmoji: '🤗' }
-  ],
-  '🐱 Animals': [
-    { id: 'gif_a1', title: 'Cat Vibe', tag: '#animals', category: '🐱 Animals', fileId: 2021, width: 320, height: 240, duration: 4, previewEmoji: '🐱' },
-    { id: 'gif_a2', title: 'Happy Doggy', tag: '#animals', category: '🐱 Animals', fileId: 2022, width: 320, height: 240, duration: 3, previewEmoji: '🐶' },
-    { id: 'gif_a3', title: 'Panda Roll', tag: '#animals', category: '🐱 Animals', fileId: 2023, width: 320, height: 240, duration: 3, previewEmoji: '🐼' },
-    { id: 'gif_a4', title: 'Bunny Hop', tag: '#animals', category: '🐱 Animals', fileId: 2024, width: 320, height: 240, duration: 2, previewEmoji: '🐰' },
-    { id: 'gif_a5', title: 'Koala Nap', tag: '#animals', category: '🐱 Animals', fileId: 2025, width: 320, height: 240, duration: 4, previewEmoji: '🐨' }
-  ],
-  '👏 Applause': [
-    { id: 'gif_ap1', title: 'Standing Ovation', tag: '#applause', category: '👏 Applause', fileId: 2026, width: 320, height: 240, duration: 3, previewEmoji: '👏' },
-    { id: 'gif_ap2', title: 'Clap Clap', tag: '#applause', category: '👏 Applause', fileId: 2027, width: 320, height: 240, duration: 2, previewEmoji: '🙌' },
-    { id: 'gif_ap3', title: 'Chef Kiss', tag: '#applause', category: '👏 Applause', fileId: 2028, width: 320, height: 240, duration: 3, previewEmoji: '👌' },
-    { id: 'gif_ap4', title: 'Salute You', tag: '#applause', category: '👏 Applause', fileId: 2029, width: 320, height: 240, duration: 2, previewEmoji: '🫡' },
-    { id: 'gif_ap5', title: 'Top Notch', tag: '#applause', category: '👏 Applause', fileId: 2030, width: 320, height: 240, duration: 2, previewEmoji: '💯' }
-  ]
-};
+/** 首次打开面板时的空列表（不用假数据填充）。 */
+export const EMPTY_GIFS: GifItem[] = [];

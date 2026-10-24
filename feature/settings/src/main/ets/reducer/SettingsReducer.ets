@@ -100,15 +100,6 @@ import {
   ApplyPrivacyPicker,
   PrivacyRulesSaved,
   PrivacyRulesSaveFailed,
-  OpenProxyPage,
-  CloseProxyPage,
-  LoadProxies,
-  ProxiesLoaded,
-  SelectProxy,
-  SaveProxy,
-  RemoveProxyRequested,
-  ProxyPingUpdated,
-  ProxyConnectionStateChanged,
   OpenAutoDownloadPage,
   CloseAutoDownloadPage,
   LoadAutoDownloadPolicy,
@@ -141,12 +132,6 @@ import {
   LoadPrivacyDetailEffect,
   SetPrivacySettingEffect,
   SetReadDatePrivacyEffect,
-  LoadProxiesEffect,
-  EnableProxyEffect,
-  DisableProxyEffect,
-  SaveProxyEffect,
-  RemoveProxyEffect,
-  PingProxiesEffect,
   LoadAutoDownloadPolicyEffect,
   PersistAutoDownloadPolicyEffect,
   LoadDataSaverSettingsEffect,
@@ -177,16 +162,6 @@ import {
   privacyChatsWithPicked,
   privacyContactsWithPicked
 } from '../model/PrivacyDetail';
-import {
-  PROXY_NONE_ID,
-  ProxyConnectionState,
-  ProxyItem,
-  proxyFormErrorKey,
-  proxyPingsPrunedTo,
-  proxyPingsWith,
-  proxyFailuresPrunedTo,
-  proxyFailuresWith
-} from '../model/ProxySettings';
 import {
   AutoDownloadFlags,
   AutoDownloadPolicy,
@@ -251,19 +226,6 @@ function togglePickedId(picked: number[], id: number): number[] {
     next.push(id);
   }
   return next;
-}
-
-/** 按 TDLib id 取代理行；列表里还没有该行时返回 null（调用方据此忽略点击）。 */
-function proxyItemById(
-  items: readonly ProxyItem[],
-  proxyId: number
-): ProxyItem | null {
-  for (let i = 0; i < items.length; i++) {
-    if (items[i].id === proxyId) {
-      return items[i];
-    }
-  }
-  return null;
 }
 
 export const settingsReducer: Reducer<SettingsUiState, SettingsIntent, SettingsEffect> = (
@@ -999,153 +961,6 @@ export const settingsReducer: Reducer<SettingsUiState, SettingsIntent, SettingsE
         updatingPrivacyKey: null,
         errorMessage: failedIntent.errorMessage
       };
-      return reduced(state.copyWith(options));
-    }
-
-    // ---- PROXY-101 网络代理 ----
-
-    case 'openProxyPage': {
-      const options: SettingsUiStateOptions = {
-        showProxyPage: true,
-        isLoadingProxies: true,
-        errorMessage: null
-      };
-      return reduced(state.copyWith(options), [new LoadProxiesEffect()]);
-    }
-
-    case 'closeProxyPage': {
-      if (!state.showProxyPage) {
-        return reduced(state);
-      }
-      // 探测结果是这一页的临时观察，不是账号状态：离页清空，回来时重新测。
-      const cleared: Map<number, number> = new Map();
-      const clearedFailures: Map<number, string> = new Map();
-      const options: SettingsUiStateOptions = {
-        showProxyPage: false,
-        proxyPingMs: cleared,
-        proxyPingFailure: clearedFailures,
-        proxyConnection: 'unknown'
-      };
-      return reduced(state.copyWith(options));
-    }
-
-    case 'loadProxies': {
-      const options: SettingsUiStateOptions = {
-        isLoadingProxies: true
-      };
-      return reduced(state.copyWith(options), [new LoadProxiesEffect()]);
-    }
-
-    case 'proxiesLoaded': {
-      const loadedIntent: ProxiesLoaded = intent as ProxiesLoaded;
-      const options: SettingsUiStateOptions = {
-        proxyItems: loadedIntent.items,
-        isLoadingProxies: false,
-        updatingProxyId: null,
-        // 重建行的同时留住还活着的探测结果：删掉的行不留残值，在途的行不被抹掉。
-        // 两张侧表用同一个口径剪枝，否则失败原因会留在一个已经不存在的行上。
-        proxyPingMs: proxyPingsPrunedTo(state.proxyPingMs, loadedIntent.items),
-        proxyPingFailure: proxyFailuresPrunedTo(state.proxyPingFailure, loadedIntent.items)
-      };
-      // 每次读到列表都把每一行（含「不使用代理」）探一遍 —— 可用性是测出来的，不是猜的。
-      return reduced(state.copyWith(options), [new PingProxiesEffect()]);
-    }
-
-    case 'selectProxy': {
-      const selectIntent: SelectProxy = intent as SelectProxy;
-      if (state.updatingProxyId !== null) {
-        return reduced(state);
-      }
-      // 「不使用代理」这一行没有对应的 TDLib 对象，只能走 disableProxy。
-      if (selectIntent.proxyId === PROXY_NONE_ID) {
-        const options: SettingsUiStateOptions = {
-          updatingProxyId: PROXY_NONE_ID
-        };
-        return reduced(state.copyWith(options), [new DisableProxyEffect()]);
-      }
-      const item: ProxyItem | null = proxyItemById(state.proxyItems, selectIntent.proxyId);
-      // 列表还没读到该行时忽略点击，而不是凭 id 猜一个启用态出去。
-      if (item === null) {
-        return reduced(state);
-      }
-      // TDLib 只允许一个代理生效；点已选中的那行是空操作，不该再发请求。
-      if (item.isEnabled) {
-        return reduced(state);
-      }
-      const options: SettingsUiStateOptions = {
-        updatingProxyId: selectIntent.proxyId
-      };
-      return reduced(state.copyWith(options), [new EnableProxyEffect(selectIntent.proxyId)]);
-    }
-
-    case 'saveProxy': {
-      const saveIntent: SaveProxy = intent as SaveProxy;
-      if (state.updatingProxyId !== null) {
-        return reduced(state);
-      }
-      // 页面已经把「完成」置灰，这里再挡一道：表单不能凭空绕过校验写出去。
-      const errorKey: string = proxyFormErrorKey(saveIntent.form);
-      if (errorKey.length > 0) {
-        const options: SettingsUiStateOptions = {
-          errorMessage: errorKey
-        };
-        return reduced(state.copyWith(options));
-      }
-      const options: SettingsUiStateOptions = {
-        updatingProxyId: saveIntent.form.id,
-        errorMessage: null
-      };
-      return reduced(state.copyWith(options), [new SaveProxyEffect(saveIntent.form)]);
-    }
-
-    case 'removeProxyRequested': {
-      const removeIntent: RemoveProxyRequested = intent as RemoveProxyRequested;
-      if (state.updatingProxyId !== null) {
-        return reduced(state);
-      }
-      if (proxyItemById(state.proxyItems, removeIntent.proxyId) === null) {
-        return reduced(state);
-      }
-      const options: SettingsUiStateOptions = {
-        updatingProxyId: removeIntent.proxyId
-      };
-      return reduced(state.copyWith(options), [new RemoveProxyEffect(removeIntent.proxyId)]);
-    }
-
-    // ---- PROXY-102 连通性探测与连接态 ----
-
-    case 'proxyPingUpdated': {
-      const pingIntent: ProxyPingUpdated = intent as ProxyPingUpdated;
-      // 行已经不在了（被删了或列表重建过）就别再写：晚到的回包不该复活一个探测值。
-      if (pingIntent.proxyId !== PROXY_NONE_ID &&
-        proxyItemById(state.proxyItems, pingIntent.proxyId) === null) {
-        return reduced(state);
-      }
-      const options: SettingsUiStateOptions = {
-        proxyPingMs: proxyPingsWith(state.proxyPingMs, pingIntent.proxyId, pingIntent.pingMs),
-        // 两张表同一个口径写：成功探测要把上一次的失败原因擦掉，否则「Error」的句子还在、
-        // 延迟也跟着显示，读起来的是一句自相矛盾的话。
-        proxyPingFailure: proxyFailuresWith(state.proxyPingFailure, pingIntent.proxyId, pingIntent.failureKey)
-      };
-      return reduced(state.copyWith(options));
-    }
-
-    case 'proxyConnectionStateChanged': {
-      const connectionIntent: ProxyConnectionStateChanged = intent as ProxyConnectionStateChanged;
-      const previous: ProxyConnectionState = state.proxyConnection;
-      if (previous === connectionIntent.connection) {
-        return reduced(state);
-      }
-      const options: SettingsUiStateOptions = {
-        proxyConnection: connectionIntent.connection
-      };
-      // 只在真的「断了又通」时重测：断网期间那批探测值是按旧网络出来的。
-      // 首帧 unknown → ready 不重测，否则每次进页都要多发一轮。
-      const recovered: boolean = connectionIntent.connection === 'ready' &&
-        previous !== 'unknown' && state.showProxyPage;
-      if (recovered) {
-        return reduced(state.copyWith(options), [new PingProxiesEffect()]);
-      }
       return reduced(state.copyWith(options));
     }
 

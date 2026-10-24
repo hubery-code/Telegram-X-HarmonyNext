@@ -15,7 +15,6 @@ import { TdUserPrivacySettingRule } from '@tgx/core-td-api-generated';
 import { PrivacySettingItem, PrivacySettingKey } from '../model/PrivacySettings';
 import { PrivacyMode } from '../model/PrivacyRules';
 import { PrivacyChatRow, PrivacyContactRow, PrivacyExceptionTarget } from '../model/PrivacyDetail';
-import { ProxyForm, ProxyItem, ProxyConnectionState } from '../model/ProxySettings';
 import {
   AutoDownloadChatScope,
   AutoDownloadMediaKind,
@@ -515,93 +514,6 @@ export class PrivacyRulesSaveFailed implements Intent {
   }
 }
 
-/** PROXY-101：打开「代理」子页（同时触发列表读取）。 */
-export class OpenProxyPage implements Intent {
-  readonly kind: 'openProxyPage' = 'openProxyPage';
-}
-
-/** PROXY-101：关闭「代理」子页。 */
-export class CloseProxyPage implements Intent {
-  readonly kind: 'closeProxyPage' = 'closeProxyPage';
-}
-
-/** PROXY-101：读取已添加的代理列表（getProxies）。 */
-export class LoadProxies implements Intent {
-  readonly kind: 'loadProxies' = 'loadProxies';
-}
-
-/** PROXY-101：列表读取完成；写回后也以该意图回灌，界面恒以 TDLib 返回值为准。 */
-export class ProxiesLoaded implements Intent {
-  readonly kind: 'proxiesLoaded' = 'proxiesLoaded';
-  readonly items: ProxyItem[];
-
-  constructor(items: ProxyItem[]) {
-    this.items = items;
-  }
-}
-
-/** PROXY-101：单选启用某个代理；`proxyId` 为 `PROXY_NONE_ID` 表示「不使用代理」。 */
-export class SelectProxy implements Intent {
-  readonly kind: 'selectProxy' = 'selectProxy';
-  readonly proxyId: number;
-
-  constructor(proxyId: number) {
-    this.proxyId = proxyId;
-  }
-}
-
-/** PROXY-101：保存代理；`form.id === PROXY_NEW_ID` 为新增，否则为编辑该行。 */
-export class SaveProxy implements Intent {
-  readonly kind: 'saveProxy' = 'saveProxy';
-  readonly form: ProxyForm;
-
-  constructor(form: ProxyForm) {
-    this.form = form;
-  }
-}
-
-/** PROXY-101：删除代理（页面已二次确认）。 */
-export class RemoveProxyRequested implements Intent {
-  readonly kind: 'removeProxyRequested' = 'removeProxyRequested';
-  readonly proxyId: number;
-
-  constructor(proxyId: number) {
-    this.proxyId = proxyId;
-  }
-}
-
-/**
- * PROXY-102：某一行 `pingProxy` 的回结果。
- * `proxyId` 用 `PROXY_NONE_ID`（0）表示「不使用代理」那一行的直连探测；
- * `pingMs` 取模型层的哨兵（LOADING / FAILED）或正数毫秒。
- *
- * PROXY-103 加 `failureKey`：失败那一行要说的「为什么」，同样是 Lang key，
- * 成功/在途传空串（空串即擦除这一行的旧原因）。为什么不编进 `pingMs`：
- * `PROXY_PING_FAILED` 只有一个值，说不出是拒连、查不到地址还是本地超时。
- */
-export class ProxyPingUpdated implements Intent {
-  readonly kind: 'proxyPingUpdated' = 'proxyPingUpdated';
-  readonly proxyId: number;
-  readonly pingMs: number;
-  readonly failureKey: string;
-
-  constructor(proxyId: number, pingMs: number, failureKey: string = '') {
-    this.proxyId = proxyId;
-    this.pingMs = pingMs;
-    this.failureKey = failureKey;
-  }
-}
-
-/** PROXY-102：TDLib `updateConnectionState` 进状态；连接文案只属于当前生效的那条路。 */
-export class ProxyConnectionStateChanged implements Intent {
-  readonly kind: 'proxyConnectionStateChanged' = 'proxyConnectionStateChanged';
-  readonly connection: ProxyConnectionState;
-
-  constructor(connection: ProxyConnectionState) {
-    this.connection = connection;
-  }
-}
-
 /** AUTODL-101：打开「自动媒体下载」子页（同时读取本地策略）。 */
 export class OpenAutoDownloadPage implements Intent {
   readonly kind: 'openAutoDownloadPage' = 'openAutoDownloadPage';
@@ -965,15 +877,6 @@ export type SettingsIntent =
   | ApplyPrivacyPicker
   | PrivacyRulesSaved
   | PrivacyRulesSaveFailed
-  | OpenProxyPage
-  | CloseProxyPage
-  | LoadProxies
-  | ProxiesLoaded
-  | SelectProxy
-  | SaveProxy
-  | RemoveProxyRequested
-  | ProxyPingUpdated
-  | ProxyConnectionStateChanged
   | OpenAutoDownloadPage
   | CloseAutoDownloadPage
   | LoadAutoDownloadPolicy

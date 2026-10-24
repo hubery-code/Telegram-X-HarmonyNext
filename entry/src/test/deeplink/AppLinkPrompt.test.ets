@@ -9,15 +9,10 @@ import { describe, it, expect } from '@ohos/hypium';
 import {
   InvitePromptData,
   PromptCard,
-  ProxyPromptData,
   appLinkReasonKey,
   inviteActionLabelKey,
   inviteCountLabelKey,
-  invitePromptCard,
-  proxyChoiceEnables,
-  proxyNeedsMtprotoHint,
-  proxyPromptAddress,
-  proxyPromptCard
+  invitePromptCard
 } from '../../main/ets/deeplink/AppLinkPrompt';
 
 /** 假装是 `Lang.getString`：键即文案，`{0}` 用实参替换。测试因此不认识 Kit。 */
@@ -44,10 +39,6 @@ function inviteData(
     isChannel: isChannel,
     createsJoinRequest: createsJoinRequest
   };
-}
-
-function proxyData(kind: string): ProxyPromptData {
-  return { server: 'proxy.example.com', port: 8443, kind: kind };
 }
 
 export default function appLinkPromptTest() {
@@ -92,40 +83,8 @@ export default function appLinkPromptTest() {
       expect(card.primaryLabel).assertEqual('Request to Join');
     });
 
-    it('proxyPromptCard_showsAddressAndBothActions', 0, () => {
-      const card: PromptCard = proxyPromptCard(proxyData('socks5'), fakeTranslate);
-      expect(card.title).assertEqual('Connect to This Proxy?');
-      expect(card.body).assertEqual('Server: proxy.example.com\nPort: 8443');
-      expect(card.primaryLabel).assertEqual('Enable');
-      expect(card.secondaryLabel).assertEqual('Save for Later');
-      // 密钥/用户名不出现在弹窗的任何一行。
-      expect(card.footnote.indexOf('secret')).assertEqual(-1);
-    });
-
-    it('proxyPromptCard_addsSecretHintOnlyForMtproto', 0, () => {
-      const socks: PromptCard = proxyPromptCard(proxyData('socks5'), fakeTranslate);
-      const mtproto: PromptCard = proxyPromptCard(proxyData('mtproto'), fakeTranslate);
-      expect(proxyNeedsMtprotoHint(proxyData('socks5'))).assertFalse();
-      expect(proxyNeedsMtprotoHint(proxyData('mtproto'))).assertTrue();
-      expect(mtproto.footnote.length > socks.footnote.length).assertTrue();
-      expect(socks.footnote).assertEqual('This will add a proxy server to your configuration.');
-    });
-
-    it('proxyPromptAddress_isPlainServerColonPort', 0, () => {
-      expect(proxyPromptAddress(proxyData('http'))).assertEqual('proxy.example.com:8443');
-    });
-
-    it('proxyChoiceEnables_mapsCancelToNull', 0, () => {
-      // cancel → null 是「什么都别写」的唯一表示；save 是 false 而不是 null。
-      expect(proxyChoiceEnables('enable') === true).assertTrue();
-      expect(proxyChoiceEnables('save') === false).assertTrue();
-      expect(proxyChoiceEnables('cancel') === null).assertTrue();
-    });
-
     it('appLinkReasonKey_mapsEveryNotifiedReason', 0, () => {
       expect(appLinkReasonKey('join_request_sent')).assertEqual('Join request sent');
-      expect(appLinkReasonKey('proxy_enabled')).assertEqual('Proxy enabled');
-      expect(appLinkReasonKey('proxy_saved')).assertEqual('Proxy saved for later use');
       // 认不出的键不许把内部键名印到用户脸上。
       expect(appLinkReasonKey('internalLinkTypeGame')).assertEqual('Failed to open link');
       expect(appLinkReasonKey('')).assertEqual('Failed to open link');

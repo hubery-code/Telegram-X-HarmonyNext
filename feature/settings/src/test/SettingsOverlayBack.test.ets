@@ -39,13 +39,8 @@ export default function settingsOverlayBackTest(): void {
       expect(settingsOverlayCloseIntent(state)?.kind).assertEqual('closeDevicesPage');
     });
 
-    it('proxyPage_closesProxy', 0, () => {
-      // 这两层是原来那串 if 漏掉的：返回键直接把设置页 pop 掉，子页留在状态里。
-      const state: SettingsUiState = SettingsUiState.initial().copyWith({ showProxyPage: true });
-      expect(settingsOverlayCloseIntent(state)?.kind).assertEqual('closeProxyPage');
-    });
-
     it('autoDownloadPage_closesAutoDownload', 0, () => {
+      // 这一层是原来那串 if 漏掉的：返回键直接把设置页 pop 掉，子页留在状态里。
       const state: SettingsUiState =
         SettingsUiState.initial().copyWith({ showAutoDownloadPage: true });
       expect(settingsOverlayCloseIntent(state)?.kind).assertEqual('closeAutoDownloadPage');
@@ -82,10 +77,9 @@ export default function settingsOverlayBackTest(): void {
     });
 
     it('passcodeBeatsEverythingBelowIt', 0, () => {
-      // 应用锁页在 Stack 里最上，所以哪怕代理页也开着，先关的仍是它。
+      // 应用锁页在 Stack 里最上，所以哪怕自动下载页也开着，先关的仍是它。
       const state: SettingsUiState = SettingsUiState.initial().copyWith({
         showPasscodePage: true,
-        showProxyPage: true,
         showAutoDownloadPage: true
       });
       expect(settingsOverlayCloseIntent(state)?.kind).assertEqual('closePasscodePage');
@@ -106,7 +100,6 @@ export default function settingsOverlayBackTest(): void {
       // 一次只关一层：连续调用的结果序列就是用户连按返回键应看到的路径。
       let state: SettingsUiState = SettingsUiState.initial().copyWith({
         showPasscodePage: true,
-        showProxyPage: true,
         showAutoDownloadPage: true,
         showDevicesPage: true,
         showPrivacyPage: true,
@@ -123,7 +116,7 @@ export default function settingsOverlayBackTest(): void {
         state = closeOverlay(state, intent.kind);
       }
       expect(kinds.join(',')).assertEqual([
-        'closePasscodePage', 'closeAutoDownloadPage', 'closeProxyPage',
+        'closePasscodePage', 'closeAutoDownloadPage',
         'closePrivacyPage', 'closeDevicesPage', 'cancelLogout', 'closeAccountSwitcher'
       ].join(','));
     });
@@ -137,9 +130,6 @@ function closeOverlay(state: SettingsUiState, kind: string): SettingsUiState {
   }
   if (kind === 'closeAutoDownloadPage') {
     return state.copyWith({ showAutoDownloadPage: false });
-  }
-  if (kind === 'closeProxyPage') {
-    return state.copyWith({ showProxyPage: false });
   }
   if (kind === 'closePrivacyPage') {
     return state.copyWith({ showPrivacyPage: false });

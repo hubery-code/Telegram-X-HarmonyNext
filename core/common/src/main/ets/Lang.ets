@@ -263,53 +263,8 @@ const EN_DICTIONARY: Record<string, string> = {
   'Hide Read Time Desc':
     'Hide the time when you read messages from people who can\'t see your last seen. If you turn this on, their read time will also be hidden from you. This setting does not affect group chats.',
 
-  // Network proxies (PROXY-101)
-  'Proxies': 'Proxies',
-  'Tap to set up': 'Tap to set up',
-  'Proxy Disabled': 'Disabled',
-  'Do Not Use Proxy': 'Do Not Use Proxy',
-  'No proxies set up yet. Tap Add Proxy below.': 'No proxies set up yet. Tap Add Proxy below.',
-  'Tap a proxy to route Telegram through it.': 'Tap a proxy to route Telegram through it.',
-  'Add Proxy': 'Add Proxy',
-  'Edit Proxy': 'Edit Proxy',
-  'Proxy Type': 'Proxy Type',
-  'Server Address': 'Server Address',
-  'Port': 'Port',
-  'Username': 'Username',
-  'Password': 'Password',
-  'Secret (hex)': 'Secret (hex)',
-  'Comment': 'Comment (optional)',
-  'Optional': 'Optional',
-  'HTTP Only': 'HTTP Only',
-  'Enable Proxy': 'Enable Proxy',
-  'Route Telegram traffic through this proxy now.': 'Route Telegram traffic through this proxy now.',
-  'Server address required': 'Enter the proxy server address',
-  'Port must be 1-65535': 'Port must be a number from 1 to 65535',
-  'Secret must be hexadecimal': 'Secret must be hexadecimal, e.g. ee1234…',
-  'Remove proxy': 'Remove proxy',
-  'Delete this proxy configuration?': 'Delete this proxy configuration?',
-
-  // Proxy connectivity probe and connection state (PROXY-102)
-  'Connected': 'Connected',
-  'Available': 'Available',
-  'Checking...': 'Checking...',
-  'Connecting...': 'Connecting...',
-  'Waiting for network...': 'Waiting for network...',
-  'Updating...': 'Updating...',
-  'Error': 'Error',
-  'Problems detected': 'Problems detected',
-
-  // Why a proxy probe failed (PROXY-103). These are our own sentences, classified
-  // from the TDLib error — the raw text never reaches the screen.
-  'Address not found': 'Address not found',
-  'Connection refused': 'Connection refused',
-  'Connection timed out': 'Connection timed out',
-  'Network unavailable': 'Network unavailable',
-  'Proxy handshake failed': 'Proxy handshake failed',
-  'Proxy settings rejected': 'Proxy settings rejected',
-  'Proxy error': 'Proxy error',
-
   // Automatic media download (AUTODL-101)
+  'Username': 'Username',
   'Automatic Media Download': 'Automatic Media Download',
   'Automatic download': 'Automatic download',
   'Tap to choose what downloads on its own': 'Tap to choose what downloads on its own',
@@ -353,6 +308,7 @@ const EN_DICTIONARY: Record<string, string> = {
   'Animated stickers play once and stop.': 'Animated stickers play once and stop.',
 
   // Internal links (DEEPLINK-101)
+  'Connecting...': 'Connecting...',
   'This link type is not supported yet': 'This link type is not supported yet',
   'Failed to open link': 'Failed to open link',
   'Sticker set: %s': 'Sticker set: %s',
@@ -368,15 +324,7 @@ const EN_DICTIONARY: Record<string, string> = {
   'Admin': 'Admin',
   '{0} file': '{0} file',
   '{0} files': '{0} files',
-  'Connect to This Proxy?': 'Connect to This Proxy?',
-  'Server': 'Server',
-  'This will add a proxy server to your configuration.': 'This will add a proxy server to your configuration.',
-  'This proxy uses a secret, make sure you trust the link source.': 'This proxy uses a secret, make sure you trust the link source.',
-  'Enable': 'Enable',
-  'Save for Later': 'Save for Later',
   'Join request sent': 'Join request sent',
-  'Proxy enabled': 'Proxy enabled',
-  'Proxy saved for later use': 'Proxy saved for later use',
 
   // Screen lock (APPLOCK-101)
   'Screen Lock': 'Screen Lock',
@@ -928,52 +876,8 @@ const ZH_DICTIONARY: Record<string, string> = {
   'Hide Read Time Desc':
     '对看不到你最后上线时间的人隐藏你的已读时间。开启后，你也会看不到他们的已读时间。此项不影响群聊。',
 
-  // Network proxies (PROXY-101)
-  'Proxies': '代理',
-  'Tap to set up': '点按设置',
-  'Proxy Disabled': '已停用',
-  'Do Not Use Proxy': '不使用代理',
-  'No proxies set up yet. Tap Add Proxy below.': '尚未添加代理，可点按下方「添加代理」。',
-  'Tap a proxy to route Telegram through it.': '点按某个代理即可让 Telegram 走它。',
-  'Add Proxy': '添加代理',
-  'Edit Proxy': '编辑代理',
-  'Proxy Type': '代理类型',
-  'Server Address': '服务器地址',
-  'Port': '端口',
-  'Username': '用户名',
-  'Password': '密码',
-  'Secret (hex)': '密钥（十六进制）',
-  'Comment': '备注（可选）',
-  'Optional': '可选',
-  'HTTP Only': '仅 HTTP',
-  'Enable Proxy': '启用代理',
-  'Route Telegram traffic through this proxy now.': '保存后立即让 Telegram 走这个代理。',
-  'Server address required': '请填写代理服务器地址',
-  'Port must be 1-65535': '端口需为 1 到 65535 之间的数字',
-  'Secret must be hexadecimal': '密钥需为十六进制字符串，例如 ee1234…',
-  'Remove proxy': '移除代理',
-  'Delete this proxy configuration?': '确定删除这条代理配置吗？',
-
-  // Proxy connectivity probe and connection state (PROXY-102)
-  'Connected': '已连接',
-  'Available': '可用',
-  'Checking...': '检测中...',
-  'Connecting...': '连接中...',
-  'Waiting for network...': '等待网络...',
-  'Updating...': '同步中...',
-  'Error': '连接失败',
-  'Problems detected': '直连异常',
-
-  // 探测失败的原因（PROXY-103）：本端分类出来的句子，不是 TDLib 原文。
-  'Address not found': '地址无法解析',
-  'Connection refused': '连接被拒绝',
-  'Connection timed out': '连接超时',
-  'Network unavailable': '网络不可用',
-  'Proxy handshake failed': '代理握手失败',
-  'Proxy settings rejected': '代理配置被拒绝',
-  'Proxy error': '代理异常',
-
   // Automatic media download (AUTODL-101)
+  'Username': '用户名',
   'Automatic Media Download': '自动媒体下载',
   'Automatic download': '自动下载',
   'Tap to choose what downloads on its own': '点按选择在哪些会话里自动下载哪些媒体',
@@ -1017,6 +921,7 @@ const ZH_DICTIONARY: Record<string, string> = {
   'Animated stickers play once and stop.': '动态贴纸只播放一遍，停在最后一帧。',
 
   // Internal links (DEEPLINK-101)
+  'Connecting...': '连接中...',
   'This link type is not supported yet': '暂不支持这种链接',
   'Failed to open link': '无法打开链接',
   'Sticker set: %s': '贴纸包：%s',
@@ -1032,15 +937,7 @@ const ZH_DICTIONARY: Record<string, string> = {
   'Admin': '管理员',
   '{0} file': '{0} 个文件',
   '{0} files': '{0} 个文件',
-  'Connect to This Proxy?': '连接到此代理？',
-  'Server': '服务器',
-  'This will add a proxy server to your configuration.': '这会将一个代理服务器添加到你的配置中。',
-  'This proxy uses a secret, make sure you trust the link source.': '该代理带有密钥，请确认你信任链接来源。',
-  'Enable': '启用',
-  'Save for Later': '稍后使用',
   'Join request sent': '加入申请已发送',
-  'Proxy enabled': '代理已启用',
-  'Proxy saved for later use': '代理已保存，稍后可使用',
 
   // Screen lock (APPLOCK-101)
   'Screen Lock': '屏幕锁定',

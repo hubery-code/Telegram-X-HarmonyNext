@@ -33,7 +33,7 @@ import { ChatKind } from '../model/SenderInfo';
 import { PinnedMessageInfo } from '../model/PinnedMessageInfo';
 import { StickerSetPreviewState, StickerSetItem } from '../model/StickerSetPreviewState';
 import { StickerBoardState } from '../model/StickerBoard';
-import { GifItem, DEFAULT_RECENT_GIFS } from '../model/GifItem';
+import { GifItem, EMPTY_GIFS } from '../model/GifItem';
 import { PollComposerState } from '../model/PollView';
 
 /** 输入栏模式：回复某条消息。 */
@@ -368,7 +368,7 @@ export class ChatUiState implements UiState {
     // STICKER-RECENT-101：最近使用来自 TDLib `getRecentStickers`，初值必须是空的。
     // 这里曾挂着一份预置假贴纸（DEFAULT_RECENT_STICKERS），真实用户第一次开板看到的就是它。
     recentStickers: readonly StickerSetItem[] = [],
-    recentGifs: readonly GifItem[] = DEFAULT_RECENT_GIFS,
+    recentGifs: readonly GifItem[] = EMPTY_GIFS,
     gifSearchQuery: string = '',
     showMenuConfirmDialog: boolean = false,
     pendingMenuAction: string = '',
@@ -427,7 +427,7 @@ export class ChatUiState implements UiState {
   }
 
   static initial(): ChatUiState {
-    return new ChatUiState(0, '', [], false, true, null, '', null, null, -1, [], 0, 0, false, [], false, false, '', [], false, 0, '', 'unknown', null, false, true, new ChatSendRights(), false, null, StickerBoardState.initial(), false, 0, null, 0, 0, DEFAULT_RECENT_EMOJIS, [], DEFAULT_RECENT_GIFS, '', false, '', null);
+    return new ChatUiState(0, '', [], false, true, null, '', null, null, -1, [], 0, 0, false, [], false, false, '', [], false, 0, '', 'unknown', null, false, true, new ChatSendRights(), false, null, StickerBoardState.initial(), false, 0, null, 0, 0, DEFAULT_RECENT_EMOJIS, [], EMPTY_GIFS, '', false, '', null);
   }
 
   copyWith(options: ChatUiStateOptions): ChatUiState {
