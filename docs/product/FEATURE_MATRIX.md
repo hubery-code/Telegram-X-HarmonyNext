@@ -3035,19 +3035,35 @@
 > （35 个测试类）、`entry` 160/160。
 
 
-| 功能 ID | 功能名 |
-|---|---|
-| FEAT-P2-001 | 联系人同步与新建会话 |
-| FEAT-P2-002 | 群组/频道创建、成员、权限、邀请链接 |
-| FEAT-P2-003 | 反应、投票、置顶消息、话题/论坛 |
-| FEAT-P2-004 | Sticker、emoji、GIF、动画贴纸 |
-| FEAT-P2-005 | CameraPicker、相册、文件选择、系统分享 |
-| FEAT-P2-006 | 完整媒体查看器、后台音频、AVSession |
-| FEAT-P2-007 | 代理、下载策略、缓存清理 |
-| FEAT-P2-008 | Passcode、生物识别、活跃会话管理 |
-| FEAT-P2-009 | 实时位置、地图 adapter |
-| FEAT-P2-010 | `tg://`、`t.me` 深链与 Share Extension |
-| FEAT-P2-011 | 平板/折叠屏双栏、无障碍与 RTL（注：无障碍与平板双栏依用户指示暂不做，Deferred） |
+> **2026-10-24 状态校准（FEAT-AUDIT-101）**：本表此前**只有功能名、没有状态列**，等于 P2 的完成度
+> 从未被登记过。本轮用 `tools/audit/verify_feature_wiring.py` 逐项做**机械确证** ——
+> 判据是「有没有 `scope.request('<TDLib 方法>')` 的发送点」+「有没有页面/组件/模型/协调器里的
+> 消费点」，两样都在才记 `Wired`。30 个被确证的能力里 **29 项真接通**，唯一缺口是
+> `inputMessageAnimation`（GIF 发送）。**三条判据纠错值得记**，它们都是「先误报、再核实」：
+> ① `clear cache` 真实的 TDLib 方法是 `optimizeStorage` 而非 `clearCache`（后者只有 bot 可用）；
+> ② `reaction` 用的是较新的 `addMessageReaction` / `removeMessageReaction`，不是旧的 `sendMessageReaction`；
+> ③ `upload file` 根本不单独存在 —— 本仓上传走 `sendMessage` + `inputMessagePhoto/Video/Document`
+> （TDLib 语义是「本地路径 → 内部自动上传」），把它当成缺口会去补一个不该存在的东西。
+> 另有 `chat folders` 同理：本仓用本地硬编码的 5 个分类 Tab，刻意不接 TDLib 的 `getChatFolders`。
+
+| 功能 ID | 功能名 | 状态（2026-10-24 机械确证） |
+|---|---|---|
+| FEAT-P2-001 | 联系人同步与新建会话 | Wired（CONTACT-101/102 已交付） |
+| FEAT-P2-002 | 群组/频道创建、成员、权限、邀请链接 | Wired（PROFILE-102、CHANNEL-101；群/频道**创建**未做） |
+| FEAT-P2-003 | 反应、投票、置顶消息、话题/论坛 | Wired（反应/投票/置顶已交付；**论坛话题未做**） |
+| FEAT-P2-004 | Sticker、emoji、GIF、动画贴纸 | Wired（贴纸/emoji 已交付；**GIF 发送链路未做**，动图渲染已有） |
+| FEAT-P2-005 | CameraPicker、相册、文件选择、系统分享 | Wired（CAM-PICKER-101；系统分享未做） |
+| FEAT-P2-006 | 完整媒体查看器、后台音频、AVSession | Wired（AUDIO-BG-101/102、MEDIA-VIEWER；薄遗留见 PROGRESS） |
+| FEAT-P2-007 | ~~代理~~、下载策略、缓存清理 | **代理已按用户 2026-10-24 指示彻底移除**（REMOVE-PROXY-101）；下载策略与缓存清理 Wired |
+| FEAT-P2-008 | Passcode、生物识别、活跃会话管理 | Wired（AppLock、DEVICES-101；**生物识别 APPLOCK-103 未做**） |
+| FEAT-P2-009 | 实时位置、地图 adapter | Wired（位置消息气泡已交付；**地图 adapter 未做**） |
+| FEAT-P2-010 | `tg://`、`t.me` 深链与 Share Extension | Wired（深链已交付；**Share Extension 未做**） |
+| FEAT-P2-011 | 平板/折叠屏双栏、无障碍与 RTL（注：无障碍与平板双栏依用户指示暂不做，Deferred） | Deferred（双栏 + A11Y）；**RTL 未做** |
+
+> **P3（高级功能）的完成度**：`FEAT-P3-001/002`（VoIP 通话）经 ADR-004 判 Deferred；
+> `FEAT-P3-003`（Stories）、`FEAT-P3-005`（Instant View / Web App）、`FEAT-P3-004`
+> （视频编辑）与 `FEAT-P3-006`（高级主题）在代码里**零实现痕迹**（同上脚本口径：无请求发送点、
+> 无页面）。`FEAT-P3-007`（PC/2in1、穿戴）与已挂起的双栏同源。
 
 ## P3：高级功能（计划 §3.4，仅列名）
 
