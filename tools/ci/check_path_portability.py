@@ -35,7 +35,14 @@ import re
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-CI_DIR = ROOT / 'tools' / 'ci'
+# 射程：CI 脚本 + 其余**会被人在这台 Windows 上直接跑**的 Python 工具。
+# 刻意不含 `native/tdcore/third_party/**`（vendored 上游源码，改了下次同步会被覆盖）
+# 与 `__pycache__`（产物）。
+SCAN_GLOBS = (
+    'tools/ci/*.py',
+    'tools/td_api_codegen/*.py',
+    'tools/test/*.py',
+)
 
 # 自我豁免：本文件里难免出现被检查的那些字面形状（否则没法描述规则）。
 SELF = pathlib.Path(__file__).name
@@ -46,7 +53,14 @@ REL_TO_RE = re.compile(r'\.relative_to\(\s*ROOT\s*\)')
 # `for part in rel`）时带斜杠是对的 —— 那正是子串匹配。
 PARTS_IN_RE = re.compile(r'for\s+(\w+)\s+in\s+[\w.]*\.parts\b')
 _CONST_TUPLE_RE = re.compile(r"^(\w+)\s*=\s*(?:frozenset\()?\(([^)]*)\)", re.M)
-SUBPROCESS_RE = re.compile(r'subprocess\.run\(')
+# R3：`subprocess.run(...)` 以及**别名导入**的等价写法
+# （`import subprocess as sp; sp.run(...)` / `from subprocess import run; run(...)`）。
+# 只认字面 `subprocess.run` 会漏掉别名——实测变异测试正是这样漏过去的：
+# 植入 `_sp.run(..., text=True)` 时守卫报 0 条，因为它的正则只找 `subprocess.run(`。
+# 三类形状都收：`<name>.run(` 里 name 是 subprocess 或其别名 / 直接 `.run(`。
+SUBPROCESS_RE = re.compile(r'\b(?:subprocess|_?sp|_?subprocess)\s*\.\s*run\s*\(')
+SUBPROCESS_ALIAS_RE = re.compile(
+    r'^\s*(?:import\s+subprocess\s+as\s+(\w+))|^\s*(?:from\s+subprocess\s+import)')
 
 
 def read(path: pathlib.Path) -> str:
@@ -155,11 +169,21 @@ def check_parts_compare(code: str, name: str) -> list:
 
 
 def check_subprocess_encoding(code: str, name: str) -> list:
-    """R3：subprocess.run(..., text=True) 必须显式给 encoding。"""
+    """R3：`subprocess.run(..., text=True)` 必须显式给 encoding。
+
+    覆盖三种写法：`subprocess.run(` / 别名 `sp.run(` / `from subprocess import run`
+    之后的裸 `run(`（后者只在文件确实 `from subprocess import` 过时才判，避免误伤
+    自有的 `run()` 函数）。
+    """
     problems = []
-    for m in SUBPROCESS_RE.finditer(code):
+    has_bare_import = re.search(
+        r'^\s*from\s+subprocess\s+import\s+[^\n]*\brun\b', code, re.M) is not None
+    hits = list(SUBPROCESS_RE.finditer(code))
+    if has_bare_import:
+        for m in re.finditer(r'(?<![\w.])run\s*\(', code):
+            hits.append(m)
+    for m in hits:
         tail = code[m.start():m.start() + 400]
-        # 截到本调用的右括号为止（粗略：到下一个空行为止）
         if 'text=True' not in tail and 'universal_newlines' not in tail:
             continue
         if 'encoding=' in tail:
@@ -193,6 +217,21 @@ SELF_CASES = (
      "res = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8')\n", False),
     ('r3-good-binary', check_subprocess_encoding,
      "res = subprocess.run(cmd, capture_output=True)\n", False),
+    # 别名形状：这三条是**变异测试里漏过去的那一类**。首版正则只认字面
+    # `subprocess.run(`，植入 `_sp.run(..., text=True)` 时守卫报 0 条。
+    ('r3-bad-alias', check_subprocess_encoding,
+     "import subprocess as _sp\n"
+     "res = _sp.run(cmd, capture_output=True, text=True)\n", True),
+    ('r3-good-alias', check_subprocess_encoding,
+     "import subprocess as _sp\n"
+     "res = _sp.run(cmd, capture_output=True, text=True, encoding='utf-8')\n", False),
+    ('r3-bad-from-import', check_subprocess_encoding,
+     "from subprocess import run\n"
+     "res = run(cmd, capture_output=True, text=True)\n", True),
+    # 反向对照：文件里没有 `from subprocess import run` 时，裸 `run(` 是自有函数，不许误报。
+    ('r3-good-local-run', check_subprocess_encoding,
+     "def run(cmd):\n    return cmd\n"
+     "res = run('x', text=True)\n", False),
 )
 
 
@@ -226,21 +265,25 @@ def main() -> int:
 
     problems = []
     scanned = 0
-    for path in sorted(CI_DIR.glob('*.py')):
-        if path.name == SELF:
-            continue
-        code = strip_comments(read(path))
-        scanned += 1
-        problems += check_relative_to(code, path.name)
-        problems += check_parts_compare(code, path.name)
-        problems += check_subprocess_encoding(code, path.name)
+    seen = set()
+    for pattern in SCAN_GLOBS:
+        for path in sorted(ROOT.glob(pattern)):
+            if path.name == SELF or path in seen:
+                continue
+            seen.add(path)
+            code = strip_comments(read(path))
+            scanned += 1
+            display = str(path.relative_to(ROOT)).replace('\\', '/')
+            problems += check_relative_to(code, display)
+            problems += check_parts_compare(code, display)
+            problems += check_subprocess_encoding(code, display)
 
     if problems:
         for msg in problems:
             print(f'[path] {msg}')
         print(f'[path] FAILED: {len(problems)} 处路径口径问题', file=sys.stderr)
         return 1
-    print(f'[path] OK: {scanned} 个 CI 脚本的路径口径一致（归一化 / parts 比较 / 子进程编码）')
+    print(f'[path] OK: {scanned} 个 Python 工具的路径口径一致（归一化 / parts 比较 / 子进程编码）')
     return 0
 
 

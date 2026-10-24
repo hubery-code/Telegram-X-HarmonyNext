@@ -38,7 +38,7 @@ def compile_native_soak():
         "-o", NATIVE_SOAK_BIN,
         "-lpthread"
     ]
-    res = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True)
+    res = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True, encoding='utf-8', errors='replace')
     if res.returncode != 0:
         print(f"[soak_runner] ERROR: Failed to compile native_soak:\n{res.stderr}")
         return False
@@ -57,7 +57,7 @@ def run_native_soak(events=None, duration=None):
 
     print(f"[soak_runner] Running native soak: {' '.join(cmd)}")
     start_t = time.time()
-    res = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True)
+    res = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True, encoding='utf-8', errors='replace')
     elapsed = time.time() - start_t
 
     if res.returncode != 0 and not res.stdout.strip():
@@ -82,7 +82,7 @@ def run_arkts_soak_suite():
         "-p", "module=platform_tdcore_bridge@default",
         "--no-daemon"
     ]
-    res = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True)
+    res = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True, encoding='utf-8', errors='replace')
     passed = (res.returncode == 0)
     print(f"[soak_runner] ArkTS BridgeSoak test suite: {'PASS' if passed else 'FAIL'}", flush=True)
 
@@ -93,7 +93,7 @@ def check_device_status():
     hdc = "/Applications/DevEco-Studio.app/Contents/sdk/default/openharmony/toolchains/hdc"
     if not os.path.exists(hdc):
         return None
-    res = subprocess.run([hdc, "list", "targets"], capture_output=True, text=True)
+    res = subprocess.run([hdc, "list", "targets"], capture_output=True, text=True, encoding='utf-8', errors='replace')
     targets = [line.strip() for line in res.stdout.splitlines() if line.strip() and not line.startswith("[Empty]")]
     return targets
 
