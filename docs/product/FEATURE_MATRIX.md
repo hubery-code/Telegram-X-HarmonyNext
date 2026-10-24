@@ -3060,6 +3060,32 @@
 | FEAT-P2-010 | `tg://`、`t.me` 深链与 Share Extension | Wired（深链已交付；**Share Extension 未做**） |
 | FEAT-P2-011 | 平板/折叠屏双栏、无障碍与 RTL（注：无障碍与平板双栏依用户指示暂不做，Deferred） | Deferred（双栏 + A11Y）；**RTL 未做** |
 
+> **未实现功能的难度实测（2026-10-24，`tools/audit/rank_pending_features.py`）**：
+> 我此前给过一个「GIF 小 → 礼物中偏小 → 论坛中 → InstantView 中偏大 → Stories 大」的排序，
+> **那个排序是错的**，实测推翻两处：① **礼物（Gifts）是最大项之一，不是中偏小** ——
+> 生成代码里 `*Gift*` 相关 DTO 有 **174 个**（含拍卖 `GiftAuction`、合成 `CraftGift`、
+> 收藏 `GiftCollection`、升级 `UpgradedGift`、Stars 支付 `StarGiftPayment`），
+> 这是一整个子系统；② **论坛话题（Forum Topics）也不是「中」**，但它是**协议面最窄的** ——
+> 36 个 DTO 里真正要用到的只有 6 个请求（`GetForumTopics` / `GetForumTopic` /
+> `CreateForumTopic` / `EditForumTopic` / `ToggleForumTopicIsClosed` /
+> `ToggleForumTopicIsPinned`）加 3 个模型，边界很清楚。
+>
+> 实测体量（DTO 数 ≈ 协议面宽度，本仓脚手架均为 0，即均未开工）：
+>
+> | 功能 | DTO | 真实工作量 | 备注 |
+> |---|---|---|---|
+> | **论坛话题** | 36（核心 6） | **最小** | 一个话题列表页 + 分页 + 创建/编辑 |
+> | Web App | 34 | 中 | 需 ArkWeb 与内嵌页面桥接 |
+> | Instant View | 3 + **46 个 `PageBlock*`** | 中偏大 | 协议只有 3 个，但渲染器要覆盖 46 种块类型 |
+> | 实时位置 / 地图 | 45 | 中 | 需地图 adapter（第三方 SDK） |
+> | Stories | 162 | 大 | 需独立页面栈 + 播放器 + 已读同步 |
+> | **礼物（Gifts）** | **174** | **大** | 拍卖/合成/收藏/升级/Stars 支付 |
+> | VoIP 通话 | 144 | 极大 | ADR-004 已判 Deferred |
+>
+> 注：**视频编辑（P3-004）的 DTO 命中为 0** —— 它不是协议功能，是纯客户端工作
+> （裁剪/压缩/转码，需 native 编解码），所以「数的 DTO 少」不代表「活少」，
+> 它是本表里唯一**无法用 DTO 数衡量**的一项。
+>
 > **P3（高级功能）的完成度**：`FEAT-P3-001/002`（VoIP 通话）经 ADR-004 判 Deferred；
 > `FEAT-P3-003`（Stories）、`FEAT-P3-005`（Instant View / Web App）、`FEAT-P3-004`
 > （视频编辑）与 `FEAT-P3-006`（高级主题）在代码里**零实现痕迹**（同上脚本口径：无请求发送点、
