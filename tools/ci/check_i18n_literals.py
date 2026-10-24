@@ -12,7 +12,7 @@
 就地豁免仍按**物理行**走。旧口径是逐物理行建模，`Text(`↵`'Reply'`、`const hint = 'Try Again';`
 + `Text(hint)` 两类写法全都看不见。
 
-本脚本守九条（R4' 与 R5a/R5b 是各自规则内的子条，不另计）：
+本脚本守十条（R4' 与 R5a/R5b 是各自规则内的子条，不另计）：
 
   R1 视图层字面量禁令：`entry` 与各 `feature/*` 的 **pages/ 与 components/** 下，任何 .ets 文件
      里都不允许出现含汉字的字符串字面量（emoji 不在 `一-鿿` 段内，不会被误伤）。
@@ -131,6 +131,13 @@
      一律违规。正确形状只有 `tdlibSystemLanguageCode(语言偏好, 系统 locale)` 这一个出处；
      `setTdlibParameters` 一个客户端只发一次，所以档位是**进程内常量**，页面侧那条兜底参数
      读 `AppStorage` 里的同一份，不许自己再算。这条不开就地豁免 —— 要豁免的不是写法，是漏洞。
+  R10 同一本词典内不许重名（I18N-DUPKEY-101 引入）：R3 判的是两本词典**之间**的键集合对等，
+     而 `set()` 天生去重 —— 同一个 key 在词典里写两次，集合里仍然只剩一个，所以 R3 从结构上
+     看不见它，R1~R9 也全部静默。代价是在 ArkTS 里属**编译错误** 10505001
+     （`An object literal cannot have multiple properties with the same name`），
+     整个 `HarCompileArkTS` 直接失败。这不是假想：`'File'` 曾为附件面板建过一次，
+     后来做媒体气泡脚注时又建了一次，最后是编译器把构建打挂才发现。
+     R10 只读词典本身、不看代码，解析走 `_parse_dict_block()`（与 `load_dicts()` 同一套）。
 
 用法：python3 tools/ci/check_i18n_literals.py [--quiet] [--self-test]
       默认每次扫描前先跑一遍负向对照（--self-test 只跑对照、不扫全仓）：
@@ -202,6 +209,11 @@ TDLIB_LANG_FIELD_RE = re.compile(
     r'(?P<value>(?P<quote>["\'`])(?P<body>(?:\\.|(?!(?P=quote)).)*(?P=quote))'
     r'|[A-Za-z_$][\w$]*)')
 TDLIB_LANG_COMPUTATION = 'tdlibSystemLanguageCode(语言偏好, 系统 locale)'
+
+# R10（I18N-DUPKEY-101）：同一本词典内的重复 key。
+# load_dicts() 填这张表 —— 集合口径会去重，所以重复必须另存一份计数。
+# 结构：{'EN': {'File': 2}, 'ZH': {...}}（只在真出现重复时才有对应键）
+DUPLICATE_KEYS: dict = {}
 
 # 汉字段（CJK Unified Ideographs）。emoji（😀 ★ ✋）与假名/谚文都不在此段，故意只拦汉字：
 # 本仓的界面文案只有中英两档，拦假名只会误伤测试里的样例数据。
@@ -1031,20 +1043,86 @@ def scan_tdlib_language_field(files):
     return problems
 
 
+def _parse_dict_block(text: str, name: str):
+    """从一段源码文本里解析 `<NAME>_DICTIONARY`，返回 (key 集合, 重复计数表)。
+
+    抽成独立函数是为了让 `--self-test` 的 R10 样例走**同一个解析器**：
+    自证若换一套自己的解析逻辑，就会变成「自证过了但真实路径另一套」的假绿灯。
+    """
+    m = re.search(r'const ' + name + r'_DICTIONARY: Record<string, string> = \{(.*?)\n\};',
+                  text, re.S)
+    if m is None:
+        return None, None
+    keys = re.findall(r"^\s*'((?:[^'\\]|\\.)+)'\s*:", m.group(1), re.M)
+    counts = collections.Counter(keys)
+    dup = {k: c for k, c in counts.items() if c > 1}
+    return set(keys), dup
+
+
 def load_dicts():
+    """读两本词典，返回 `{EN|ZH: set(keys)}`，并把「同名重复」记进 DUPLICATE_KEYS。
+
+    为什么要单独留一份重复表（I18N-DUPKEY-101）：R3 判的是**键集合全等**，
+    而 `set()` 天生去重 —— 同一个 key 在词典里出现两次，集合里仍然只剩一个，
+    所以 R3 结构上看不见重复。此前 `'File'` 被重复添加就是这么漏过去的：
+    七条规则全静默，最后靠 ArkTS 编译器 10505001
+    （`An object literal cannot have multiple properties with the same name`）
+    在 HarCompileArkTS 阶段把构建打挂才发现。
+    重复 key 在运行时的语义是**后一个覆盖前一个**（编译不过就更糟），
+    两者都不是我们想要的 —— 守卫应该抢在编译前。
+    """
     if not LANG_FILE.is_file():
         print(f'[i18n] ERROR: 找不到词典 {LANG_FILE}', file=sys.stderr)
         sys.exit(2)
     text = LANG_FILE.read_text(encoding='utf-8')
     out = {}
+    duplicates = {}
     for name in ('EN', 'ZH'):
-        m = re.search(r'const ' + name + r'_DICTIONARY: Record<string, string> = \{(.*?)\n\};',
-                      text, re.S)
-        if m is None:
+        keys, dup = _parse_dict_block(text, name)
+        if keys is None:
             print(f'[i18n] ERROR: Lang.ets 未解析出 {name}_DICTIONARY', file=sys.stderr)
             sys.exit(2)
-        out[name] = set(re.findall(r"^\s*'((?:[^'\\]|\\.)+)'\s*:", m.group(1), re.M))
+        out[name] = keys
+        if dup:
+            duplicates[name] = dup
+    DUPLICATE_KEYS.clear()
+    DUPLICATE_KEYS.update(duplicates)
     return out
+
+
+def scan_duplicate_keys():
+    """R10：同一本词典里不许出现重复 key（I18N-DUPKEY-101）。
+
+    与 R3 的分工：R3 管「两本词典之间」的键集合对等，R10 管「同一本词典之内」的重名。
+    两者都必要 —— 重复 key 在 ArkTS 里是编译错误 10505001，而集合口径看不见它。
+    """
+    problems = []
+    for name in ('EN', 'ZH'):
+        for key, count in sorted(DUPLICATE_KEYS.get(name, {}).items()):
+            problems.append(
+                f'{name}_DICTIONARY 里 key {key!r} 重复 {count} 次'
+                f'（ArkTS 会以 10505001 拒绝整个对象字面量）')
+    return problems
+
+
+def scan_duplicate_keys_in(files):
+    """R10 的自证入口：从传进来的样例文件里解析词典块并判重。
+
+    生产路径走 `scan_duplicate_keys()`（读 DUPLICATE_KEYS，由 load_dicts 填）。
+    自证路径必须走**同一个 `_parse_dict_block`**，否则就成了「自证一套、生产一套」。
+    """
+    problems = []
+    for rel, path in files:
+        text = path.read_text(encoding='utf-8')
+        for name in ('EN', 'ZH'):
+            _keys, dup = _parse_dict_block(text, name)
+            if not dup:
+                continue
+            for key, count in sorted(dup.items()):
+                problems.append(
+                    f'{name}_DICTIONARY 里 key {key!r} 重复 {count} 次'
+                    f'（ArkTS 会以 10505001 拒绝整个对象字面量）')
+    return problems
 
 
 def key_slot(hit) -> bool:
@@ -1121,6 +1199,10 @@ SELF_TEST_RUNNERS = {
     'R7': lambda files, dicts, ctor: scan_builder_copy_params(files),
     'R8': lambda files, dicts, ctor: scan_date_forms(files, dicts),
     'R9': lambda files, dicts, ctor: scan_tdlib_language_field(files),
+    # R10 生产路径不看文件（读 load_dicts 填的 DUPLICATE_KEYS），但自证要能从样例
+    # 源码里解析出伪词典 —— 所以这里用 scan_duplicate_keys_in(files)，它内部走的是
+    # 与生产同一套 `_parse_dict_block`，避免「自证一套、生产一套」的假绿灯。
+    'R10': lambda files, dicts, ctor: scan_duplicate_keys_in(files),
 }
 
 SELF_TEST_CASES = (
@@ -1416,6 +1498,46 @@ function fallbackParams(): TdlibParametersConfig {
   return { systemLanguageCode: AppStorage.get<string>('tdlibLanguageCode') }
 }
 """),
+    # R10（I18N-DUPKEY-101）三条对照，覆盖「该拦的两侧 + 不该报的一侧」。
+    # 这两个样例里的 `const EN_DICTIONARY … = { … };` 是**伪词典块**，形状与
+    # Lang.ets 里的一模一样 —— 自证用的就是生产解析器 `_parse_dict_block`。
+    SelfCase('r10-duplicate-key-same-dict', (
+        ('R10', 'fire', "key 'File' 重复 2 次"),
+    ), """
+const EN_DICTIONARY: Record<string, string> = {
+  'Gallery': 'Gallery',
+  'File': 'File',
+  'Camera': 'Camera',
+  'File': 'File'
+};
+"""),
+    SelfCase('r10-duplicate-key-both-dicts', (
+        ('R10', 'fire', 'EN_DICTIONARY'),
+        ('R10', 'fire', 'ZH_DICTIONARY'),
+    ), """
+const EN_DICTIONARY: Record<string, string> = {
+  'Uploading {0}%': 'Uploading {0}%',
+  'Uploading {0}%': 'Uploading {0}%'
+};
+const ZH_DICTIONARY: Record<string, string> = {
+  'Uploading {0}%': '上传中 {0}%',
+  'Uploading {0}%': '上传中 {0}%'
+};
+"""),
+    SelfCase('r10-unique-keys-clean', (
+        ('R10', 'clean', None),
+    ), """
+const EN_DICTIONARY: Record<string, string> = {
+  'Gallery': 'Gallery',
+  'File': 'File',
+  'Camera': 'Camera'
+};
+const ZH_DICTIONARY: Record<string, string> = {
+  'Gallery': '相册',
+  'File': '文件',
+  'Camera': '相机'
+};
+"""),
 )
 
 
@@ -1492,13 +1614,16 @@ def main() -> int:
     # 错的只有服务端看到的东西（贴纸语言列表、MTProto 头部）。射程借 R8 那批
     # 「全模块 src/main/ets」目录：参数在 entry 建，契约在 feature/auth，两边都得看着。
     tdlib_lang_problems = scan_tdlib_language_field(date_files)
+    # R10：同一本词典内的重复 key（I18N-DUPKEY-101）。这一条不看代码，只看词典本身 ——
+    # 重复 key 是 ArkTS 编译错误 10505001，而 R3 的集合口径天然去重、结构上看不见它。
+    dupkey_problems = scan_duplicate_keys()
 
     allowed = (allowed_literal + allowed_slot + allowed_data_literal
                + allowed_data_slot + allowed_carrier)
     failed = bool(literal_problems or slot_problems or data_literal_problems
                   or data_slot_problems or key_problems or carrier_problems
                   or builder_problems or parity_problems or date_form_problems
-                  or tdlib_lang_problems)
+                  or tdlib_lang_problems or dupkey_problems)
     if not args.quiet or failed:
         for msg in literal_problems:
             print(f'[i18n] LITERAL {msg}')
@@ -1520,6 +1645,8 @@ def main() -> int:
             print(f'[i18n] DATE-FORM {msg}')
         for msg in tdlib_lang_problems:
             print(f'[i18n] TDLIB-LANG {msg}')
+        for msg in dupkey_problems:
+            print(f'[i18n] DUP-KEY {msg}')
         if not args.quiet:
             print(f'[i18n] 视图层文件 {len(files)} 个 / 数据层文件 {len(data)} 个，'
                   f'日期形态射程 {len(date_files)} 个文件，'
@@ -1536,7 +1663,8 @@ def main() -> int:
               f'builder 按值传串 {len(builder_problems)} / '
               f'日期形态出格 {len(date_form_problems)} / '
               f'TDLib 语言档写死 {len(tdlib_lang_problems)} / '
-              f'词典不对称 {len(parity_problems)}', file=sys.stderr)
+              f'词典不对称 {len(parity_problems)} / '
+              f'词典内重复 key {len(dupkey_problems)}', file=sys.stderr)
         return 1
     print('[i18n] OK')
     return 0

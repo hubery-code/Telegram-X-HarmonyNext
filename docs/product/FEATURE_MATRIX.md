@@ -128,7 +128,7 @@
 |---|---|---|---|---|---|---|---|---|
 | FEAT-UI-001 | 深色/浅色主题 | P1 | `theme/ThemeManager.java:48`（DEFAULT_DARK_THEME = NIGHT_BLUE）, `theme/Theme.java` | —（平台侧） | 跟随系统/手动切换，关键页面（列表/聊天/设置）色值正确；偏好（system/light/dark）跨进程持久，系统深浅色经 `onConfigurationUpdate` 实时参与解析 | — | Accepted | 迁移组, APPSTORAGE-PAIR-101 |
 | FEAT-UI-002 | 大字体（聊天字号调节） | P1 | `unsorted/Settings.java:791`（CHAT_FONT_SIZES）, `ui/SettingsController.java:218`（getChatFontSize） | —（平台侧） | 大字号模式下气泡/列表不截断不重叠 | 字体缩放 | Accepted | SET-105 |
-| FEAT-UI-003 | 中/英文案资源 | P1 | `core/Lang.java`, `ui/SettingsLanguageController.java` | — | 关键路径文案中英齐全，无硬编码遗漏（视图层与 coordinator/model 数据层的写死文案、词典缺项由 `check_i18n_literals.py` 九条规则强制（R1–R9，判定单位是**逻辑行**：跨行调用与「字面量先赋给 const、再把 const 传进槽位」都在射程内，且每次扫描前先跑一遍负向对照自证；路径一律归一成 `/` 再比较，否则 Windows 上豁免与分层整体失效）；日期形态与文案分治 —— 月份名/星期名/`年月日`排布只许出自 `core/common/…/DateFormat.ets` 一个文件（同守卫第八条规则 R8）；语言偏好跨进程持久且系统语言参与解析；送进 TDLib 的 `system_language_code` 不许是字面量，只许出自 `tdlibSystemLanguageCode()`（同守卫第九条规则 R9）；写进 AppStorage 的键必须有读者（`check_appstorage_pairs.py` R1）；`subprocess` 捕获输出必须显式 `encoding='utf-8'`，否则中文 Windows 按 GBK 解码直接崩 | — | Accepted | I18N-LITERAL-101/102/103/104, I18N-HOTSWITCH-101/102, LANG-PERSIST-101, APPSTORAGE-PAIR-101, I18N-DATE-101, I18N-DATE-102, I18N-GUARDSPAN-101, I18N-SYSLANG-101, GUARD-WIN-101 |
+| FEAT-UI-003 | 中/英文案资源 | P1 | `core/Lang.java`, `ui/SettingsLanguageController.java` | — | 关键路径文案中英齐全，无硬编码遗漏（视图层与 coordinator/model 数据层的写死文案、词典缺项由 `check_i18n_literals.py` 十条规则强制（R1–R10，判定单位是**逻辑行**：跨行调用与「字面量先赋给 const、再把 const 传进槽位」都在射程内，且每次扫描前先跑一遍负向对照自证；路径一律归一成 `/` 再比较，否则 Windows 上豁免与分层整体失效）；日期形态与文案分治 —— 月份名/星期名/`年月日`排布只许出自 `core/common/…/DateFormat.ets` 一个文件（同守卫第八条规则 R8）；语言偏好跨进程持久且系统语言参与解析；送进 TDLib 的 `system_language_code` 不许是字面量，只许出自 `tdlibSystemLanguageCode()`（同守卫第九条规则 R9）；写进 AppStorage 的键必须有读者（`check_appstorage_pairs.py` R1）；同一本词典内不许重名（同守卫第十条规则 R10 —— R3 的集合口径天然去重、结构上看不见重复，重复 key 在 ArkTS 里是编译错误 10505001）；`subprocess` 捕获输出必须显式 `encoding='utf-8'`，否则中文 Windows 按 GBK 解码直接崩 | — | Accepted | I18N-LITERAL-101/102/103/104, I18N-HOTSWITCH-101/102, LANG-PERSIST-101, APPSTORAGE-PAIR-101, I18N-DATE-101, I18N-DATE-102, I18N-GUARDSPAN-101, I18N-SYSLANG-101, GUARD-WIN-101 |
 | FEAT-UI-004 | 抽屉主导航（≡ 账号头 + 联系人/通话/我的收藏/设置/邀请朋友/帮助 + 夜间模式开关） | P1 | `navigation/DrawerController.java`, `MainActivity.java` | —（平台侧） | 会话列表抽屉导航，账号头展示在线状态，入口路由正确 | — | Accepted | DRAWER-101 |
 
 ---
@@ -2996,9 +2996,11 @@
 > 直接拒掉 `core_common` 的 `HarCompileArkTS`，构建失败（提交 `718f88fe` 修）。
 > **守卫为什么没拦住值得记**：R3 只判 EN/ZH **键集合对等**，而重复 key 在集合里天然只剩一个，
 > 所以 R3 结构上看不见它；`--self-test` 的对照集也没有「同词典内重名」这一形状。
-> 也就是说「词典一致性」目前由编译器兜底而不是守卫兜底 —— 记为本仓待办
-> **I18N-DUPKEY-101**（给 R3 或新增一条补「同词典内重复 key」判定 + 一条 `--self-test`
-> 负向对照），不在本轮扩规则。
+> 也就是说当时「词典一致性」由编译器兜底而不是守卫兜底 —— 已由 **I18N-DUPKEY-101** 补上
+> （见本节末与 FEAT-UI-003 的 R10）：`load_dicts()` 额外留一份重复计数表，
+> 新增 `scan_duplicate_keys()` 作为第十条规则，自证补三条对照（同词典重名 / 双词典重名 /
+> 无重名干净）；并用变异测试验证过 —— 临时插入重复的 `'File'` 后守卫报
+> `DUP-KEY EN_DICTIONARY 里 key 'File' 重复 2 次` 且 exit 1，还原后回 OK。
 >
 > **六、Windows 构建链路（devecocli 1.3.0 + DevEco Studio）**：`entry/hvigorfile.ts` 原先
 > 写死 `execFileSync('python3', …)`，Windows 上必炸且报错指不回原因。改为三层解析：
