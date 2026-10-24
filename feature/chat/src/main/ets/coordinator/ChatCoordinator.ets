@@ -110,6 +110,7 @@ import {
   MessageProperties,
   MessageReplyToMessage,
   MessageSenderUser,
+  MessageSendingStateFailed,
   MessageSticker,
   MessageText,
   MessageVideo,
@@ -2912,13 +2913,33 @@ export class ChatCoordinator {
       commentCount = message.interaction_info.reply_info.reply_count;
     }
 
+    // POLL-104：出站消息一旦被判为 failed，记一条定点日志。
+    // 动机：2026-10-24 在群里发投票，`send_poll_ok` 之后气泡仍带红色感叹号且
+    // 时间戳走失败态配色，而日志里没有任何失败事件 —— 「谁是 failed 的来源」
+    // 在现有日志里查不到。这里把 TDLib 回灌的形状与**失败原因**一并记下来。
+    // `messageSendingStateFailed` 自带 `error` / `can_retry` / `need_another_sender`
+    // / `retry_after` 四个可判别字段（TdTypes_M.ets），能把「需要换身份发送」
+    // 与「慢速模式限流」「权限不足」区分开 —— 这正是上一轮缺的那一格。
+    // 脱敏边界：`error.message` 是协议层的固定英文串（如 "CHAT_SEND_MEDIA_FORBIDDEN"），
+    // 不含用户输入的正文；只记它、不记消息文本。
+    const sendStateForLog: MessageSendState = messageSendStateOf(message.sending_state);
+    if (sendStateForLog === 'failed' && message.sending_state !== null) {
+      const failed: MessageSendingStateFailed = message.sending_state as MessageSendingStateFailed;
+      const cause: string = failed.error === null
+        ? '-'
+        : `${failed.error.code}:${failed.error.message}`;
+      this.logger.info(TAG, `outgoing_msg_failed id=${message.id} cause=${cause} `
+        + `canRetry=${failed.can_retry} needAnotherSender=${failed.need_another_sender} `
+        + `retryAfter=${failed.retry_after}`);
+    }
+
     return new MessageItem(
       message.id,
       displayText,
       message.date * 1000,
       message.is_outgoing,
       senderInfo.name,
-      messageSendStateOf(message.sending_state),
+      sendStateForLog,
       isTextMessage,
       message.edit_date > 0,
       replyToId,
