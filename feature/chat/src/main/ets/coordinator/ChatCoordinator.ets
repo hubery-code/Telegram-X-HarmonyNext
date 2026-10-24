@@ -5419,8 +5419,70 @@ export class ChatCoordinator {
     }
   }
 
+  /**
+   * POLL-103：把「TDLib 会拒绝的投票形状」在本地先判出来，返回可读的原因串。
+   *
+   * 为什么要这一层：TDLib 对投票的七种拒绝全归到同一个 `tdlib/bad_request` 分类，
+   * 而本仓日志按脱敏口径只输出分类串（`toLogString` 不带 message/cause），
+   * 于是「问题为空」「选项不足」「选项为空」「问题超长」「选项超长」在日志里
+   * **完全无法区分** —— 2026-10-24 那次模拟器取证就卡在这里。
+   *
+   * 上限取自 TDLib 源码（不是猜的）：
+   *   - 问题：`MessageContent.cpp:5059` 非 bot 为 255 字符；
+   *   - 选项：`PollOption.cpp:68` MAX_POLL_OPTION_LENGTH（100 字符）;
+   *   - 选项数下限：`PollOption.cpp:78` 至少 1 个（但产品口径要求 ≥2，投影层已判）。
+   * 返回空串表示「本地看不出问题」，仍以 TDLib 的最终判定为准 —— 这层只是诊断。
+   */
+  private pollRejectReason(sendPoll: SendPollEffect): string {
+    const questionLength: number = sendPoll.question.trim().length;
+    const validOptions: string[] = [];
+    for (let i: number = 0; i < sendPoll.options.length; i++) {
+      const option: string = sendPoll.options[i].trim();
+      if (option.length > 0) {
+        validOptions.push(option);
+      }
+    }
+    if (questionLength === 0) {
+      return 'question_empty';
+    }
+    if (questionLength > 255) {
+      return 'question_too_long';
+    }
+    if (validOptions.length < 2) {
+      return 'options_insufficient';
+    }
+    for (let i: number = 0; i < validOptions.length; i++) {
+      if (validOptions[i].length > 100) {
+        return 'option_too_long';
+      }
+    }
+    return '';
+  }
+
   /** POLL-101：发送投票消息（投影层组 InputMessagePoll 走 sendMessage）。 */
   private handleSendPoll(sendPoll: SendPollEffect): void {
+    // POLL-103：把**实际要发出去的形状**记一条。2026-10-24 在模拟器上创建投票时
+    // TDLib 回 `tdlib/bad_request/retryable=false`，而日志里只有这一行错误码 ——
+    // 分不清是「问题串为空」「选项不足」「选项内容空」还是「type_ 没带上」，
+    // 而这几种在 TDLib 侧都是同一个 400 分类。
+    // 只记**数量与长度**、不记原文（本仓既有脱敏口径：toLogString 只出分类串）：
+    // qLen=0 指向问题串没同步上来；optN<2 指向选项没同步；optLens 里出现 0
+    // 指向某个选项是空串；qLen>255 / 任一 optLen>100 指向超长（见下面的上限说明）。
+    const qLen: number = sendPoll.question.trim().length;
+    const optLensArr: string[] = [];
+    for (let i: number = 0; i < sendPoll.options.length; i++) {
+      optLensArr.push(`${sendPoll.options[i].trim().length}`);
+    }
+    this.logger.info(TAG, `send_poll req qLen=${qLen} optN=${sendPoll.options.length} `
+      + `optLens=[${optLensArr.join(',')}] anon=${sendPoll.isAnonymous} multi=${sendPoll.allowsMultiple}`);
+    // 本地前置校验：把 TDLib 会拒绝的几种形状在发请求前就判掉，并给出**可区分**的日志。
+    // 上限取自 TDLib 源码（MessageContent.cpp:5059 与 PollOption.cpp:68）：
+    // 问题 255 字符（非 bot）、选项 100 字符。判在这里而不是只靠 TDLib 的 400，
+    // 是因为 400 的六种成因在脱敏日志里长得一样。
+    const rejectReason: string = this.pollRejectReason(sendPoll);
+    if (rejectReason.length > 0) {
+      this.logger.info(TAG, `send_poll_rejected reason=${rejectReason}`);
+    }
     const result: Result<TdPendingRequest, AppError> = this.projection.sendPollMessage(
       sendPoll.question,
       sendPoll.options,
@@ -5434,7 +5496,16 @@ export class ChatCoordinator {
     if (result.ok) {
       result.value.promise.then((res: Result<TdWireObject, AppError>) => {
         if (res.err) {
+          // POLL-103：把 TDLib 的 cause 单独记一条。
+          // 依据：`AppError` 的头部注释写明 `cause` 是「原始诊断信息（可选，仅日志/调试，
+          // 不进用户文案）」—— 它本来就是给日志用的；`toLogString` 不含 message/cause
+          // 是**聚合日志**的稳定格式，不约束这种定点诊断行。
+          // 脱敏边界：TDLib 对投票的拒绝原文全是固定句（`Poll question length must not
+          // exceed 255` / `Poll must have at least one answer option` …），
+          // 已核对 `MessageContent.cpp` 与 `PollOption.cpp` 的全部 Status::Error，
+          // 没有一处把用户输入拼进消息，所以这里直接记原文是安全的。
           this.logger.logError(TAG, res.error);
+          this.logger.info(TAG, `send_poll_failed cause=${res.error.cause === undefined ? '-' : res.error.cause}`);
           if (!this.destroyed) {
             this.dispatch(new OnMessageSendFailed(res.error));
           }
