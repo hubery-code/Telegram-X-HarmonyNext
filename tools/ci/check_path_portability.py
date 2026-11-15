@@ -19,15 +19,19 @@
 三批的共同点是**规则本身看起来完全正常**，坏的是「路径口径」这个元数据层。
 所以这里不再逐个守卫补丁，而是用一条**机械可判的自检**把口径钉死：
 
-  R1 凡出现 `relative_to(ROOT)` 的地方，必须紧跟 `.replace('\\\\', '/')`，
-     或经由名为 `repo_rel` 的辅助函数；
+  R1 凡「赋值或比较位置」出现 `relative_to(ROOT)` 的结果，必须紧跟
+     `.replace('\\\\', '/')`，或经由名为 `repo_rel` 的辅助函数 —— 比较位置
+     （`if path.relative_to(ROOT) == 'tools/ci'` 之类）与赋值同罪：拿 Windows
+     反斜杠路径跟 `/` 口径的字面量判等/判属，静默恒假；
   R2 凡 `p.parts` / `.parts` 与某个常量集合按 `in` 比较的地方，
      该常量集合里**不许**出现带斜杠的元素（`/build/` 那种），
      因为 `parts` 里永远是裸目录名；
-  R3 凡 `subprocess.run(..., text=True)` 必须同时给 `encoding='utf-8'`
-     （中文 Windows 的 locale 是 GBK）。
+  R3 凡 `subprocess.run/Popen/check_output(..., text=True)` 必须同时给
+     `encoding='utf-8'`（中文 Windows 的 locale 是 GBK；text 参数在三个
+     入口上语义相同，Popen/check_output 与 run 同一条伤疤）。
 
-这条守卫只扫 `tools/ci/*.py` 自身，秒级完成，不依赖任何构建产物。
+这条守卫只扫三个目录里的 Python 工具（`tools/ci`、`tools/td_api_codegen`、
+`tools/test`，守卫自身豁免），秒级完成，不依赖任何构建产物。
 """
 import argparse
 import pathlib
@@ -48,19 +52,38 @@ SCAN_GLOBS = (
 SELF = pathlib.Path(__file__).name
 
 REL_TO_RE = re.compile(r'\.relative_to\(\s*ROOT\s*\)')
+# R1 的「比较上下文」判据：==/!=/<=/>=/成员 `in`。`in` 必须先剥掉 `for ... in`
+# 迭代子句 —— 仓库里 check_appstorage_pairs / check_accessibility_labels 的真实形状
+# 是 `[str(p.relative_to(ROOT)) for p in ROOT.glob(...)]`，推导式里的 `in` 是迭代
+# 不是比较，不剥会把合法代码误判成违规（全局替换，一行可有多个 for 子句）。
+# 单个 `<`/`>` 刻意不收：`-> str` 返回注解、类型参数都会撞上，召回收益为零。
+COMPARE_OP_RE = re.compile(r'==|!=|<=|>=|\bin\b')
+_FOR_CLAUSE_RE = re.compile(r'\bfor\s+[\w\s,]+?\s+in\s+')
+ASSIGN_OP_RE = re.compile(r'(?<![=!<>])=(?!=)')
 # R2 的精确定义：只有当 `part`（或任意循环变量）遍历的是 **`.parts`** 时，
 # 「常量里带斜杠」才是死代码。遍历字符串（`for part in repo_rel(p)` /
 # `for part in rel`）时带斜杠是对的 —— 那正是子串匹配。
 PARTS_IN_RE = re.compile(r'for\s+(\w+)\s+in\s+[\w.]*\.parts\b')
 _CONST_TUPLE_RE = re.compile(r"^(\w+)\s*=\s*(?:frozenset\()?\(([^)]*)\)", re.M)
-# R3：`subprocess.run(...)` 以及**别名导入**的等价写法
-# （`import subprocess as sp; sp.run(...)` / `from subprocess import run; run(...)`）。
-# 只认字面 `subprocess.run` 会漏掉别名——实测变异测试正是这样漏过去的：
-# 植入 `_sp.run(..., text=True)` 时守卫报 0 条，因为它的正则只找 `subprocess.run(`。
-# 三类形状都收：`<name>.run(` 里 name 是 subprocess 或其别名 / 直接 `.run(`。
-SUBPROCESS_RE = re.compile(r'\b(?:subprocess|_?sp|_?subprocess)\s*\.\s*run\s*\(')
-SUBPROCESS_ALIAS_RE = re.compile(
-    r'^\s*(?:import\s+subprocess\s+as\s+(\w+))|^\s*(?:from\s+subprocess\s+import)')
+# R3：`subprocess.<func>(...)` 的三个入口函数（run / Popen / check_output），
+# 连同**别名导入**的等价写法（`import subprocess as sp; sp.Popen(...)` /
+# `from subprocess import Popen; Popen(...)`）。
+# 只认字面 `subprocess.run` 会漏掉别名——round 70 实测变异测试正是这样漏过去的
+# （植入 `_sp.run(..., text=True)` 时守卫报 0 条）。别名**必须动态解析**：
+# PATH-PORTABLE-103 轮的变异测试再度证明，硬编码 `_?sp` 只认得恰好叫 sp/_sp 的
+# 别名，`import subprocess as mutsp` 照样漏。所以按文件实际 import 建 `X.<func>(`。
+# from-import 之后的裸 `<func>(` 只在文件确实 import 过**该函数名**时才判
+# （按名逐个 gating，防误伤自有的同名函数；text 参数在三个入口上语义相同）。
+SUBPROCESS_FUNCS = ('run', 'Popen', 'check_output')
+_ALIAS_IMPORT_RE = re.compile(r'\bimport\s+(?:[\w.]+\s*,\s*)*subprocess\s+as\s+(\w+)')
+
+
+def _subprocess_qualified_hits(code, func):
+    """`subprocess.<func>(` + 本文件真实别名 `X.<func>(` 的全部出现位置。"""
+    pats = [r'\b(?:subprocess|_?sp|_?subprocess)\s*\.\s*' + func + r'\s*\(']
+    for alias in sorted(set(_ALIAS_IMPORT_RE.findall(code))):
+        pats.append(r'(?<![\w.])' + re.escape(alias) + r'\s*\.\s*' + func + r'\s*\(')
+    return [m for pat in pats for m in re.finditer(pat, code)]
 
 
 def read(path: pathlib.Path) -> str:
@@ -99,22 +122,31 @@ def strip_comments(text: str) -> str:
     return '\n'.join(out)
 
 
+def _is_comparison_line(line: str) -> bool:
+    """剥掉 `for ... in` 迭代子句后，行内是否还有比较运算符（含成员 `in`）。"""
+    return COMPARE_OP_RE.search(_FOR_CLAUSE_RE.sub(' ', line)) is not None
+
+
 def check_relative_to(code: str, name: str) -> list:
     """R1：`relative_to(ROOT)` 的结果必须归一成 `/`，或落在 repo_rel() 里。
 
-    只在**同一行**同时出现「赋值」与 `relative_to(ROOT)` 时判 —— 那才是
-    「这个相对路径被算出来并可能被后续过滤/比较使用」的那一份。
+    判「赋值**或比较上下文**」两类位置 —— 只有这两处会把未归一化的结果真正
+    用于过滤/判等：
+      - 赋值：`x = ... relative_to(ROOT) ...`（算出来供后续使用）；
+      - 比较：`if path.relative_to(ROOT) == 'tools/ci'` / `assert ...` /
+        `'tools/ci' in path.relative_to(ROOT)` —— 拿反斜杠路径跟 `/` 口径的
+        字面量判等/判属，静默恒假，与赋值后过滤失效是同一条伤疤。
     直接嵌在推导式、f-string 里的不影响过滤语义，不报（早先不区分时
     对四个脚本一次报出 4 条假阳性，全是 `relative_to` 在别处、而这一行
-    恰好有别的 `=`）。
+    恰好有别的 `=`）；推导式里的 `for ... in` 由 _FOR_CLAUSE_RE 先剥掉。
     """
     problems = []
     lines = code.splitlines()
     for idx, line in enumerate(lines):
         if REL_TO_RE.search(line) is None:
             continue
-        # 本行必须是一个赋值（`x = ... relative_to ...`），而不是在别处用它
-        if re.search(r'(?<![=!<>])=(?!=)', line) is None:
+        # 本行必须是赋值或比较位置，而不是单纯在推导式/f-string 里用它
+        if ASSIGN_OP_RE.search(line) is None and not _is_comparison_line(line):
             continue
         # 允许：赋值处就带 replace（归一化的正确形状）
         if ".replace('\\\\', '/')" in line or '.replace("\\\\", "/")' in line:
@@ -124,8 +156,8 @@ def check_relative_to(code: str, name: str) -> list:
         if 'def repo_rel' in enclosing:
             continue
         problems.append(
-            f'{name}:{idx + 1}: relative_to(ROOT) 的结果未归一成 "/" '
-            f'（必须 replace("\\\\", "/") 或走 repo_rel()；否则 Windows 上过滤静默失效）')
+            f'{name}:{idx + 1}: relative_to(ROOT) 的结果未归一成 "/" 就被赋值/比较使用 '
+            f'（必须 .replace("\\\\", "/") 或走 repo_rel()；否则 Windows 上过滤/判等静默失效）')
     return problems
 
 
@@ -169,30 +201,38 @@ def check_parts_compare(code: str, name: str) -> list:
 
 
 def check_subprocess_encoding(code: str, name: str) -> list:
-    """R3：`subprocess.run(..., text=True)` 必须显式给 encoding。
+    """R3：`subprocess.run/Popen/check_output(..., text=True)` 必须显式给 encoding。
 
-    覆盖三种写法：`subprocess.run(` / 别名 `sp.run(` / `from subprocess import run`
-    之后的裸 `run(`（后者只在文件确实 `from subprocess import` 过时才判，避免误伤
-    自有的 `run()` 函数）。
+    每个入口函数各覆盖三种写法：`subprocess.<func>(` / 本文件实际别名 `X.<func>(`
+    （动态解析 `import subprocess as X`，不硬编码别名表）/
+    `from subprocess import <func>` 之后的裸 `<func>(`。裸名形态按**函数名逐个**
+    gating —— 只在该文件确实 `from subprocess import` 过这个名字时才判，避免误伤
+    自有的同名函数（如自定义 `run()` / `check_output()`）。text=True 在三个入口上
+    语义相同：Popen/check_output 的解码同样走 locale，同一条 GBK 伤疤。
     """
     problems = []
-    has_bare_import = re.search(
-        r'^\s*from\s+subprocess\s+import\s+[^\n]*\brun\b', code, re.M) is not None
-    hits = list(SUBPROCESS_RE.finditer(code))
-    if has_bare_import:
-        for m in re.finditer(r'(?<![\w.])run\s*\(', code):
-            hits.append(m)
-    for m in hits:
-        tail = code[m.start():m.start() + 400]
-        if 'text=True' not in tail and 'universal_newlines' not in tail:
-            continue
-        if 'encoding=' in tail:
-            continue
-        line_no = code[:m.start()].count('\n') + 1
-        problems.append(
-            f'{name}:{line_no}: subprocess.run(text=True) 未指定 encoding —— '
-            f'中文 Windows 的 locale 是 GBK，解 UTF-8 输出会抛 UnicodeDecodeError，'
-            f'且症状是「明明成功却报崩」')
+    seen = set()
+    for func in SUBPROCESS_FUNCS:
+        hits = list(_subprocess_qualified_hits(code, func))
+        has_bare_import = re.search(
+            r'^\s*from\s+subprocess\s+import\s+[^\n]*\b' + func + r'\b', code, re.M) is not None
+        if has_bare_import:
+            for m in re.finditer(r'(?<![\w.])' + func + r'\s*\(', code):
+                hits.append(m)
+        for m in hits:
+            if m.start() in seen:
+                continue
+            seen.add(m.start())
+            tail = code[m.start():m.start() + 400]
+            if 'text=True' not in tail and 'universal_newlines' not in tail:
+                continue
+            if 'encoding=' in tail:
+                continue
+            line_no = code[:m.start()].count('\n') + 1
+            problems.append(
+                f'{name}:{line_no}: subprocess.{func}(text=True) 未指定 encoding —— '
+                f'中文 Windows 的 locale 是 GBK，解 UTF-8 输出会抛 UnicodeDecodeError，'
+                f'且症状是「明明成功却报崩」')
     return problems
 
 
@@ -205,6 +245,32 @@ SELF_CASES = (
      "rel = str(path.relative_to(ROOT)).replace('\\\\', '/')\n", False),
     ('r1-good-helper', check_relative_to,
      "def repo_rel(path):\n    return str(path.relative_to(ROOT)).replace('\\\\\\\\', '/')\n", False),
+    # ---- R1 放宽（PATH-PORTABLE-103）：比较上下文与赋值同罪 —— 未归一化结果
+    # 被拿去判等/判属，Windows 上与 `/` 口径字面量比较恒假。每类形状都配
+    # 「合法用法不报」的反向对照，放宽不允许变成误报源。
+    ('r1-bad-compare', check_relative_to,
+     "if path.relative_to(ROOT) == 'tools/ci':\n    pass\n", True),
+    ('r1-bad-compare-assert', check_relative_to,
+     "assert path.relative_to(ROOT) == 'tools/ci'\n", True),
+    ('r1-bad-compare-rhs', check_relative_to,
+     "if 'tools/ci' == path.relative_to(ROOT):\n    pass\n", True),
+    ('r1-bad-membership', check_relative_to,
+     "if 'tools/ci' in path.relative_to(ROOT):\n    pass\n", True),
+    # 反向对照：比较前就地 replace 是正确形状
+    ('r1-good-compare-replace', check_relative_to,
+     "if str(path.relative_to(ROOT)).replace('\\\\', '/') == 'tools/ci':\n    pass\n", False),
+    # 反向对照：repo 里的真实合法形状 —— 推导式里的 `for ... in` 是迭代不是比较
+    # （check_appstorage_pairs.py:43-45 原样），不剥迭代子句会误报 4 条
+    ('r1-good-comprehension', check_relative_to,
+     "files = (\n"
+     "    [str(p.relative_to(ROOT)) for p in ROOT.glob('feature/*/src/main/ets')]\n"
+     ")\n", False),
+    # 反向对照：迭代 relative_to 结果的 .parts —— parts 是裸目录名，无分隔符风险
+    ('r1-good-iteration-parts', check_relative_to,
+     "for part in path.relative_to(ROOT).parts:\n    pass\n", False),
+    # 反向对照：f-string 纯展示用途，不参与过滤/判等
+    ('r1-good-fstring', check_relative_to,
+     'print(f"output: {path.relative_to(ROOT)}")\n', False),
     ('r2-bad', check_parts_compare,
      "SKIP = ('/build/', '/oh_modules/')\n"
      "if any(part in SKIP for part in p.parts):\n    pass\n", True),
@@ -232,6 +298,48 @@ SELF_CASES = (
     ('r3-good-local-run', check_subprocess_encoding,
      "def run(cmd):\n    return cmd\n"
      "res = run('x', text=True)\n", False),
+    # ---- R3 形状补全（PATH-PORTABLE-103）：Popen / check_output 与 run 同罪同罚 ----
+    # text=True 在三个入口上语义相同，解码同样走 locale，同一条 GBK 伤疤。
+    ('r3-bad-popen', check_subprocess_encoding,
+     "proc = subprocess.Popen(cmd, text=True)\n", True),
+    ('r3-good-popen', check_subprocess_encoding,
+     "proc = subprocess.Popen(cmd, text=True, encoding='utf-8')\n", False),
+    # 别名形状：与 run 的 r3-*-alias 同理，守卫必须看穿 `as` 重命名
+    ('r3-bad-popen-alias', check_subprocess_encoding,
+     "import subprocess as sp\nproc = sp.Popen(cmd, text=True)\n", True),
+    ('r3-good-popen-alias', check_subprocess_encoding,
+     "import subprocess as sp\nproc = sp.Popen(cmd, text=True, encoding='utf-8')\n", False),
+    # 任意重命名的别名也必须看穿 —— 103 轮变异测试实测：硬编码 `_?sp` 时
+    # `import subprocess as mutsp; mutsp.Popen(...)` 静默漏报，故别名必须动态解析
+    ('r3-bad-popen-alias-rename', check_subprocess_encoding,
+     "import subprocess as mutsp\nproc = mutsp.Popen(cmd, text=True)\n", True),
+    ('r3-good-popen-alias-rename', check_subprocess_encoding,
+     "import subprocess as mutsp\nproc = mutsp.Popen(cmd, text=True, encoding='utf-8')\n", False),
+    # from-import 形状：裸 `Popen(` 只在文件确实 import 过 Popen 时才判
+    ('r3-bad-popen-from-import', check_subprocess_encoding,
+     "from subprocess import Popen\nproc = Popen(cmd, text=True)\n", True),
+    # 反向对照：自有 Popen 函数（文件无任何 subprocess import）不许误报
+    ('r3-good-local-popen', check_subprocess_encoding,
+     "def Popen(cmd):\n    return cmd\nres = Popen(cmd, text=True)\n", False),
+    ('r3-bad-check-output', check_subprocess_encoding,
+     "out = subprocess.check_output(cmd, text=True)\n", True),
+    ('r3-good-check-output', check_subprocess_encoding,
+     "out = subprocess.check_output(cmd, text=True, encoding='utf-8')\n", False),
+    ('r3-bad-check-output-alias', check_subprocess_encoding,
+     "import subprocess as _sp\nout = _sp.check_output(cmd, text=True)\n", True),
+    ('r3-good-check-output-alias', check_subprocess_encoding,
+     "import subprocess as _sp\nout = _sp.check_output(cmd, text=True, encoding='utf-8')\n", False),
+    ('r3-bad-check-output-from-import', check_subprocess_encoding,
+     "from subprocess import check_output\nout = check_output(cmd, text=True)\n", True),
+    # 反向对照：自有 check_output 函数（无 import）不许误报
+    ('r3-good-local-check-output', check_subprocess_encoding,
+     "def check_output(cmd):\n    return cmd\nres = check_output(cmd, text=True)\n", False),
+    # 反向对照：from-import gating 按**函数名**逐个判 —— 只 import 了 run，
+    # 自有的 check_output 即使带 text=True 也不许误报
+    ('r3-good-local-check-output-with-run-import', check_subprocess_encoding,
+     "from subprocess import run\n\n"
+     "def check_output(cmd):\n    return cmd\n"
+     "res = check_output('x', text=True)\n", False),
 )
 
 
