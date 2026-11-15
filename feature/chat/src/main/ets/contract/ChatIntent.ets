@@ -818,6 +818,8 @@ export type ChatIntent =
   | OnForumTopicsLoaded
   | OnMoreForumTopicsLoaded
   | OnForumTopicsFailed
+  | OnTopicOpened
+  | CloseActiveTopic
   | OnForumModeChanged;
 
 /** STICKER-PREVIEW-101：打开贴纸包预览弹窗。 */
@@ -1471,4 +1473,35 @@ export class OnForumTopicsFailed implements Intent {
   constructor(message: string) {
     this.message = message;
   }
+}
+
+/**
+ * FORUM-102：回灌「当前打开的话题」。
+ *
+ * 协调器在截获 `openForumTopic` 并完成投影侧切流（openTopic + 首屏拉取）
+ * 之后派发本意图，reducer 把话题 id 与名字写进 ChatUiState —— 头部标题、
+ * 返回键行为都由它驱动。名字放在意图里而不是让页面回头查话题列表：
+ * 列表是分页集合，点开的行一定在手（onOpenTopic 的回调参数），
+ * 现拿现传比回查可靠。
+ */
+export class OnTopicOpened implements Intent {
+  readonly kind: 'onTopicOpened' = 'onTopicOpened';
+  readonly topicId: number;
+  readonly name: string;
+
+  constructor(topicId: number, name: string) {
+    this.topicId = topicId;
+    this.name = name;
+  }
+}
+
+/**
+ * FORUM-102：关闭当前话题、回到话题列表。
+ *
+ * 头部返回键在话题模式下派发本意图：协调器截获做投影侧切流
+ * （closeTopic + 重拉全会话首屏），reducer 清 activeTopic* 并把
+ * showForumTopics 拉起——用户从话题列表进来，回去也回话题列表。
+ */
+export class CloseActiveTopic implements Intent {
+  readonly kind: 'closeActiveTopic' = 'closeActiveTopic';
 }

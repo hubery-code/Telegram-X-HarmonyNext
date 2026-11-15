@@ -123,6 +123,7 @@ import {
   LoadInitialMessages,
   LoadOlderMessages,
   BackToChatList,
+  CloseActiveTopic,
   ComposerTextChanged,
   SendCurrentMessage,
   MessageActionRequested,
@@ -1230,21 +1231,28 @@ export struct ChatPage {
         .alignItems(VerticalAlign.Center)
         .accessibilityText(a11y(A11y.BACK))
         .onClick(() => {
-          this.onDispatch(new BackToChatList());
+          // FORUM-102：话题流里返回键的语义是「回到话题列表」，不是退出会话。
+          if (this.uiState.activeTopicId > 0) {
+            this.onDispatch(new CloseActiveTopic());
+          } else {
+            this.onDispatch(new BackToChatList());
+          }
         })
 
         // MSG-109：标题 + 副标题（副标题非空时显示，subheadline 字号 textSecondary）。
         // A11Y-102：标题与副标题合成一站，所以点击挂在容器上而不是标题 Text 上——
         // 分组容器里留着可操作后代，读屏就再也走不到那个后代（守卫 R4 拦这种写法）。
+        // FORUM-102：话题打开时标题换话题名；副标题是全会话口径（成员/在线数），
+        // 在话题流里显示会让人误读成话题属性，一并隐藏。
         Column() {
-          Text(this.uiState.chatTitle)
+          Text(this.uiState.activeTopicId > 0 ? this.uiState.activeTopicName : this.uiState.chatTitle)
             .fontSize(this.T.typography.title.fontSize)
             .fontWeight(this.T.typography.title.fontWeight)
             .fontColor(this.T.colors.textPrimary)
             .maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
 
-          if (this.uiState.headerSubtitle.length > 0) {
+          if (this.uiState.activeTopicId === 0 && this.uiState.headerSubtitle.length > 0) {
             Text(this.uiState.headerSubtitle)
               .fontSize(this.T.typography.subheadline.fontSize)
               .fontColor(this.T.colors.textSecondary)
@@ -1257,7 +1265,10 @@ export struct ChatPage {
         .accessibilityGroup(true)
         .onClick(() => {
           // MSG-109：私聊/群/频道标题点击 → 打开会话资料页（纯导航意图）。
-          this.onDispatch(new OpenChatProfile(this.uiState.chatId));
+          // FORUM-102：话题流里标题是话题名，不是会话资料入口，不响应。
+          if (this.uiState.activeTopicId === 0) {
+            this.onDispatch(new OpenChatProfile(this.uiState.chatId));
+          }
         })
 
         // MSG-109：私聊头部语音通话占位入口（📞，语义后续泳道实现）。
@@ -5695,8 +5706,11 @@ export struct ChatPage {
         Column() {
           // 未输入关键词时给引导文案；输入过但无命中才提示 No results
           // （否则一打开面板就是"No results"，看起来像搜索坏了）。
+          // FORUM-103：话题态的检索已收窄到当前话题，引导文案照实说。
           Text(this.uiState.searchQuery.trim().length === 0
-            ? this.t('Search messages in this chat')
+            ? (this.uiState.activeTopicId > 0
+              ? this.t('Search messages in this topic')
+              : this.t('Search messages in this chat'))
             : this.t('No Results'))
             .fontSize(this.T.typography.body.fontSize)
             .fontColor(this.T.colors.textSecondary)

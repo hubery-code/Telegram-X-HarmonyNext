@@ -160,7 +160,9 @@ import {
   OnForumTopicsLoaded,
   OnMoreForumTopicsLoaded,
   OnForumTopicsFailed,
-  OnForumModeChanged
+  OnForumModeChanged,
+  OnTopicOpened,
+  CloseActiveTopic
 } from '../contract/ChatIntent';
 import {
   ChatEffect,
@@ -2386,10 +2388,29 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
     }
 
     case 'openForumTopic': {
-      // 本包只做列表；「打开某话题的消息流」是导航，交给装配层
-      // （coordinator 把这个意图转成回调，reducer 只负责关掉列表覆盖层）。
+      // FORUM-102：投影侧切流（openTopic + 首屏拉取）由协调器在 reduce 前截获
+      // 完成，reducer 只负责关掉列表覆盖层；话题名/id 经 OnTopicOpened 回灌。
       const ftOpen: OpenForumTopic = intent as OpenForumTopic;
       return reduced(state.copyWith({ showForumTopics: false, jumpToMessageId: 0 }));
+    }
+
+    case 'onTopicOpened': {
+      // FORUM-102：协调器完成切流后的回灌；同话题重复回灌不换引用。
+      const opened: OnTopicOpened = intent as OnTopicOpened;
+      if (state.activeTopicId === opened.topicId && state.activeTopicName === opened.name) {
+        return reduced(state);
+      }
+      return reduced(state.copyWith({ activeTopicId: opened.topicId, activeTopicName: opened.name }));
+    }
+
+    case 'closeActiveTopic': {
+      // FORUM-102：投影侧切流由协调器截获完成；这里清话题态并把话题列表
+      // 覆盖层拉起 —— 用户从话题列表进来，回去也回话题列表。
+      const closeIntent: CloseActiveTopic = intent as CloseActiveTopic;
+      if (state.activeTopicId === 0 && !state.showForumTopics) {
+        return reduced(state);
+      }
+      return reduced(state.copyWith({ activeTopicId: 0, activeTopicName: '', showForumTopics: true }));
     }
   }
 

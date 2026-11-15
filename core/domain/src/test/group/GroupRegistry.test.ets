@@ -426,10 +426,23 @@ export default function groupRegistryTest(): void {
     });
 
     it('should correctly format member counts for groups and channels', 0, (): void => {
+      // 2026-11-15（FORUM-102 轮顺手修复）：这条用例原来直接断言英文串、从未声明语言，
+      // 依赖「跑它时 Lang 恰好是 en」的环境状态 —— 默认语言改中文后必然失败。
+      // 修法与 StorageSize.test 同一口径：显式声明语言、中英两档都断言并还原，
+      // 既去掉顺序依赖，又把单复数行为两侧都钉住。
+      Lang.getInstance().reset();
+      Lang.getInstance().setLanguage('en');
       expect(formatMemberCount(1, false)).assertEqual('1 member');
       expect(formatMemberCount(5, false)).assertEqual('5 members');
       expect(formatMemberCount(1, true)).assertEqual('1 subscriber');
       expect(formatMemberCount(100, true)).assertEqual('100 subscribers');
+
+      Lang.getInstance().setLanguage('zh');
+      expect(formatMemberCount(1, false)).assertEqual('1 位成员');
+      expect(formatMemberCount(5, false)).assertEqual('5 位成员');
+      expect(formatMemberCount(1, true)).assertEqual('1 位订阅者');
+      expect(formatMemberCount(100, true)).assertEqual('100 位订阅者');
+      Lang.getInstance().reset();
     });
 
     it('groupHeaderSubtitle_en_assemblesMemberAndOnlineCounts', 0, (): void => {
@@ -491,6 +504,12 @@ export default function groupRegistryTest(): void {
     });
 
     it('should correctly format member role from status and tag', 0, (): void => {
+      // 2026-11-15（FORUM-102 轮顺手修复）：与上一条同因 —— 原来断言英文串但未声明
+      // 语言，默认语言改中文后必败；现在中英两档都断言并还原。tag 是调用方给的
+      // 原文，不属于词典，任何语言下都原样返回。
+      Lang.getInstance().reset();
+      Lang.getInstance().setLanguage('en');
+
       const member1: ChatMember = new ChatMember();
       member1.tag = 'Founder';
       expect(formatMemberRole(member1)).assertEqual('Founder');
@@ -506,6 +525,12 @@ export default function groupRegistryTest(): void {
       const member4: ChatMember = new ChatMember();
       member4.status = new ChatMemberStatusMember();
       expect(formatMemberRole(member4)).assertEqual('');
+
+      Lang.getInstance().setLanguage('zh');
+      expect(formatMemberRole(member2)).assertEqual('群主');
+      expect(formatMemberRole(member3)).assertEqual('管理员');
+      expect(formatMemberRole(member1)).assertEqual('Founder');
+      Lang.getInstance().reset();
     });
 
     it('should assemble requestBasicGroup and resolve with cached BasicGroup', 0, async (): Promise<void> => {

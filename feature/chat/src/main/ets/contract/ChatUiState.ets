@@ -235,6 +235,10 @@ export interface ChatUiStateOptions {
   readonly forumTopics?: ForumTopicsState;
   /** FORUM-101：话题列表覆盖层是否显示。 */
   readonly showForumTopics?: boolean;
+  /** FORUM-102：当前打开的话题 id（0 = 没有话题打开，消息流是全会话视图）。 */
+  readonly activeTopicId?: number;
+  /** FORUM-102：当前打开的话题名（头部标题显示用）。 */
+  readonly activeTopicName?: string;
 }
 
 export const DEFAULT_RECENT_EMOJIS: readonly string[] = [
@@ -340,6 +344,10 @@ export class ChatUiState implements UiState {
   readonly forumTopics: ForumTopicsState;
   /** FORUM-101：话题列表覆盖层是否显示。 */
   readonly showForumTopics: boolean;
+  /** FORUM-102：当前打开的话题 id（0 = 没有话题打开，消息流是全会话视图）。 */
+  readonly activeTopicId: number;
+  /** FORUM-102：当前打开的话题名（头部标题显示用）。 */
+  readonly activeTopicName: string;
 
   constructor(
     chatId: number,
@@ -394,7 +402,10 @@ export class ChatUiState implements UiState {
     // （`initial()` 与 `copyWith()` 都按位置传，中间插一个就会整体错位）。
     isForum: boolean = false,
     forumTopics: ForumTopicsState = ForumTopicsState.initial(),
-    showForumTopics: boolean = false
+    showForumTopics: boolean = false,
+    // FORUM-102：同理追加在末尾。
+    activeTopicId: number = 0,
+    activeTopicName: string = ''
   ) {
     this.chatId = chatId;
     this.chatTitle = chatTitle;
@@ -445,6 +456,8 @@ export class ChatUiState implements UiState {
     this.isForum = isForum;
     this.forumTopics = forumTopics;
     this.showForumTopics = showForumTopics;
+    this.activeTopicId = activeTopicId;
+    this.activeTopicName = activeTopicName;
   }
 
   static initial(): ChatUiState {
@@ -501,7 +514,9 @@ export class ChatUiState implements UiState {
       options.savedAnimationsRequested !== undefined ? options.savedAnimationsRequested : this.savedAnimationsRequested,
       options.isForum !== undefined ? options.isForum : this.isForum,
       options.forumTopics !== undefined ? options.forumTopics : this.forumTopics,
-      options.showForumTopics !== undefined ? options.showForumTopics : this.showForumTopics
+      options.showForumTopics !== undefined ? options.showForumTopics : this.showForumTopics,
+      options.activeTopicId !== undefined ? options.activeTopicId : this.activeTopicId,
+      options.activeTopicName !== undefined ? options.activeTopicName : this.activeTopicName
     );
   }
 

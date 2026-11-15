@@ -177,6 +177,17 @@ function findSentRequest(bridge: TestNativeBridge, type: string): Record<string,
   return null;
 }
 
+/** FORUM-102：取已发请求的**最后一条**（同一类型多次发送时，第一条会截住旧请求）。 */
+function lastSentRequest(bridge: TestNativeBridge, type: string): Record<string, TdWireValue> | null {
+  for (let i = bridge.sent.length - 1; i >= 0; i--) {
+    const json: Record<string, TdWireValue> = JSON.parse(bridge.sent[i].utf8) as Record<string, TdWireValue>;
+    if (json['@type'] === type) {
+      return json;
+    }
+  }
+  return null;
+}
+
 function sentRequestId(json: Record<string, TdWireValue>): string {
   const extra: Record<string, TdWireValue> = json['@extra'] as Record<string, TdWireValue>;
   return extra['requestId'] as string;
@@ -243,6 +254,44 @@ async function replyHistory(
   messages: Record<string, TdWireValue>[]
 ): Promise<void> {
   const reqs: Record<string, TdWireValue>[] = historyRequests(bridge);
+  const req: Record<string, TdWireValue> = reqs[reqIndex];
+  bridge.emitResponse(scope.clientId, sentRequestId(req), historyPageFields(messages));
+  await flushAsync();
+  await flushAsync();
+}
+
+// ---- FORUM-102 话题模式 ----
+
+/** 带 messageTopicForum 归属的消息（forum 群每条消息都有 topic_id）。 */
+function rawTopicMessage(id: number, chatId: number, topicId: number): Record<string, TdWireValue> {
+  const payload: Record<string, TdWireValue> = rawMessage(id, chatId);
+  const topic: Record<string, TdWireValue> = {};
+  topic['@type'] = 'messageTopicForum';
+  topic['forum_topic_id'] = topicId;
+  payload['topic_id'] = topic;
+  return payload;
+}
+
+/** 取出已发的 getForumTopicHistory 请求（按发出顺序）。 */
+function forumTopicHistoryRequests(bridge: TestNativeBridge): Record<string, TdWireValue>[] {
+  const out: Record<string, TdWireValue>[] = [];
+  for (let i = 0; i < bridge.sent.length; i++) {
+    const json: Record<string, TdWireValue> = JSON.parse(bridge.sent[i].utf8) as Record<string, TdWireValue>;
+    if (json['@type'] === 'getForumTopicHistory') {
+      out.push(json);
+    }
+  }
+  return out;
+}
+
+/** 回一帧话题历史页（回包同为 Messages），并把投影的异步收尾跑完。 */
+async function replyTopicHistory(
+  bridge: TestNativeBridge,
+  scope: AccountScope,
+  reqIndex: number,
+  messages: Record<string, TdWireValue>[]
+): Promise<void> {
+  const reqs: Record<string, TdWireValue>[] = forumTopicHistoryRequests(bridge);
   const req: Record<string, TdWireValue> = reqs[reqIndex];
   bridge.emitResponse(scope.clientId, sentRequestId(req), historyPageFields(messages));
   await flushAsync();
@@ -1434,6 +1483,163 @@ export default function messageProjectionTest(): void {
       expect(projection.state.messages.length).assertEqual(3);
       expect(projection.state.messages[0].id).assertEqual(100);
       expect(projection.state.messages[2].id).assertEqual(102);
+      projection.stop();
+    });
+
+    // ---- FORUM-102 话题模式 ----
+
+    it('FORUM102_openTopicRoutesHistoryToGetForumTopicHistory', 0, async (): Promise<void> => {
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const scope: AccountScope = createScope(bridge);
+      const projection: MessageProjection = new MessageProjection(42, scope);
+
+      expect(projection.getTopicId()).assertEqual(0);
+      projection.openTopic(7);
+      expect(projection.getTopicId()).assertEqual(7);
+
+      const first: Result<TdPendingRequest, AppError> | null = projection.loadInitialMessages(30);
+      expect(first !== null).assertTrue();
+      await replyTopicHistory(bridge, scope, 0, [rawTopicMessage(301, 42, 7)]);
+      expect(projection.state.messages.length).assertEqual(1);
+      expect(projection.state.messages[0].id).assertEqual(301);
+
+      const topicReqs: Record<string, TdWireValue>[] = forumTopicHistoryRequests(bridge);
+      expect(topicReqs.length).assertEqual(1);
+      expect(topicReqs[0]['chat_id']).assertEqual(42);
+      expect(topicReqs[0]['forum_topic_id']).assertEqual(7);
+      expect(topicReqs[0]['from_message_id']).assertEqual(0);
+      projection.stop();
+    });
+
+    it('FORUM102_updateNewMessageFilteredByTopicInTopicMode', 0, (): void => {
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const scope: AccountScope = createScope(bridge);
+      const projection: MessageProjection = new MessageProjection(42, scope);
+      // 更新订阅只在 start() 里建立；不 start，emitUpdate 根本送不进来
+      projection.start();
+
+      projection.openTopic(7);
+
+      // 别的话题的消息：不收
+      const otherTopicFields: Record<string, TdWireValue> = {};
+      otherTopicFields['chat_id'] = 42;
+      otherTopicFields['message'] = rawTopicMessage(402, 42, 8);
+      bridge.emitUpdate(scope.clientId, 'updateNewMessage', otherTopicFields);
+      expect(projection.state.messages.length).assertEqual(0);
+
+      // 无 topic_id 归属的消息：话题视图里没有归属依据，不收
+      const noTopicFields: Record<string, TdWireValue> = {};
+      noTopicFields['chat_id'] = 42;
+      noTopicFields['message'] = rawMessage(403, 42);
+      bridge.emitUpdate(scope.clientId, 'updateNewMessage', noTopicFields);
+      expect(projection.state.messages.length).assertEqual(0);
+
+      // 本话题的消息：收
+      const inTopicFields: Record<string, TdWireValue> = {};
+      inTopicFields['chat_id'] = 42;
+      inTopicFields['message'] = rawTopicMessage(401, 42, 7);
+      bridge.emitUpdate(scope.clientId, 'updateNewMessage', inTopicFields);
+      expect(projection.state.messages.length).assertEqual(1);
+      expect(projection.state.messages[0].id).assertEqual(401);
+      projection.stop();
+    });
+
+    it('FORUM102_closeTopicReturnsToWholeChatHistory', 0, (): void => {
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const scope: AccountScope = createScope(bridge);
+      const projection: MessageProjection = new MessageProjection(42, scope);
+
+      projection.openTopic(7);
+      projection.closeTopic();
+      expect(projection.getTopicId()).assertEqual(0);
+      // 重复关闭是幂等 no-op
+      projection.closeTopic();
+
+      const first: Result<TdPendingRequest, AppError> | null = projection.loadInitialMessages(30);
+      expect(first !== null).assertTrue();
+      expect(forumTopicHistoryRequests(bridge).length).assertEqual(0);
+      expect(historyRequests(bridge).length).assertEqual(1);
+      projection.stop();
+    });
+
+    it('FORUM102_sendTextCarriesForumTopicIdInTopicModeAndNullOtherwise', 0, (): void => {
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const scope: AccountScope = createScope(bridge);
+      const projection: MessageProjection = new MessageProjection(42, scope);
+
+      const plain: Result<TdPendingRequest, AppError> = projection.sendTextMessage('hi');
+      expect(plain.ok).assertTrue();
+      const plainReq: Record<string, TdWireValue> | null = findSentRequest(bridge, 'sendMessage');
+      expect(plainReq !== null).assertTrue();
+      if (plainReq !== null) {
+        expect(plainReq['topic_id']).assertNull();
+      }
+
+      projection.openTopic(7);
+      const inTopic: Result<TdPendingRequest, AppError> = projection.sendTextMessage('hi');
+      expect(inTopic.ok).assertTrue();
+      // 取最后一条：findSentRequest 返回第一条（无话题的那次），会截住旧请求
+      const topicReq: Record<string, TdWireValue> | null = lastSentRequest(bridge, 'sendMessage');
+      expect(topicReq !== null).assertTrue();
+      if (topicReq !== null) {
+        const topicId: Record<string, TdWireValue> | null =
+          topicReq['topic_id'] as Record<string, TdWireValue> | null;
+        expect(topicId !== null).assertTrue();
+        if (topicId !== null) {
+          expect(topicId['@type']).assertEqual('messageTopicForum');
+          expect(topicId['forum_topic_id']).assertEqual(7);
+        }
+      }
+      projection.stop();
+    });
+
+    it('FORUM102_inFlightPageFromSwitchedTopicIsDropped', 0, async (): Promise<void> => {
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const scope: AccountScope = createScope(bridge);
+      const projection: MessageProjection = new MessageProjection(42, scope);
+
+      projection.openTopic(7);
+      const first: Result<TdPendingRequest, AppError> | null = projection.loadInitialMessages(30);
+      expect(first !== null).assertTrue();
+
+      // 回包没到之前切走：这页属于话题 7 的流，不能灌进话题 8（或全会话）的集合
+      projection.openTopic(8);
+      await replyTopicHistory(bridge, scope, 0, [rawTopicMessage(301, 42, 7)]);
+      expect(projection.state.messages.length).assertEqual(0);
+      expect(projection.getTopicId()).assertEqual(8);
+      projection.stop();
+    });
+
+    it('FORUM103_searchMessagesScopedToTopicInTopicMode', 0, (): void => {
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const scope: AccountScope = createScope(bridge);
+      const projection: MessageProjection = new MessageProjection(42, scope);
+
+      // 全会话视图：不带话题（null），检索所有话题
+      const plain: Result<TdPendingRequest, AppError> = projection.searchMessages('hello');
+      expect(plain.ok).assertTrue();
+      const plainReq: Record<string, TdWireValue> | null = lastSentRequest(bridge, 'searchChatMessages');
+      expect(plainReq !== null).assertTrue();
+      if (plainReq !== null) {
+        expect(plainReq['topic_id']).assertNull();
+        expect(plainReq['query']).assertEqual('hello');
+      }
+
+      // 话题模式：检索收窄到当前话题
+      projection.openTopic(7);
+      const scoped: Result<TdPendingRequest, AppError> = projection.searchMessages('hello');
+      expect(scoped.ok).assertTrue();
+      const scopedReq: Record<string, TdWireValue> | null = lastSentRequest(bridge, 'searchChatMessages');
+      expect(scopedReq !== null).assertTrue();
+      if (scopedReq !== null) {
+        const topicId: Record<string, TdWireValue> | null =
+          scopedReq['topic_id'] as Record<string, TdWireValue> | null;
+        expect(topicId !== null).assertTrue();
+        if (topicId !== null) {
+          expect(topicId['@type']).assertEqual('messageTopicForum');
+          expect(topicId['forum_topic_id']).assertEqual(7);
+        }
+      }
       projection.stop();
     });
 

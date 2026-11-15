@@ -73,6 +73,8 @@ import {
   OnChatSendPermissionsChanged,
   OpenMessageComments,
   ToggleMessageReaction,
+  OnTopicOpened,
+  CloseActiveTopic,
   OpenStickerSet,
   OpenStickerBoard,
   OnStickerBoardLoaded,
@@ -3630,6 +3632,58 @@ export default function chatReducerTest() {
       expect(menuNotFav.showFavoriteSticker).assertTrue();
       expect(menuNotFav.isFavoriteSticker).assertFalse();
       expect(menuNotFav.showViewStickerSet).assertTrue();
+    });
+
+    // ---- FORUM-102 话题流切换（reducer 侧状态） ----
+
+    it('onTopicOpened_setsActiveTopicIdAndName', 0, () => {
+      const state: ChatUiState = makeState();
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        state,
+        new OnTopicOpened(7, 'General'),
+        makeEnv()
+      );
+      expect(result.state.activeTopicId).assertEqual(7);
+      expect(result.state.activeTopicName).assertEqual('General');
+      expect(result.effects.length).assertEqual(0);
+    });
+
+    it('onTopicOpened_sameTopicSameName_isNoOpSameStateRef', 0, () => {
+      const state: ChatUiState = makeState().copyWith({ activeTopicId: 7, activeTopicName: 'General' });
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        state,
+        new OnTopicOpened(7, 'General'),
+        makeEnv()
+      );
+      expect(result.state === state).assertTrue();
+    });
+
+    it('closeActiveTopic_clearsTopicStateAndReopensList', 0, () => {
+      const state: ChatUiState = makeState().copyWith({
+        activeTopicId: 7,
+        activeTopicName: 'General',
+        showForumTopics: false
+      });
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        state,
+        new CloseActiveTopic(),
+        makeEnv()
+      );
+      expect(result.state.activeTopicId).assertEqual(0);
+      expect(result.state.activeTopicName).assertEqual('');
+      // 从话题列表进来，回去也回话题列表
+      expect(result.state.showForumTopics).assertTrue();
+      expect(result.effects.length).assertEqual(0);
+    });
+
+    it('closeActiveTopic_withoutTopicAndOverlayHidden_isNoOpSameStateRef', 0, () => {
+      const state: ChatUiState = makeState();
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        state,
+        new CloseActiveTopic(),
+        makeEnv()
+      );
+      expect(result.state === state).assertTrue();
     });
   });
 }

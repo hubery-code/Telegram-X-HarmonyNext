@@ -184,6 +184,8 @@ import {
   InputSticker,
   InputMessageAnimation,
   InputAnimation,
+  MessageTopicForum,
+  TdMessageTopic,
   FormattedText,
   InputFileId,
   SendMessage,
@@ -321,7 +323,10 @@ import {
   OnForumTopicsLoaded,
   OnMoreForumTopicsLoaded,
   OnForumTopicsFailed,
-  OnForumModeChanged
+  OnForumModeChanged,
+  OpenForumTopic,
+  OnTopicOpened,
+  CloseActiveTopic
 } from '../contract/ChatIntent';
 import {
   ChatEffect,
@@ -1380,7 +1385,14 @@ export class ChatCoordinator {
   }
 
   dispatch(intent: ChatIntent): void {
-    if (intent.kind === 'openMediaViewer') {
+    if (intent.kind === 'openForumTopic') {
+      // FORUM-102：截获在 reduce 之前——投影侧切流要在覆盖层关掉的同时发生，
+      // 话题名从意图里现拿（点开的那一行一定在手）。
+      const ftOpen: OpenForumTopic = intent as OpenForumTopic;
+      this.openTopicStream(ftOpen.topicId, ftOpen.name);
+    } else if (intent.kind === 'closeActiveTopic') {
+      this.closeTopicStream();
+    } else if (intent.kind === 'openMediaViewer') {
       const openIntent: OpenMediaViewer = intent as OpenMediaViewer;
       this.handleOpenMediaViewer(openIntent.messageId, openIntent.targetFileId);
     } else if (intent.kind === 'requestMediaDownload') {
@@ -5254,6 +5266,62 @@ export class ChatCoordinator {
   }
 
   /**
+   * FORUM-102：打开话题 —— 投影切到话题流并拉首屏。
+   *
+   * 三步顺序有意固定：
+   * ① `projection.openTopic` 清集合并置话题 id（历史源自此改走
+   *    `getForumTopicHistory`，`updateNewMessage` 自此按话题过滤）；
+   * ② 复位本协调器的「每条消息流一份」状态——未读书签在话题视图里没有
+   *    依据（TDLib 1.8.67 不推按话题的已读水位，unreadCount 是全会话口径，
+   *    照搬会把分隔线钉在错误的位置，所以话题内一律抑制）、待跳转目标
+   *    属于上一个流、已读节流水位同样跨流无意义；
+   * ③ 派发 OnTopicOpened（头部标题/返回键换挡）+ LoadInitialMessages
+   *    （走既有首屏效果链；投影已清空，loadInitialMessages 不会被拒绝）。
+   */
+  private openTopicStream(topicId: number, name: string): void {
+    if (topicId <= 0) {
+      this.logger.info(TAG, 'forum_topic_open_rejected', `topicId=${topicId}`);
+      return;
+    }
+    this.logger.info(TAG, 'forum_topic_open', `topicId=${topicId}`);
+    this.projection.openTopic(topicId);
+    this.resetPerStreamState(/* inTopic: */ true);
+    this.dispatch(new OnTopicOpened(topicId, name));
+    this.dispatch(new LoadInitialMessages());
+  }
+
+  /**
+   * FORUM-102：关闭话题 —— 投影切回全会话流并拉首屏。
+   * reducer 侧（closeActiveTopic）会把 showForumTopics 拉起，话题列表重新
+   * 盖在恢复中的全会话流上；与打开话题共用同一条复位逻辑，但未读书签要
+   * 回到「待解析」而不是抑制态（全会话口径的未读分隔线在这里才成立）。
+   */
+  private closeTopicStream(): void {
+    if (this.projection.getTopicId() === 0) {
+      return;
+    }
+    this.logger.info(TAG, 'forum_topic_close', `topicId=${this.projection.getTopicId()}`);
+    this.projection.closeTopic();
+    this.resetPerStreamState(/* inTopic: */ false);
+    this.dispatch(new LoadInitialMessages());
+  }
+
+  /** 话题/全会话两条流之间切换时共用的每流状态复位。 */
+  private resetPerStreamState(inTopic: boolean): void {
+    this.firstUnreadMessageId = null;
+    // 全会话视图恢复未读书签解析；话题视图里没有按话题的水位，锁定抑制。
+    this.initialUnreadResolved = !inTopic;
+    this.pendingJumpMessageId = 0;
+    this.pendingJumpInFlight = false;
+    this.readThrottle.reset();
+    // CHAT-HIST-101 的空列表补拉是话题切流后真正拉起首屏的那条路
+    // （此时 reducer 里还留着上一条流的消息，直接派发 LoadInitialMessages
+    // 会被 no-op 拦掉），上一条流若耗尽过重试额度，不清零会把新流锁死。
+    this.backfillTries = 0;
+    this.backfillScheduled = false;
+  }
+
+  /**
    * 话题行的一行预览，返回**词条 key**（名字以 `Key` 结尾 = 契约，不是风格）。
    *
    * 为什么不在这里 `t()` 成已解析文本：这个值要进 `ForumTopicItem.preview`
@@ -5785,6 +5853,21 @@ export class ChatCoordinator {
     }
   }
 
+  /**
+   * FORUM-102：协调器直构 `sendMessage`（贴纸/动图两处）时的话题字段。
+   * 投影侧的六个 send* 用的是 `MessageProjection.activeTopicForRequests()`，
+   * 两者读同一个 `projection.getTopicId()`，口径不会分叉。
+   */
+  private forumTopicForSend(): TdMessageTopic | null {
+    const topicId: number = this.projection.getTopicId();
+    if (topicId === 0) {
+      return null;
+    }
+    const topic: MessageTopicForum = new MessageTopicForum();
+    topic.forum_topic_id = topicId;
+    return topic;
+  }
+
   private handleSendSticker(sendSticker: SendStickerMessage): void {
     if (isUnicodeEmojiSticker(sendSticker.fileId)) {
       this.projection.sendTextMessage(sendSticker.emoji, 0);
@@ -5793,6 +5876,8 @@ export class ChatCoordinator {
 
     const req: SendMessage = new SendMessage();
     req.chat_id = sendSticker.chatId;
+    // FORUM-102：话题模式下发送必须落到当前话题（与投影的六个 send* 同口径）。
+    req.topic_id = this.forumTopicForSend();
     const inputSticker: InputSticker = new InputSticker();
     const inputFileId: InputFileId = new InputFileId();
     inputFileId.id = sendSticker.fileId;
@@ -5835,6 +5920,8 @@ export class ChatCoordinator {
     // 真实动图被静默降级成文本（2001-2040 不是保留段，只是当时瞎定的）。
     const req: SendMessage = new SendMessage();
     req.chat_id = sendAnimation.chatId;
+    // FORUM-102：话题模式下发送必须落到当前话题（与投影的六个 send* 同口径）。
+    req.topic_id = this.forumTopicForSend();
     const inputAnim: InputAnimation = new InputAnimation();
     const inputFileId: InputFileId = new InputFileId();
     inputFileId.id = sendAnimation.fileId;

@@ -32,6 +32,14 @@
  *
  * MSG-106 新增：forwardMessages（多选消息转发到目标会话，含 send_copy
  * "以副本发送"隐藏原发送者选项）。
+ *
+ * FORUM-102 新增：话题模式（openTopic / closeTopic / getTopicId）。打开话题后
+ * 历史改走 getForumTopicHistory、updateNewMessage 按 message.topic_id 过滤、
+ * 全部发送请求挂 messageTopicForum topic_id；切换话题时请求带世代对齐，
+ * 在途回包若属于另一个流则丢弃。
+ *
+ * FORUM-103 新增：searchChatMessages 在话题模式下带 topic_id——会话内检索
+ * 收窄到当前话题（TDLib 原生参数），与 getForumTopicHistory 共用同一套流。
  */
 
 import {
@@ -41,6 +49,7 @@ import {
   decodeMessage,
   decodeChat,
   encodeGetChatHistory,
+  encodeGetForumTopicHistory,
   encodeOpenChat,
   encodeCloseChat,
   encodeSendMessage,
@@ -64,6 +73,7 @@ import {
   encodeGetMessageThread,
   encodeGetMessageThreadHistory,
   GetChatHistory,
+  GetForumTopicHistory,
   OpenChat,
   CloseChat,
   SendMessage,
@@ -110,6 +120,8 @@ import {
   LinkPreviewOptions,
   FormattedText,
   Message,
+  MessageTopicForum,
+  TdMessageTopic,
   TdJsonRaw,
   TdUpdate,
   UpdateNewMessage,
@@ -180,6 +192,12 @@ export class MessageProjection {
   private lastReadInboxMessageId: number = 0;
   /** 未读消息计数。 */
   private unreadCount: number = 0;
+  /**
+   * FORUM-102：当前打开的话题 id；0 = 全会话视图（话题未打开）。
+   * 话题模式下历史走 `getForumTopicHistory`、`updateNewMessage` 按
+   * `message.topic_id` 过滤、发送请求挂 `messageTopicForum`。
+   */
+  private activeTopicId: number = 0;
 
   private subscription: TdUpdateSubscription | null = null;
   private stateListener: (() => void) | null = null;
@@ -191,6 +209,63 @@ export class MessageProjection {
   constructor(chatId: number, scope: AccountScope) {
     this.chatId = chatId;
     this.scope = scope;
+  }
+
+  /** FORUM-102：当前打开的话题 id（0 = 全会话视图）。 */
+  getTopicId(): number {
+    return this.activeTopicId;
+  }
+
+  /**
+   * FORUM-102：打开话题，把消息流切到该话题。
+   *
+   * 必须清空整套列表集合（orderedIds / rowIds / messagesById / hasMoreOlder /
+   * emptyPageStreak）：loadInitialMessages 以「列表非空」拒绝重复首屏，不清就
+   * 会拿全会话的消息顶在话题流里翻不到页。已读水位刻意保留——message.id
+   * 是全会话单调的，水位在话题视图里依然有效；unreadCount 是全会话口径，
+   * 清零由调用方（协调器）在话题模式下抑制未读分隔线来兜住，这里不动它。
+   */
+  openTopic(topicId: number): void {
+    if (this.activeTopicId === topicId) {
+      return;
+    }
+    this.activeTopicId = topicId;
+    this.resetCollection();
+    this.notifyStateChanged();
+  }
+
+  /** FORUM-102：关闭话题，回到全会话视图（集合清空，由调用方重拉首屏）。 */
+  closeTopic(): void {
+    if (this.activeTopicId === 0) {
+      return;
+    }
+    this.activeTopicId = 0;
+    this.resetCollection();
+    this.notifyStateChanged();
+  }
+
+  /** openTopic / closeTopic 共用的集合清空。 */
+  private resetCollection(): void {
+    this.messagesById.clear();
+    this.rowIds.clear();
+    this.orderedIds = [];
+    this.hasMoreOlder = true;
+    this.emptyPageStreak = 0;
+    this.isLoading = false;
+  }
+
+  /**
+   * FORUM-102/103：带话题字段的请求（sendMessage / searchChatMessages）取
+   * 当前话题的统一口径——话题模式返回 `messageTopicForum`，全会话视图返回
+   * null（非 forum 会话 TDLib 对 null 照常受理）。
+   */
+  private activeTopicForRequests(): TdMessageTopic | null {
+    if (this.activeTopicId === 0) {
+      return null;
+    }
+    const topic: MessageTopicForum = new MessageTopicForum();
+    topic.forum_topic_id = this.activeTopicId;
+    return topic;
   }
 
   /** 列表内容或加载状态变化时回调（调用方负责合并高频通知）。 */
@@ -342,7 +417,9 @@ export class MessageProjection {
     req.limit = limit;
     req.filter = null;
     req.sender_id = null;
-    req.topic_id = null;
+    // FORUM-103：话题模式下检索收窄到当前话题（TDLib 原生 topic_id 参数），
+    // 结果天然只含本话题消息，跨话题的搜索结果在话题视图里跳不过去的问题随之消失。
+    req.topic_id = this.activeTopicForRequests();
     return this.scope.request('searchChatMessages', encodeSearchChatMessages(req) as TdWireObject);
   }
 
@@ -502,6 +579,8 @@ export class MessageProjection {
 
     const req: SendMessage = new SendMessage();
     req.chat_id = this.chatId;
+    // FORUM-102：话题模式下发送必须落到当前话题。
+    req.topic_id = this.activeTopicForRequests();
     if (replyToMessageId > 0) {
       const replyTo: InputMessageReplyToMessage = new InputMessageReplyToMessage();
       replyTo.message_id = replyToMessageId;
@@ -563,6 +642,8 @@ export class MessageProjection {
 
     const pollReq: SendMessage = new SendMessage();
     pollReq.chat_id = this.chatId;
+    // FORUM-102：话题模式下发送必须落到当前话题。
+    pollReq.topic_id = this.activeTopicForRequests();
     pollReq.input_message_content = content;
 
     return this.scope.request('sendMessage', encodeSendMessage(pollReq) as TdWireObject);
@@ -620,6 +701,8 @@ export class MessageProjection {
 
     const req: SendMessage = new SendMessage();
     req.chat_id = this.chatId;
+    // FORUM-102：话题模式下发送必须落到当前话题。
+    req.topic_id = this.activeTopicForRequests();
     if (replyToMessageId > 0) {
       const replyTo: InputMessageReplyToMessage = new InputMessageReplyToMessage();
       replyTo.message_id = replyToMessageId;
@@ -662,6 +745,8 @@ export class MessageProjection {
 
     const req: SendMessage = new SendMessage();
     req.chat_id = this.chatId;
+    // FORUM-102：话题模式下发送必须落到当前话题。
+    req.topic_id = this.activeTopicForRequests();
     if (replyToMessageId > 0) {
       const replyTo: InputMessageReplyToMessage = new InputMessageReplyToMessage();
       replyTo.message_id = replyToMessageId;
@@ -740,6 +825,8 @@ export class MessageProjection {
 
     const req: SendMessage = new SendMessage();
     req.chat_id = this.chatId;
+    // FORUM-102：话题模式下发送必须落到当前话题。
+    req.topic_id = this.activeTopicForRequests();
     if (replyToMessageId > 0) {
       const replyTo: InputMessageReplyToMessage = new InputMessageReplyToMessage();
       replyTo.message_id = replyToMessageId;
@@ -786,6 +873,8 @@ export class MessageProjection {
 
     const req: SendMessage = new SendMessage();
     req.chat_id = this.chatId;
+    // FORUM-102：话题模式下发送必须落到当前话题。
+    req.topic_id = this.activeTopicForRequests();
     if (replyToMessageId > 0) {
       const replyTo: InputMessageReplyToMessage = new InputMessageReplyToMessage();
       replyTo.message_id = replyToMessageId;
@@ -1054,15 +1143,34 @@ export class MessageProjection {
   }
 
   private requestHistory(fromMessageId: number, offset: number, limit: number): Result<TdPendingRequest, AppError> {
-    const req: GetChatHistory = new GetChatHistory();
-    req.chat_id = this.chatId;
-    req.from_message_id = fromMessageId;
-    req.offset = offset;
-    req.limit = limit;
-    req.only_local = false;
+    // FORUM-102：话题模式下历史源换成 getForumTopicHistory（回包同为 Messages，
+    // 摄入与翻页判定与全会话共用）。话题 id 世代随请求发出——回包结算时若
+    // 话题已切换（openTopic/closeTopic 清过集合），这一页宁可丢弃也不能把
+    // 另一个流的消息灌进当前集合。
+    const topicAtRequest: number = this.activeTopicId;
+    let requestType: string = 'getChatHistory';
+    let wire: TdWireObject;
+    if (this.activeTopicId > 0) {
+      const req: GetForumTopicHistory = new GetForumTopicHistory();
+      req.chat_id = this.chatId;
+      req.forum_topic_id = this.activeTopicId;
+      req.from_message_id = fromMessageId;
+      req.offset = offset;
+      req.limit = limit;
+      wire = encodeGetForumTopicHistory(req) as TdWireObject;
+      requestType = 'getForumTopicHistory';
+    } else {
+      const req: GetChatHistory = new GetChatHistory();
+      req.chat_id = this.chatId;
+      req.from_message_id = fromMessageId;
+      req.offset = offset;
+      req.limit = limit;
+      req.only_local = false;
+      wire = encodeGetChatHistory(req) as TdWireObject;
+    }
 
     const result: Result<TdPendingRequest, AppError> =
-      this.scope.request('getChatHistory', encodeGetChatHistory(req) as TdWireObject);
+      this.scope.request(requestType, wire);
     if (result.ok) {
       this.isLoading = true;
       this.notifyStateChanged();
@@ -1070,8 +1178,12 @@ export class MessageProjection {
       result.value.promise.then((res: Result<TdWireObject, AppError>) => {
         self.isLoading = false;
         if (res.ok) {
+          if (self.activeTopicId !== topicAtRequest) {
+            console.info(`MessageProjection history dropped chatId=${self.chatId} topic=${topicAtRequest}->${self.activeTopicId}`);
+            return;
+          }
           const ingest: HistoryIngest = self.ingestHistoryPage(res.value, limit);
-          console.info(`MessageProjection history chatId=${self.chatId} received=${ingest.received} added=${ingest.added}`);
+          console.info(`MessageProjection history chatId=${self.chatId} topic=${self.activeTopicId} received=${ingest.received} added=${ingest.added}`);
           // TDLib 按"最优性能"自选回包条数：首屏常只回内存已有的末条消息，
           // 同时后台 preload 更旧历史（服务器往返 1-2s）。preload 在飞时空跑
           // 会拿到重复/空页，因此连续 MAX_EMPTY_PAGES 次无新增才判定到顶。
@@ -1118,6 +1230,20 @@ export class MessageProjection {
     return new HistoryIngest(received, added);
   }
 
+  /**
+   * FORUM-102：这条消息是否属于当前打开的话题。
+   * 只有 `messageTopicForum` 形状携带 forum_topic_id；TDLib 1.8.67 的
+   * updateNewMessage 不区分来源（含 service 消息），topic_id 为 null 的
+   * 消息在话题视图里没有归属依据，丢弃比混进来更安全。
+   */
+  private messageBelongsToActiveTopic(message: Message): boolean {
+    const topic: TdMessageTopic | null = message.topic_id;
+    if (topic === null || topic.type !== 'messageTopicForum') {
+      return false;
+    }
+    return (topic as MessageTopicForum).forum_topic_id === this.activeTopicId;
+  }
+
   private handleUpdate(update: TdUpdate): void {
     if (update.type === 'updateMessageContent' || update.type === 'updateMessageEdited' ||
       update.type === 'updateMessageSendSucceeded' || update.type === 'updateMessageSendFailed') {
@@ -1126,6 +1252,12 @@ export class MessageProjection {
     if (update.type === 'updateNewMessage') {
       const message: Message | null = (update as UpdateNewMessage).message;
       if (message !== null && message.chat_id === this.chatId) {
+        // FORUM-102：话题模式下只收本话题的消息。forum 群每条消息都带
+        // topic_id（messageTopicForum）；General 话题的 forum_topic_id 为 1。
+        // topic_id 缺失或非 forum 形状时不收——全会话视图不受此过滤。
+        if (this.activeTopicId > 0 && !this.messageBelongsToActiveTopic(message)) {
+          return;
+        }
         this.upsertMessages([message]);
         this.notifyStateChanged();
       }

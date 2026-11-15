@@ -71,6 +71,31 @@ export default function chatOverlayBackTest(): void {
       expect(chatOverlayCloseIntent(state)?.kind).assertEqual('exitMessageSelection');
     });
 
+    // ---- FORUM-102：话题列表覆盖层与话题流接入返回键收口 ----
+
+    it('forumTopicsList_closesForumTopics', 0, () => {
+      const state: ChatUiState = ChatUiState.initial().copyWith({ showForumTopics: true });
+      expect(chatOverlayCloseIntent(state)?.kind).assertEqual('closeForumTopics');
+    });
+
+    it('activeTopic_closesActiveTopicWhenListHidden', 0, () => {
+      const state: ChatUiState = ChatUiState.initial().copyWith({
+        activeTopicId: 7,
+        activeTopicName: 'General'
+      });
+      expect(chatOverlayCloseIntent(state)?.kind).assertEqual('closeActiveTopic');
+    });
+
+    it('forumTopicsList_onTopOfActiveTopic_closesListFirst', 0, () => {
+      // 从话题流里再开列表（头部话题入口）：列表盖在话题流上，先关列表。
+      const state: ChatUiState = ChatUiState.initial().copyWith({
+        showForumTopics: true,
+        activeTopicId: 7,
+        activeTopicName: 'General'
+      });
+      expect(chatOverlayCloseIntent(state)?.kind).assertEqual('closeForumTopics');
+    });
+
     it('hierarchy_topmostOverlayWins', 0, () => {
       // 确认弹窗高于一切
       const state1: ChatUiState = ChatUiState.initial().copyWith({

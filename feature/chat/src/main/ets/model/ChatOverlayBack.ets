@@ -15,15 +15,19 @@
  * 7. actionMenu !== null：长按气泡的操作菜单
  * 8. showEmojiBoard：表情与贴纸键盘抽屉
  * 9. selectionMode：多选转发状态（返回则退出多选态，不退群聊）
+ * 10. showForumTopics：话题列表覆盖层（FORUM-101 当轮漏接，FORUM-102 补上）
+ * 11. activeTopicId > 0：话题消息流打开中（返回回话题列表，FORUM-102）
  *
  * 若所有覆盖层均未激活（返回 null），由外部装配层（`entry`）执行 `BackToChatList` 退出会话。
  */
 
 import {
   ChatIntent,
+  CloseActiveTopic,
   CloseAttachmentMenu,
   CloseChatSearch,
   CloseEmojiBoard,
+  CloseForumTopics,
   CloseMediaViewer,
   ClosePollComposer,
   CloseStickerSetPreview,
@@ -64,6 +68,16 @@ export function chatOverlayCloseIntent(state: ChatUiState): ChatIntent | null {
   }
   if (state.selectionMode) {
     return new ExitMessageSelection();
+  }
+  // FORUM-102：话题列表覆盖层盖在消息流上（无论底下是全会话还是已打开的
+  // 话题），所以先于话题态判断——列表在最上，先关列表；再按一次才关话题，
+  // 关话题时 reducer 会把列表重新拉起，形成 会话 → 话题列表 → 话题 的
+  // 三层返回链。
+  if (state.showForumTopics) {
+    return new CloseForumTopics();
+  }
+  if (state.activeTopicId > 0) {
+    return new CloseActiveTopic();
   }
   return null;
 }

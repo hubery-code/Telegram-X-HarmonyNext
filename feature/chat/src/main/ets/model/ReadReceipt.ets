@@ -69,4 +69,14 @@ export class ReadReportThrottle {
     this.lastReported = messageId;
     return true;
   }
+
+  /**
+   * FORUM-102：话题/全会话两条流之间切换时清水位。
+   * lastReported 只在「同一个消息流」内单调有效——切到另一个流后，旧水位
+   * 会把新流里更早的未读消息误判成「已上报」。清零的最坏代价是重复上报
+   * 一条 viewMessages，幂等且便宜。
+   */
+  reset(): void {
+    this.lastReported = 0;
+  }
 }
