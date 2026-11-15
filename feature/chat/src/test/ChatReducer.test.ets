@@ -146,6 +146,7 @@ import {
   OnTopicIconsLoaded,
   OnTopicManageRightsChanged,
   OnForumTopicInfoPushed,
+  OnForumTopicStatsPushed,
   OnForumTopicCreated,
   OnForumTopicClosedToggled,
   OnForumTopicEdited,
@@ -4126,6 +4127,55 @@ export default function chatReducerTest() {
       // 推送早于列表加载到达：patchForumTopic 找不到该行，不插半成品
       expect(result.state.forumTopics.items.length).assertEqual(1);
       expect(result.state.forumTopics.items[0].topicId).assertEqual(7);
+    });
+
+    // ---- FORUM-106：updateForumTopic 推送补丁 + 置顶重排 ----
+
+    it('FORUM106_onForumTopicStatsPushed_patchesRowAndRepartsAboveUnpinned', 0, () => {
+      // 初始：topic 2 置顶，topic 3 / topic 1 非置顶（保持服务端相对顺序）
+      const t1: ForumTopicItem = makeReducerTopic(1);
+      const t3: ForumTopicItem = makeReducerTopic(3);
+      const t2raw: ForumTopicItem = makeReducerTopic(2);
+      const t2: ForumTopicItem = {
+        topicId: t2raw.topicId,
+        name: t2raw.name,
+        iconEmojiId: t2raw.iconEmojiId,
+        iconColor: t2raw.iconColor,
+        unreadCount: t2raw.unreadCount,
+        unreadMentionCount: t2raw.unreadMentionCount,
+        isPinned: true,
+        isClosed: t2raw.isClosed,
+        isGeneral: t2raw.isGeneral,
+        preview: t2raw.preview,
+        lastMessageDate: t2raw.lastMessageDate
+      };
+      const state: ChatUiState = makeForumListState([t2, t3, t1]);
+      // 推送：topic 1 被置顶、未读 @ 数 5
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        state,
+        new OnForumTopicStatsPushed(1, true, 5),
+        makeEnv()
+      );
+      const items: readonly ForumTopicItem[] = result.state.forumTopics.items;
+      // 稳定分区：t1 升到非置顶之上（t2 之后），未置顶的 t3 沉底；
+      // 同为置顶的 t2/t1 保持原相对顺序 —— 服务端权威顺序在下次拉页落位
+      expect(items[0].topicId).assertEqual(2);
+      expect(items[1].topicId).assertEqual(1);
+      expect(items[1].isPinned).assertTrue();
+      expect(items[1].unreadMentionCount).assertEqual(5);
+      expect(items[2].topicId).assertEqual(3);
+    });
+
+    it('FORUM106_onForumTopicStatsPushed_unknownTopic_keepsRowShape', 0, () => {
+      const state: ChatUiState = makeForumListState([makeReducerTopic(1)]);
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        state,
+        new OnForumTopicStatsPushed(99, true, 3),
+        makeEnv()
+      );
+      // 找不到行：patchForumTopic 原样返回（不插半成品）
+      expect(result.state.forumTopics.items.length).assertEqual(1);
+      expect(result.state.forumTopics.items[0].topicId).assertEqual(1);
     });
   });
 }

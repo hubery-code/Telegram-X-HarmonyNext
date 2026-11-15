@@ -186,6 +186,7 @@ import {
   InputAnimation,
   MessageTopicForum,
   TdMessageTopic,
+  TdMessageSender,
   FormattedText,
   InputFileId,
   SendMessage,
@@ -204,6 +205,7 @@ import {
   UpdateChatNotificationSettings,
   ChatPermissions,
   UpdateChatPermissions,
+  UpdateChatMember,
   MessagePoll,
   MessageContact,
   MessageLocation,
@@ -347,6 +349,7 @@ import {
   OnTopicIconsLoaded,
   OnTopicManageRightsChanged,
   OnForumTopicInfoPushed,
+  OnForumTopicStatsPushed,
   OnForumTopicCreated,
   OnForumTopicClosedToggled,
   OnForumTopicEdited,
@@ -779,6 +782,8 @@ export class ChatCoordinator {
    * 编辑/关闭话题的权威结果不再只靠本地乐观补丁。
    */
   private forumTopicSubscription: TdUpdateSubscription | null = null;
+  /** FORUM-106：updateChatMember 订阅句柄（管理员中途改我的权限 → 即时刷新，destroy 时退订）。 */
+  private ownChatMemberSubscription: TdUpdateSubscription | null = null;
   /** FORUM-105：本端用户 id（getMe 一次取足，TDLib 本地缓存零网络；0 = 未知）。 */
   private ownUserId: number = 0;
   /** FORUM-105：own-admin-rights 链是否已发起（每次打开会话只取一次，防重）。 */
@@ -1036,6 +1041,8 @@ export class ChatCoordinator {
     this.subscribeChatPermissions();
     // FORUM-105：话题基本信息实时同步（编辑/关闭的权威结果靠 updateForumTopicInfo 推送）。
     this.subscribeForumTopicUpdates();
+    // FORUM-106：本端成员身份变动 → own-admin-rights 即时刷新（结掉 105 的遗留）。
+    this.subscribeOwnChatMember();
     // STICKER-RECENT-101：最近使用实时同步（发出/收到一颗贴纸后 updateRecentStickers 会推）。
     this.subscribeRecentStickers();
     // STICKER-FAV-101：收藏实时同步（在其它端加/删一颗收藏会推 updateFavoriteStickers）。
@@ -1384,6 +1391,11 @@ export class ChatCoordinator {
     if (this.forumTopicSubscription !== null) {
       this.forumTopicSubscription.unsubscribe();
       this.forumTopicSubscription = null;
+    }
+    // FORUM-106：退订本端成员身份推送。
+    if (this.ownChatMemberSubscription !== null) {
+      this.ownChatMemberSubscription.unsubscribe();
+      this.ownChatMemberSubscription = null;
     }
     // STICKER-RECENT-101：退订最近使用贴纸推送。
     if (this.recentStickersSubscription !== null) {
@@ -3371,8 +3383,8 @@ export class ChatCoordinator {
    *
    * 结果经 OnTopicManageRightsChanged 回灌 ChatUiState.canManageTopics，
    * 驱动 ForumTopicsOverlay 的「新建话题」按钮与话题行长按手势。
-   * 遗留（如实记录）：admin rights 变更的实时推送（updateChatMember）未订阅，
-   * 本包只在打开会话时取一次 —— 会话中途被撤权要等重进会话才反映。
+   * FORUM-106：权限的实时性已由 subscribeOwnChatMember 结掉 —— 管理员中途
+   * 改我的权限推 updateChatMember，命中本人即重跑本链。
    * 失败静默：权限未知时按钮不出现（宁可晚出现，不让无权用户点进去报错）。
    */
   private fetchOwnAdminRights(): void {
@@ -3558,13 +3570,62 @@ export class ChatCoordinator {
           return;
         }
         if (update.type === 'updateForumTopic') {
-          // order / 未读计数 / 草稿：暂无对应状态位，先让推送可取证（日志）。
+          // FORUM-106：这条推送带 is_pinned / last_read 水位 / unread_mention_count
+          // （无 unread_count——那在 getForumTopics 回包行上），两位补进行 + 置顶重排；
+          // 其余字段（草稿/通知设置）仍无对应状态位，只记日志。
           const topicUpdate: UpdateForumTopic = update as UpdateForumTopic;
           if (topicUpdate.chat_id === this.currentState.chatId) {
             this.logger.info(TAG, 'forum_topic_pushed',
-              `topicId=${topicUpdate.forum_topic_id},pinned=${topicUpdate.is_pinned}`);
+              `topicId=${topicUpdate.forum_topic_id},pinned=${topicUpdate.is_pinned},mentions=${topicUpdate.unread_mention_count}`);
+            this.dispatch(new OnForumTopicStatsPushed(
+              topicUpdate.forum_topic_id,
+              topicUpdate.is_pinned,
+              topicUpdate.unread_mention_count
+            ));
           }
         }
+      }
+    );
+  }
+
+  /**
+   * FORUM-106：订阅 updateChatMember（本会话成员变动）。
+   *
+   * FORUM-105 交付时 admin rights 只在打开会话时取一次，管理员中途
+   * 改我的权限（授予/收回 can_manage_topics）要重进会话才生效 —— 这条
+   * 订阅把那条遗留结掉：推送成员是我（ownUserId 已缓存）时重跑权限链。
+   */
+  private subscribeOwnChatMember(): void {
+    if (this.destroyed || this.ownChatMemberSubscription !== null) {
+      return;
+    }
+    const filter: TdUpdateFilter = {
+      clientId: this.scope.clientId,
+      types: ['updateChatMember']
+    };
+    this.ownChatMemberSubscription = this.scope.gatewayInstance.subscribeUpdates(
+      filter,
+      (event: TdRoutedEvent): void => {
+        const update: TdUpdate | null = decodeTdUpdate(event.payload as TdJsonRaw);
+        if (update === null || update.type !== 'updateChatMember') {
+          return;
+        }
+        const memberUpdate: UpdateChatMember = update as UpdateChatMember;
+        // 生成类字段是 old_chat_member / new_chat_member（TDLib 1.8.67 实测形状，
+        // 不是 Bot API 的 member）——新态才是权威。
+        if (memberUpdate.chat_id !== this.currentState.chatId ||
+          memberUpdate.new_chat_member === null) {
+          return;
+        }
+        const sender: TdMessageSender | null = memberUpdate.new_chat_member.member_id;
+        if (sender === null || sender.type !== 'messageSenderUser') {
+          return;
+        }
+        if ((sender as MessageSenderUser).user_id !== this.ownUserId || this.ownUserId <= 0) {
+          return;
+        }
+        this.logger.info(TAG, 'own_chat_member_changed', `userId=${this.ownUserId}`);
+        this.fetchOwnChatMember();
       }
     );
   }

@@ -838,6 +838,7 @@ export type ChatIntent =
   | OnTopicIconsLoaded
   | OnTopicManageRightsChanged
   | OnForumTopicInfoPushed
+  | OnForumTopicStatsPushed
   | OnForumTopicCreated
   | OnForumTopicClosedToggled
   | OnForumTopicEdited
@@ -1700,6 +1701,25 @@ export class OnForumTopicInfoPushed implements Intent {
     this.name = name;
     this.iconCustomEmojiId = iconCustomEmojiId;
     this.isClosed = isClosed;
+  }
+}
+
+/**
+ * FORUM-106：`updateForumTopic` 推送回灌（is_pinned + 未读 @ 数）。
+ *
+ * TDLib 1.8.67 的这条推送没有 unread_count（那在 getForumTopics 回包行上），
+ * 所以只补这两位；reducer 打完补丁后按置顶优先稳定重排。
+ */
+export class OnForumTopicStatsPushed implements Intent {
+  readonly kind: 'onForumTopicStatsPushed' = 'onForumTopicStatsPushed';
+  readonly topicId: number;
+  readonly isPinned: boolean;
+  readonly unreadMentionCount: number;
+
+  constructor(topicId: number, isPinned: boolean, unreadMentionCount: number) {
+    this.topicId = topicId;
+    this.isPinned = isPinned;
+    this.unreadMentionCount = unreadMentionCount;
   }
 }
 

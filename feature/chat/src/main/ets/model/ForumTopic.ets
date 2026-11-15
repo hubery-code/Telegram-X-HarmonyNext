@@ -210,13 +210,24 @@ export function mergeForumTopics(
     }
   }
   // 稳定分区：置顶的保持相对顺序在前，非置顶的保持相对顺序在后。
+  return repartitionPinnedFirst(merged);
+}
+
+/**
+ * 稳定分区：置顶的保持相对顺序在前，非置顶的保持相对顺序在后。
+ *
+ * FORUM-106：从 mergeForumTopics 里抽出来复用 —— `updateForumTopic` 推送
+ * 把某行的 is_pinned 改了之后，列表必须按同一规则重排，否则推送会让
+ * 置顶行沉底（本地补丁只改字段不动顺序，两套规则会打架）。
+ */
+export function repartitionPinnedFirst(items: ForumTopicItem[]): ForumTopicItem[] {
   const pinned: ForumTopicItem[] = [];
   const rest: ForumTopicItem[] = [];
-  for (let i = 0; i < merged.length; i++) {
-    if (merged[i].isPinned) {
-      pinned.push(merged[i]);
+  for (let i = 0; i < items.length; i++) {
+    if (items[i].isPinned) {
+      pinned.push(items[i]);
     } else {
-      rest.push(merged[i]);
+      rest.push(items[i]);
     }
   }
   return pinned.concat(rest);
@@ -294,6 +305,30 @@ export function withTopicIcon(item: ForumTopicItem, iconEmojiId: string): ForumT
     unreadCount: item.unreadCount,
     unreadMentionCount: item.unreadMentionCount,
     isPinned: item.isPinned,
+    isClosed: item.isClosed,
+    isGeneral: item.isGeneral,
+    preview: item.preview,
+    lastMessageDate: item.lastMessageDate
+  };
+  return patched;
+}
+
+/**
+ * FORUM-106：构造一份改了推送统计位的话题副本（is_pinned + 未读 @ 数）。
+ *
+ * TDLib 1.8.67 的 `updateForumTopic` 携带 is_pinned / last_read 水位 /
+ * unread_mention_count 等，但**没有 unread_count**（那在 getForumTopics
+ * 回包行上）——所以本函数只补这两位，其余字段原样保留。
+ */
+export function withTopicStats(item: ForumTopicItem, isPinned: boolean, mentionCount: number): ForumTopicItem {
+  const patched: ForumTopicItem = {
+    topicId: item.topicId,
+    name: item.name,
+    iconEmojiId: item.iconEmojiId,
+    iconColor: item.iconColor,
+    unreadCount: item.unreadCount,
+    unreadMentionCount: mentionCount,
+    isPinned: isPinned,
     isClosed: item.isClosed,
     isGeneral: item.isGeneral,
     preview: item.preview,

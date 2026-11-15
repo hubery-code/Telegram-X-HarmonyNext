@@ -188,6 +188,7 @@ import {
   OnTopicIconsLoaded,
   OnTopicManageRightsChanged,
   OnForumTopicInfoPushed,
+  OnForumTopicStatsPushed,
   OnForumTopicCreated,
   OnForumTopicClosedToggled,
   OnForumTopicEdited,
@@ -263,6 +264,8 @@ import {
   withTopicClosed,
   withTopicName,
   withTopicIcon,
+  withTopicStats,
+  repartitionPinnedFirst,
   removeTopic,
   TOPIC_ICON_COLORS
 } from '../model/ForumTopic';
@@ -2722,6 +2725,22 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
           ))
       });
       return reduced(state.copyWith({ forumTopics: patchedPush }));
+    }
+
+    case 'onForumTopicStatsPushed': {
+      // FORUM-106：updateForumTopic 推送补丁（is_pinned + 未读 @ 数）。
+      // is_pinned 变了要按置顶优先稳定重排 —— 本地补丁只改字段不动顺序，
+      // 与 mergeForumTopics 的分区规则必须同源（repartitionPinnedFirst）。
+      const stats: OnForumTopicStatsPushed = intent as OnForumTopicStatsPushed;
+      const ftStats: ForumTopicsState = state.forumTopics !== undefined
+        ? state.forumTopics
+        : ForumTopicsState.initial();
+      const patchedStats: ForumTopicsState = ftStats.copyWith({
+        items: repartitionPinnedFirst(patchForumTopic(ftStats.items, stats.topicId,
+          (item: ForumTopicItem): ForumTopicItem =>
+            withTopicStats(item, stats.isPinned, stats.unreadMentionCount)))
+      });
+      return reduced(state.copyWith({ forumTopics: patchedStats }));
     }
   }
 

@@ -15,6 +15,8 @@ import {
   mergeForumTopics,
   patchForumTopic,
   withTopicIcon,
+  withTopicStats,
+  repartitionPinnedFirst,
   forumTopicSortWeight
 } from '../main/ets/model/ForumTopic';
 
@@ -190,6 +192,31 @@ export default function forumTopicTest(): void {
       expect(s2.isLoading).assertTrue();
       // 关键：copyWith 返回新实例，不改原对象
       expect(s.isLoading).assertFalse();
+    });
+
+    // ---- FORUM-106：推送统计补丁与置顶重排 ----
+
+    it('withTopicStats_replacesPinnedAndMentionsKeepsRest', 0, () => {
+      const item: ForumTopicItem = makeTopic(9, false, 3);
+      const out: ForumTopicItem = withTopicStats(item, true, 7);
+      expect(out.isPinned).assertTrue();
+      expect(out.unreadMentionCount).assertEqual(7);
+      // 其余字段原样保留
+      expect(out.unreadCount).assertEqual(3);
+      expect(out.name).assertEqual('Topic 9');
+    });
+
+    it('repartitionPinnedFirst_stableTwoWay', 0, () => {
+      const a: ForumTopicItem = makeTopic(1, false);
+      const b: ForumTopicItem = makeTopic(2, true);
+      const c: ForumTopicItem = makeTopic(3, false);
+      const d: ForumTopicItem = makeTopic(4, true);
+      // 置顶的保持相对顺序在前，非置顶的保持相对顺序在后
+      const out: ForumTopicItem[] = repartitionPinnedFirst([a, b, c, d]);
+      expect(out[0].topicId).assertEqual(2);
+      expect(out[1].topicId).assertEqual(4);
+      expect(out[2].topicId).assertEqual(1);
+      expect(out[3].topicId).assertEqual(3);
     });
   });
 }
