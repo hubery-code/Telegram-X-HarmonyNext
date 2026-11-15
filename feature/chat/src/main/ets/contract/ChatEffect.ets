@@ -574,6 +574,7 @@ export type ChatEffect =
   | SendPollEffect
   | SetPollAnswerEffect
   | FetchForumTopicsEffect
+  | FetchTopicIcons
   | SubmitTopicManageEffect
   | ToggleTopicClosedEffect
   | DeleteTopicEffect;
@@ -645,7 +646,10 @@ export class FetchForumTopicsEffect implements Effect {
  * FORUM-104：提交创建/编辑话题（弹窗确认键）。
  *
  * mode 说的是弹窗当时的状态：create → createForumTopic（带图标色），
- * edit → editForumTopic（只改标题，TDLib 不支持改已有话题的色值）。
+ * edit → editForumTopic（改标题；TDLib 不支持改已有话题的色值）。
+ * FORUM-105：iconEmojiId 为弹窗里选中的 emoji 图标 id（空串 = 未选）——
+ * create 直接进 ForumTopicIcon.custom_emoji_id；edit 仅在非空时
+ * 置 edit_icon_custom_emoji=true（不选就不动已有图标）。
  */
 export class SubmitTopicManageEffect implements Effect {
   readonly kind: 'submitTopicManage' = 'submitTopicManage';
@@ -653,12 +657,20 @@ export class SubmitTopicManageEffect implements Effect {
   readonly topicId: number;
   readonly name: string;
   readonly iconColor: number;
+  readonly iconEmojiId: string;
 
-  constructor(mode: 'create' | 'edit', topicId: number, name: string, iconColor: number) {
+  constructor(
+    mode: 'create' | 'edit',
+    topicId: number,
+    name: string,
+    iconColor: number,
+    iconEmojiId: string = ''
+  ) {
     this.mode = mode;
     this.topicId = topicId;
     this.name = name;
     this.iconColor = iconColor;
+    this.iconEmojiId = iconEmojiId;
   }
 }
 
@@ -682,4 +694,13 @@ export class DeleteTopicEffect implements Effect {
   constructor(topicId: number) {
     this.topicId = topicId;
   }
+}
+
+/**
+ * FORUM-105：拉话题 emoji 图标候选（getForumTopicDefaultIcons，无参）。
+ * 打开创建/编辑弹窗时由 reducer 派发，协调器执行；回包经
+ * OnTopicIconsLoaded 回灌，失败静默降级为「只有色板」。
+ */
+export class FetchTopicIcons implements Effect {
+  readonly kind: 'fetchTopicIcons' = 'fetchTopicIcons';
 }

@@ -36,6 +36,14 @@
  *   值相同返回原引用；
  * - openChatProfile / chatMenuAction：纯导航/占位意图不改状态、无 effect
  *   （switch 无匹配分支，落到末尾 reduced(state) 透传）。
+ *
+ * FORUM-105 新增话题收尾三件套：
+ * - openTopicCreateDialog / openTopicEditDialog 追加 FetchTopicIcons 效果；
+ *   onTopicIconsLoaded 把候选 emoji id 列表灌进弹层状态；
+ * - topicManageEmojiSelected：emoji 网格点选（再点一次取消选中）；
+ * - onTopicManageRightsChanged：own-admin-rights 回灌（canManageTopics）；
+ * - onForumTopicInfoPushed：updateForumTopicInfo 推送补丁
+ *   （withTopicName + withTopicClosed + withTopicIcon 组合）。
  */
 
 import { Reducer, ReducerEnv, ReducerResult, reduced } from '@tgx/feature-template';
@@ -167,6 +175,7 @@ import {
   OpenTopicEditDialog,
   TopicManageTitleChanged,
   TopicManageIconSelected,
+  TopicManageEmojiSelected,
   SubmitTopicManage,
   CloseTopicManageDialog,
   OpenTopicMenu,
@@ -176,6 +185,9 @@ import {
   ConfirmDeleteTopic,
   DismissDeleteTopic,
   OnTopicManageFailed,
+  OnTopicIconsLoaded,
+  OnTopicManageRightsChanged,
+  OnForumTopicInfoPushed,
   OnForumTopicCreated,
   OnForumTopicClosedToggled,
   OnForumTopicEdited,
@@ -230,6 +242,7 @@ import {
   SendPollEffect,
   SetPollAnswerEffect,
   FetchForumTopicsEffect,
+  FetchTopicIcons,
   SubmitTopicManageEffect,
   ToggleTopicClosedEffect,
   DeleteTopicEffect
@@ -249,6 +262,7 @@ import {
   patchForumTopic,
   withTopicClosed,
   withTopicName,
+  withTopicIcon,
   removeTopic,
   TOPIC_ICON_COLORS
 } from '../model/ForumTopic';
@@ -2447,7 +2461,11 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
     // 以「非 null」为「有弹层开着」的判据，残留全空对象会让返回键空转一次）。
 
     case 'openTopicCreateDialog': {
-      return reduced(state.copyWith({ topicManage: new TopicManageState('create', 0, true) }));
+      // FORUM-105：打开弹窗的同时拉一次 emoji 图标候选（失败静默降级为只有色板）。
+      return reduced(
+        state.copyWith({ topicManage: new TopicManageState('create', 0, true) }),
+        [new FetchTopicIcons()]
+      );
     }
 
     case 'openTopicEditDialog': {
@@ -2457,15 +2475,17 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
         return reduced(state);
       }
       // 图标色不可编辑（TDLib editForumTopic 不支持改色），沿用该行现有色。
+      // FORUM-105：emoji 图标可换（edit_icon_custom_emoji），同样拉一次候选。
       const editing: TopicManageState = base.copyWith({
         mode: 'edit',
         editingTopicId: editOpen.topicId,
         dialogOpen: true,
         title: editOpen.name,
         menuTopicId: 0,
-        errorMessage: ''
+        errorMessage: '',
+        iconEmojiId: ''
       });
-      return reduced(state.copyWith({ topicManage: editing }));
+      return reduced(state.copyWith({ topicManage: editing }), [new FetchTopicIcons()]);
     }
 
     case 'topicManageTitleChanged': {
@@ -2492,6 +2512,33 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
       }));
     }
 
+    case 'topicManageEmojiSelected': {
+      // FORUM-105：emoji 网格点选。create / edit 两模式都有效（编辑走
+      // edit_icon_custom_emoji）；再点一次已选中的格子 = 取消选中。
+      const emojiSel: TopicManageEmojiSelected = intent as TopicManageEmojiSelected;
+      const tmSel: TopicManageState | null = state.topicManage;
+      if (tmSel === null || !tmSel.dialogOpen) {
+        return reduced(state);
+      }
+      const nextEmojiId: string = tmSel.iconEmojiId === emojiSel.emojiId ? '' : emojiSel.emojiId;
+      return reduced(state.copyWith({
+        topicManage: tmSel.copyWith({ iconEmojiId: nextEmojiId })
+      }));
+    }
+
+    case 'onTopicIconsLoaded': {
+      // FORUM-105：候选回灌。弹窗已关（或从未开）就丢弃 —— 没有可挂的地方，
+      // 下次打开会重新拉；延迟到达的空列表不打扰已有候选。
+      const iconsLoaded: OnTopicIconsLoaded = intent as OnTopicIconsLoaded;
+      const tmIcons: TopicManageState | null = state.topicManage;
+      if (tmIcons === null || !tmIcons.dialogOpen) {
+        return reduced(state);
+      }
+      return reduced(state.copyWith({
+        topicManage: tmIcons.copyWith({ iconEmojiIds: iconsLoaded.emojiIds })
+      }));
+    }
+
     case 'submitTopicManage': {
       const tm: TopicManageState | null = state.topicManage;
       if (tm === null || !tm.dialogOpen || tm.isSubmitting) {
@@ -2505,7 +2552,10 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
         }));
       }
       const submitting: TopicManageState = tm.copyWith({ isSubmitting: true, errorMessage: '' });
-      const effects: ChatEffect[] = [new SubmitTopicManageEffect(tm.mode, tm.editingTopicId, trimmed, tm.iconColor)];
+      // FORUM-105：选中的 emoji id 随效果走（未选为空串 = 纯色 / 不动图标）。
+      const effects: ChatEffect[] = [
+        new SubmitTopicManageEffect(tm.mode, tm.editingTopicId, trimmed, tm.iconColor, tm.iconEmojiId)
+      ];
       return reduced(state.copyWith({ topicManage: submitting }), effects);
     }
 
@@ -2642,6 +2692,36 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
       });
       // 删除成功：弹层全清（确认弹窗与菜单同源于这一份状态）。
       return reduced(state.copyWith({ forumTopics: remaining, topicManage: null }));
+    }
+
+    case 'onTopicManageRightsChanged': {
+      // FORUM-105：own-admin-rights 回灌（getMe → getChatMember 链的结果）。
+      // 未回包前恒 false，按钮隐藏；值相同不换引用，避免无关重渲。
+      // 遗留（如实记录）：admin rights 的实时推送（updateChatMember）未订阅，
+      // 本包只在打开会话时取一次；会话中途被撤权要等重进才反映。
+      const rightsChanged: OnTopicManageRightsChanged = intent as OnTopicManageRightsChanged;
+      if (state.canManageTopics === rightsChanged.canManageTopics) {
+        return reduced(state);
+      }
+      return reduced(state.copyWith({ canManageTopics: rightsChanged.canManageTopics }));
+    }
+
+    case 'onForumTopicInfoPushed': {
+      // FORUM-105：updateForumTopicInfo 推送补丁（权威源）。FORUM-104 的本地乐观补丁
+      // 保留不动 —— 推送晚到时同 id 互相覆盖，天然去重；早于列表加载到达时
+      // patchForumTopic 找不到该行，原样返回（不插半成品行）。
+      const pushed: OnForumTopicInfoPushed = intent as OnForumTopicInfoPushed;
+      const ftPushed: ForumTopicsState = state.forumTopics !== undefined
+        ? state.forumTopics
+        : ForumTopicsState.initial();
+      const patchedPush: ForumTopicsState = ftPushed.copyWith({
+        items: patchForumTopic(ftPushed.items, pushed.topicId, (item: ForumTopicItem): ForumTopicItem =>
+          withTopicIcon(
+            withTopicName(withTopicClosed(item, pushed.isClosed), pushed.name),
+            pushed.iconCustomEmojiId
+          ))
+      });
+      return reduced(state.copyWith({ forumTopics: patchedPush }));
     }
   }
 

@@ -31,6 +31,12 @@ export struct ForumTopicsOverlay {
   @Prop query: string = '';
   /** FORUM-104：话题管理三合一弹层状态（null = 创建/编辑弹窗、长按菜单、删除确认全关）。 */
   @Prop topicManage: TopicManageState | null = null;
+  /**
+   * FORUM-105：本端用户能否管理话题（own-admin-rights 回灌）。
+   * false（含权限未知/未回包）时「新建话题」按钮不渲染、话题行长按不出菜单 ——
+   * 宁可晚出现，不让无权用户点进去吃 TDLib 的 400。
+   */
+  @Prop canManageTopics: boolean = false;
   @State private searchText: string = '';
   // I18N-DATE-101：语言与时钟档来自 AppStorage 同一对键（ChatListPage 同源），
   // 这样话题行的时间戳与聊天列表的时间戳形态永远一致。
@@ -47,6 +53,8 @@ export struct ForumTopicsOverlay {
   onCreateTap?: () => void;
   onTopicManageTitleChanged?: (title: string) => void;
   onTopicManageIconSelected?: (color: number) => void;
+  /** FORUM-105：emoji 网格点选（create/edit 两模式都有效；再点一次取消选中）。 */
+  onTopicManageEmojiSelected?: (emojiId: string) => void;
   onSubmitTopicManage?: () => void;
   onCloseTopicManageDialog?: () => void;
   onOpenTopicMenu?: (topicId: number) => void;
@@ -72,18 +80,22 @@ export struct ForumTopicsOverlay {
           .layoutWeight(1)
 
         // FORUM-104：新建话题入口。文字按钮自带可读文本（Retry 同一惯例），
-        // 不需要 a11y 槽位；权限在服务端（can_manage_topics / can_create_topics），
-        // 无权的成员提交后由弹窗内联错误告知 —— 本端没有 own-admin-rights 数据，
-        // 按它预判会错杀管理员（ChatPermissions 不反映管理员旁路）。
-        Text(this.t('Create Topic'))
-          .fontSize(this.T.typography.body.fontSize)
-          .fontColor(this.T.colors.accent)
-          .padding({ left: this.T.spacing.sm, right: this.T.spacing.sm })
-          .onClick(() => {
-            if (this.onCreateTap !== undefined) {
-              this.onCreateTap();
-            }
-          })
+        // 不需要 a11y 槽位。FORUM-105：按钮按 own-admin-rights 把关 ——
+        // getChatMember 回包确认 can_manage_topics（或群主）才渲染；
+        // 权限未知时隐藏，宁可晚出现也不让无权用户点进去报错。
+        // 遗留：admin rights 变更的实时推送（updateChatMember）未订阅，
+        // 会话中途拿到权限要重进会话才看到按钮。
+        if (this.canManageTopics) {
+          Text(this.t('Create Topic'))
+            .fontSize(this.T.typography.body.fontSize)
+            .fontColor(this.T.colors.accent)
+            .padding({ left: this.T.spacing.sm, right: this.T.spacing.sm })
+            .onClick(() => {
+              if (this.onCreateTap !== undefined) {
+                this.onCreateTap();
+              }
+            })
+        }
 
         Row() {
           Image($r('app.media.ic_close'))
@@ -348,9 +360,10 @@ export struct ForumTopicsOverlay {
     // 服务端都不允许（editForumTopic 明说 General 不可编辑），出空菜单比
     // 不出菜单更让人困惑。手势常挂、动作内放行（.gesture 不收 undefined
     // 分支）；时长对齐 ChatPage 气泡的 350ms。
+    // FORUM-105：own-admin-rights 把关 —— 无权（含权限未知）时动作直接放行掉。
     .gesture(LongPressGesture({ duration: 350 })
       .onAction(() => {
-        if (item.isGeneral) {
+        if (item.isGeneral || !this.canManageTopics) {
           return;
         }
         if (this.onOpenTopicMenu !== undefined) {
@@ -487,6 +500,12 @@ export struct ForumTopicsOverlay {
           .margin({ top: this.T.spacing.md })
         }
 
+        if (tm.iconEmojiIds.length > 0) {
+          // FORUM-105：emoji 图标网格（候选来自 getForumTopicDefaultIcons）。
+          // 拉取失败/回包为空时整块不渲染（只有色板），不是错误态。
+          this.TopicEmojiGrid(tm)
+        }
+
         if (tm.errorMessage.length > 0) {
           // errorMessage 恒为**词条 key**（协调器只回 key，见 classifyTopicManageFailureKey）
           Text(this.t(tm.errorMessage))
@@ -531,6 +550,46 @@ export struct ForumTopicsOverlay {
     }
     .width('100%')
     .height('100%')
+  }
+
+  /**
+   * FORUM-105：话题 emoji 图标网格（create / edit 弹窗共用）。
+   *
+   * 格子渲染的是**通用占位字符**，不是真实的自定义 emoji：custom_emoji_id 需要
+   * 「下载 custom emoji 贴纸文件 → 渲染」的完整管线，本端还没有（全仓检索确认无
+   * 可复用组件）。这是 FORUM-105 记录在案的折中 —— 发给 TDLib 的值是真实的
+   * custom_emoji_id（TDLib 回包 Sticker.full_type 里的那个），占位只影响本端视觉；
+   * 唯一的观感代价是网格里每格长一样，用户盲选一个后再看服务端回灌的真实图标。
+   *
+   * 收**非空弹层对象**参数（与 ActionMenuSheet 同一模式）：调用点已判
+   * iconEmojiIds.length > 0，体内直接读；选中态描边，再点一次取消选中（reducer 侧）。
+   * 格子是带文本内容的 Text（占位字符即内容），不是图标-only 控件，不需要 a11y 槽位。
+   */
+  @Builder
+  TopicEmojiGrid(tm: TopicManageState) {
+    Flex({ wrap: FlexWrap.Wrap }) {
+      ForEach(tm.iconEmojiIds, (emojiId: string) => {
+        Text('🙂')
+          .width(40)
+          .height(40)
+          .fontSize(22)
+          .textAlign(TextAlign.Center)
+          .backgroundColor(this.T.colors.surfaceVariant)
+          .borderRadius(20)
+          .border({
+            width: tm.iconEmojiId === emojiId ? 2 : 0,
+            color: this.T.colors.accent
+          })
+          .margin({ right: this.T.spacing.sm, bottom: this.T.spacing.sm })
+          .onClick(() => {
+            if (this.onTopicManageEmojiSelected !== undefined) {
+              this.onTopicManageEmojiSelected(emojiId);
+            }
+          })
+      }, (emojiId: string) => `topic_emoji_${emojiId}`)
+    }
+    .width('100%')
+    .margin({ top: this.T.spacing.md })
   }
 
   /**

@@ -1727,5 +1727,73 @@ export default function messageProjectionTest(): void {
       projection.stop();
     });
 
+    // ---- FORUM-105 话题 emoji 图标 ----
+
+    it('FORUM105_fetchForumTopicDefaultIconsSendsParameterlessRequest', 0, (): void => {
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const scope: AccountScope = createScope(bridge);
+      const projection: MessageProjection = new MessageProjection(42, scope);
+
+      const result: Result<TdPendingRequest, AppError> = projection.fetchForumTopicDefaultIcons();
+      expect(result.ok).assertTrue();
+
+      const req: Record<string, TdWireValue> | null = lastSentRequest(bridge, 'getForumTopicDefaultIcons');
+      expect(req !== null).assertTrue();
+      if (req !== null) {
+        // TDLib 生成的请求类无字段（只有 @type）；候选与 chatId 无关。
+        expect(req['@type']).assertEqual('getForumTopicDefaultIcons');
+        expect(req['chat_id']).assertUndefined();
+      }
+      projection.stop();
+    });
+
+    it('FORUM105_createForumTopicCarriesSelectedEmojiId', 0, (): void => {
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const scope: AccountScope = createScope(bridge);
+      const projection: MessageProjection = new MessageProjection(42, scope);
+
+      const result: Result<TdPendingRequest, AppError> = projection.createForumTopic('Release', 0x6FB9F0, '567890123');
+      expect(result.ok).assertTrue();
+
+      const req: Record<string, TdWireValue> | null = lastSentRequest(bridge, 'createForumTopic');
+      expect(req !== null).assertTrue();
+      if (req !== null) {
+        const icon: Record<string, TdWireValue> = req['icon'] as Record<string, TdWireValue>;
+        expect(icon['@type']).assertEqual('forumTopicIcon');
+        expect(icon['color']).assertEqual(0x6FB9F0);
+        // 选中的 emoji id 原样进 ForumTopicIcon.custom_emoji_id
+        expect(icon['custom_emoji_id']).assertEqual('567890123');
+      }
+      projection.stop();
+    });
+
+    it('FORUM105_editForumTopicSendsIconEditFlagsOnlyWhenSelected', 0, (): void => {
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const scope: AccountScope = createScope(bridge);
+      const projection: MessageProjection = new MessageProjection(42, scope);
+
+      // 选中 emoji：edit_icon_custom_emoji=true + icon_custom_emoji_id=选中值
+      const withIcon: Result<TdPendingRequest, AppError> =
+        projection.editForumTopic(7, 'New Name', true, '42');
+      expect(withIcon.ok).assertTrue();
+      const iconReq: Record<string, TdWireValue> | null = lastSentRequest(bridge, 'editForumTopic');
+      expect(iconReq !== null).assertTrue();
+      if (iconReq !== null) {
+        expect(iconReq['edit_icon_custom_emoji']).assertEqual(true);
+        expect(iconReq['icon_custom_emoji_id']).assertEqual('42');
+      }
+
+      // 未选 emoji：编辑位回 false、id 清空（只改标题，图标不动）
+      const withoutIcon: Result<TdPendingRequest, AppError> = projection.editForumTopic(7, 'New Name');
+      expect(withoutIcon.ok).assertTrue();
+      const plainReq: Record<string, TdWireValue> | null = lastSentRequest(bridge, 'editForumTopic');
+      expect(plainReq !== null).assertTrue();
+      if (plainReq !== null) {
+        expect(plainReq['edit_icon_custom_emoji']).assertEqual(false);
+        expect(plainReq['icon_custom_emoji_id']).assertEqual('');
+      }
+      projection.stop();
+    });
+
   });
 }

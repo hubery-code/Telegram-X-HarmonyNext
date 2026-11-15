@@ -40,11 +40,17 @@
  *
  * FORUM-103 新增：searchChatMessages 在话题模式下带 topic_id——会话内检索
  * 收窄到当前话题（TDLib 原生参数），与 getForumTopicHistory 共用同一套流。
+ *
+ * FORUM-105 新增：fetchForumTopicDefaultIcons（话题 emoji 图标候选，无参请求）；
+ * createForumTopic 带 iconEmojiId、editForumTopic 带编辑图标参数
+ * （edit_icon_custom_emoji + icon_custom_emoji_id）。
  */
 
 import {
   GetForumTopics,
   encodeGetForumTopics,
+  GetForumTopicDefaultIcons,
+  encodeGetForumTopicDefaultIcons,
   CreateForumTopic,
   encodeCreateForumTopic,
   EditForumTopic,
@@ -559,13 +565,28 @@ export class MessageProjection {
   }
 
   /**
-   * FORUM-104：创建话题（createForumTopic = ForumTopicInfo）。
-   * 权限在服务端（can_manage_topics 管理员位或 can_create_topics 成员位），
-   * 本端不预判，失败经 promise 透传给调用方出提示。v1 只发颜色、不带
-   * 自定义 emoji（custom_emoji_id 传空串；emoji 选择见遗留项）。
-   * iconColor 必须是 TDLib 文档的六个色值之一，调用方（弹窗色板）保证。
+   * FORUM-105：取话题可选的默认 emoji 图标（getForumTopicDefaultIcons）。
+   * 请求无参数；回包是 Stickers —— 一串 Sticker，非 Premium 用户可用的全部
+   * 图标就在其中。custom_emoji_id 不在 Sticker 顶层（本仓 TDLib 1.8.67 生成类
+   * 亦然），而在 `full_type = stickerFullTypeCustomEmoji` 分支上，解码归调用方。
    */
-  createForumTopic(name: string, iconColor: number): Result<TdPendingRequest, AppError> {
+  fetchForumTopicDefaultIcons(): Result<TdPendingRequest, AppError> {
+    const req: GetForumTopicDefaultIcons = new GetForumTopicDefaultIcons();
+    return this.scope.request(
+      'getForumTopicDefaultIcons',
+      encodeGetForumTopicDefaultIcons(req) as TdWireObject
+    );
+  }
+
+  /**
+   * FORUM-104/105：创建话题（createForumTopic = ForumTopicInfo）。
+   * 权限在服务端（can_manage_topics 管理员位或 can_create_topics 成员位），
+   * 本端不预判，失败经 promise 透传给调用方出提示。
+   * iconColor 必须是 TDLib 文档的六个色值之一，调用方（弹窗色板）保证。
+   * FORUM-105：iconEmojiId 为选中的自定义 emoji id（getForumTopicDefaultIcons
+   * 的 custom_emoji_id），未选传空串（TDLib 视为纯色图标）。
+   */
+  createForumTopic(name: string, iconColor: number, iconEmojiId: string = ''): Result<TdPendingRequest, AppError> {
     const trimmed: string = name.trim();
     if (trimmed.length === 0) {
       return err(AppErrors.parameter('missing', 'name', 'topic name is empty'));
@@ -576,17 +597,24 @@ export class MessageProjection {
     req.is_name_implicit = false;
     const icon: ForumTopicIcon = new ForumTopicIcon();
     icon.color = iconColor;
-    icon.custom_emoji_id = '';
+    icon.custom_emoji_id = iconEmojiId;
     req.icon = icon;
     return this.scope.request('createForumTopic', encodeCreateForumTopic(req) as TdWireObject);
   }
 
   /**
-   * FORUM-104：编辑话题标题（editForumTopic）。v1 只改标题
-   * （edit_icon_custom_emoji=false）；General 话题不可编辑，
-   * 由 UI 侧不给菜单入口来保证，这里不做特判。
+   * FORUM-104：编辑话题标题（editForumTopic）。
+   * FORUM-105：editIconCustomEmoji=true 时把图标换成 iconCustomEmojiId
+   * （TDLib 1.8.67 的 editForumTopic 原生参数）；false 时 iconCustomEmojiId
+   * 传空串、图标不动。General 话题不可编辑，由 UI 侧不给菜单入口来保证，
+   * 这里不做特判。
    */
-  editForumTopic(topicId: number, name: string): Result<TdPendingRequest, AppError> {
+  editForumTopic(
+    topicId: number,
+    name: string,
+    editIconCustomEmoji: boolean = false,
+    iconCustomEmojiId: string = ''
+  ): Result<TdPendingRequest, AppError> {
     const trimmed: string = name.trim();
     if (trimmed.length === 0) {
       return err(AppErrors.parameter('missing', 'name', 'topic name is empty'));
@@ -595,8 +623,8 @@ export class MessageProjection {
     req.chat_id = this.chatId;
     req.forum_topic_id = topicId;
     req.name = trimmed;
-    req.edit_icon_custom_emoji = false;
-    req.icon_custom_emoji_id = '';
+    req.edit_icon_custom_emoji = editIconCustomEmoji;
+    req.icon_custom_emoji_id = editIconCustomEmoji ? iconCustomEmojiId : '';
     return this.scope.request('editForumTopic', encodeEditForumTopic(req) as TdWireObject);
   }
 

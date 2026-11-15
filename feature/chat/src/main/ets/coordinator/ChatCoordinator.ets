@@ -213,7 +213,22 @@ import {
   ForumTopic,
   ForumTopicInfo,
   decodeForumTopicInfo,
-  ForumTopicIcon} from '@tgx/core-td-api-generated';
+  ForumTopicIcon,
+  GetForumTopicDefaultIcons,
+  encodeGetForumTopicDefaultIcons,
+  StickerFullTypeCustomEmoji,
+  TdStickerFullType,
+  GetMe,
+  encodeGetMe,
+  decodeUser,
+  GetChatMember,
+  encodeGetChatMember,
+  decodeChatMember,
+  ChatMember,
+  ChatMemberStatusAdministrator,
+  UpdateForumTopic,
+  UpdateForumTopicInfo,
+  decodeUpdateForumTopicInfo} from '@tgx/core-td-api-generated';
 import {
   FileRegistry,
   formatFullName,
@@ -329,6 +344,9 @@ import {
   OnTopicOpened,
   CloseActiveTopic,
   OnTopicManageFailed,
+  OnTopicIconsLoaded,
+  OnTopicManageRightsChanged,
+  OnForumTopicInfoPushed,
   OnForumTopicCreated,
   OnForumTopicClosedToggled,
   OnForumTopicEdited,
@@ -383,7 +401,8 @@ import {
   PauseVoiceNoteEffect,
   SendPollEffect,
   SetPollAnswerEffect,
-  FetchForumTopicsEffect} from '../contract/ChatEffect';
+  FetchForumTopicsEffect,
+  FetchTopicIcons} from '../contract/ChatEffect';
 import { GifItem } from '../model/GifItem';
 import { ForumTopicItem } from '../model/ForumTopic';
 import { StickerSetPreviewState, StickerSetItem, isUnicodeEmojiSticker } from '../model/StickerSetPreviewState';
@@ -755,6 +774,15 @@ export class ChatCoordinator {
   private muteSubscription: TdUpdateSubscription | null = null;
   /** CHAN-SEND：updateChatPermissions 订阅句柄（destroy 时退订）。 */
   private permissionsSubscription: TdUpdateSubscription | null = null;
+  /**
+   * FORUM-105：updateForumTopicInfo / updateForumTopic 订阅句柄（destroy 时退订）。
+   * 编辑/关闭话题的权威结果不再只靠本地乐观补丁。
+   */
+  private forumTopicSubscription: TdUpdateSubscription | null = null;
+  /** FORUM-105：本端用户 id（getMe 一次取足，TDLib 本地缓存零网络；0 = 未知）。 */
+  private ownUserId: number = 0;
+  /** FORUM-105：own-admin-rights 链是否已发起（每次打开会话只取一次，防重）。 */
+  private ownAdminRightsRequested: boolean = false;
   /** MSG-109：getBasicGroup 是否已发起（防重；失败复位可重试）。 */
   private basicGroupInfoRequested: boolean = false;
   /** MSG-109：getSupergroupFullInfo 是否已发起（防重；失败复位可重试）。 */
@@ -1006,6 +1034,8 @@ export class ChatCoordinator {
     this.subscribeChatNotificationSettings();
     // CHAN-SEND：发言权实时同步（管理员改权限会推 updateChatPermissions）。
     this.subscribeChatPermissions();
+    // FORUM-105：话题基本信息实时同步（编辑/关闭的权威结果靠 updateForumTopicInfo 推送）。
+    this.subscribeForumTopicUpdates();
     // STICKER-RECENT-101：最近使用实时同步（发出/收到一颗贴纸后 updateRecentStickers 会推）。
     this.subscribeRecentStickers();
     // STICKER-FAV-101：收藏实时同步（在其它端加/删一颗收藏会推 updateFavoriteStickers）。
@@ -1349,6 +1379,11 @@ export class ChatCoordinator {
     if (this.permissionsSubscription !== null) {
       this.permissionsSubscription.unsubscribe();
       this.permissionsSubscription = null;
+    }
+    // FORUM-105：退订话题信息推送。
+    if (this.forumTopicSubscription !== null) {
+      this.forumTopicSubscription.unsubscribe();
+      this.forumTopicSubscription = null;
     }
     // STICKER-RECENT-101：退订最近使用贴纸推送。
     if (this.recentStickersSubscription !== null) {
@@ -3275,6 +3310,11 @@ export class ChatCoordinator {
           if (sg !== null) {
             this.logger.info(TAG, 'supergroup_forum_resolved', `isForum=${sg.is_forum}`);
             this.dispatch(new OnForumModeChanged(sg.is_forum));
+            // FORUM-105：确认是 forum 群才取 own-admin-rights —— 非 forum 群
+            // 没有话题可言，getMe + getChatMember 纯属浪费（按钮本来就不渲染）。
+            if (sg.is_forum) {
+              this.fetchOwnAdminRights();
+            }
           }
         }
       }).catch(() => {
@@ -3314,6 +3354,219 @@ export class ChatCoordinator {
       }).catch(() => {
       });
     }
+  }
+
+  /**
+   * FORUM-105：own-admin-rights 链 —— 本端用户在本 forum 群能否管理话题。
+   *
+   * 两步，都在 TDLib 本地缓存上跑（零网络往返）：
+   * ① getMe 拿自己的 user id 并缓存（回 User）；
+   * ② getChatMember(chat_id, messageSenderUser(user_id)) 回 ChatMember，
+   *    status 分三种形状判定：
+   *    - chatMemberStatusCreator：群主，所有管理权隐含，恒真；
+   *    - chatMemberStatusAdministrator：取 rights.can_manage_topics
+   *      （rights 为 null 按 false 处理 —— 读不到权限不等于有权限，
+   *      与 CHAN-SEND「读不到按放开」相反：这里放错人是要吃 TDLib 400 的）；
+   *    - 其余（member/restricted/left/banned）：无权。
+   *
+   * 结果经 OnTopicManageRightsChanged 回灌 ChatUiState.canManageTopics，
+   * 驱动 ForumTopicsOverlay 的「新建话题」按钮与话题行长按手势。
+   * 遗留（如实记录）：admin rights 变更的实时推送（updateChatMember）未订阅，
+   * 本包只在打开会话时取一次 —— 会话中途被撤权要等重进会话才反映。
+   * 失败静默：权限未知时按钮不出现（宁可晚出现，不让无权用户点进去报错）。
+   */
+  private fetchOwnAdminRights(): void {
+    if (this.ownAdminRightsRequested || this.destroyed) {
+      return;
+    }
+    this.ownAdminRightsRequested = true;
+    const meReq: GetMe = new GetMe();
+    const meResult: Result<TdPendingRequest, AppError> =
+      this.scope.request('getMe', encodeGetMe(meReq) as TdWireObject);
+    if (meResult.err) {
+      this.logger.logError(TAG, meResult.error);
+      return;
+    }
+    if (meResult.ok) {
+      const self: ChatCoordinator = this;
+      meResult.value.promise.then((res: Result<TdWireObject, AppError>): void => {
+        if (self.destroyed) {
+          return;
+        }
+        if (res.err) {
+          self.logger.logError(TAG, res.error);
+          return;
+        }
+        if (res.ok) {
+          const me: User | null = decodeUser(res.value as TdJsonRaw);
+          if (me === null || me.id <= 0) {
+            self.logger.info(TAG, 'own_admin_rights_me_undecodable');
+            return;
+          }
+          self.ownUserId = me.id;
+          self.fetchOwnChatMember();
+        }
+      }).catch((): void => {
+      });
+    }
+  }
+
+  /** FORUM-105：own-admin-rights 第二步 —— getChatMember 查本端成员身份。 */
+  private fetchOwnChatMember(): void {
+    if (this.destroyed || this.ownUserId <= 0) {
+      return;
+    }
+    const memberReq: GetChatMember = new GetChatMember();
+    memberReq.chat_id = this.currentState.chatId;
+    const sender: MessageSenderUser = new MessageSenderUser();
+    sender.user_id = this.ownUserId;
+    memberReq.member_id = sender;
+    const result: Result<TdPendingRequest, AppError> =
+      this.scope.request('getChatMember', encodeGetChatMember(memberReq) as TdWireObject);
+    if (result.err) {
+      this.logger.logError(TAG, result.error);
+      return;
+    }
+    if (result.ok) {
+      const pending: TdPendingRequest = result.value;
+      pending.promise.then((res: Result<TdWireObject, AppError>): void => {
+        if (this.destroyed) {
+          return;
+        }
+        if (res.err) {
+          this.logger.logError(TAG, res.error);
+          return;
+        }
+        if (res.ok) {
+          const member: ChatMember | null = decodeChatMember(res.value as TdJsonRaw);
+          if (member === null || member.status === null) {
+            this.logger.info(TAG, 'own_admin_rights_undecodable');
+            return;
+          }
+          let canManageTopics: boolean = false;
+          if (member.status.type === 'chatMemberStatusCreator') {
+            // 群主隐含全部管理权；chatMemberStatusCreator 上没有 rights 字段可查。
+            canManageTopics = true;
+          } else if (member.status.type === 'chatMemberStatusAdministrator') {
+            const admin: ChatMemberStatusAdministrator = member.status as ChatMemberStatusAdministrator;
+            canManageTopics = admin.rights !== null && admin.rights.can_manage_topics;
+          }
+          this.logger.info(TAG, 'own_admin_rights_resolved',
+            `userId=${this.ownUserId},status=${member.status.type},canManageTopics=${canManageTopics}`);
+          this.dispatch(new OnTopicManageRightsChanged(canManageTopics));
+        }
+      }).catch((): void => {
+      });
+    }
+  }
+
+  /**
+   * FORUM-105：拉话题 emoji 图标候选（getForumTopicDefaultIcons，无参）。
+   *
+   * 回包是 Stickers —— 每个 Sticker 的 custom_emoji_id 不在顶层，
+   * 在 `full_type = stickerFullTypeCustomEmoji` 分支上（本仓 TDLib 1.8.67
+   * 生成类的实际形状，写码前核查过）；其它 full_type 形状（普通贴纸等）
+   * 不会出现在这个回包里，出现也按无 id 丢弃。
+   * 失败/解码失败静默降级为「只有色板」，不派发回灌（intent 缺席 = 网格空）。
+   */
+  private handleFetchTopicIcons(): void {
+    const req: GetForumTopicDefaultIcons = new GetForumTopicDefaultIcons();
+    const result: Result<TdPendingRequest, AppError> = this.scope.request(
+      'getForumTopicDefaultIcons',
+      encodeGetForumTopicDefaultIcons(req) as TdWireObject
+    );
+    if (result.err) {
+      this.logRequestError('getForumTopicDefaultIcons', result.error);
+      return;
+    }
+    if (result.ok) {
+      const pending: TdPendingRequest = result.value;
+      pending.promise.then((res: Result<TdWireObject, AppError>): void => {
+        if (this.destroyed) {
+          return;
+        }
+        if (res.err) {
+          this.logRequestError('getForumTopicDefaultIcons', res.error, pending);
+          return;
+        }
+        if (res.ok) {
+          const stickers: Stickers | null = decodeStickers(res.value as TdJsonRaw);
+          if (stickers === null) {
+            this.logger.info(TAG, 'topic_icons_decode_failed');
+            return;
+          }
+          const emojiIds: string[] = [];
+          for (let i = 0; i < stickers.stickers.length; i++) {
+            const sticker: Sticker = stickers.stickers[i];
+            const fullType: TdStickerFullType | null = sticker.full_type;
+            if (fullType !== null && fullType.type === 'stickerFullTypeCustomEmoji') {
+              const customEmoji: StickerFullTypeCustomEmoji = fullType as StickerFullTypeCustomEmoji;
+              if (customEmoji.custom_emoji_id.length > 0) {
+                emojiIds.push(customEmoji.custom_emoji_id);
+              }
+            }
+          }
+          this.logger.info(TAG, 'topic_icons_loaded',
+            `stickers=${stickers.stickers.length},emojiIds=${emojiIds.length}`);
+          this.dispatch(new OnTopicIconsLoaded(emojiIds));
+        }
+      }).catch((): void => {
+      });
+    }
+  }
+
+  /**
+   * FORUM-105：订阅 updateForumTopicInfo / updateForumTopic（本会话的话题推送），
+   * destroy 时退订。照 subscribeChatPermissions 的模式（subscribeUpdates +
+   * TdUpdateFilter.types 过滤 + decodeTdUpdate），层级在**协调器**，与
+   * MessageProjection.handleUpdate（消息流更新的地盘）互不相干。
+   *
+   * 只消费 updateForumTopicInfo（basic info：name / icon / is_closed / is_general），
+   * 经 OnForumTopicInfoPushed 回灌 reducer 打补丁；updateForumTopic（order /
+   * 未读计数 / 草稿）暂无对应状态位，只记一条日志。
+   */
+  private subscribeForumTopicUpdates(): void {
+    if (this.destroyed || this.forumTopicSubscription !== null) {
+      return;
+    }
+    const filter: TdUpdateFilter = {
+      clientId: this.scope.clientId,
+      types: ['updateForumTopicInfo', 'updateForumTopic']
+    };
+    this.forumTopicSubscription = this.scope.gatewayInstance.subscribeUpdates(
+      filter,
+      (event: TdRoutedEvent): void => {
+        const update: TdUpdate | null = decodeTdUpdate(event.payload as TdJsonRaw);
+        if (update === null) {
+          return;
+        }
+        if (update.type === 'updateForumTopicInfo') {
+          const infoUpdate: UpdateForumTopicInfo = update as UpdateForumTopicInfo;
+          const info: ForumTopicInfo | null = infoUpdate.info;
+          if (info === null || info.chat_id !== this.currentState.chatId) {
+            return;
+          }
+          const icon: ForumTopicIcon | null = info.icon;
+          this.logger.info(TAG, 'forum_topic_info_pushed',
+            `topicId=${info.forum_topic_id},closed=${info.is_closed}`);
+          this.dispatch(new OnForumTopicInfoPushed(
+            info.forum_topic_id,
+            info.name,
+            icon !== null ? icon.custom_emoji_id : '',
+            info.is_closed
+          ));
+          return;
+        }
+        if (update.type === 'updateForumTopic') {
+          // order / 未读计数 / 草稿：暂无对应状态位，先让推送可取证（日志）。
+          const topicUpdate: UpdateForumTopic = update as UpdateForumTopic;
+          if (topicUpdate.chat_id === this.currentState.chatId) {
+            this.logger.info(TAG, 'forum_topic_pushed',
+              `topicId=${topicUpdate.forum_topic_id},pinned=${topicUpdate.is_pinned}`);
+          }
+        }
+      }
+    );
   }
 
   /**
@@ -4232,6 +4485,12 @@ export class ChatCoordinator {
       case 'fetchForumTopics': {
         const fetchFt: FetchForumTopicsEffect = effect as FetchForumTopicsEffect;
         this.handleFetchForumTopics(fetchFt);
+        break;
+      }
+
+      case 'fetchTopicIcons': {
+        // FORUM-105：弹窗打开时拉 emoji 图标候选；失败静默（无回灌 = 只有色板）。
+        this.handleFetchTopicIcons();
         break;
       }
 
@@ -5308,11 +5567,11 @@ export class ChatCoordinator {
     return 'Topic action failed';
   }
 
-  /** FORUM-104：弹窗确认提交 → createForumTopic / editForumTopic。 */
+  /** FORUM-104：弹窗确认提交 → createForumTopic / editForumTopic。FORUM-105：带选中的 emoji 图标。 */
   private handleSubmitTopicManage(effect: SubmitTopicManageEffect): void {
     if (effect.mode === 'create') {
       const createRes: Result<TdPendingRequest, AppError> =
-        this.projection.createForumTopic(effect.name, effect.iconColor);
+        this.projection.createForumTopic(effect.name, effect.iconColor, effect.iconEmojiId);
       // AGENTS.md §3.1：Result 不能靠提前 return 收窄，ok / err 两个分支都要显式写。
       if (createRes.err) {
         this.logger.logError(TAG, createRes.error);
@@ -5344,8 +5603,14 @@ export class ChatCoordinator {
       return;
     }
 
-    const editRes: Result<TdPendingRequest, AppError> =
-      this.projection.editForumTopic(effect.topicId, effect.name);
+    // FORUM-105：编辑模式只在用户选了 emoji 时才动图标（edit_icon_custom_emoji=true）；
+    // 未选 = 只改标题，图标原样保留。
+    const editRes: Result<TdPendingRequest, AppError> = this.projection.editForumTopic(
+      effect.topicId,
+      effect.name,
+      effect.iconEmojiId.length > 0,
+      effect.iconEmojiId
+    );
     if (editRes.err) {
       this.logger.logError(TAG, editRes.error);
       this.dispatch(new OnTopicManageFailed(this.classifyTopicManageFailureKey(editRes.error)));
@@ -5362,7 +5627,8 @@ export class ChatCoordinator {
         }
         if (res.ok) {
           this.logger.info(TAG, 'forum_topic_edited', `topicId=${effect.topicId}`);
-          // 本地补丁 + 关弹窗；TDLib 1.8.67 的 updateForumTopicInfo 未订阅，编辑结果不靠推送。
+          // 本地补丁 + 关弹窗（即时反馈）；FORUM-105 起订阅了 updateForumTopicInfo，
+          // 权威结果由推送经 OnForumTopicInfoPushed 覆盖（同 id 互相去重）。
           this.dispatch(new OnForumTopicEdited(effect.topicId, effect.name));
         }
       }).catch((): void => {

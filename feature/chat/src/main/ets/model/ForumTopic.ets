@@ -280,6 +280,28 @@ export function withTopicName(item: ForumTopicItem, name: string): ForumTopicIte
   return patched;
 }
 
+/**
+ * FORUM-105：构造一份改了图标 emoji 的话题副本。
+ * updateForumTopicInfo 推送（权威源）回灌时与 withTopicClosed / withTopicName
+ * 组合使用；空串 = 该话题当前没有自定义 emoji 图标（纯色）。
+ */
+export function withTopicIcon(item: ForumTopicItem, iconEmojiId: string): ForumTopicItem {
+  const patched: ForumTopicItem = {
+    topicId: item.topicId,
+    name: item.name,
+    iconEmojiId: iconEmojiId,
+    iconColor: item.iconColor,
+    unreadCount: item.unreadCount,
+    unreadMentionCount: item.unreadMentionCount,
+    isPinned: item.isPinned,
+    isClosed: item.isClosed,
+    isGeneral: item.isGeneral,
+    preview: item.preview,
+    lastMessageDate: item.lastMessageDate
+  };
+  return patched;
+}
+
 /** FORUM-104：从列表移除一个话题（删除成功后的本地补丁；找不到原样返回）。 */
 export function removeTopic(items: ForumTopicItem[], topicId: number): ForumTopicItem[] {
   const out: ForumTopicItem[] = [];
@@ -315,8 +337,8 @@ export function forumTopicSortWeight(item: ForumTopicItem): number {
  * 这是 TDLib `createForumTopic` 文档里写死的六个 RGB 值
  * （「Icon color must be one of 0x6FB9F0, 0xFFD67E, 0xCB86DB, 0x8EEE98,
  * 0xFF93B2, or 0xFB6F5F」），不是设计 token —— 服务端只认这六个，
- * 传别的色值会被 400 拒掉。emoji 图标选择（getForumTopicDefaultIcons）
- * 是遗留项，v1 只出纯色圆点。
+ * 传别的色值会被 400 拒掉。FORUM-105 起 emoji 图标网格（候选来自
+ * getForumTopicDefaultIcons）与色板并排出，色板保留为默认形态。
  */
 export const TOPIC_ICON_COLORS: readonly number[] = [
   0x6FB9F0,
@@ -341,6 +363,10 @@ export interface TopicManageStateOptions {
   readonly errorMessage?: string;
   readonly menuTopicId?: number;
   readonly confirmDeleteTopicId?: number;
+  /** FORUM-105：弹窗内选中的图标 emoji id（空串 = 未选，纯色图标）。 */
+  readonly iconEmojiId?: string;
+  /** FORUM-105：getForumTopicDefaultIcons 回灌的候选 id 列表（空 = 只有色板）。 */
+  readonly iconEmojiIds?: string[];
 }
 
 /**
@@ -355,7 +381,7 @@ export interface TopicManageStateOptions {
  * 收口链也按这个顺序（确认 > 菜单 > 弹窗 > 关列表 > 关话题）。
  */
 export class TopicManageState {
-  /** 'create' 新建；'edit' 改标题（编辑图标 emoji 是遗留项，v1 只有标题）。 */
+  /** 'create' 新建（标题 + 色板 + emoji 网格）；'edit' 改标题（FORUM-105 起也可换 emoji 图标，色值仍不可改）。 */
   readonly mode: 'create' | 'edit';
   /** edit 模式的目标话题 id；create 模式恒为 0。 */
   readonly editingTopicId: number;
@@ -371,6 +397,14 @@ export class TopicManageState {
   readonly menuTopicId: number;
   /** 删除确认弹窗指向的话题 id（0 = 确认弹窗关闭）。 */
   readonly confirmDeleteTopicId: number;
+  /**
+   * FORUM-105：弹窗内选中的图标 emoji id（getForumTopicDefaultIcons 候选之一；
+   * 空串 = 未选，创建走纯色、编辑不动图标）。两个弹层位（menuTopicId /
+   * confirmDeleteTopicId）之后追加，位置参数口径与其余字段一致。
+   */
+  readonly iconEmojiId: string;
+  /** FORUM-105：候选 emoji id 列表（拉取失败静默降级为空 = 只有色板）。 */
+  readonly iconEmojiIds: string[];
 
   constructor(
     mode: 'create' | 'edit' = 'create',
@@ -381,7 +415,9 @@ export class TopicManageState {
     isSubmitting: boolean = false,
     errorMessage: string = '',
     menuTopicId: number = 0,
-    confirmDeleteTopicId: number = 0
+    confirmDeleteTopicId: number = 0,
+    iconEmojiId: string = '',
+    iconEmojiIds: string[] = []
   ) {
     this.mode = mode;
     this.editingTopicId = editingTopicId;
@@ -392,6 +428,8 @@ export class TopicManageState {
     this.errorMessage = errorMessage;
     this.menuTopicId = menuTopicId;
     this.confirmDeleteTopicId = confirmDeleteTopicId;
+    this.iconEmojiId = iconEmojiId;
+    this.iconEmojiIds = iconEmojiIds;
   }
 
   copyWith(options: TopicManageStateOptions): TopicManageState {
@@ -404,7 +442,9 @@ export class TopicManageState {
       options.isSubmitting !== undefined ? options.isSubmitting : this.isSubmitting,
       options.errorMessage !== undefined ? options.errorMessage : this.errorMessage,
       options.menuTopicId !== undefined ? options.menuTopicId : this.menuTopicId,
-      options.confirmDeleteTopicId !== undefined ? options.confirmDeleteTopicId : this.confirmDeleteTopicId
+      options.confirmDeleteTopicId !== undefined ? options.confirmDeleteTopicId : this.confirmDeleteTopicId,
+      options.iconEmojiId !== undefined ? options.iconEmojiId : this.iconEmojiId,
+      options.iconEmojiIds !== undefined ? options.iconEmojiIds : this.iconEmojiIds
     );
   }
 }

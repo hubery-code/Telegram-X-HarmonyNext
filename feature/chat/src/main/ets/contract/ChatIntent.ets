@@ -825,6 +825,7 @@ export type ChatIntent =
   | OpenTopicEditDialog
   | TopicManageTitleChanged
   | TopicManageIconSelected
+  | TopicManageEmojiSelected
   | SubmitTopicManage
   | CloseTopicManageDialog
   | OpenTopicMenu
@@ -834,6 +835,9 @@ export type ChatIntent =
   | ConfirmDeleteTopic
   | DismissDeleteTopic
   | OnTopicManageFailed
+  | OnTopicIconsLoaded
+  | OnTopicManageRightsChanged
+  | OnForumTopicInfoPushed
   | OnForumTopicCreated
   | OnForumTopicClosedToggled
   | OnForumTopicEdited
@@ -1562,6 +1566,20 @@ export class TopicManageIconSelected implements Intent {
   }
 }
 
+/**
+ * FORUM-105：弹窗选中图标 emoji（emoji 网格点选，create/edit 两模式都有效）。
+ * emojiId 为 getForumTopicDefaultIcons 回包里的 custom_emoji_id；
+ * 再点一次已选中的格子视为取消选中（emojiId 传回原值，reducer 置空串）。
+ */
+export class TopicManageEmojiSelected implements Intent {
+  readonly kind: 'topicManageEmojiSelected' = 'topicManageEmojiSelected';
+  readonly emojiId: string;
+
+  constructor(emojiId: string) {
+    this.emojiId = emojiId;
+  }
+}
+
 /** FORUM-104：弹窗确认键（提交创建或编辑；reducer 置 isSubmitting 并发效果）。 */
 export class SubmitTopicManage implements Intent {
   readonly kind: 'submitTopicManage' = 'submitTopicManage';
@@ -1632,6 +1650,59 @@ export class OnTopicManageFailed implements Intent {
   }
 }
 
+/**
+ * FORUM-105：getForumTopicDefaultIcons 回包回灌（弹窗 emoji 网格的候选列表）。
+ * 协调器从 Stickers 的每个 Sticker.full_type（stickerFullTypeCustomEmoji）里抽
+ * custom_emoji_id；请求失败静默降级（不派发本意图），弹窗只显示色板。
+ */
+export class OnTopicIconsLoaded implements Intent {
+  readonly kind: 'onTopicIconsLoaded' = 'onTopicIconsLoaded';
+  readonly emojiIds: string[];
+
+  constructor(emojiIds: string[]) {
+    this.emojiIds = emojiIds;
+  }
+}
+
+/**
+ * FORUM-105：own-admin-rights 回灌（本端用户在本会话是否可管理话题）。
+ * 协调器链路：getMe（本地缓存）→ getChatMember(chat_id, messageSenderUser) →
+ * status 为 chatMemberStatusCreator 恒真；为 chatMemberStatusAdministrator 时取
+ * rights.can_manage_topics。未回包前恒 false —— 弹层按钮宁可晚出现，
+ * 也不让无权用户点进去吃 TDLib 的 400。遗留：admin rights 的实时推送
+ * （updateChatMember）未订阅，本包只在打开会话时取一次。
+ */
+export class OnTopicManageRightsChanged implements Intent {
+  readonly kind: 'onTopicManageRightsChanged' = 'onTopicManageRightsChanged';
+  readonly canManageTopics: boolean;
+
+  constructor(canManageTopics: boolean) {
+    this.canManageTopics = canManageTopics;
+  }
+}
+
+/**
+ * FORUM-105：updateForumTopicInfo 推送回灌（权威源）。
+ * TDLib 的 ForumTopicInfo 是全量信息，四字段一次带齐：话题名 / 图标 emoji id /
+ * 关闭态。reducer 用 patchForumTopic + withTopicName/withTopicIcon/withTopicClosed
+ * 打本地补丁（与 FORUM-104 的乐观补丁同 id 互相覆盖，天然去重）。
+ * 推送早于列表加载到达时 reducer 侧找不到该行，原样丢弃。
+ */
+export class OnForumTopicInfoPushed implements Intent {
+  readonly kind: 'onForumTopicInfoPushed' = 'onForumTopicInfoPushed';
+  readonly topicId: number;
+  readonly name: string;
+  readonly iconCustomEmojiId: string;
+  readonly isClosed: boolean;
+
+  constructor(topicId: number, name: string, iconCustomEmojiId: string, isClosed: boolean) {
+    this.topicId = topicId;
+    this.name = name;
+    this.iconCustomEmojiId = iconCustomEmojiId;
+    this.isClosed = isClosed;
+  }
+}
+
 /** FORUM-104：创建成功回灌（createForumTopic 回 ForumTopicInfo，协调器转成列表项并合并）。 */
 export class OnForumTopicCreated implements Intent {
   readonly kind: 'onForumTopicCreated' = 'onForumTopicCreated';
@@ -1642,7 +1713,7 @@ export class OnForumTopicCreated implements Intent {
   }
 }
 
-/** FORUM-104：关闭/重开成功回灌（本地补丁；TDLib 1.8.67 的 updateForumTopicInfo 未订阅）。 */
+/** FORUM-104：关闭/重开成功回灌（本地乐观补丁；FORUM-105 起推送补丁由 OnForumTopicInfoPushed 权威覆盖）。 */
 export class OnForumTopicClosedToggled implements Intent {
   readonly kind: 'onForumTopicClosedToggled' = 'onForumTopicClosedToggled';
   readonly topicId: number;

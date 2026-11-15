@@ -131,8 +131,10 @@ import {
   VotePollOption,
   RetractPollVote,
   OpenTopicCreateDialog,
+  OpenTopicEditDialog,
   TopicManageTitleChanged,
   TopicManageIconSelected,
+  TopicManageEmojiSelected,
   SubmitTopicManage,
   CloseTopicManageDialog,
   OpenTopicMenu,
@@ -141,6 +143,9 @@ import {
   ConfirmDeleteTopic,
   DismissDeleteTopic,
   OnTopicManageFailed,
+  OnTopicIconsLoaded,
+  OnTopicManageRightsChanged,
+  OnForumTopicInfoPushed,
   OnForumTopicCreated,
   OnForumTopicClosedToggled,
   OnForumTopicEdited,
@@ -3934,6 +3939,193 @@ export default function chatReducerTest() {
         makeEnv()
       );
       expect(result.state.topicManage).assertNull();
+    });
+
+    // ---- FORUM-105 话题收尾三件套 ----
+    // （own-admin-rights gating、emoji 图标、updateForumTopicInfo 推送补丁。）
+
+    it('FORUM105_onTopicManageRightsChanged_updatesGatingAndDedupes', 0, () => {
+      const state: ChatUiState = makeState();
+      // 初始恒 false（权限未知）；回 true 才出现按钮。
+      expect(state.canManageTopics).assertFalse();
+      const granted: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        state,
+        new OnTopicManageRightsChanged(true),
+        makeEnv()
+      );
+      expect(granted.state.canManageTopics).assertTrue();
+
+      // 值相同不换引用（推送/回读重复回灌不让整页重算）。
+      const again: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        granted.state,
+        new OnTopicManageRightsChanged(true),
+        makeEnv()
+      );
+      expect(again.state === granted.state).assertTrue();
+
+      const revoked: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        granted.state,
+        new OnTopicManageRightsChanged(false),
+        makeEnv()
+      );
+      expect(revoked.state.canManageTopics).assertFalse();
+    });
+
+    it('FORUM105_openTopicCreateDialog_emitsFetchTopicIcons', 0, () => {
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        makeForumListState([]),
+        new OpenTopicCreateDialog(),
+        makeEnv()
+      );
+      expect(result.effects.length).assertEqual(1);
+      expect(result.effects[0].kind).assertEqual('fetchTopicIcons');
+      const tm: TopicManageState | null = result.state.topicManage;
+      expect(tm !== null).assertTrue();
+      if (tm !== null) {
+        // 弹窗初开候选为空：回灌前只有色板
+        expect(tm.iconEmojiIds.length).assertEqual(0);
+        expect(tm.iconEmojiId).assertEqual('');
+      }
+    });
+
+    it('FORUM105_openTopicEditDialog_resetsSelectedEmojiAndEmitsFetchTopicIcons', 0, () => {
+      const state: ChatUiState = makeForumListState([makeReducerTopic(7)])
+        .copyWith({
+          topicManage: new TopicManageState('create', 0, false, '', 0x6FB9F0, false, '', 7, 0, 'stale-id')
+        });
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        state,
+        new OpenTopicEditDialog(7, 'Topic 7'),
+        makeEnv()
+      );
+      expect(result.effects.length).assertEqual(1);
+      expect(result.effects[0].kind).assertEqual('fetchTopicIcons');
+      const tm: TopicManageState | null = result.state.topicManage;
+      expect(tm !== null).assertTrue();
+      if (tm !== null) {
+        expect(tm.mode).assertEqual('edit');
+        // 编辑弹窗不继承上一次弹层的选中 emoji（那是另一个话题的残留）
+        expect(tm.iconEmojiId).assertEqual('');
+      }
+    });
+
+    it('FORUM105_onTopicIconsLoaded_fillsDialogAndDropsWhenClosed', 0, () => {
+      const state: ChatUiState = makeForumListState([])
+        .copyWith({ topicManage: new TopicManageState('create', 0, true) });
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        state,
+        new OnTopicIconsLoaded(['111', '222']),
+        makeEnv()
+      );
+      const tm: TopicManageState | null = result.state.topicManage;
+      expect(tm !== null).assertTrue();
+      if (tm !== null) {
+        expect(tm.iconEmojiIds.length).assertEqual(2);
+        expect(tm.iconEmojiIds[0]).assertEqual('111');
+      }
+
+      // 弹窗已关（或从未开）时回灌迟到：丢弃，不造出一份无主的弹层状态。
+      const closedState: ChatUiState = makeForumListState([]);
+      const dropped: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        closedState,
+        new OnTopicIconsLoaded(['111', '222']),
+        makeEnv()
+      );
+      expect(dropped.state === closedState).assertTrue();
+    });
+
+    it('FORUM105_topicManageEmojiSelected_setsAndTogglesOff', 0, () => {
+      const state: ChatUiState = makeForumListState([])
+        .copyWith({
+          topicManage: new TopicManageState('create', 0, true, 'Release', 0x6FB9F0, false, '', 0, 0, '', ['e1', 'e2'])
+        });
+      const picked: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        state,
+        new TopicManageEmojiSelected('e1'),
+        makeEnv()
+      );
+      const tmPicked: TopicManageState | null = picked.state.topicManage;
+      expect(tmPicked !== null).assertTrue();
+      if (tmPicked !== null) {
+        expect(tmPicked.iconEmojiId).assertEqual('e1');
+      }
+
+      // 再点一次已选中的格子 = 取消选中（回到纯色图标）。
+      const toggled: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        picked.state,
+        new TopicManageEmojiSelected('e1'),
+        makeEnv()
+      );
+      const tmToggled: TopicManageState | null = toggled.state.topicManage;
+      expect(tmToggled !== null).assertTrue();
+      if (tmToggled !== null) {
+        expect(tmToggled.iconEmojiId).assertEqual('');
+      }
+
+      // 弹窗关着时不吃点选。
+      const closed: ChatUiState = makeForumListState([])
+        .copyWith({ topicManage: new TopicManageState('create', 0, false) });
+      const ignored: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        closed,
+        new TopicManageEmojiSelected('e1'),
+        makeEnv()
+      );
+      expect(ignored.state === closed).assertTrue();
+    });
+
+    it('FORUM105_submitTopicManage_carriesSelectedEmojiId', 0, () => {
+      const state: ChatUiState = makeForumListState([])
+        .copyWith({
+          topicManage: new TopicManageState('create', 0, true, 'Release', 0x6FB9F0, false, '', 0, 0, 'e9')
+        });
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        state,
+        new SubmitTopicManage(),
+        makeEnv()
+      );
+      expect(result.effects.length).assertEqual(1);
+      const submit: SubmitTopicManageEffect = result.effects[0] as SubmitTopicManageEffect;
+      expect(submit.mode).assertEqual('create');
+      expect(submit.iconEmojiId).assertEqual('e9');
+    });
+
+    it('FORUM105_onForumTopicInfoPushed_patchesNameIconClosed', 0, () => {
+      const state: ChatUiState = makeForumListState([makeReducerTopic(7), makeReducerTopic(8)]);
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        state,
+        new OnForumTopicInfoPushed(7, 'Renamed by push', 'emoji-9', true),
+        makeEnv()
+      );
+      const target: ForumTopicItem | undefined = result.state.forumTopics.items.find(
+        (item: ForumTopicItem): boolean => item.topicId === 7
+      );
+      expect(target !== undefined).assertTrue();
+      if (target !== undefined) {
+        expect(target.name).assertEqual('Renamed by push');
+        expect(target.iconEmojiId).assertEqual('emoji-9');
+        expect(target.isClosed).assertTrue();
+      }
+      // 其它行不受影响（推送只补指向的那一行）
+      const other: ForumTopicItem | undefined = result.state.forumTopics.items.find(
+        (item: ForumTopicItem): boolean => item.topicId === 8
+      );
+      expect(other !== undefined).assertTrue();
+      if (other !== undefined) {
+        expect(other.name).assertEqual('Topic 8');
+        expect(other.isClosed).assertFalse();
+      }
+    });
+
+    it('FORUM105_onForumTopicInfoPushed_unknownTopicIsNoOp', 0, () => {
+      const state: ChatUiState = makeForumListState([makeReducerTopic(7)]);
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        state,
+        new OnForumTopicInfoPushed(999, 'Ghost', 'x', true),
+        makeEnv()
+      );
+      // 推送早于列表加载到达：patchForumTopic 找不到该行，不插半成品
+      expect(result.state.forumTopics.items.length).assertEqual(1);
+      expect(result.state.forumTopics.items[0].topicId).assertEqual(7);
     });
   });
 }

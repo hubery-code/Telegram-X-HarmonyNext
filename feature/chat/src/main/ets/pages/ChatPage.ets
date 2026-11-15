@@ -129,6 +129,7 @@ import {
   OpenTopicEditDialog,
   TopicManageTitleChanged,
   TopicManageIconSelected,
+  TopicManageEmojiSelected,
   SubmitTopicManage,
   CloseTopicManageDialog,
   OpenTopicMenu,
@@ -1156,11 +1157,13 @@ export struct ChatPage {
 
       // FORUM-101：论坛话题列表覆盖层（整页覆盖，带自己的顶栏与搜索）。
       // FORUM-104：话题管理三弹层状态与回调一并接入（创建/编辑弹窗、长按菜单、删除确认）。
+      // FORUM-105：canManageTopics 把关（新建按钮显隐 + 长按手势放行）与 emoji 网格回调。
       if (this.uiState.showForumTopics) {
         ForumTopicsOverlay({
           forumTopics: this.uiState.forumTopics,
           query: this.uiState.forumTopics.query,
           topicManage: this.uiState.topicManage,
+          canManageTopics: this.uiState.canManageTopics,
           onClose: () => {
             this.onDispatch(new CloseForumTopics());
           },
@@ -1184,6 +1187,9 @@ export struct ChatPage {
           },
           onTopicManageIconSelected: (color: number) => {
             this.onDispatch(new TopicManageIconSelected(color));
+          },
+          onTopicManageEmojiSelected: (emojiId: string) => {
+            this.onDispatch(new TopicManageEmojiSelected(emojiId));
           },
           onSubmitTopicManage: () => {
             this.onDispatch(new SubmitTopicManage());

@@ -14,6 +14,7 @@ import {
   nextForumCursor,
   mergeForumTopics,
   patchForumTopic,
+  withTopicIcon,
   forumTopicSortWeight
 } from '../main/ets/model/ForumTopic';
 
@@ -141,6 +142,22 @@ export default function forumTopicTest(): void {
       const out = patchForumTopic(items, 999, (t: ForumTopicItem): ForumTopicItem => t);
       expect(out.length).assertEqual(1);
       expect(out[0].topicId).assertEqual(1);
+    });
+
+    // ---------- withTopicIcon（FORUM-105 推送补丁） ----------
+    it('withTopicIcon_replacesEmojiAndKeepsOtherFields', 0, () => {
+      const base = makeTopic(7, true, 3, 42);
+      const patched = withTopicIcon(base, 'emoji-9');
+      expect(patched.iconEmojiId).assertEqual('emoji-9');
+      // 其余字段原样保留（关闭态/名字由 withTopicClosed / withTopicName 各自负责）
+      expect(patched.topicId).assertEqual(7);
+      expect(patched.name).assertEqual('Topic 7');
+      expect(patched.isPinned).assertTrue();
+      expect(patched.unreadCount).assertEqual(3);
+      expect(patched.lastMessageDate).assertEqual(42);
+      // 空串 = 无自定义 emoji（纯色图标），同样合法
+      const cleared = withTopicIcon(base, '');
+      expect(cleared.iconEmojiId).assertEqual('');
     });
 
     // ---------- 排序权重 ----------

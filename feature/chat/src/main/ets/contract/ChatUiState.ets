@@ -241,6 +241,8 @@ export interface ChatUiStateOptions {
   readonly activeTopicName?: string;
   /** FORUM-104：话题管理弹层三合一状态（创建/编辑弹窗、长按菜单、删除确认）；null = 全关。 */
   readonly topicManage?: TopicManageState | null;
+  /** FORUM-105：本端用户在本会话是否可管理话题（own-admin-rights；未知/未回包 = false）。 */
+  readonly canManageTopics?: boolean;
 }
 
 export const DEFAULT_RECENT_EMOJIS: readonly string[] = [
@@ -352,6 +354,13 @@ export class ChatUiState implements UiState {
   readonly activeTopicName: string;
   /** FORUM-104：话题管理弹层三合一状态；null = 创建/编辑弹窗、长按菜单、删除确认全关。 */
   readonly topicManage: TopicManageState | null;
+  /**
+   * FORUM-105：本端用户在本会话是否可管理话题（own-admin-rights 回灌）。
+   * 刻意追加在参数表**末尾**：这个构造函数是位置参数，中间插位会把后面
+   * 字段的默认值整体错位（`initial()` 与 `copyWith()` 都按位置传）。
+   * 权限未知（getMe/getChatMember 未回或失败）恒 false —— 按钮宁可晚出现。
+   */
+  readonly canManageTopics: boolean;
 
   constructor(
     chatId: number,
@@ -411,7 +420,9 @@ export class ChatUiState implements UiState {
     activeTopicId: number = 0,
     activeTopicName: string = '',
     // FORUM-104：同理追加在末尾。
-    topicManage: TopicManageState | null = null
+    topicManage: TopicManageState | null = null,
+    // FORUM-105：同理追加在末尾。
+    canManageTopics: boolean = false
   ) {
     this.chatId = chatId;
     this.chatTitle = chatTitle;
@@ -465,6 +476,7 @@ export class ChatUiState implements UiState {
     this.activeTopicId = activeTopicId;
     this.activeTopicName = activeTopicName;
     this.topicManage = topicManage;
+    this.canManageTopics = canManageTopics;
   }
 
   static initial(): ChatUiState {
@@ -524,7 +536,8 @@ export class ChatUiState implements UiState {
       options.showForumTopics !== undefined ? options.showForumTopics : this.showForumTopics,
       options.activeTopicId !== undefined ? options.activeTopicId : this.activeTopicId,
       options.activeTopicName !== undefined ? options.activeTopicName : this.activeTopicName,
-      options.topicManage !== undefined ? options.topicManage : this.topicManage
+      options.topicManage !== undefined ? options.topicManage : this.topicManage,
+      options.canManageTopics !== undefined ? options.canManageTopics : this.canManageTopics
     );
   }
 
