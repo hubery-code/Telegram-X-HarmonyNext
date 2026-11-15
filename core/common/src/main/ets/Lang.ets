@@ -462,6 +462,8 @@ const EN_DICTIONARY: Record<string, string> = {
   'A11ySwitchAccount': 'Switch account',
   'A11yOpenProfile': 'Open {0} profile',
   'A11yNewChat': 'New message',
+  'A11yForumTopics': 'Topics',
+  'A11yForumSearch': 'Search topics',
   'A11yAttach': 'Attach',
   'A11yEmoji': 'Emoji',
   'A11yKeyboard': 'Switch to keyboard',
@@ -752,6 +754,16 @@ const EN_DICTIONARY: Record<string, string> = {
   'Contact': 'Contact',
   'Add to Contacts': 'Add to Contacts',
   'View Profile': 'View Profile',
+
+  'Topics': 'Topics',
+  'Search topics': 'Search topics',
+  'Failed to load topics': 'Failed to load topics',
+  'No topics found': 'No topics found',
+  'No topics yet': 'No topics yet',
+  'Pinned': 'Pinned',
+  'Closed': 'Closed',
+  '{0} unread': '{0} unread',
+  'Forum': 'Forum',
 };
 
 const ZH_DICTIONARY: Record<string, string> = {
@@ -1071,6 +1083,8 @@ const ZH_DICTIONARY: Record<string, string> = {
   'A11ySwitchAccount': '切换账号',
   'A11yOpenProfile': '打开 {0} 的资料页',
   'A11yNewChat': '新消息',
+  'A11yForumTopics': '话题',
+  'A11yForumSearch': '搜索话题',
   'A11yAttach': '附件',
   'A11yEmoji': '表情',
   'A11yKeyboard': '切换到键盘',
@@ -1344,6 +1358,16 @@ const ZH_DICTIONARY: Record<string, string> = {
   'Contact': '联系人',
   'Add to Contacts': '添加到联系人',
   'View Profile': '查看个人资料',
+
+  'Topics': '话题',
+  'Search topics': '搜索话题',
+  'Failed to load topics': '话题加载失败',
+  'No topics found': '没有找到话题',
+  'No topics yet': '还没有话题',
+  'Pinned': '已置顶',
+  'Closed': '已关闭',
+  '{0} unread': '{0} 条未读',
+  'Forum': '论坛',
 };
 
 export class Lang {

@@ -817,7 +817,8 @@ export type ChatIntent =
   | OpenForumTopic
   | OnForumTopicsLoaded
   | OnMoreForumTopicsLoaded
-  | OnForumTopicsFailed;
+  | OnForumTopicsFailed
+  | OnForumModeChanged;
 
 /** STICKER-PREVIEW-101：打开贴纸包预览弹窗。 */
 export class OpenStickerSet implements Intent {
@@ -1442,6 +1443,23 @@ export class OnMoreForumTopicsLoaded implements Intent {
     this.offsetDate = offsetDate;
     this.offsetMessageId = offsetMessageId;
     this.offsetForumTopicId = offsetForumTopicId;
+  }
+}
+
+/**
+ * FORUM-101：回灌「这个会话是不是 forum」（`getSupergroup.is_forum`）。
+ *
+ * 单独一个 intent 而不是复用 `OnChatKindChanged`：`chatKind` 说的是
+ * 私聊/群/频道/机器人，`isForum` 说的是**群的形态**，两者正交 ——
+ * 一个 channel 可以不是 forum，一个 group 也可以是（Telegram 的
+ * 「论坛群」就是把普通群的话题化开关打开）。
+ */
+export class OnForumModeChanged implements Intent {
+  readonly kind: 'onForumModeChanged' = 'onForumModeChanged';
+  readonly isForum: boolean;
+
+  constructor(isForum: boolean) {
+    this.isForum = isForum;
   }
 }
 

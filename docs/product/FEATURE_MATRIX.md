@@ -3050,7 +3050,7 @@
 |---|---|---|
 | FEAT-P2-001 | 联系人同步与新建会话 | Wired（CONTACT-101/102 已交付） |
 | FEAT-P2-002 | 群组/频道创建、成员、权限、邀请链接 | Wired（PROFILE-102、CHANNEL-101；群/频道**创建**未做） |
-| FEAT-P2-003 | 反应、投票、置顶消息、话题/论坛 | Wired（反应/投票/置顶已交付；**论坛话题未做**） |
+| FEAT-P2-003 | 反应、投票、置顶消息、话题/论坛 | Wired（反应/投票/置顶已交付；**论坛话题列表 FORUM-101 已交付**，话题内消息流 FORUM-102 未做） |
 | FEAT-P2-004 | Sticker、emoji、GIF、动画贴纸 | Wired（贴纸/emoji 已交付；**GIF 发送链路未做**，动图渲染已有） |
 | FEAT-P2-005 | CameraPicker、相册、文件选择、系统分享 | Wired（CAM-PICKER-101；系统分享未做） |
 | FEAT-P2-006 | 完整媒体查看器、后台音频、AVSession | Wired（AUDIO-BG-101/102、MEDIA-VIEWER；薄遗留见 PROGRESS） |

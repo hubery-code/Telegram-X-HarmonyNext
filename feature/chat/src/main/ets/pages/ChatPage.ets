@@ -206,13 +206,20 @@ import {
   TogglePollComposerMultiple,
   SubmitPollComposer,
   VotePollOption,
-  RetractPollVote
+  RetractPollVote,
+  OpenForumTopics,
+  CloseForumTopics,
+  LoadMoreForumTopics,
+  RetryForumTopics,
+  SearchForumTopics,
+  OpenForumTopic
 } from '../contract/ChatIntent';
 import { isMessageSelected } from '../model/ForwardSelection';
 import { ChatSearchResultItem } from '../model/ChatSearchResultItem';
 import { PinnedMessageInfo } from '../model/PinnedMessageInfo';
 import { StickerSetItem, isUnicodeEmojiSticker } from '../model/StickerSetPreviewState';
 import { GifItem } from '../model/GifItem';
+import { ForumTopicItem } from '../model/ForumTopic';
 import {
   PollComposerState,
   PollOptionView,
@@ -223,6 +230,7 @@ import {
   POLL_OPTION_MAX_LENGTH
 } from '../model/PollView';
 import { EmojiBoard } from './EmojiBoard';
+import { ForumTopicsOverlay } from './ForumTopicsOverlay';
 import { StickerSetPreviewSheet } from './StickerSetPreviewSheet';
 
 
@@ -1133,6 +1141,29 @@ export struct ChatPage {
         })
       }
 
+      // FORUM-101：论坛话题列表覆盖层（整页覆盖，带自己的顶栏与搜索）。
+      if (this.uiState.showForumTopics) {
+        ForumTopicsOverlay({
+          forumTopics: this.uiState.forumTopics,
+          query: this.uiState.forumTopics.query,
+          onClose: () => {
+            this.onDispatch(new CloseForumTopics());
+          },
+          onLoadMore: () => {
+            this.onDispatch(new LoadMoreForumTopics());
+          },
+          onRetry: () => {
+            this.onDispatch(new RetryForumTopics());
+          },
+          onSearch: (q: string) => {
+            this.onDispatch(new SearchForumTopics(q));
+          },
+          onOpenTopic: (item: ForumTopicItem) => {
+            this.onDispatch(new OpenForumTopic(item.topicId, item.name));
+          }
+        })
+      }
+
       // MENU-101：⋮ 菜单破坏性操作确认弹窗（遮罩 + 居中卡片）。
       if (this.uiState.showMenuConfirmDialog) {
         this.MenuConfirmDialogOverlay()
@@ -1262,6 +1293,25 @@ export struct ChatPage {
         .onClick(() => {
           this.onDispatch(new OpenChatSearch());
         })
+
+        // FORUM-101：论坛群的话题入口。只有 `isForum` 为真才出现 ——
+        // 普通群/频道/私聊里没有「话题」这回事，入口常驻会让用户点进去看到空列表。
+        if (this.uiState.isForum) {
+          Row() {
+            Image($r('app.media.ic_forum'))
+              .width(22)
+              .height(22)
+              .fillColor(this.T.colors.accent)
+          }
+          .width(SEARCH_BUTTON_SIZE)
+          .height(SEARCH_BUTTON_SIZE)
+          .justifyContent(FlexAlign.Center)
+          .alignItems(VerticalAlign.Center)
+          .accessibilityText(a11y(A11y.FORUM_TOPICS))
+          .onClick(() => {
+            this.onDispatch(new OpenForumTopics());
+          })
+        }
 
         // MSG-109：头部 ⋮ 溢出菜单（按 chatKind 出项，删除聊天 destructive 色）。
         Row() {

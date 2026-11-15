@@ -24,6 +24,11 @@ LABELS = [
     ('OPEN_PROFILE', 'A11yOpenProfile', 'Open {0} profile', '打开 {0} 的资料页'),
     # A11Y-102：会话列表的悬浮「写消息」按钮（A11Y-101 漏掉的一处，守卫修好解析盲区后才现形）。
     ('NEW_CHAT', 'A11yNewChat', 'New message', '新消息'),
+    # FORUM-101：论坛群头部的话题入口，以及话题列表里的搜索框。
+    # 两者都是图标-only 的可点击控件，守卫要求走 a11y(A11y.<槽位>)，
+    # 所以必须先在本清单登记 —— 「表里有 = 词典里有」是生成出来的。
+    ('FORUM_TOPICS', 'A11yForumTopics', 'Topics', '话题'),
+    ('FORUM_SEARCH', 'A11yForumSearch', 'Search topics', '搜索话题'),
 
     ('ATTACH', 'A11yAttach', 'Attach', '附件'),
     ('EMOJI', 'A11yEmoji', 'Emoji', '表情'),
@@ -66,7 +71,7 @@ LABELS = [
 
 GROUPS = [
     ('导航与头部', ['BACK', 'CLOSE', 'MORE', 'SEARCH', 'CALL', 'MENU', 'SETTINGS', 'SWITCH_ACCOUNT', 'OPEN_PROFILE',
-               'NEW_CHAT']),
+               'NEW_CHAT', 'FORUM_TOPICS', 'FORUM_SEARCH']),
     ('输入栏与登录', ['ATTACH', 'EMOJI', 'KEYBOARD', 'SEND', 'RECORD_VOICE', 'CANCEL_RECORDING',
                  'SEND_RECORDING', 'DELETE_CHAR', 'SHOW_PASSWORD', 'HIDE_PASSWORD']),
     ('消息与媒体', ['FORWARD', 'PLAY', 'PAUSE', 'DOWNLOAD', 'CANCEL_DOWNLOAD', 'CANCEL_UPLOAD',

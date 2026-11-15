@@ -320,7 +320,9 @@ import {
   VoicePlaybackResumed,
   OnForumTopicsLoaded,
   OnMoreForumTopicsLoaded,
-  OnForumTopicsFailed} from '../contract/ChatIntent';
+  OnForumTopicsFailed,
+  OnForumModeChanged
+} from '../contract/ChatIntent';
 import {
   ChatEffect,
   SendTextMessage,
@@ -3173,6 +3175,9 @@ export class ChatCoordinator {
               if (chat.type_.type === 'chatTypeSupergroup') {
                 this.supergroupId = (chat.type_ as ChatTypeSupergroup).supergroup_id;
                 this.fetchSupergroupMemberStatus();
+                // FORUM-101：`is_forum` 不在 Chat 上，只在 Supergroup 上，
+                // 所以要额外一次 getSupergroup（TDLib 本地缓存，几乎零成本）。
+                this.fetchSupergroupIsForum(this.supergroupId);
               } else if (chat.type_.type === 'chatTypeBasicGroup') {
                 this.basicGroupId = (chat.type_ as ChatTypeBasicGroup).basic_group_id;
               } else if (chat.type_.type === 'chatTypePrivate') {
@@ -3212,6 +3217,50 @@ export class ChatCoordinator {
    * CHANNEL-101：拉取超级群/频道详情以确认当前用户的成员身份（GetSupergroup）。
    * 若 status 为 chatMemberStatusLeft，则表示未加入频道（回灌 isMember=false）。
    */
+  /**
+   * FORUM-101：查这个超级群是不是 forum（`getSupergroup.is_forum`）。
+   *
+   * 为什么必须单独一次请求：`Chat` 上只有 `supergroup_id`，`is_forum` 是
+   * `Supergroup` 的字段。这次请求打的是 TDLib 本地缓存（会话已经打开），
+   * 不是网络往返，所以放在 `fetchChatKind` 的同一回调里直接发，不需要防抖。
+   *
+   * 失败时保持 `isForum = false` 并只记日志：话题入口不显示是**安全的降级**
+   * （最多是用户少看到一个入口），而把非 forum 的群判成 forum 会让用户
+   * 点进去看到空列表 —— 两害相权取其轻。
+   */
+  private fetchSupergroupIsForum(supergroupId: number): void {
+    if (supergroupId === 0 || this.destroyed) {
+      return;
+    }
+    const req: GetSupergroup = new GetSupergroup();
+    req.supergroup_id = supergroupId;
+    const result: Result<TdPendingRequest, AppError> =
+      this.scope.request('getSupergroup', encodeGetSupergroup(req) as TdWireObject);
+    if (result.err) {
+      this.logger.logError(TAG, result.error);
+      return;
+    }
+    if (result.ok) {
+      result.value.promise.then((res: Result<TdWireObject, AppError>) => {
+        if (this.destroyed) {
+          return;
+        }
+        if (res.err) {
+          this.logger.logError(TAG, res.error);
+          return;
+        }
+        if (res.ok) {
+          const sg: Supergroup | null = decodeSupergroup(res.value as TdJsonRaw);
+          if (sg !== null) {
+            this.logger.info(TAG, 'supergroup_forum_resolved', `isForum=${sg.is_forum}`);
+            this.dispatch(new OnForumModeChanged(sg.is_forum));
+          }
+        }
+      }).catch(() => {
+      });
+    }
+  }
+
   private fetchSupergroupMemberStatus(): void {
     if (this.destroyed || this.supergroupId <= 0) {
       return;

@@ -159,7 +159,8 @@ import {
   OpenForumTopic,
   OnForumTopicsLoaded,
   OnMoreForumTopicsLoaded,
-  OnForumTopicsFailed
+  OnForumTopicsFailed,
+  OnForumModeChanged
 } from '../contract/ChatIntent';
 import {
   ChatEffect,
@@ -2374,6 +2375,14 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
       return reduced(state.copyWith({
         forumTopics: curFail.copyWith({ isLoading: false, errorMessage: ff.message })
       }));
+    }
+
+    case 'onForumModeChanged': {
+      const fm: OnForumModeChanged = intent as OnForumModeChanged;
+      if (state.isForum === fm.isForum) {
+        return reduced(state);
+      }
+      return reduced(state.copyWith({ isForum: fm.isForum }));
     }
 
     case 'openForumTopic': {
