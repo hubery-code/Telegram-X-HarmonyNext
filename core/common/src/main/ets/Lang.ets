@@ -464,6 +464,7 @@ const EN_DICTIONARY: Record<string, string> = {
   'A11yNewChat': 'New message',
   'A11yForumTopics': 'Topics',
   'A11yForumSearch': 'Search topics',
+  'A11yTopicIconColor': 'Topic icon color',
   'A11yAttach': 'Attach',
   'A11yEmoji': 'Emoji',
   'A11yKeyboard': 'Switch to keyboard',
@@ -765,6 +766,19 @@ const EN_DICTIONARY: Record<string, string> = {
   'Closed': 'Closed',
   '{0} unread': '{0} unread',
   'Forum': 'Forum',
+  // FORUM-104：话题管理
+  'Create Topic': 'Create Topic',
+  'Edit Topic': 'Edit Topic',
+  'Topic Title': 'Topic Title',
+  'Topic title is required': 'Topic title is required',
+  'Manage Topic': 'Manage Topic',
+  'Close Topic': 'Close Topic',
+  'Reopen Topic': 'Reopen Topic',
+  'Delete Topic': 'Delete Topic',
+  'Delete this topic?': 'Delete this topic?',
+  'All messages in this topic will be removed for everyone.': 'All messages in this topic will be removed for everyone.',
+  'Topic action failed': 'Topic action failed',
+  'No permission to manage topics here': 'No permission to manage topics here',
 };
 
 const ZH_DICTIONARY: Record<string, string> = {
@@ -1086,6 +1100,7 @@ const ZH_DICTIONARY: Record<string, string> = {
   'A11yNewChat': '新消息',
   'A11yForumTopics': '话题',
   'A11yForumSearch': '搜索话题',
+  'A11yTopicIconColor': '话题图标颜色',
   'A11yAttach': '附件',
   'A11yEmoji': '表情',
   'A11yKeyboard': '切换到键盘',
@@ -1370,6 +1385,19 @@ const ZH_DICTIONARY: Record<string, string> = {
   'Closed': '已关闭',
   '{0} unread': '{0} 条未读',
   'Forum': '论坛',
+  // FORUM-104：话题管理
+  'Create Topic': '新建话题',
+  'Edit Topic': '编辑话题',
+  'Topic Title': '话题标题',
+  'Topic title is required': '请输入话题标题',
+  'Manage Topic': '管理话题',
+  'Close Topic': '关闭话题',
+  'Reopen Topic': '重开话题',
+  'Delete Topic': '删除话题',
+  'Delete this topic?': '删除这个话题？',
+  'All messages in this topic will be removed for everyone.': '话题内的全部消息将对所有人移除。',
+  'Topic action failed': '话题操作失败',
+  'No permission to manage topics here': '没有在这里管理话题的权限',
 };
 
 export class Lang {

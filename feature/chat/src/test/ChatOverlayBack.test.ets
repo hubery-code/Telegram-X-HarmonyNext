@@ -9,6 +9,7 @@ import { describe, it, expect } from '@ohos/hypium';
 import { ChatUiState, MessageActionMenuState } from '../main/ets/contract/ChatUiState';
 import { StickerSetPreviewState } from '../main/ets/model/StickerSetPreviewState';
 import { PollComposerState } from '../main/ets/model/PollView';
+import { TopicManageState } from '../main/ets/model/ForumTopic';
 import { chatOverlayCloseIntent } from '../main/ets/model/ChatOverlayBack';
 
 export default function chatOverlayBackTest(): void {
@@ -94,6 +95,32 @@ export default function chatOverlayBackTest(): void {
         activeTopicName: 'General'
       });
       expect(chatOverlayCloseIntent(state)?.kind).assertEqual('closeForumTopics');
+    });
+
+    // ---- FORUM-104：话题管理三弹层的返回链（确认 > 菜单 > 弹窗 > 列表） ----
+
+    it('topicDeleteConfirm_closesConfirmFirst', 0, () => {
+      const state: ChatUiState = ChatUiState.initial().copyWith({
+        showForumTopics: true,
+        topicManage: new TopicManageState('create', 0, true, 'x', 0x6FB9F0, false, '', 5, 5)
+      });
+      expect(chatOverlayCloseIntent(state)?.kind).assertEqual('dismissDeleteTopic');
+    });
+
+    it('topicMenu_closesMenuBeforeDialog', 0, () => {
+      const state: ChatUiState = ChatUiState.initial().copyWith({
+        showForumTopics: true,
+        topicManage: new TopicManageState('create', 0, true, 'x', 0x6FB9F0, false, '', 5, 0)
+      });
+      expect(chatOverlayCloseIntent(state)?.kind).assertEqual('closeTopicMenu');
+    });
+
+    it('topicDialog_closesDialogBeforeList', 0, () => {
+      const state: ChatUiState = ChatUiState.initial().copyWith({
+        showForumTopics: true,
+        topicManage: new TopicManageState('create', 0, true, 'x')
+      });
+      expect(chatOverlayCloseIntent(state)?.kind).assertEqual('closeTopicManageDialog');
     });
 
     it('hierarchy_topmostOverlayWins', 0, () => {

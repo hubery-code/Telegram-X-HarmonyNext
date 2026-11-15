@@ -1643,5 +1643,89 @@ export default function messageProjectionTest(): void {
       projection.stop();
     });
 
+    // ---- FORUM-104 话题管理请求形状 ----
+
+    it('FORUM104_createForumTopicSendsNameAndPaletteColor', 0, (): void => {
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const scope: AccountScope = createScope(bridge);
+      const projection: MessageProjection = new MessageProjection(42, scope);
+
+      const result: Result<TdPendingRequest, AppError> = projection.createForumTopic('  Release  ', 0xCB86DB);
+      expect(result.ok).assertTrue();
+
+      const req: Record<string, TdWireValue> | null = lastSentRequest(bridge, 'createForumTopic');
+      expect(req !== null).assertTrue();
+      if (req !== null) {
+        expect(req['chat_id']).assertEqual(42);
+        // trim 后发送：服务端对空白标题照样 400，本端先拦
+        expect(req['name']).assertEqual('Release');
+        expect(req['is_name_implicit']).assertEqual(false);
+        const icon: Record<string, TdWireValue> = req['icon'] as Record<string, TdWireValue>;
+        expect(icon['@type']).assertEqual('forumTopicIcon');
+        expect(icon['color']).assertEqual(0xCB86DB);
+        // v1 不带自定义 emoji：custom_emoji_id 空串（int64-as-string 的「无」）
+        expect(icon['custom_emoji_id']).assertEqual('');
+      }
+      projection.stop();
+    });
+
+    it('FORUM104_createForumTopicRejectsEmptyName', 0, (): void => {
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const scope: AccountScope = createScope(bridge);
+      const projection: MessageProjection = new MessageProjection(42, scope);
+
+      const result: Result<TdPendingRequest, AppError> = projection.createForumTopic('   ', 0x6FB9F0);
+      expect(result.err).assertTrue();
+      // 空标题就地拦：请求根本不发出去
+      expect(lastSentRequest(bridge, 'createForumTopic')).assertNull();
+      projection.stop();
+    });
+
+    it('FORUM104_editForumTopicSendsNameOnlyWithoutIconEdit', 0, (): void => {
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const scope: AccountScope = createScope(bridge);
+      const projection: MessageProjection = new MessageProjection(42, scope);
+
+      const result: Result<TdPendingRequest, AppError> = projection.editForumTopic(7, 'New Name');
+      expect(result.ok).assertTrue();
+
+      const req: Record<string, TdWireValue> | null = lastSentRequest(bridge, 'editForumTopic');
+      expect(req !== null).assertTrue();
+      if (req !== null) {
+        expect(req['chat_id']).assertEqual(42);
+        expect(req['forum_topic_id']).assertEqual(7);
+        expect(req['name']).assertEqual('New Name');
+        // v1 只改标题：图标编辑位恒 false（TDLib 不支持改已有话题的色值）
+        expect(req['edit_icon_custom_emoji']).assertEqual(false);
+      }
+      projection.stop();
+    });
+
+    it('FORUM104_toggleClosedAndDeleteSendTopicIdOnly', 0, (): void => {
+      const bridge: TestNativeBridge = new TestNativeBridge();
+      const scope: AccountScope = createScope(bridge);
+      const projection: MessageProjection = new MessageProjection(42, scope);
+
+      const closeRes: Result<TdPendingRequest, AppError> = projection.toggleForumTopicIsClosed(7, true);
+      expect(closeRes.ok).assertTrue();
+      const closeReq: Record<string, TdWireValue> | null = lastSentRequest(bridge, 'toggleForumTopicIsClosed');
+      expect(closeReq !== null).assertTrue();
+      if (closeReq !== null) {
+        expect(closeReq['chat_id']).assertEqual(42);
+        expect(closeReq['forum_topic_id']).assertEqual(7);
+        expect(closeReq['is_closed']).assertEqual(true);
+      }
+
+      const delRes: Result<TdPendingRequest, AppError> = projection.deleteForumTopic(7);
+      expect(delRes.ok).assertTrue();
+      const delReq: Record<string, TdWireValue> | null = lastSentRequest(bridge, 'deleteForumTopic');
+      expect(delReq !== null).assertTrue();
+      if (delReq !== null) {
+        expect(delReq['chat_id']).assertEqual(42);
+        expect(delReq['forum_topic_id']).assertEqual(7);
+      }
+      projection.stop();
+    });
+
   });
 }

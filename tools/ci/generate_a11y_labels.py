@@ -29,6 +29,8 @@ LABELS = [
     # 所以必须先在本清单登记 —— 「表里有 = 词典里有」是生成出来的。
     ('FORUM_TOPICS', 'A11yForumTopics', 'Topics', '话题'),
     ('FORUM_SEARCH', 'A11yForumSearch', 'Search topics', '搜索话题'),
+    # FORUM-104：创建话题弹窗的图标色块（纯色圆点，图标-only 可点击控件）。
+    ('TOPIC_ICON_COLOR', 'A11yTopicIconColor', 'Topic icon color', '话题图标颜色'),
 
     ('ATTACH', 'A11yAttach', 'Attach', '附件'),
     ('EMOJI', 'A11yEmoji', 'Emoji', '表情'),
@@ -71,7 +73,7 @@ LABELS = [
 
 GROUPS = [
     ('导航与头部', ['BACK', 'CLOSE', 'MORE', 'SEARCH', 'CALL', 'MENU', 'SETTINGS', 'SWITCH_ACCOUNT', 'OPEN_PROFILE',
-               'NEW_CHAT', 'FORUM_TOPICS', 'FORUM_SEARCH']),
+               'NEW_CHAT', 'FORUM_TOPICS', 'FORUM_SEARCH', 'TOPIC_ICON_COLOR']),
     ('输入栏与登录', ['ATTACH', 'EMOJI', 'KEYBOARD', 'SEND', 'RECORD_VOICE', 'CANCEL_RECORDING',
                  'SEND_RECORDING', 'DELETE_CHAR', 'SHOW_PASSWORD', 'HIDE_PASSWORD']),
     ('消息与媒体', ['FORWARD', 'PLAY', 'PAUSE', 'DOWNLOAD', 'CANCEL_DOWNLOAD', 'CANCEL_UPLOAD',

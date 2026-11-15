@@ -239,6 +239,59 @@ export function patchForumTopic(
 }
 
 /**
+ * FORUM-104：构造一份改了关闭态的话题副本。
+ *
+ * 为什么不用对象展开（`{ ...item, isClosed }`）：ArkTS 对 interface 的
+ * 展开字面量支持不完整（10605038 一族），逐字段构造是最稳的写法；
+ * ForumTopicItem 字段是快照值（渲染层每帧重读），浅拷贝足够。
+ */
+export function withTopicClosed(item: ForumTopicItem, isClosed: boolean): ForumTopicItem {
+  const patched: ForumTopicItem = {
+    topicId: item.topicId,
+    name: item.name,
+    iconEmojiId: item.iconEmojiId,
+    iconColor: item.iconColor,
+    unreadCount: item.unreadCount,
+    unreadMentionCount: item.unreadMentionCount,
+    isPinned: item.isPinned,
+    isClosed: isClosed,
+    isGeneral: item.isGeneral,
+    preview: item.preview,
+    lastMessageDate: item.lastMessageDate
+  };
+  return patched;
+}
+
+/** FORUM-104：构造一份改了标题的话题副本（编辑话题成功后的本地补丁）。 */
+export function withTopicName(item: ForumTopicItem, name: string): ForumTopicItem {
+  const patched: ForumTopicItem = {
+    topicId: item.topicId,
+    name: name,
+    iconEmojiId: item.iconEmojiId,
+    iconColor: item.iconColor,
+    unreadCount: item.unreadCount,
+    unreadMentionCount: item.unreadMentionCount,
+    isPinned: item.isPinned,
+    isClosed: item.isClosed,
+    isGeneral: item.isGeneral,
+    preview: item.preview,
+    lastMessageDate: item.lastMessageDate
+  };
+  return patched;
+}
+
+/** FORUM-104：从列表移除一个话题（删除成功后的本地补丁；找不到原样返回）。 */
+export function removeTopic(items: ForumTopicItem[], topicId: number): ForumTopicItem[] {
+  const out: ForumTopicItem[] = [];
+  for (let i = 0; i < items.length; i++) {
+    if (items[i].topicId !== topicId) {
+      out.push(items[i]);
+    }
+  }
+  return out;
+}
+
+/**
  * 排序键：置顶优先，其次未读优先，再按最后消息时间倒序。
  *
  * 这条规则只用于**本地即时反馈**（例如刚把某话题标为已读），
@@ -254,4 +307,104 @@ export function forumTopicSortWeight(item: ForumTopicItem): number {
     w += 100000;
   }
   return w + item.lastMessageDate;
+}
+
+/**
+ * FORUM-104：创建话题可用的图标色板。
+ *
+ * 这是 TDLib `createForumTopic` 文档里写死的六个 RGB 值
+ * （「Icon color must be one of 0x6FB9F0, 0xFFD67E, 0xCB86DB, 0x8EEE98,
+ * 0xFF93B2, or 0xFB6F5F」），不是设计 token —— 服务端只认这六个，
+ * 传别的色值会被 400 拒掉。emoji 图标选择（getForumTopicDefaultIcons）
+ * 是遗留项，v1 只出纯色圆点。
+ */
+export const TOPIC_ICON_COLORS: readonly number[] = [
+  0x6FB9F0,
+  0xFFD67E,
+  0xCB86DB,
+  0x8EEE98,
+  0xFF93B2,
+  0xFB6F5F
+];
+
+/**
+ * `TopicManageState.copyWith` 的可选项（ArkTS 不认匿名对象类型标注，
+ * 与 `ForumTopicsStateOptions` 同一写法）。
+ */
+export interface TopicManageStateOptions {
+  readonly mode?: 'create' | 'edit';
+  readonly editingTopicId?: number;
+  readonly dialogOpen?: boolean;
+  readonly title?: string;
+  readonly iconColor?: number;
+  readonly isSubmitting?: boolean;
+  readonly errorMessage?: string;
+  readonly menuTopicId?: number;
+  readonly confirmDeleteTopicId?: number;
+}
+
+/**
+ * 话题管理弹层的三合一状态（FORUM-104）。
+ *
+ * 为什么挂在 ChatUiState 而不是 ForumTopicsOverlay 的本地 @State：
+ * 物理返回键收口链（`chatOverlayCloseIntent`）只看 ChatUiState ——
+ * 弹层开着按返回键应该先关弹层而不是把整个话题列表连弹层一起端掉，
+ * 与 stickerSetPreview 落在状态里的理由相同。
+ *
+ * 三个弹层的视觉层叠（后渲染在上）：创建/编辑弹窗 → 长按菜单 → 删除确认，
+ * 收口链也按这个顺序（确认 > 菜单 > 弹窗 > 关列表 > 关话题）。
+ */
+export class TopicManageState {
+  /** 'create' 新建；'edit' 改标题（编辑图标 emoji 是遗留项，v1 只有标题）。 */
+  readonly mode: 'create' | 'edit';
+  /** edit 模式的目标话题 id；create 模式恒为 0。 */
+  readonly editingTopicId: number;
+  /** 创建/编辑弹窗是否打开（mode 与 editingTopicId 只在它为真时有意义）。 */
+  readonly dialogOpen: boolean;
+  readonly title: string;
+  /** create 模式的图标色（TOPIC_ICON_COLORS 之一）；edit 模式不可改色（TDLib 不支持）。 */
+  readonly iconColor: number;
+  readonly isSubmitting: boolean;
+  /** 弹窗内联错误（创建/编辑失败时显示在弹窗里，不清空已输入内容）。 */
+  readonly errorMessage: string;
+  /** 长按菜单指向的话题行（0 = 菜单关闭）。General 话题不出菜单。 */
+  readonly menuTopicId: number;
+  /** 删除确认弹窗指向的话题 id（0 = 确认弹窗关闭）。 */
+  readonly confirmDeleteTopicId: number;
+
+  constructor(
+    mode: 'create' | 'edit' = 'create',
+    editingTopicId: number = 0,
+    dialogOpen: boolean = false,
+    title: string = '',
+    iconColor: number = TOPIC_ICON_COLORS[0],
+    isSubmitting: boolean = false,
+    errorMessage: string = '',
+    menuTopicId: number = 0,
+    confirmDeleteTopicId: number = 0
+  ) {
+    this.mode = mode;
+    this.editingTopicId = editingTopicId;
+    this.dialogOpen = dialogOpen;
+    this.title = title;
+    this.iconColor = iconColor;
+    this.isSubmitting = isSubmitting;
+    this.errorMessage = errorMessage;
+    this.menuTopicId = menuTopicId;
+    this.confirmDeleteTopicId = confirmDeleteTopicId;
+  }
+
+  copyWith(options: TopicManageStateOptions): TopicManageState {
+    return new TopicManageState(
+      options.mode !== undefined ? options.mode : this.mode,
+      options.editingTopicId !== undefined ? options.editingTopicId : this.editingTopicId,
+      options.dialogOpen !== undefined ? options.dialogOpen : this.dialogOpen,
+      options.title !== undefined ? options.title : this.title,
+      options.iconColor !== undefined ? options.iconColor : this.iconColor,
+      options.isSubmitting !== undefined ? options.isSubmitting : this.isSubmitting,
+      options.errorMessage !== undefined ? options.errorMessage : this.errorMessage,
+      options.menuTopicId !== undefined ? options.menuTopicId : this.menuTopicId,
+      options.confirmDeleteTopicId !== undefined ? options.confirmDeleteTopicId : this.confirmDeleteTopicId
+    );
+  }
 }

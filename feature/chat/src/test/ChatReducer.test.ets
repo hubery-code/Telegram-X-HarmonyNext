@@ -129,8 +129,24 @@ import {
   TogglePollComposerMultiple,
   SubmitPollComposer,
   VotePollOption,
-  RetractPollVote
+  RetractPollVote,
+  OpenTopicCreateDialog,
+  TopicManageTitleChanged,
+  TopicManageIconSelected,
+  SubmitTopicManage,
+  CloseTopicManageDialog,
+  OpenTopicMenu,
+  ToggleTopicClosedRequested,
+  RequestDeleteTopic,
+  ConfirmDeleteTopic,
+  DismissDeleteTopic,
+  OnTopicManageFailed,
+  OnForumTopicCreated,
+  OnForumTopicClosedToggled,
+  OnForumTopicEdited,
+  OnForumTopicDeleted
 } from '../main/ets/contract/ChatIntent';
+import { ForumTopicsState, ForumTopicItem, TopicManageState } from '../main/ets/model/ForumTopic';
 import { PinnedMessageInfo } from '../main/ets/model/PinnedMessageInfo';
 import { PollComposerState, PollOptionView, PollView, pollViewOf } from '../main/ets/model/PollView';
 import { Poll, PollOption, FormattedText } from '@tgx/core-td-api-generated';
@@ -141,6 +157,9 @@ import { GifItem } from '../main/ets/model/GifItem';
 import { MediaAttachment } from '../main/ets/model/MediaAttachment';
 import {
   ChatEffect,
+  SubmitTopicManageEffect,
+  ToggleTopicClosedEffect,
+  DeleteTopicEffect,
   SendTextMessage,
   FetchMessagePermissions,
   EditMessageText,
@@ -199,6 +218,34 @@ function makeEnv(nowMillis: number = 1000, monotonicMillis: number = 500): Reduc
 
 function makeState(composerText: string = '', errorMessage: string | null = null): ChatUiState {
   return new ChatUiState(42, 'chat', [], false, true, errorMessage, composerText, null, null);
+}
+
+// ---- FORUM-104 话题管理（顶层辅助：ArkTS 不允许嵌套函数声明） ----
+
+/** 与 ForumTopic.test.ets 的 makeTopic 同形（列表操作用例共用形状）。 */
+function makeReducerTopic(id: number, isClosed: boolean = false): ForumTopicItem {
+  const item: ForumTopicItem = {
+    topicId: id,
+    name: `Topic ${id}`,
+    iconEmojiId: '',
+    iconColor: 0,
+    unreadCount: 0,
+    unreadMentionCount: 0,
+    isPinned: false,
+    isClosed: isClosed,
+    isGeneral: false,
+    preview: '',
+    lastMessageDate: id
+  };
+  return item;
+}
+
+/** 列表已就绪、弹层全关的基态。 */
+function makeForumListState(items: ForumTopicItem[]): ChatUiState {
+  return makeState().copyWith({
+    showForumTopics: true,
+    forumTopics: ForumTopicsState.initial().copyWith({ items: items })
+  });
 }
 
 /** 板卡上的一包：reducer 只看数组与标志位，格子内容无所谓。 */
@@ -3684,6 +3731,209 @@ export default function chatReducerTest() {
         makeEnv()
       );
       expect(result.state === state).assertTrue();
+    });
+
+    // ---- FORUM-104 话题管理 ----
+    // （makeReducerTopic / makeForumListState 在文件顶层：ArkTS 不允许嵌套函数声明。）
+
+    it('openTopicCreateDialog_opensDialogInCreateMode', 0, () => {
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        makeForumListState([]),
+        new OpenTopicCreateDialog(),
+        makeEnv()
+      );
+      const tm: TopicManageState | null = result.state.topicManage;
+      expect(tm !== null).assertTrue();
+      if (tm !== null) {
+        expect(tm.mode).assertEqual('create');
+        expect(tm.dialogOpen).assertTrue();
+        expect(tm.title).assertEqual('');
+      }
+    });
+
+    it('submitTopicManage_emptyTitle_inlineErrorAndNoEffect', 0, () => {
+      const state: ChatUiState = makeForumListState([])
+        .copyWith({ topicManage: new TopicManageState('create', 0, true, '   ') });
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        state,
+        new SubmitTopicManage(),
+        makeEnv()
+      );
+      const tm: TopicManageState | null = result.state.topicManage;
+      expect(tm !== null).assertTrue();
+      if (tm !== null) {
+        // 空标题就地拦：TDLib 的 400 来得晚，内联错误不清空已输入内容
+        expect(tm.errorMessage).assertEqual('Topic title is required');
+        expect(tm.isSubmitting).assertFalse();
+      }
+      expect(result.effects.length).assertEqual(0);
+    });
+
+    it('submitTopicManage_createMode_setsSubmittingAndEmitsEffect', 0, () => {
+      const state: ChatUiState = makeForumListState([])
+        .copyWith({ topicManage: new TopicManageState('create', 0, true, '  Release  ', 0xCB86DB) });
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        state,
+        new SubmitTopicManage(),
+        makeEnv()
+      );
+      const tm: TopicManageState | null = result.state.topicManage;
+      expect(tm !== null).assertTrue();
+      if (tm !== null) {
+        expect(tm.isSubmitting).assertTrue();
+      }
+      expect(result.effects.length).assertEqual(1);
+      const effect: ChatEffect = result.effects[0];
+      expect(effect.kind).assertEqual('submitTopicManage');
+      const submit: SubmitTopicManageEffect = effect as SubmitTopicManageEffect;
+      expect(submit.mode).assertEqual('create');
+      // trim 后进效果（与投影侧的 trim 双保险，但这里就地把空格洗掉）
+      expect(submit.name).assertEqual('Release');
+      expect(submit.iconColor).assertEqual(0xCB86DB);
+    });
+
+    it('onForumTopicCreated_mergesIntoListAndClosesDialog', 0, () => {
+      const state: ChatUiState = makeForumListState([makeReducerTopic(1)])
+        .copyWith({ topicManage: new TopicManageState('create', 0, true, 'New Topic') });
+      const created: ForumTopicItem = makeReducerTopic(2);
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        state,
+        new OnForumTopicCreated(created),
+        makeEnv()
+      );
+      // 合并后两条都在；弹窗全关（没有菜单/确认可留）
+      expect(result.state.forumTopics.items.length).assertEqual(2);
+      expect(result.state.topicManage).assertNull();
+    });
+
+    it('topicManageTitleChanged_updatesTitleAndClearsInlineError', 0, () => {
+      const state: ChatUiState = makeForumListState([])
+        .copyWith({ topicManage: new TopicManageState('create', 0, true, '', 0x6FB9F0, false, 'Topic action failed') });
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        state,
+        new TopicManageTitleChanged('hello'),
+        makeEnv()
+      );
+      const tm: TopicManageState | null = result.state.topicManage;
+      expect(tm !== null).assertTrue();
+      if (tm !== null) {
+        expect(tm.title).assertEqual('hello');
+        // 输入即清错：上一轮的失败提示不该钉在弹窗里
+        expect(tm.errorMessage).assertEqual('');
+      }
+    });
+
+    it('toggleTopicClosedRequested_closesMenuAndEmitsEffect_patchUpdatesRow', 0, () => {
+      const state: ChatUiState = makeForumListState([makeReducerTopic(7)])
+        .copyWith({ topicManage: new TopicManageState('create', 0, false, '', 0x6FB9F0, false, '', 7, 0) });
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        state,
+        new ToggleTopicClosedRequested(7, true),
+        makeEnv()
+      );
+      // 菜单收掉且弹层全空 → 状态置 null
+      expect(result.state.topicManage).assertNull();
+      expect(result.effects.length).assertEqual(1);
+      expect(result.effects[0].kind).assertEqual('toggleTopicClosed');
+
+      const patched: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        result.state,
+        new OnForumTopicClosedToggled(7, true),
+        makeEnv()
+      );
+      expect(patched.state.forumTopics.items[0].isClosed).assertTrue();
+    });
+
+    it('deleteFlow_requestConfirm_emitsEffect_thenRemovesRow', 0, () => {
+      const state: ChatUiState = makeForumListState([makeReducerTopic(1), makeReducerTopic(2)])
+        .copyWith({ topicManage: new TopicManageState('create', 0, false, '', 0x6FB9F0, false, '', 2, 0) });
+
+      // 菜单点删除 → 出确认弹窗（不直接执行）
+      const requested: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        state,
+        new RequestDeleteTopic(2),
+        makeEnv()
+      );
+      const tm: TopicManageState | null = requested.state.topicManage;
+      expect(tm !== null).assertTrue();
+      if (tm !== null) {
+        expect(tm.confirmDeleteTopicId).assertEqual(2);
+        expect(tm.menuTopicId).assertEqual(0);
+      }
+      expect(requested.effects.length).assertEqual(0);
+
+      // 确认 → 发效果
+      const confirmed: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        requested.state,
+        new ConfirmDeleteTopic(),
+        makeEnv()
+      );
+      expect(confirmed.effects.length).assertEqual(1);
+      expect(confirmed.effects[0].kind).assertEqual('deleteTopic');
+      const del: DeleteTopicEffect = confirmed.effects[0] as DeleteTopicEffect;
+      expect(del.topicId).assertEqual(2);
+
+      // 成功回灌 → 行移除、弹层全清
+      const done: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        confirmed.state,
+        new OnForumTopicDeleted(2),
+        makeEnv()
+      );
+      expect(done.state.forumTopics.items.length).assertEqual(1);
+      expect(done.state.forumTopics.items[0].topicId).assertEqual(1);
+      expect(done.state.topicManage).assertNull();
+    });
+
+    it('onForumTopicEdited_patchesNameAndClosesDialog', 0, () => {
+      const state: ChatUiState = makeForumListState([makeReducerTopic(7)])
+        .copyWith({ topicManage: new TopicManageState('edit', 7, true, 'Renamed') });
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        state,
+        new OnForumTopicEdited(7, 'Renamed'),
+        makeEnv()
+      );
+      expect(result.state.forumTopics.items[0].name).assertEqual('Renamed');
+      expect(result.state.topicManage).assertNull();
+    });
+
+    it('onTopicManageFailed_dialogOpen_showsInlineErrorKeepsInput', 0, () => {
+      const state: ChatUiState = makeForumListState([])
+        .copyWith({ topicManage: new TopicManageState('create', 0, true, 'Release', 0x6FB9F0, true) });
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        state,
+        new OnTopicManageFailed('No permission to manage topics here'),
+        makeEnv()
+      );
+      const tm: TopicManageState | null = result.state.topicManage;
+      expect(tm !== null).assertTrue();
+      if (tm !== null) {
+        expect(tm.isSubmitting).assertFalse();
+        expect(tm.errorMessage).assertEqual('No permission to manage topics here');
+        // 输入保留：失败不清空用户已输入的内容
+        expect(tm.title).assertEqual('Release');
+      }
+    });
+
+    it('closeTopicManageDialog_withNothingElseOpen_clearsToNull', 0, () => {
+      const state: ChatUiState = makeForumListState([])
+        .copyWith({ topicManage: new TopicManageState('create', 0, true, 'x') });
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        state,
+        new CloseTopicManageDialog(),
+        makeEnv()
+      );
+      expect(result.state.topicManage).assertNull();
+    });
+
+    it('dismissDeleteTopic_withNothingElseOpen_clearsToNull', 0, () => {
+      const state: ChatUiState = makeForumListState([makeReducerTopic(1)])
+        .copyWith({ topicManage: new TopicManageState('create', 0, false, '', 0x6FB9F0, false, '', 0, 1) });
+      const result: ReducerResult<ChatUiState, ChatEffect> = chatReducer(
+        state,
+        new DismissDeleteTopic(),
+        makeEnv()
+      );
+      expect(result.state.topicManage).assertNull();
     });
   });
 }

@@ -45,6 +45,15 @@
 import {
   GetForumTopics,
   encodeGetForumTopics,
+  CreateForumTopic,
+  encodeCreateForumTopic,
+  EditForumTopic,
+  encodeEditForumTopic,
+  ToggleForumTopicIsClosed,
+  encodeToggleForumTopicIsClosed,
+  DeleteForumTopic,
+  encodeDeleteForumTopic,
+  ForumTopicIcon,
   decodeTdUpdate,
   decodeMessage,
   decodeChat,
@@ -547,6 +556,65 @@ export class MessageProjection {
     req.offset_forum_topic_id = offsetForumTopicId;
     req.limit = limit;
     return this.scope.request('getForumTopics', encodeGetForumTopics(req) as TdWireObject);
+  }
+
+  /**
+   * FORUM-104：创建话题（createForumTopic = ForumTopicInfo）。
+   * 权限在服务端（can_manage_topics 管理员位或 can_create_topics 成员位），
+   * 本端不预判，失败经 promise 透传给调用方出提示。v1 只发颜色、不带
+   * 自定义 emoji（custom_emoji_id 传空串；emoji 选择见遗留项）。
+   * iconColor 必须是 TDLib 文档的六个色值之一，调用方（弹窗色板）保证。
+   */
+  createForumTopic(name: string, iconColor: number): Result<TdPendingRequest, AppError> {
+    const trimmed: string = name.trim();
+    if (trimmed.length === 0) {
+      return err(AppErrors.parameter('missing', 'name', 'topic name is empty'));
+    }
+    const req: CreateForumTopic = new CreateForumTopic();
+    req.chat_id = this.chatId;
+    req.name = trimmed;
+    req.is_name_implicit = false;
+    const icon: ForumTopicIcon = new ForumTopicIcon();
+    icon.color = iconColor;
+    icon.custom_emoji_id = '';
+    req.icon = icon;
+    return this.scope.request('createForumTopic', encodeCreateForumTopic(req) as TdWireObject);
+  }
+
+  /**
+   * FORUM-104：编辑话题标题（editForumTopic）。v1 只改标题
+   * （edit_icon_custom_emoji=false）；General 话题不可编辑，
+   * 由 UI 侧不给菜单入口来保证，这里不做特判。
+   */
+  editForumTopic(topicId: number, name: string): Result<TdPendingRequest, AppError> {
+    const trimmed: string = name.trim();
+    if (trimmed.length === 0) {
+      return err(AppErrors.parameter('missing', 'name', 'topic name is empty'));
+    }
+    const req: EditForumTopic = new EditForumTopic();
+    req.chat_id = this.chatId;
+    req.forum_topic_id = topicId;
+    req.name = trimmed;
+    req.edit_icon_custom_emoji = false;
+    req.icon_custom_emoji_id = '';
+    return this.scope.request('editForumTopic', encodeEditForumTopic(req) as TdWireObject);
+  }
+
+  /** FORUM-104：关闭/重开话题（toggleForumTopicIsClosed）。 */
+  toggleForumTopicIsClosed(topicId: number, isClosed: boolean): Result<TdPendingRequest, AppError> {
+    const req: ToggleForumTopicIsClosed = new ToggleForumTopicIsClosed();
+    req.chat_id = this.chatId;
+    req.forum_topic_id = topicId;
+    req.is_closed = isClosed;
+    return this.scope.request('toggleForumTopicIsClosed', encodeToggleForumTopicIsClosed(req) as TdWireObject);
+  }
+
+  /** FORUM-104：删除话题及其全部消息（deleteForumTopic）——破坏性动作，确认弹窗由 UI 侧把关。 */
+  deleteForumTopic(topicId: number): Result<TdPendingRequest, AppError> {
+    const req: DeleteForumTopic = new DeleteForumTopic();
+    req.chat_id = this.chatId;
+    req.forum_topic_id = topicId;
+    return this.scope.request('deleteForumTopic', encodeDeleteForumTopic(req) as TdWireObject);
   }
 
   /**

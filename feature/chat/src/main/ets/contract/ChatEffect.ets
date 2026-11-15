@@ -573,7 +573,10 @@ export type ChatEffect =
   | PauseVoiceNoteEffect
   | SendPollEffect
   | SetPollAnswerEffect
-  | FetchForumTopicsEffect;
+  | FetchForumTopicsEffect
+  | SubmitTopicManageEffect
+  | ToggleTopicClosedEffect
+  | DeleteTopicEffect;
 
 
 /** POLL-101：发送投票消息（messagePoll）。 */
@@ -635,5 +638,48 @@ export class FetchForumTopicsEffect implements Effect {
     this.offsetForumTopicId = offsetForumTopicId;
     this.query = query;
     this.limit = limit;
+  }
+}
+
+/**
+ * FORUM-104：提交创建/编辑话题（弹窗确认键）。
+ *
+ * mode 说的是弹窗当时的状态：create → createForumTopic（带图标色），
+ * edit → editForumTopic（只改标题，TDLib 不支持改已有话题的色值）。
+ */
+export class SubmitTopicManageEffect implements Effect {
+  readonly kind: 'submitTopicManage' = 'submitTopicManage';
+  readonly mode: 'create' | 'edit';
+  readonly topicId: number;
+  readonly name: string;
+  readonly iconColor: number;
+
+  constructor(mode: 'create' | 'edit', topicId: number, name: string, iconColor: number) {
+    this.mode = mode;
+    this.topicId = topicId;
+    this.name = name;
+    this.iconColor = iconColor;
+  }
+}
+
+/** FORUM-104：关闭/重开话题（长按菜单项；要求 can_manage_topics 管理员位，TDLib 兜底）。 */
+export class ToggleTopicClosedEffect implements Effect {
+  readonly kind: 'toggleTopicClosed' = 'toggleTopicClosed';
+  readonly topicId: number;
+  readonly isClosed: boolean;
+
+  constructor(topicId: number, isClosed: boolean) {
+    this.topicId = topicId;
+    this.isClosed = isClosed;
+  }
+}
+
+/** FORUM-104：删除话题及其全部消息（破坏性；确认弹窗已在 reducer 侧把关）。 */
+export class DeleteTopicEffect implements Effect {
+  readonly kind: 'deleteTopic' = 'deleteTopic';
+  readonly topicId: number;
+
+  constructor(topicId: number) {
+    this.topicId = topicId;
   }
 }

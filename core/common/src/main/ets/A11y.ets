@@ -41,6 +41,7 @@ export class A11y {
   static readonly NEW_CHAT: string = 'A11yNewChat';
   static readonly FORUM_TOPICS: string = 'A11yForumTopics';
   static readonly FORUM_SEARCH: string = 'A11yForumSearch';
+  static readonly TOPIC_ICON_COLOR: string = 'A11yTopicIconColor';
 
   // 输入栏与登录
   static readonly ATTACH: string = 'A11yAttach';
@@ -103,6 +104,7 @@ export const A11Y_SLOTS: string[] = [
   A11y.NEW_CHAT,
   A11y.FORUM_TOPICS,
   A11y.FORUM_SEARCH,
+  A11y.TOPIC_ICON_COLOR,
   A11y.ATTACH,
   A11y.EMOJI,
   A11y.KEYBOARD,

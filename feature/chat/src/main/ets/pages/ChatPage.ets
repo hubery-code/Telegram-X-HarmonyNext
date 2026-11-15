@@ -124,6 +124,18 @@ import {
   LoadOlderMessages,
   BackToChatList,
   CloseActiveTopic,
+  OpenTopicCreateDialog,
+  CloseTopicMenu,
+  OpenTopicEditDialog,
+  TopicManageTitleChanged,
+  TopicManageIconSelected,
+  SubmitTopicManage,
+  CloseTopicManageDialog,
+  OpenTopicMenu,
+  ToggleTopicClosedRequested,
+  RequestDeleteTopic,
+  ConfirmDeleteTopic,
+  DismissDeleteTopic,
   ComposerTextChanged,
   SendCurrentMessage,
   MessageActionRequested,
@@ -1143,10 +1155,12 @@ export struct ChatPage {
       }
 
       // FORUM-101：论坛话题列表覆盖层（整页覆盖，带自己的顶栏与搜索）。
+      // FORUM-104：话题管理三弹层状态与回调一并接入（创建/编辑弹窗、长按菜单、删除确认）。
       if (this.uiState.showForumTopics) {
         ForumTopicsOverlay({
           forumTopics: this.uiState.forumTopics,
           query: this.uiState.forumTopics.query,
+          topicManage: this.uiState.topicManage,
           onClose: () => {
             this.onDispatch(new CloseForumTopics());
           },
@@ -1161,6 +1175,42 @@ export struct ChatPage {
           },
           onOpenTopic: (item: ForumTopicItem) => {
             this.onDispatch(new OpenForumTopic(item.topicId, item.name));
+          },
+          onCreateTap: () => {
+            this.onDispatch(new OpenTopicCreateDialog());
+          },
+          onTopicManageTitleChanged: (title: string) => {
+            this.onDispatch(new TopicManageTitleChanged(title));
+          },
+          onTopicManageIconSelected: (color: number) => {
+            this.onDispatch(new TopicManageIconSelected(color));
+          },
+          onSubmitTopicManage: () => {
+            this.onDispatch(new SubmitTopicManage());
+          },
+          onCloseTopicManageDialog: () => {
+            this.onDispatch(new CloseTopicManageDialog());
+          },
+          onOpenTopicMenu: (topicId: number) => {
+            this.onDispatch(new OpenTopicMenu(topicId));
+          },
+          onCloseTopicMenu: () => {
+            this.onDispatch(new CloseTopicMenu());
+          },
+          onMenuEdit: (topicId: number, name: string) => {
+            this.onDispatch(new OpenTopicEditDialog(topicId, name));
+          },
+          onMenuToggleClosed: (topicId: number, isClosed: boolean) => {
+            this.onDispatch(new ToggleTopicClosedRequested(topicId, isClosed));
+          },
+          onMenuDelete: (topicId: number) => {
+            this.onDispatch(new RequestDeleteTopic(topicId));
+          },
+          onConfirmDelete: () => {
+            this.onDispatch(new ConfirmDeleteTopic());
+          },
+          onDismissDelete: () => {
+            this.onDispatch(new DismissDeleteTopic());
           }
         })
       }

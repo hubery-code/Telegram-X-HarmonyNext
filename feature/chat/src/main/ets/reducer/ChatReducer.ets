@@ -162,7 +162,24 @@ import {
   OnForumTopicsFailed,
   OnForumModeChanged,
   OnTopicOpened,
-  CloseActiveTopic
+  CloseActiveTopic,
+  OpenTopicCreateDialog,
+  OpenTopicEditDialog,
+  TopicManageTitleChanged,
+  TopicManageIconSelected,
+  SubmitTopicManage,
+  CloseTopicManageDialog,
+  OpenTopicMenu,
+  CloseTopicMenu,
+  ToggleTopicClosedRequested,
+  RequestDeleteTopic,
+  ConfirmDeleteTopic,
+  DismissDeleteTopic,
+  OnTopicManageFailed,
+  OnForumTopicCreated,
+  OnForumTopicClosedToggled,
+  OnForumTopicEdited,
+  OnForumTopicDeleted
 } from '../contract/ChatIntent';
 import {
   ChatEffect,
@@ -212,7 +229,10 @@ import {
   PauseVoiceNoteEffect,
   SendPollEffect,
   SetPollAnswerEffect,
-  FetchForumTopicsEffect
+  FetchForumTopicsEffect,
+  SubmitTopicManageEffect,
+  ToggleTopicClosedEffect,
+  DeleteTopicEffect
 } from '../contract/ChatEffect';
 import { StickerSetPreviewState, StickerSetItem } from '../model/StickerSetPreviewState';
 import { StickerBoardState, stickerSetInstalledLocally, stickerTrendingWithInstalled } from '../model/StickerBoard';
@@ -224,8 +244,15 @@ import {
   EMPTY_FORUM_CURSOR,
   nextForumCursor,
   mergeForumTopics,
-  ForumCursorStep
-} from '../model/ForumTopic';import {
+  ForumCursorStep,
+  TopicManageState,
+  patchForumTopic,
+  withTopicClosed,
+  withTopicName,
+  removeTopic,
+  TOPIC_ICON_COLORS
+} from '../model/ForumTopic';
+import {
   PollComposerState,
   PollOptionView,
   PollView,
@@ -2411,6 +2438,210 @@ export const chatReducer: Reducer<ChatUiState, ChatIntent, ChatEffect> = (
         return reduced(state);
       }
       return reduced(state.copyWith({ activeTopicId: 0, activeTopicName: '', showForumTopics: true }));
+    }
+
+    // ---- FORUM-104：话题管理 ----
+    //
+    // TopicManageState 的三个弹层（创建/编辑弹窗、长按菜单、删除确认）共用一个
+    // 可空子状态；每层关闭时若其余层也全空，就置回 null（chatOverlayCloseIntent
+    // 以「非 null」为「有弹层开着」的判据，残留全空对象会让返回键空转一次）。
+
+    case 'openTopicCreateDialog': {
+      return reduced(state.copyWith({ topicManage: new TopicManageState('create', 0, true) }));
+    }
+
+    case 'openTopicEditDialog': {
+      const editOpen: OpenTopicEditDialog = intent as OpenTopicEditDialog;
+      const base: TopicManageState | null = state.topicManage;
+      if (base === null) {
+        return reduced(state);
+      }
+      // 图标色不可编辑（TDLib editForumTopic 不支持改色），沿用该行现有色。
+      const editing: TopicManageState = base.copyWith({
+        mode: 'edit',
+        editingTopicId: editOpen.topicId,
+        dialogOpen: true,
+        title: editOpen.name,
+        menuTopicId: 0,
+        errorMessage: ''
+      });
+      return reduced(state.copyWith({ topicManage: editing }));
+    }
+
+    case 'topicManageTitleChanged': {
+      const titleChanged: TopicManageTitleChanged = intent as TopicManageTitleChanged;
+      if (state.topicManage === null) {
+        return reduced(state);
+      }
+      return reduced(state.copyWith({
+        topicManage: state.topicManage.copyWith({ title: titleChanged.title, errorMessage: '' })
+      }));
+    }
+
+    case 'topicManageIconSelected': {
+      const iconSel: TopicManageIconSelected = intent as TopicManageIconSelected;
+      if (state.topicManage === null) {
+        return reduced(state);
+      }
+      // 编辑模式改色无效：TDLib 不支持改已有话题的色值，UI 色板在编辑态不渲染。
+      if (state.topicManage.mode !== 'create') {
+        return reduced(state);
+      }
+      return reduced(state.copyWith({
+        topicManage: state.topicManage.copyWith({ iconColor: iconSel.color })
+      }));
+    }
+
+    case 'submitTopicManage': {
+      const tm: TopicManageState | null = state.topicManage;
+      if (tm === null || !tm.dialogOpen || tm.isSubmitting) {
+        return reduced(state);
+      }
+      const trimmed: string = tm.title.trim();
+      if (trimmed.length === 0) {
+        // 空标题就地报错：TDLib 的 400 「name must be non-empty」来得晚，这一步就地拦。
+        return reduced(state.copyWith({
+          topicManage: tm.copyWith({ errorMessage: 'Topic title is required' })
+        }));
+      }
+      const submitting: TopicManageState = tm.copyWith({ isSubmitting: true, errorMessage: '' });
+      const effects: ChatEffect[] = [new SubmitTopicManageEffect(tm.mode, tm.editingTopicId, trimmed, tm.iconColor)];
+      return reduced(state.copyWith({ topicManage: submitting }), effects);
+    }
+
+    case 'closeTopicManageDialog': {
+      const tm: TopicManageState | null = state.topicManage;
+      if (tm === null || !tm.dialogOpen) {
+        return reduced(state);
+      }
+      const closed: TopicManageState = tm.copyWith({ dialogOpen: false, isSubmitting: false, errorMessage: '' });
+      const isEmpty: boolean = closed.menuTopicId === 0 && closed.confirmDeleteTopicId === 0;
+      return reduced(state.copyWith({ topicManage: isEmpty ? null : closed }));
+    }
+
+    case 'openTopicMenu': {
+      const menuOpen: OpenTopicMenu = intent as OpenTopicMenu;
+      const base: TopicManageState | null = state.topicManage;
+      const next: TopicManageState = base !== null
+        ? base.copyWith({ menuTopicId: menuOpen.topicId })
+        : new TopicManageState('create', 0, false, '', TOPIC_ICON_COLORS[0], false, '', menuOpen.topicId, 0);
+      return reduced(state.copyWith({ topicManage: next }));
+    }
+
+    case 'closeTopicMenu': {
+      const tm: TopicManageState | null = state.topicManage;
+      if (tm === null || tm.menuTopicId === 0) {
+        return reduced(state);
+      }
+      const closed: TopicManageState = tm.copyWith({ menuTopicId: 0 });
+      const isEmpty: boolean = !closed.dialogOpen && closed.confirmDeleteTopicId === 0;
+      return reduced(state.copyWith({ topicManage: isEmpty ? null : closed }));
+    }
+
+    case 'toggleTopicClosedRequested': {
+      // 菜单点「关闭/重开」：先收菜单，效果由协调器执行（失败 toast）。
+      const toggleReq: ToggleTopicClosedRequested = intent as ToggleTopicClosedRequested;
+      const tm: TopicManageState | null = state.topicManage;
+      let cleared: TopicManageState | null = null;
+      if (tm !== null) {
+        const c: TopicManageState = tm.copyWith({ menuTopicId: 0 });
+        cleared = (!c.dialogOpen && c.confirmDeleteTopicId === 0) ? null : c;
+      }
+      const effects: ChatEffect[] = [new ToggleTopicClosedEffect(toggleReq.topicId, toggleReq.isClosed)];
+      return reduced(state.copyWith({ topicManage: cleared }), effects);
+    }
+
+    case 'requestDeleteTopic': {
+      const reqDel: RequestDeleteTopic = intent as RequestDeleteTopic;
+      const tm: TopicManageState | null = state.topicManage;
+      if (tm === null) {
+        return reduced(state);
+      }
+      return reduced(state.copyWith({
+        topicManage: tm.copyWith({ confirmDeleteTopicId: reqDel.topicId, menuTopicId: 0 })
+      }));
+    }
+
+    case 'dismissDeleteTopic': {
+      const tm: TopicManageState | null = state.topicManage;
+      if (tm === null || tm.confirmDeleteTopicId === 0) {
+        return reduced(state);
+      }
+      const dismissed: TopicManageState = tm.copyWith({ confirmDeleteTopicId: 0 });
+      const isEmpty: boolean = !dismissed.dialogOpen && dismissed.menuTopicId === 0;
+      return reduced(state.copyWith({ topicManage: isEmpty ? null : dismissed }));
+    }
+
+    case 'confirmDeleteTopic': {
+      const tm: TopicManageState | null = state.topicManage;
+      if (tm === null || tm.confirmDeleteTopicId === 0) {
+        return reduced(state);
+      }
+      const effects: ChatEffect[] = [new DeleteTopicEffect(tm.confirmDeleteTopicId)];
+      return reduced(state, effects);
+    }
+
+    case 'onTopicManageFailed': {
+      // 创建/编辑失败：弹窗内联显示（不清空输入）；菜单动作的失败走 toast，
+      // 不进这个意图 —— 弹窗没开时这里没有可显示的位置。
+      const failed: OnTopicManageFailed = intent as OnTopicManageFailed;
+      const tm: TopicManageState | null = state.topicManage;
+      if (tm === null || !tm.dialogOpen) {
+        return reduced(state);
+      }
+      return reduced(state.copyWith({
+        topicManage: tm.copyWith({ isSubmitting: false, errorMessage: failed.messageKey })
+      }));
+    }
+
+    case 'onForumTopicCreated': {
+      // 创建成功：新话题合并进列表（置顶分区稳定在前，其余按服务端顺序），
+      // 弹窗关闭。新话题通常排最前，本地合并只是即时反馈，下次拉页以服务端为准。
+      const created: OnForumTopicCreated = intent as OnForumTopicCreated;
+      const ft: ForumTopicsState = state.forumTopics !== undefined
+        ? state.forumTopics
+        : ForumTopicsState.initial();
+      const merged: ForumTopicsState = ft.copyWith({
+        items: mergeForumTopics(ft.items, [created.item])
+      });
+      return reduced(state.copyWith({ forumTopics: merged, topicManage: null }));
+    }
+
+    case 'onForumTopicClosedToggled': {
+      const toggled: OnForumTopicClosedToggled = intent as OnForumTopicClosedToggled;
+      const ft: ForumTopicsState = state.forumTopics !== undefined
+        ? state.forumTopics
+        : ForumTopicsState.initial();
+      const patched: ForumTopicsState = ft.copyWith({
+        items: patchForumTopic(ft.items, toggled.topicId, (item: ForumTopicItem): ForumTopicItem =>
+          withTopicClosed(item, toggled.isClosed))
+      });
+      return reduced(state.copyWith({ forumTopics: patched }));
+    }
+
+    case 'onForumTopicEdited': {
+      const edited: OnForumTopicEdited = intent as OnForumTopicEdited;
+      const ft: ForumTopicsState = state.forumTopics !== undefined
+        ? state.forumTopics
+        : ForumTopicsState.initial();
+      const patched: ForumTopicsState = ft.copyWith({
+        items: patchForumTopic(ft.items, edited.topicId, (item: ForumTopicItem): ForumTopicItem =>
+          withTopicName(item, edited.name))
+      });
+      // 编辑成功即关弹窗（菜单已在打开弹窗时关掉）。
+      return reduced(state.copyWith({ forumTopics: patched, topicManage: null }));
+    }
+
+    case 'onForumTopicDeleted': {
+      const deleted: OnForumTopicDeleted = intent as OnForumTopicDeleted;
+      const ft: ForumTopicsState = state.forumTopics !== undefined
+        ? state.forumTopics
+        : ForumTopicsState.initial();
+      const remaining: ForumTopicsState = ft.copyWith({
+        items: removeTopic(ft.items, deleted.topicId)
+      });
+      // 删除成功：弹层全清（确认弹窗与菜单同源于这一份状态）。
+      return reduced(state.copyWith({ forumTopics: remaining, topicManage: null }));
     }
   }
 

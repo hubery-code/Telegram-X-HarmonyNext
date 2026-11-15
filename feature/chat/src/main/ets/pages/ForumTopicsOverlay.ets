@@ -16,13 +16,21 @@ import {
   SupportedLanguage
 } from '@tgx/core-common';
 import { LightTheme, Theme } from '@tgx/core-design-system';
-import { ForumTopicItem, ForumTopicsState, EMPTY_FORUM_CURSOR } from '../model/ForumTopic';
+import {
+  ForumTopicItem,
+  ForumTopicsState,
+  TopicManageState,
+  TOPIC_ICON_COLORS,
+  EMPTY_FORUM_CURSOR
+} from '../model/ForumTopic';
 
 @Component
 export struct ForumTopicsOverlay {
   @Prop forumTopics: ForumTopicsState = ForumTopicsState.initial();
   /** 搜索结果为空时区分「搜不到」与「一条都没有」。 */
   @Prop query: string = '';
+  /** FORUM-104：话题管理三合一弹层状态（null = 创建/编辑弹窗、长按菜单、删除确认全关）。 */
+  @Prop topicManage: TopicManageState | null = null;
   @State private searchText: string = '';
   // I18N-DATE-101：语言与时钟档来自 AppStorage 同一对键（ChatListPage 同源），
   // 这样话题行的时间戳与聊天列表的时间戳形态永远一致。
@@ -35,6 +43,19 @@ export struct ForumTopicsOverlay {
   onRetry?: () => void;
   onSearch?: (query: string) => void;
   onOpenTopic?: (item: ForumTopicItem) => void;
+  // FORUM-104：话题管理回调（与 ForumTopicsState 同源，ChatPage 派发意图）。
+  onCreateTap?: () => void;
+  onTopicManageTitleChanged?: (title: string) => void;
+  onTopicManageIconSelected?: (color: number) => void;
+  onSubmitTopicManage?: () => void;
+  onCloseTopicManageDialog?: () => void;
+  onOpenTopicMenu?: (topicId: number) => void;
+  onCloseTopicMenu?: () => void;
+  onMenuEdit?: (topicId: number, name: string) => void;
+  onMenuToggleClosed?: (topicId: number, isClosed: boolean) => void;
+  onMenuDelete?: (topicId: number) => void;
+  onConfirmDelete?: () => void;
+  onDismissDelete?: () => void;
 
   private t(key: string, ...args: (string | number)[]): string {
     return Lang.getInstance().getString(key, ...args);
@@ -42,13 +63,27 @@ export struct ForumTopicsOverlay {
 
   build() {
     Column() {
-      // ---- 顶栏：标题 + 关闭 ----
+      // ---- 顶栏：标题 + 新建 + 关闭 ----
       Row() {
         Text(this.t('Topics'))
           .fontSize(this.T.typography.title.fontSize)
           .fontWeight(this.T.typography.title.fontWeight)
           .fontColor(this.T.colors.textPrimary)
           .layoutWeight(1)
+
+        // FORUM-104：新建话题入口。文字按钮自带可读文本（Retry 同一惯例），
+        // 不需要 a11y 槽位；权限在服务端（can_manage_topics / can_create_topics），
+        // 无权的成员提交后由弹窗内联错误告知 —— 本端没有 own-admin-rights 数据，
+        // 按它预判会错杀管理员（ChatPermissions 不反映管理员旁路）。
+        Text(this.t('Create Topic'))
+          .fontSize(this.T.typography.body.fontSize)
+          .fontColor(this.T.colors.accent)
+          .padding({ left: this.T.spacing.sm, right: this.T.spacing.sm })
+          .onClick(() => {
+            if (this.onCreateTap !== undefined) {
+              this.onCreateTap();
+            }
+          })
 
         Row() {
           Image($r('app.media.ic_close'))
@@ -142,6 +177,22 @@ export struct ForumTopicsOverlay {
             this.onLoadMore();
           }
         })
+      }
+
+      // ---- FORUM-104：话题管理弹层 ----
+      // 渲染顺序即视觉层叠（后渲染在上）：创建/编辑弹窗 → 长按菜单 → 删除确认。
+      // chatOverlayCloseIntent 的收口顺序与此一致（确认 > 菜单 > 弹窗）。
+      // 与 ActionMenuSheet(menu) 同一模式：判空用自包含表达式，builder 收**非空**
+      // 对象参数 —— @Builder 体内不能声明局部变量做空收窄，参数化后体内直接读。
+      if (this.topicManage !== null && this.topicManage.dialogOpen) {
+        this.TopicManageDialogSheet(this.topicManage)
+      }
+      if (this.topicManage !== null && this.topicManage.menuTopicId > 0 &&
+        this.menuTopicItem(this.topicManage.menuTopicId) !== null) {
+        this.TopicMenuSheet(this.menuTopicItem(this.topicManage.menuTopicId) as ForumTopicItem)
+      }
+      if (this.topicManage !== null && this.topicManage.confirmDeleteTopicId > 0) {
+        this.TopicDeleteConfirmKey()
       }
     }
     .width('100%')
@@ -293,6 +344,19 @@ export struct ForumTopicsOverlay {
         this.onOpenTopic(item);
       }
     })
+    // FORUM-104：长按出管理菜单。General 话题不出菜单 —— 它的名字/删除
+    // 服务端都不允许（editForumTopic 明说 General 不可编辑），出空菜单比
+    // 不出菜单更让人困惑。手势常挂、动作内放行（.gesture 不收 undefined
+    // 分支）；时长对齐 ChatPage 气泡的 350ms。
+    .gesture(LongPressGesture({ duration: 350 })
+      .onAction(() => {
+        if (item.isGeneral) {
+          return;
+        }
+        if (this.onOpenTopicMenu !== undefined) {
+          this.onOpenTopicMenu(item.topicId);
+        }
+      }))
   }
 
   @Builder
@@ -341,5 +405,261 @@ export struct ForumTopicsOverlay {
   /** 首字母占位（emoji/汉字取首字符）。 */
   private topicInitial(name: string): string {
     return name.length > 0 ? name.substring(0, 1) : '?';
+  }
+
+  /**
+   * FORUM-104：长按菜单指向的话题行（编辑要现拿名字、关闭/重开要现拿关闭态）。
+   * 菜单指向的行可能在弹层开着时被下一页合并/服务端推送刷掉 —— 找不到就不渲染菜单，
+   * 让返回键/遮罩把状态清掉（比渲染一张数据全空的菜单诚实）。
+   */
+  private menuTopicItem(topicId: number): ForumTopicItem | null {
+    for (let i = 0; i < this.forumTopics.items.length; i++) {
+      if (this.forumTopics.items[i].topicId === topicId) {
+        return this.forumTopics.items[i];
+      }
+    }
+    return null;
+  }
+
+  /**
+   * FORUM-104：创建/编辑话题弹窗（遮罩 + 居中卡片）。
+   *
+   * 与 ActionMenuSheet(menu) 同一模式：收**非空对象参数**，体内直接读字段；
+   * 换语言整卡重算（无参/对象参数都在父渲染时重新求值，字符串 key 走体内 t()）。
+   */
+  @Builder
+  TopicManageDialogSheet(tm: TopicManageState) {
+    Stack() {
+      // 遮罩：点它 = 取消（与关闭按钮同义，不做提交）。
+      Column()
+        .width('100%')
+        .height('100%')
+        .backgroundColor('#66000000')
+        .onClick(() => {
+          if (this.onCloseTopicManageDialog !== undefined) {
+            this.onCloseTopicManageDialog();
+          }
+        })
+
+      Column() {
+        Text(tm.mode === 'edit' ? this.t('Edit Topic') : this.t('Create Topic'))
+          .fontSize(this.T.typography.title.fontSize)
+          .fontWeight(this.T.typography.title.fontWeight)
+          .fontColor(this.T.colors.textPrimary)
+          .margin({ bottom: this.T.spacing.md })
+
+        TextInput({
+          text: tm.title,
+          placeholder: this.t('Topic Title')
+        })
+          .fontSize(this.T.typography.body.fontSize)
+          .fontColor(this.T.colors.textPrimary)
+          .placeholderColor(this.T.colors.textSecondary)
+          .backgroundColor(this.T.colors.surfaceVariant)
+          .borderRadius(this.T.radius.sm)
+          .height(44)
+          .padding({ left: this.T.spacing.sm, right: this.T.spacing.sm })
+          .enabled(!tm.isSubmitting)
+          .onChange((value: string) => {
+            if (this.onTopicManageTitleChanged !== undefined) {
+              this.onTopicManageTitleChanged(value);
+            }
+          })
+
+        if (tm.mode === 'create') {
+          // 色板：TDLib 只认文档六个色值。编辑模式不渲染（服务端不支持改色）。
+          Row() {
+            ForEach(TOPIC_ICON_COLORS.slice(), (color: number) => {
+              Circle()
+                .width(32)
+                .height(32)
+                .fill(color)
+                .margin({ right: this.T.spacing.sm })
+                .accessibilityText(a11y(A11y.TOPIC_ICON_COLOR))
+                .onClick(() => {
+                  if (this.onTopicManageIconSelected !== undefined) {
+                    this.onTopicManageIconSelected(color);
+                  }
+                })
+            }, (color: number) => `topic_color_${color}`)
+          }
+          .width('100%')
+          .margin({ top: this.T.spacing.md })
+        }
+
+        if (tm.errorMessage.length > 0) {
+          // errorMessage 恒为**词条 key**（协调器只回 key，见 classifyTopicManageFailureKey）
+          Text(this.t(tm.errorMessage))
+            .fontSize(this.T.typography.footnote.fontSize)
+            .fontColor(this.T.colors.destructive)
+            .margin({ top: this.T.spacing.sm })
+        }
+
+        Row() {
+          Text(this.t('Cancel'))
+            .fontSize(this.T.typography.body.fontSize)
+            .fontColor(this.T.colors.textSecondary)
+            .layoutWeight(1)
+            .textAlign(TextAlign.Center)
+            .padding({ top: this.T.spacing.sm, bottom: this.T.spacing.sm })
+            .onClick(() => {
+              if (this.onCloseTopicManageDialog !== undefined) {
+                this.onCloseTopicManageDialog();
+              }
+            })
+
+          Text(this.t('Save'))
+            .fontSize(this.T.typography.body.fontSize)
+            .fontColor(this.T.colors.accent)
+            .opacity(tm.isSubmitting ? 0.4 : 1)
+            .layoutWeight(1)
+            .textAlign(TextAlign.Center)
+            .padding({ top: this.T.spacing.sm, bottom: this.T.spacing.sm })
+            .onClick(() => {
+              if (!tm.isSubmitting && this.onSubmitTopicManage !== undefined) {
+                this.onSubmitTopicManage();
+              }
+            })
+        }
+        .width('100%')
+        .margin({ top: this.T.spacing.sm })
+      }
+      .width('84%')
+      .padding(this.T.spacing.lg)
+      .backgroundColor(this.T.colors.background)
+      .borderRadius(this.T.radius.lg)
+    }
+    .width('100%')
+    .height('100%')
+  }
+
+  /**
+   * FORUM-104：长按管理菜单（遮罩 + 居中卡片，三行文字按钮）。
+   * 收**非空行对象**参数（调用点已确认行存在）；行被服务端推送刷掉时不渲染菜单。
+   */
+  @Builder
+  TopicMenuSheet(item: ForumTopicItem) {
+    Stack() {
+      Column()
+        .width('100%')
+        .height('100%')
+        .backgroundColor('#66000000')
+        .onClick(() => {
+          if (this.onCloseTopicMenu !== undefined) {
+            this.onCloseTopicMenu();
+          }
+        })
+
+      Column() {
+        Text(this.t('Manage Topic'))
+          .fontSize(this.T.typography.subheadline.fontSize)
+          .fontColor(this.T.colors.textSecondary)
+          .margin({ bottom: this.T.spacing.sm })
+
+        Text(this.t('Edit Topic'))
+          .fontSize(this.T.typography.body.fontSize)
+          .fontColor(this.T.colors.textPrimary)
+          .width('100%')
+          .textAlign(TextAlign.Center)
+          .padding(this.T.spacing.sm)
+          .onClick(() => {
+            if (this.onMenuEdit !== undefined) {
+              this.onMenuEdit(item.topicId, item.name);
+            }
+          })
+
+        Text(item.isClosed ? this.t('Reopen Topic') : this.t('Close Topic'))
+          .fontSize(this.T.typography.body.fontSize)
+          .fontColor(this.T.colors.textPrimary)
+          .width('100%')
+          .textAlign(TextAlign.Center)
+          .padding(this.T.spacing.sm)
+          .onClick(() => {
+            if (this.onMenuToggleClosed !== undefined) {
+              this.onMenuToggleClosed(item.topicId, !item.isClosed);
+            }
+          })
+
+        Text(this.t('Delete Topic'))
+          .fontSize(this.T.typography.body.fontSize)
+          .fontColor(this.T.colors.destructive)
+          .width('100%')
+          .textAlign(TextAlign.Center)
+          .padding(this.T.spacing.sm)
+          .onClick(() => {
+            if (this.onMenuDelete !== undefined) {
+              this.onMenuDelete(item.topicId);
+            }
+          })
+      }
+      .width('70%')
+      .padding(this.T.spacing.md)
+      .backgroundColor(this.T.colors.background)
+      .borderRadius(this.T.radius.lg)
+    }
+    .width('100%')
+    .height('100%')
+  }
+
+  /** FORUM-104：删除确认弹窗（破坏性动作的最后一道闸）。 */
+  @Builder
+  TopicDeleteConfirmKey() {
+    Stack() {
+      Column()
+        .width('100%')
+        .height('100%')
+        .backgroundColor('#66000000')
+        .onClick(() => {
+          if (this.onDismissDelete !== undefined) {
+            this.onDismissDelete();
+          }
+        })
+
+      Column() {
+        Text(this.t('Delete this topic?'))
+          .fontSize(this.T.typography.title.fontSize)
+          .fontWeight(this.T.typography.title.fontWeight)
+          .fontColor(this.T.colors.textPrimary)
+          .margin({ bottom: this.T.spacing.sm })
+
+        Text(this.t('All messages in this topic will be removed for everyone.'))
+          .fontSize(this.T.typography.body.fontSize)
+          .fontColor(this.T.colors.textSecondary)
+          .margin({ bottom: this.T.spacing.md })
+
+        Row() {
+          Text(this.t('Cancel'))
+            .fontSize(this.T.typography.body.fontSize)
+            .fontColor(this.T.colors.textSecondary)
+            .layoutWeight(1)
+            .textAlign(TextAlign.Center)
+            .padding({ top: this.T.spacing.sm, bottom: this.T.spacing.sm })
+            .onClick(() => {
+              if (this.onDismissDelete !== undefined) {
+                this.onDismissDelete();
+              }
+            })
+
+          Text(this.t('Delete'))
+            .fontSize(this.T.typography.body.fontSize)
+            .fontColor(this.T.colors.destructive)
+            .layoutWeight(1)
+            .textAlign(TextAlign.Center)
+            .padding({ top: this.T.spacing.sm, bottom: this.T.spacing.sm })
+            .onClick(() => {
+              if (this.onConfirmDelete !== undefined) {
+                this.onConfirmDelete();
+              }
+            })
+        }
+        .width('100%')
+      }
+      .width('84%')
+      .padding(this.T.spacing.lg)
+      .backgroundColor(this.T.colors.background)
+      .borderRadius(this.T.radius.lg)
+    }
+    .width('100%')
+    .height('100%')
   }
 }

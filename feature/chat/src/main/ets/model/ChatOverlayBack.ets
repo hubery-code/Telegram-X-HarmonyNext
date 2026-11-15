@@ -15,8 +15,11 @@
  * 7. actionMenu !== null：长按气泡的操作菜单
  * 8. showEmojiBoard：表情与贴纸键盘抽屉
  * 9. selectionMode：多选转发状态（返回则退出多选态，不退群聊）
- * 10. showForumTopics：话题列表覆盖层（FORUM-101 当轮漏接，FORUM-102 补上）
- * 11. activeTopicId > 0：话题消息流打开中（返回回话题列表，FORUM-102）
+ * 10. topicManage.confirmDeleteTopicId：话题删除确认（FORUM-104，列表覆盖层内最顶层）
+ * 11. topicManage.menuTopicId：话题长按菜单（FORUM-104）
+ * 12. topicManage.dialogOpen：创建/编辑话题弹窗（FORUM-104）
+ * 13. showForumTopics：话题列表覆盖层（FORUM-101 当轮漏接，FORUM-102 补上）
+ * 14. activeTopicId > 0：话题消息流打开中（返回回话题列表，FORUM-102）
  *
  * 若所有覆盖层均未激活（返回 null），由外部装配层（`entry`）执行 `BackToChatList` 退出会话。
  */
@@ -31,6 +34,9 @@ import {
   CloseMediaViewer,
   ClosePollComposer,
   CloseStickerSetPreview,
+  CloseTopicManageDialog,
+  CloseTopicMenu,
+  DismissDeleteTopic,
   DismissMenuConfirmDialog,
   DismissMessageActionMenu,
   ExitMessageSelection
@@ -68,6 +74,19 @@ export function chatOverlayCloseIntent(state: ChatUiState): ChatIntent | null {
   }
   if (state.selectionMode) {
     return new ExitMessageSelection();
+  }
+  // FORUM-104：话题管理三弹层渲染在话题列表覆盖层内部（后渲染在上），
+  // 收口顺序与视觉一致：删除确认 > 长按菜单 > 创建/编辑弹窗。
+  if (state.topicManage !== null) {
+    if (state.topicManage.confirmDeleteTopicId > 0) {
+      return new DismissDeleteTopic();
+    }
+    if (state.topicManage.menuTopicId > 0) {
+      return new CloseTopicMenu();
+    }
+    if (state.topicManage.dialogOpen) {
+      return new CloseTopicManageDialog();
+    }
   }
   // FORUM-102：话题列表覆盖层盖在消息流上（无论底下是全会话还是已打开的
   // 话题），所以先于话题态判断——列表在最上，先关列表；再按一次才关话题，

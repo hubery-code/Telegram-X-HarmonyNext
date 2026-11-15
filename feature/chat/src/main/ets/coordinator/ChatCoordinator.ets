@@ -212,6 +212,7 @@ import {
   decodeForumTopics,
   ForumTopic,
   ForumTopicInfo,
+  decodeForumTopicInfo,
   ForumTopicIcon} from '@tgx/core-td-api-generated';
 import {
   FileRegistry,
@@ -326,10 +327,18 @@ import {
   OnForumModeChanged,
   OpenForumTopic,
   OnTopicOpened,
-  CloseActiveTopic
+  CloseActiveTopic,
+  OnTopicManageFailed,
+  OnForumTopicCreated,
+  OnForumTopicClosedToggled,
+  OnForumTopicEdited,
+  OnForumTopicDeleted
 } from '../contract/ChatIntent';
 import {
   ChatEffect,
+  SubmitTopicManageEffect,
+  ToggleTopicClosedEffect,
+  DeleteTopicEffect,
   SendTextMessage,
   FetchMessagePermissions,
   EditMessageText,
@@ -4226,6 +4235,24 @@ export class ChatCoordinator {
         break;
       }
 
+      case 'submitTopicManage': {
+        const submit: SubmitTopicManageEffect = effect as SubmitTopicManageEffect;
+        this.handleSubmitTopicManage(submit);
+        break;
+      }
+
+      case 'toggleTopicClosed': {
+        const toggle: ToggleTopicClosedEffect = effect as ToggleTopicClosedEffect;
+        this.handleToggleTopicClosed(toggle);
+        break;
+      }
+
+      case 'deleteTopic': {
+        const del: DeleteTopicEffect = effect as DeleteTopicEffect;
+        this.handleDeleteTopic(del);
+        break;
+      }
+
       case 'fetchSavedAnimations': {
         this.handleFetchSavedAnimations();
         break;
@@ -5263,6 +5290,165 @@ export class ChatCoordinator {
       });
     }
     return out;
+  }
+
+  /**
+   * FORUM-104：创建/编辑话题失败 → 弹窗内联错误词条 key。
+   *
+   * 分类而不是转发（与被移除的代理分类器同一契约）：`AppError.message` 是
+   * 洗过的通用句，原文只在 `cause` 里且可能带上下文，界面永远只拿 key。
+   * 最常见的失败是没有话题管理权（TDLib 400 CHAT_ADMIN_REQUIRED 一族），
+   * 关键词命中就给权限句，其余给通用失败句。
+   */
+  private classifyTopicManageFailureKey(error: AppError): string {
+    const cause: string = error.cause !== undefined ? error.cause.toLowerCase() : '';
+    if (cause.indexOf('admin') >= 0 || cause.indexOf('right') >= 0 || cause.indexOf('privilege') >= 0) {
+      return 'No permission to manage topics here';
+    }
+    return 'Topic action failed';
+  }
+
+  /** FORUM-104：弹窗确认提交 → createForumTopic / editForumTopic。 */
+  private handleSubmitTopicManage(effect: SubmitTopicManageEffect): void {
+    if (effect.mode === 'create') {
+      const createRes: Result<TdPendingRequest, AppError> =
+        this.projection.createForumTopic(effect.name, effect.iconColor);
+      // AGENTS.md §3.1：Result 不能靠提前 return 收窄，ok / err 两个分支都要显式写。
+      if (createRes.err) {
+        this.logger.logError(TAG, createRes.error);
+        this.dispatch(new OnTopicManageFailed(this.classifyTopicManageFailureKey(createRes.error)));
+      }
+      if (createRes.ok) {
+        const pending: TdPendingRequest = createRes.value;
+        pending.promise.then((res: Result<TdWireObject, AppError>): void => {
+          if (this.destroyed) {
+            return;
+          }
+          if (res.err) {
+            this.logger.logError(TAG, res.error);
+            this.dispatch(new OnTopicManageFailed(this.classifyTopicManageFailureKey(res.error)));
+          }
+          if (res.ok) {
+            const info: ForumTopicInfo | null = decodeForumTopicInfo(res.value as TdJsonRaw);
+            if (info === null) {
+              this.logger.info(TAG, 'forum_topic_created_decode_failed');
+              this.dispatch(new OnTopicManageFailed('Topic action failed'));
+              return;
+            }
+            this.logger.info(TAG, 'forum_topic_created', `topicId=${info.forum_topic_id}`);
+            this.dispatch(new OnForumTopicCreated(this.mapForumTopicInfo(info)));
+          }
+        }).catch((): void => {
+        });
+      }
+      return;
+    }
+
+    const editRes: Result<TdPendingRequest, AppError> =
+      this.projection.editForumTopic(effect.topicId, effect.name);
+    if (editRes.err) {
+      this.logger.logError(TAG, editRes.error);
+      this.dispatch(new OnTopicManageFailed(this.classifyTopicManageFailureKey(editRes.error)));
+    }
+    if (editRes.ok) {
+      const pending: TdPendingRequest = editRes.value;
+      pending.promise.then((res: Result<TdWireObject, AppError>): void => {
+        if (this.destroyed) {
+          return;
+        }
+        if (res.err) {
+          this.logger.logError(TAG, res.error);
+          this.dispatch(new OnTopicManageFailed(this.classifyTopicManageFailureKey(res.error)));
+        }
+        if (res.ok) {
+          this.logger.info(TAG, 'forum_topic_edited', `topicId=${effect.topicId}`);
+          // 本地补丁 + 关弹窗；TDLib 1.8.67 的 updateForumTopicInfo 未订阅，编辑结果不靠推送。
+          this.dispatch(new OnForumTopicEdited(effect.topicId, effect.name));
+        }
+      }).catch((): void => {
+      });
+    }
+  }
+
+  /** FORUM-104：菜单「关闭/重开」→ toggleForumTopicIsClosed；失败 toast（菜单上没有内联位置）。 */
+  private handleToggleTopicClosed(effect: ToggleTopicClosedEffect): void {
+    const result: Result<TdPendingRequest, AppError> =
+      this.projection.toggleForumTopicIsClosed(effect.topicId, effect.isClosed);
+    if (result.err) {
+      this.logger.logError(TAG, result.error);
+      this.toastTopicActionFailure(result.error);
+    }
+    if (result.ok) {
+      const pending: TdPendingRequest = result.value;
+      pending.promise.then((res: Result<TdWireObject, AppError>): void => {
+        if (this.destroyed) {
+          return;
+        }
+        if (res.err) {
+          this.logger.logError(TAG, res.error);
+          this.toastTopicActionFailure(res.error);
+        }
+        if (res.ok) {
+          this.logger.info(TAG, 'forum_topic_closed_toggled', `topicId=${effect.topicId},isClosed=${effect.isClosed}`);
+          this.dispatch(new OnForumTopicClosedToggled(effect.topicId, effect.isClosed));
+        }
+      }).catch((): void => {
+      });
+    }
+  }
+
+  /** FORUM-104：确认删除 → deleteForumTopic；失败 toast。 */
+  private handleDeleteTopic(effect: DeleteTopicEffect): void {
+    const result: Result<TdPendingRequest, AppError> = this.projection.deleteForumTopic(effect.topicId);
+    if (result.err) {
+      this.logger.logError(TAG, result.error);
+      this.toastTopicActionFailure(result.error);
+    }
+    if (result.ok) {
+      const pending: TdPendingRequest = result.value;
+      pending.promise.then((res: Result<TdWireObject, AppError>): void => {
+        if (this.destroyed) {
+          return;
+        }
+        if (res.err) {
+          this.logger.logError(TAG, res.error);
+          this.toastTopicActionFailure(res.error);
+        }
+        if (res.ok) {
+          this.logger.info(TAG, 'forum_topic_deleted', `topicId=${effect.topicId}`);
+          this.dispatch(new OnForumTopicDeleted(effect.topicId));
+        }
+      }).catch((): void => {
+      });
+    }
+  }
+
+  /** FORUM-104：菜单动作失败 toast（按失败原因出词条，原文不进界面）。 */
+  private toastTopicActionFailure(error: AppError): void {
+    const key: string = this.classifyTopicManageFailureKey(error);
+    this.toastPort.showToast(Lang.getInstance().getString(key));
+  }
+
+  /**
+   * FORUM-104：createForumTopic 回包（ForumTopicInfo）→ 话题列表行。
+   * 新话题没有未读/预览/最后消息（creation_date 顶排序位），
+   * 这些字段由后续的 updateForumTopic 推送与下一页拉取补全。
+   */
+  private mapForumTopicInfo(info: ForumTopicInfo): ForumTopicItem {
+    const icon: ForumTopicIcon | null = info.icon;
+    return {
+      topicId: info.forum_topic_id,
+      name: info.name,
+      iconEmojiId: icon !== null && icon.custom_emoji_id.length > 0 ? icon.custom_emoji_id : '',
+      iconColor: icon !== null ? icon.color : 0,
+      unreadCount: 0,
+      unreadMentionCount: 0,
+      isPinned: false,
+      isClosed: info.is_closed,
+      isGeneral: info.is_general,
+      preview: '',
+      lastMessageDate: info.creation_date
+    };
   }
 
   /**

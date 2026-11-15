@@ -820,7 +820,24 @@ export type ChatIntent =
   | OnForumTopicsFailed
   | OnTopicOpened
   | CloseActiveTopic
-  | OnForumModeChanged;
+  | OnForumModeChanged
+  | OpenTopicCreateDialog
+  | OpenTopicEditDialog
+  | TopicManageTitleChanged
+  | TopicManageIconSelected
+  | SubmitTopicManage
+  | CloseTopicManageDialog
+  | OpenTopicMenu
+  | CloseTopicMenu
+  | ToggleTopicClosedRequested
+  | RequestDeleteTopic
+  | ConfirmDeleteTopic
+  | DismissDeleteTopic
+  | OnTopicManageFailed
+  | OnForumTopicCreated
+  | OnForumTopicClosedToggled
+  | OnForumTopicEdited
+  | OnForumTopicDeleted;
 
 /** STICKER-PREVIEW-101：打开贴纸包预览弹窗。 */
 export class OpenStickerSet implements Intent {
@@ -1504,4 +1521,157 @@ export class OnTopicOpened implements Intent {
  */
 export class CloseActiveTopic implements Intent {
   readonly kind: 'closeActiveTopic' = 'closeActiveTopic';
+}
+
+// ---- FORUM-104：话题管理（创建/编辑弹窗、长按菜单、删除确认） ----
+
+/** FORUM-104：打开「新建话题」弹窗（话题列表头部按钮）。 */
+export class OpenTopicCreateDialog implements Intent {
+  readonly kind: 'openTopicCreateDialog' = 'openTopicCreateDialog';
+}
+
+/** FORUM-104：打开「编辑话题」弹窗（长按菜单 → 编辑；名字现拿现传，与 OnTopicOpened 同理）。 */
+export class OpenTopicEditDialog implements Intent {
+  readonly kind: 'openTopicEditDialog' = 'openTopicEditDialog';
+  readonly topicId: number;
+  readonly name: string;
+
+  constructor(topicId: number, name: string) {
+    this.topicId = topicId;
+    this.name = name;
+  }
+}
+
+/** FORUM-104：弹窗标题输入变化（纯本地状态，不进词典不落盘）。 */
+export class TopicManageTitleChanged implements Intent {
+  readonly kind: 'topicManageTitleChanged' = 'topicManageTitleChanged';
+  readonly title: string;
+
+  constructor(title: string) {
+    this.title = title;
+  }
+}
+
+/** FORUM-104：弹窗选中图标色（仅 create 模式；TDLib 只认文档六个色值）。 */
+export class TopicManageIconSelected implements Intent {
+  readonly kind: 'topicManageIconSelected' = 'topicManageIconSelected';
+  readonly color: number;
+
+  constructor(color: number) {
+    this.color = color;
+  }
+}
+
+/** FORUM-104：弹窗确认键（提交创建或编辑；reducer 置 isSubmitting 并发效果）。 */
+export class SubmitTopicManage implements Intent {
+  readonly kind: 'submitTopicManage' = 'submitTopicManage';
+}
+
+/** FORUM-104：关闭创建/编辑弹窗。 */
+export class CloseTopicManageDialog implements Intent {
+  readonly kind: 'closeTopicManageDialog' = 'closeTopicManageDialog';
+}
+
+/** FORUM-104：长按话题行弹出管理菜单（General 话题由 UI 侧不出这个手势）。 */
+export class OpenTopicMenu implements Intent {
+  readonly kind: 'openTopicMenu' = 'openTopicMenu';
+  readonly topicId: number;
+
+  constructor(topicId: number) {
+    this.topicId = topicId;
+  }
+}
+
+/** FORUM-104：关闭长按菜单。 */
+export class CloseTopicMenu implements Intent {
+  readonly kind: 'closeTopicMenu' = 'closeTopicMenu';
+}
+
+/**
+ * FORUM-104：菜单点「关闭/重开话题」（reducer 关菜单并发效果；
+ * 要求 can_manage_topics 管理员位，无权时 TDLib 报错走 toast）。
+ */
+export class ToggleTopicClosedRequested implements Intent {
+  readonly kind: 'toggleTopicClosedRequested' = 'toggleTopicClosedRequested';
+  readonly topicId: number;
+  readonly isClosed: boolean;
+
+  constructor(topicId: number, isClosed: boolean) {
+    this.topicId = topicId;
+    this.isClosed = isClosed;
+  }
+}
+
+/** FORUM-104：菜单点「删除」→ 先出确认弹窗（破坏性动作不直接执行）。 */
+export class RequestDeleteTopic implements Intent {
+  readonly kind: 'requestDeleteTopic' = 'requestDeleteTopic';
+  readonly topicId: number;
+
+  constructor(topicId: number) {
+    this.topicId = topicId;
+  }
+}
+
+/** FORUM-104：确认删除（reducer 关菜单出效果，协调器打 TDLib）。 */
+export class ConfirmDeleteTopic implements Intent {
+  readonly kind: 'confirmDeleteTopic' = 'confirmDeleteTopic';
+}
+
+/** FORUM-104：取消删除。 */
+export class DismissDeleteTopic implements Intent {
+  readonly kind: 'dismissDeleteTopic' = 'dismissDeleteTopic';
+}
+
+/** FORUM-104：创建/编辑失败回灌（弹窗内联显示，不清空已输入内容；字段是**词条 key**，渲染时 t()）。 */
+export class OnTopicManageFailed implements Intent {
+  readonly kind: 'onTopicManageFailed' = 'onTopicManageFailed';
+  readonly messageKey: string;
+
+  constructor(messageKey: string) {
+    this.messageKey = messageKey;
+  }
+}
+
+/** FORUM-104：创建成功回灌（createForumTopic 回 ForumTopicInfo，协调器转成列表项并合并）。 */
+export class OnForumTopicCreated implements Intent {
+  readonly kind: 'onForumTopicCreated' = 'onForumTopicCreated';
+  readonly item: ForumTopicItem;
+
+  constructor(item: ForumTopicItem) {
+    this.item = item;
+  }
+}
+
+/** FORUM-104：关闭/重开成功回灌（本地补丁；TDLib 1.8.67 的 updateForumTopicInfo 未订阅）。 */
+export class OnForumTopicClosedToggled implements Intent {
+  readonly kind: 'onForumTopicClosedToggled' = 'onForumTopicClosedToggled';
+  readonly topicId: number;
+  readonly isClosed: boolean;
+
+  constructor(topicId: number, isClosed: boolean) {
+    this.topicId = topicId;
+    this.isClosed = isClosed;
+  }
+}
+
+/** FORUM-104：编辑标题成功回灌（本地补丁，理由同上）。 */
+export class OnForumTopicEdited implements Intent {
+  readonly kind: 'onForumTopicEdited' = 'onForumTopicEdited';
+  readonly topicId: number;
+  readonly name: string;
+
+  constructor(topicId: number, name: string) {
+    this.topicId = topicId;
+    this.name = name;
+  }
+}
+
+/** FORUM-104：删除成功回灌（从列表移除；弹层全清）。 */
+export class OnForumTopicDeleted implements Intent {
+  readonly kind: 'onForumTopicDeleted' = 'onForumTopicDeleted';
+  readonly topicId: number;
+
+  constructor(topicId: number) {
+    this.topicId = topicId;
+  }
 }

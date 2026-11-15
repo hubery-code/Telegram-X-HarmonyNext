@@ -34,7 +34,7 @@ import { PinnedMessageInfo } from '../model/PinnedMessageInfo';
 import { StickerSetPreviewState, StickerSetItem } from '../model/StickerSetPreviewState';
 import { StickerBoardState } from '../model/StickerBoard';
 import { GifItem, EMPTY_GIFS } from '../model/GifItem';
-import { ForumTopicsState } from '../model/ForumTopic';
+import { ForumTopicsState, TopicManageState } from '../model/ForumTopic';
 import { PollComposerState } from '../model/PollView';
 
 /** 输入栏模式：回复某条消息。 */
@@ -239,6 +239,8 @@ export interface ChatUiStateOptions {
   readonly activeTopicId?: number;
   /** FORUM-102：当前打开的话题名（头部标题显示用）。 */
   readonly activeTopicName?: string;
+  /** FORUM-104：话题管理弹层三合一状态（创建/编辑弹窗、长按菜单、删除确认）；null = 全关。 */
+  readonly topicManage?: TopicManageState | null;
 }
 
 export const DEFAULT_RECENT_EMOJIS: readonly string[] = [
@@ -348,6 +350,8 @@ export class ChatUiState implements UiState {
   readonly activeTopicId: number;
   /** FORUM-102：当前打开的话题名（头部标题显示用）。 */
   readonly activeTopicName: string;
+  /** FORUM-104：话题管理弹层三合一状态；null = 创建/编辑弹窗、长按菜单、删除确认全关。 */
+  readonly topicManage: TopicManageState | null;
 
   constructor(
     chatId: number,
@@ -405,7 +409,9 @@ export class ChatUiState implements UiState {
     showForumTopics: boolean = false,
     // FORUM-102：同理追加在末尾。
     activeTopicId: number = 0,
-    activeTopicName: string = ''
+    activeTopicName: string = '',
+    // FORUM-104：同理追加在末尾。
+    topicManage: TopicManageState | null = null
   ) {
     this.chatId = chatId;
     this.chatTitle = chatTitle;
@@ -458,6 +464,7 @@ export class ChatUiState implements UiState {
     this.showForumTopics = showForumTopics;
     this.activeTopicId = activeTopicId;
     this.activeTopicName = activeTopicName;
+    this.topicManage = topicManage;
   }
 
   static initial(): ChatUiState {
@@ -516,7 +523,8 @@ export class ChatUiState implements UiState {
       options.forumTopics !== undefined ? options.forumTopics : this.forumTopics,
       options.showForumTopics !== undefined ? options.showForumTopics : this.showForumTopics,
       options.activeTopicId !== undefined ? options.activeTopicId : this.activeTopicId,
-      options.activeTopicName !== undefined ? options.activeTopicName : this.activeTopicName
+      options.activeTopicName !== undefined ? options.activeTopicName : this.activeTopicName,
+      options.topicManage !== undefined ? options.topicManage : this.topicManage
     );
   }
 
