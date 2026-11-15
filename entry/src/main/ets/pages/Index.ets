@@ -39,9 +39,10 @@ import { common } from '@kit.AbilityKit';
 import { AccountDescriptor, AccountScope } from '@tgx/core-account';
 import { AppError, Lang, ManualClock, Result, SequentialIdGenerator, SupportedLanguage, TDLIB_LANGUAGE_CODE_FALLBACK } from '@tgx/core-common';
 import { ReducerEnv } from '@tgx/feature-template';
-import { AppRoute, ChatRoute, ChatInfoRoute, UserProfileRoute, CommentsRoute, SettingsSectionRoute } from '@tgx/core-navigation';
+import { AppRoute, ChatRoute, ChatInfoRoute, UserProfileRoute, CommentsRoute, InstantViewRoute, SettingsSectionRoute } from '@tgx/core-navigation';
 import { EntryNavigationController } from '../navigation/EntryNavigationController';
 import { AppLinkResult, AppLinkRouter } from '../deeplink/AppLinkRouter';
+import { InstantViewPage } from './InstantViewPage';
 import {
   InvitePromptData,
   PromptCard,
@@ -585,6 +586,10 @@ struct Index {
       return this.navController.pop();
     }
     if (this.currentRoute.name === 'mediaViewer') {
+      return this.navController.pop();
+    }
+    if (this.currentRoute.name === 'instantView') {
+      // IV-102：阅读页无覆盖层，返回键就是退路由。
       return this.navController.pop();
     }
     return this.navController.pop();
@@ -2040,6 +2045,16 @@ struct Index {
           CommentsPage({
             uiState: this.commentsUiState,
             coordinator: this.commentsCoordinator !== null ? this.commentsCoordinator : undefined,
+            onBack: () => {
+              this.navController.pop();
+            }
+          })
+        } else if (this.currentRoute.name === 'instantView') {
+          // IV-102：Instant View 阅读器。无协调器 —— 页面自持 WebPageProjection
+          // 取数（只读单取，无 MVI 状态机），scope 由装配层交给它。
+          InstantViewPage({
+            url: (this.currentRoute as InstantViewRoute).url,
+            scope: this.accountScope,
             onBack: () => {
               this.navController.pop();
             }

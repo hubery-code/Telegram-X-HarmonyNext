@@ -357,6 +357,11 @@ const EN_DICTIONARY: Record<string, string> = {
   // 命名口径与上面一致 —— 英文原文当 key，守卫 `check_i18n_literals.py` 要求两本词典 key 全等。
   'New Message': 'New Message',
   'Retry': 'Retry',
+  // IV-102：Instant View 阅读器
+  'Instant View': 'Instant View',
+  'Failed to load page': 'Failed to load page',
+  'Instant View is not available for this page': 'Instant View is not available for this page',
+  'This article is not fully loaded yet': 'This article is not fully loaded yet',
   'Confirm': 'Confirm',
   'Leave': 'Leave',
   'Report': 'Report',
@@ -996,6 +1001,11 @@ const ZH_DICTIONARY: Record<string, string> = {
   // UI 层离散文案（I18N-LITERAL-101）：与上方 EN 块同序、同 key。
   'New Message': '新消息',
   'Retry': '重试',
+  // IV-102：Instant View 阅读器
+  'Instant View': '即时预览',
+  'Failed to load page': '页面加载失败',
+  'Instant View is not available for this page': '此页面没有可用的即时预览',
+  'This article is not fully loaded yet': '全文尚未完整加载，当前仅显示部分内容',
   'Confirm': '确认',
   'Leave': '退出',
   'Report': '举报',

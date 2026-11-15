@@ -26,6 +26,7 @@ import {
   HomeRoute,
   MediaViewerRoute,
   CommentsRoute,
+  InstantViewRoute,
   ParamSpec,
   ParamValue,
   RouteDefinition,
@@ -353,6 +354,16 @@ function buildRoute(name: RouteName, params: Map<string, ParamValue>): Result<Ap
       const route: CommentsRoute = { name: 'comments', chatId: chatId, messageId: messageId };
       return ok(route);
     }
+    case 'instantView': {
+      // IV-102：url 是网页地址，结构字符已在 encode 侧整体百分号编码，
+      // 这里解出来直接用（shape 由 RouteDefinition 的 string spec 校验）。
+      const url: ParamValue | undefined = params.get('url');
+      if (typeof url !== 'string') {
+        return err(AppErrors.parameter('invalid', 'url', 'url must be string'));
+      }
+      const route: InstantViewRoute = { name: 'instantView', url: url };
+      return ok(route);
+    }
     default:
       return err(AppErrors.internal('route.unknownName', `no builder for route: ${name}`));
   }
@@ -446,6 +457,9 @@ function collectRouteParams(route: AppRoute, out: Map<string, ParamValue>): Resu
     case 'comments':
       out.set('chatId', route.chatId);
       out.set('messageId', route.messageId);
+      return ok(undefined);
+    case 'instantView':
+      out.set('url', route.url);
       return ok(undefined);
     default:
       return err(AppErrors.internal('route.unknownName', 'no param collector for route (exhaustive switch miss)'));

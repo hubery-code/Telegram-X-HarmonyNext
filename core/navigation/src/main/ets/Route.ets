@@ -62,7 +62,8 @@ export type RouteName =
   | 'settingsSection'
   | 'search'
   | 'mediaViewer'
-  | 'comments';
+  | 'comments'
+  | 'instantView';
 
 export interface HomeRoute {
   readonly name: 'home';
@@ -139,6 +140,23 @@ export interface CommentsRoute {
   readonly messageId: number;
 }
 
+/**
+ * IV-102：Instant View 阅读器页路由。
+ *
+ * 入口是 TDLib `getInternalLinkType` 判出的 `internalLinkTypeInstantView`
+ * （`url` = 要取 Instant View 的网页地址，`fallback_url` = 兜底网页）。本端 v1
+ * 的 fallback 语义是「不外跳浏览器」：取不到时阅读页内出错误态 + 重试，
+ * 所以路由只携带 `url`，`fallback_url` 在分流层即被丢弃（见 AppLinkRouter）。
+ *
+ * url 走 query 参数而不是 path 模板：网页地址含 `/`、`:` 等结构字符，
+ * encodeURIComponent 往返安全，不需要拆进模板段。
+ */
+export interface InstantViewRoute {
+  readonly name: 'instantView';
+  /** 要取 Instant View 的网页地址（http/https）。 */
+  readonly url: string;
+}
+
 /** 强类型路由：discriminated union，判别字段为 name。 */
 export type AppRoute =
   HomeRoute
@@ -152,7 +170,8 @@ export type AppRoute =
   | SettingsSectionRoute
   | SearchRoute
   | MediaViewerRoute
-  | CommentsRoute;
+  | CommentsRoute
+  | InstantViewRoute;
 
 /** settingsSection 的 section 标识格式。 */
 export const SECTION_PATTERN: RegExp = /^[a-z][a-zA-Z0-9_]*$/;
@@ -244,5 +263,12 @@ export const ROUTE_DEFINITIONS: RouteDefinition[] = [
       spec('chatId', 'int', true),
       spec('messageId', 'int', true, 1)
     ]
+  },
+  {
+    // IV-102：Instant View 阅读器。url 是网页地址（含结构字符），走 query 参数
+    // 经 encodeURIComponent 往返，不进 path 模板段。
+    name: 'instantView',
+    pathTemplate: 'instantView',
+    params: [spec('url', 'string', true, undefined, undefined, 2048)]
   }
 ];

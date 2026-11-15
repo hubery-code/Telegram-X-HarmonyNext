@@ -15,6 +15,7 @@ import {
   ChatRoute,
   ContactsRoute,
   DeepLinkRule,
+  InstantViewRoute,
   SelfProfileRoute,
   SettingsRoute,
   UserProfileRoute
@@ -33,6 +34,7 @@ import {
   AppLinkResult,
   AppLinkRouter,
   AppLinkTdPort,
+  instantViewUrlFromLink,
   invitePromptOf,
   routeForChat,
   stripAtSign
@@ -182,6 +184,14 @@ function contactsPageWire(): TdWireObject {
 function myProfilePageWire(): TdWireObject {
   const payload: TdWireObject = {};
   payload['@type'] = 'internalLinkTypeMyProfilePage';
+  return payload;
+}
+
+function instantViewWire(url: string, fallbackUrl: string): TdWireObject {
+  const payload: TdWireObject = {};
+  payload['@type'] = 'internalLinkTypeInstantView';
+  payload['url'] = url;
+  payload['fallback_url'] = fallbackUrl;
   return payload;
 }
 
@@ -1106,6 +1116,67 @@ export default function appLinkRouterTest() {
 
       port.linkTypeResult = ok(myProfilePageWire());
       expect((await router.handle('https://t.me/me')).outcome !== 'external').assertTrue();
+    });
+
+    // ---------- IV-102：Instant View 深链分流 ----------
+
+    it('instantViewUrl_acceptsHttpAndHttpsOnly', 0, (): void => {
+      expect(instantViewUrlFromLink('https://telegra.ph/x')).assertEqual('https://telegra.ph/x');
+      expect(instantViewUrlFromLink('http://example.com/a?b=1')).assertEqual('http://example.com/a?b=1');
+      // 两端空白剥掉；scheme 大小写不敏感（TDLib 回包见过带大写的形态）。
+      expect(instantViewUrlFromLink('  HTTPS://example.com/Page  ')).assertEqual('HTTPS://example.com/Page');
+      expect(instantViewUrlFromLink('') === null).assertTrue();
+      expect(instantViewUrlFromLink('   ') === null).assertTrue();
+      // 非 http(s) 一律拒绝：tg:// 是内部深链、裸域名不是 URL。
+      expect(instantViewUrlFromLink('tg://resolve?domain=durov') === null).assertTrue();
+      expect(instantViewUrlFromLink('t.me/durov') === null).assertTrue();
+      expect(instantViewUrlFromLink('ftp://example.com/f') === null).assertTrue();
+    });
+
+    it('instantViewLink_routesToInstantViewRoute', 0, async (): Promise<void> => {
+      const port: FakeAppLinkPort = new FakeAppLinkPort();
+      port.linkTypeResult = ok(instantViewWire('https://telegra.ph/post-01', 'https://t.me/post-01?fallback=1'));
+      const nav: NavRecorder = new NavRecorder();
+      const res: AppLinkResult = await makeRouter(port, nav).handle('https://t.me/post-01?iv=1');
+      expect(res.outcome).assertEqual('routed');
+      expect(res.linkType).assertEqual('internalLinkTypeInstantView');
+      expect(nav.routes.length).assertEqual(1);
+      const route: InstantViewRoute = nav.last() as InstantViewRoute;
+      expect(route.name).assertEqual('instantView');
+      expect(route.url).assertEqual('https://telegra.ph/post-01');
+      // 只问了一次判别式，不发生其他 TDLib 请求。
+      expect(port.calls.join(',')).assertEqual('getInternalLinkType');
+    });
+
+    it('instantViewLink_fallbackUrlNotCarriedIntoRoute', 0, async (): Promise<void> => {
+      // v1 fallback 语义 = 不外跳浏览器：fallback_url 在分流层丢弃，路由只带主 url。
+      // JSON 形状断言同时钉住「不多不少恰好 name + url 两个字段」。
+      const port: FakeAppLinkPort = new FakeAppLinkPort();
+      port.linkTypeResult = ok(instantViewWire('https://telegra.ph/post-02', 'https://example.com/fb'));
+      const nav: NavRecorder = new NavRecorder();
+      const res: AppLinkResult = await makeRouter(port, nav).handle('https://t.me/post-02');
+      expect(res.outcome).assertEqual('routed');
+      const route: InstantViewRoute = nav.last() as InstantViewRoute;
+      expect(JSON.stringify(route)).assertEqual('{"name":"instantView","url":"https://telegra.ph/post-02"}');
+    });
+
+    it('instantViewLink_emptyOrNonHttpUrl_fails', 0, async (): Promise<void> => {
+      const port: FakeAppLinkPort = new FakeAppLinkPort();
+      const nav: NavRecorder = new NavRecorder();
+      const router: AppLinkRouter = makeRouter(port, nav);
+
+      port.linkTypeResult = ok(instantViewWire('', 'https://example.com/fb'));
+      const emptyRes: AppLinkResult = await router.handle('https://t.me/iv-empty');
+      expect(emptyRes.outcome).assertEqual('failed');
+      expect(emptyRes.reason).assertEqual('empty_instant_view_url');
+
+      port.linkTypeResult = ok(instantViewWire('tg://resolve?domain=x', ''));
+      const badRes: AppLinkResult = await router.handle('https://t.me/iv-bad');
+      expect(badRes.outcome).assertEqual('failed');
+      expect(badRes.reason).assertEqual('empty_instant_view_url');
+
+      // 两种防御路径都不压栈、不外跳浏览器。
+      expect(nav.routes.length).assertEqual(0);
     });
   });
 }

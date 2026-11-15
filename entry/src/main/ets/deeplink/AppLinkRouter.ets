@@ -55,6 +55,7 @@ import {
   InternalLinkTypeBotStartInGroup,
   InternalLinkTypeChatInvite,
   InternalLinkTypeContactsPage,
+  InternalLinkTypeInstantView,
   InternalLinkTypeMessage,
   InternalLinkTypeMyProfilePage,
   InternalLinkTypePublicChat,
@@ -279,6 +280,9 @@ export class AppLinkRouter {
     }
     if (discriminator === 'internalLinkTypeMyProfilePage') {
       return this.openMyProfilePage(discriminator);
+    }
+    if (discriminator === 'internalLinkTypeInstantView') {
+      return this.openInstantView(discriminator, linkType as InternalLinkTypeInstantView);
     }
     // 认得判别式、但这一步还没实现（语音聊天 / 语言包 …）：提示，不外溢浏览器。
     return result('unsupported', discriminator, 0, discriminator);
@@ -654,6 +658,31 @@ export class AppLinkRouter {
   }
 
   /**
+   * Instant View 页链接（IV-102）。
+   *
+   * TDLib 判出 `internalLinkTypeInstantView` 时给两个地址：`url`（送
+   * `getWebPageInstantView` 的网页）与 `fallback_url`（取不到时的兜底网页）。
+   * 本端 v1 的 fallback 语义是**不外跳浏览器**：阅读页内出错误态 + 重试，
+   * 所以 `fallback_url` 在这里即被丢弃，不进路由（要补外跳时从这一处接）。
+   * url 的 http(s) 形状校验收口在 `instantViewUrlFromLink` 纯函数里，
+   * 阅读页的 WebPageProjection 还有一道同口径防御。
+   */
+  private openInstantView(
+    discriminator: string,
+    linkType: InternalLinkTypeInstantView
+  ): AppLinkResult {
+    const pageUrl: string | null = instantViewUrlFromLink(linkType.url);
+    if (pageUrl === null) {
+      // TDLib 只在网页链接上判 Instant View，这里空/非 http(s) 属于防御路径。
+      return result('failed', discriminator, 0, 'empty_instant_view_url');
+    }
+    this.navigate({ name: 'instantView', url: pageUrl });
+    // 只记长度不记正文 —— url 可能带 utm/会话参数，与全文件口径一致。
+    this.log('info', `outcome=routed linkType=${discriminator},urlLength=${pageUrl.length}`);
+    return result('routed', discriminator, 0, '');
+  }
+
+  /**
    * `searchPublicChat` 是 TDLib 侧「按用户名取会话」的唯一入口，它会顺手把这个公开会话
    * 建进本地库 —— 与 Android 点一条公开链接后的行为一致。失败（`chatNotPublic`、超时）
    * 一律回落成 `chat_unresolved`，不猜、不用用户名去拼 chatId。
@@ -691,6 +720,26 @@ export class AppLinkRouter {
 export function stripAtSign(raw: string): string {
   const trimmed: string = raw.trim();
   return trimmed.startsWith('@') ? trimmed.substring(1) : trimmed;
+}
+
+/**
+ * IV-102：`internalLinkTypeInstantView.url` → 阅读器路由参数。
+ *
+ * 「深链分流到 instantView 路由」的判定收口在这个纯函数：非空且为 http(s)
+ * 才给路由带 url，其余（空串/`tg://` 等内部链接）返回 null 由调用方走 failed，
+ * 不压栈一个注定取不到页面的路由。口径与 `WebPageProjection.fetchInstantView`
+ * 的本地参数校验一致 —— 那边还有一道，双保险但只有一个真相（都以 http(s) 为界）。
+ */
+export function instantViewUrlFromLink(url: string): string | null {
+  const trimmed: string = url.trim();
+  if (trimmed.length === 0) {
+    return null;
+  }
+  const lower: string = trimmed.toLowerCase();
+  if (!lower.startsWith('http://') && !lower.startsWith('https://')) {
+    return null;
+  }
+  return trimmed;
 }
 
 /**

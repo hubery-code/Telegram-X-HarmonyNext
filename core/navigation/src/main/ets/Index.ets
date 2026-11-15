@@ -13,6 +13,7 @@ export {
   SearchRoute,
   MediaViewerRoute,
   CommentsRoute,
+  InstantViewRoute,
   ParamValue,
   ParamType,
   ParamSpec,
