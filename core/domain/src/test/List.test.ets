@@ -14,6 +14,7 @@ import stickerSettingsTest from './media/StickerSettings.test';
 import appLockTest from './applock/AppLock.test';
 import passcodeFlowTest from './applock/PasscodeFlow.test';
 import chatHeaderCacheTest from './chat/ChatHeaderCache.test';
+import instantViewModelTest from './webpage/InstantViewModel.test';
 
 export default function testsuite() {
   chatRegistryTest();
@@ -32,4 +33,5 @@ export default function testsuite() {
   stickerSettingsTest();
   appLockTest();
   passcodeFlowTest();
+  instantViewModelTest();
 }

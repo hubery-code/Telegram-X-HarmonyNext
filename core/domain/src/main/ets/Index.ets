@@ -13,3 +13,5 @@ export * from './applock/PasscodeFlow';
 export * from './file/Index';
 export * from './user/Index';
 export * from './group/Index';
+export * from './webpage/InstantViewModel';
+export * from './webpage/WebPageProjection';
