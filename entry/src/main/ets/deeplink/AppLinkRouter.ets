@@ -24,6 +24,8 @@
  *    DEEPLINK-102 补上了四条：公开会话之外的**邀请 / 代理 / 消息 / bot 启动**。前两条要问用户，
  *    问的方式是一个注入的 `AppLinkPromptPort`（见 `AppLinkPrompt.ets`），**缺省实现一律拒绝** ——
  *    没接弹窗的装配路径最坏是链接点了没反应，不会替用户加入会话或切换代理。
+ *    DEEPLINK-103 再补一批「有现成落点」的：搜索页、新建私聊/群组/频道、分享草稿、
+ *    语言包（落设置页语言卡）、设置分区细化（四个有真实落点的 section）。
  * 4. **日志里没有链接正文**。链接可以携带邀请哈希（等同凭证），与本仓既有的
  *    `openLink failed: no host context`（只记事件不记 URL）口径一致，只记判别式与 chatId。
  */
@@ -56,10 +58,16 @@ import {
   InternalLinkTypeChatInvite,
   InternalLinkTypeContactsPage,
   InternalLinkTypeInstantView,
+  InternalLinkTypeLanguagePack,
   InternalLinkTypeMessage,
+  InternalLinkTypeMessageDraft,
   InternalLinkTypeMyProfilePage,
+  InternalLinkTypeNewChannelChat,
+  InternalLinkTypeNewGroupChat,
+  InternalLinkTypeNewPrivateChat,
   InternalLinkTypePublicChat,
   InternalLinkTypeSavedMessages,
+  InternalLinkTypeSearch,
   InternalLinkTypeSettings,
   InternalLinkTypeStickerSet,
   InternalLinkTypeUserPhoneNumber,
@@ -72,6 +80,7 @@ import {
   TdChatType,
   TdInternalLinkType,
   TdJsonRaw,
+  TdSettingsSection,
   TdUserType,
   User,
   decodeChat,
@@ -156,6 +165,18 @@ export interface AppLinkRouterOptions {
    * DEEPLINK-EXPAND-102：群聊中添加/启动 Bot 回调（入参为 botUsername、startParameter、chatId）。
    */
   readonly onBotStartInGroup?: (botUsername: string, startParameter: string, chatId: number) => void;
+  /**
+   * DEEPLINK-103：`internalLinkTypeNewGroupChat` / `NewChannelChat` 回调。
+   * kind 为 'group' | 'channel'；entry 侧复用 GROUP-CREATE-101 的「联系人多选 → 命名」链路。
+   * 未注入时退回联系人页（与 newPrivateChat 同一落点）。
+   */
+  readonly onCreateChat?: (kind: 'group' | 'channel') => void;
+  /**
+   * DEEPLINK-103：`internalLinkTypeMessageDraft`（`t.me/share/url?...`）回调。
+   * entry 侧复用 SHARE-EXT-101 的「目标选择器 → 发送」链路。
+   * 未注入时按 notified 处理（不外溢浏览器、不丢正文）。
+   */
+  readonly onShareDraft?: (text: string) => void;
 }
 
 const TAG: string = 'AppLinkRouter';
@@ -170,6 +191,8 @@ export class AppLinkRouter {
   private readonly prompt: AppLinkPromptPort;
   private readonly onOpenStickerSet?: (stickerSetName: string, expectCustomEmoji: boolean) => void;
   private readonly onBotStartInGroup?: (botUsername: string, startParameter: string, chatId: number) => void;
+  private readonly onCreateChat?: (kind: 'group' | 'channel') => void;
+  private readonly onShareDraft?: (text: string) => void;
   /** 在途链接（归一化后）；TDLib 没有取消接口，只能自己挡住重复。 */
   private inFlight: string | null = null;
 
@@ -183,6 +206,8 @@ export class AppLinkRouter {
     this.prompt = options.prompt !== undefined ? options.prompt : DECLINING_APP_LINK_PROMPT;
     this.onOpenStickerSet = options.onOpenStickerSet;
     this.onBotStartInGroup = options.onBotStartInGroup;
+    this.onCreateChat = options.onCreateChat;
+    this.onShareDraft = options.onShareDraft;
   }
 
   /** 一次只能有一条链接在解析（队列会按序重投）。 */
@@ -284,7 +309,25 @@ export class AppLinkRouter {
     if (discriminator === 'internalLinkTypeInstantView') {
       return this.openInstantView(discriminator, linkType as InternalLinkTypeInstantView);
     }
-    // 认得判别式、但这一步还没实现（语音聊天 / 语言包 …）：提示，不外溢浏览器。
+    if (discriminator === 'internalLinkTypeSearch') {
+      return this.openSearchPage(discriminator);
+    }
+    if (discriminator === 'internalLinkTypeNewPrivateChat') {
+      return this.openNewPrivateChat(discriminator);
+    }
+    if (discriminator === 'internalLinkTypeNewGroupChat') {
+      return this.openNewGroupOrChannel(discriminator, 'group');
+    }
+    if (discriminator === 'internalLinkTypeNewChannelChat') {
+      return this.openNewGroupOrChannel(discriminator, 'channel');
+    }
+    if (discriminator === 'internalLinkTypeMessageDraft') {
+      return this.openMessageDraft(discriminator, linkType as InternalLinkTypeMessageDraft);
+    }
+    if (discriminator === 'internalLinkTypeLanguagePack') {
+      return this.openLanguageSettings(discriminator);
+    }
+    // 认得判别式、但这一步还没实现（语音聊天 / 支付 / 礼物 / Story …）：提示，不外溢浏览器。
     return result('unsupported', discriminator, 0, discriminator);
   }
 
@@ -598,13 +641,21 @@ export class AppLinkRouter {
     return result('routed', discriminator, chat.id, '');
   }
 
-  /** `tg://settings` —— 设置页链接（DEEPLINK-EXPAND-102）。 */
+  /** `tg://settings` —— 设置页链接（DEEPLINK-EXPAND-102；DEEPLINK-103 细化 section）。 */
   private openSettingsLink(
     discriminator: string,
-    _linkType: InternalLinkTypeSettings
+    linkType: InternalLinkTypeSettings
   ): AppLinkResult {
-    this.navigate({ name: 'settings' });
-    this.log('info', `outcome=routed linkType=${discriminator}`);
+    // TDLib 会把 t.me/settings/<section> 解析成强类型 section；本端只有四个分区有
+    // 真实落点（notifications / data_and_storage 分区渲染 + devices / privacy 整屏子页），
+    // 其余（language / appearance / premium …）落完整设置页，由对应卡片行承接。
+    const section: string = settingsSectionKeyOf(linkType.section);
+    if (section.length > 0) {
+      this.navigate({ name: 'settingsSection', section: section });
+    } else {
+      this.navigate({ name: 'settings' });
+    }
+    this.log('info', `outcome=routed linkType=${discriminator},section=${section}`);
     return result('routed', discriminator, 0, '');
   }
 
@@ -683,6 +734,87 @@ export class AppLinkRouter {
   }
 
   /**
+   * 应用内搜索链接（DEEPLINK-103）。
+   *
+   * TDLib 对 `t.me/chats/search` 判出 `internalLinkTypeSearch`，但判别式**不携带查询词**
+   * （生成类只有 type/extra，LinkManager.cpp:1161 的 InternalLinkSearch 无字段）——
+   * Android 侧也是打开空查询的搜索页。这里同样只落 `search` 路由，不自己从原始链接
+   * 里猜查询词（猜错口径比空查询更糟）；SearchPage 自己会聚焦输入框。
+   */
+  private openSearchPage(discriminator: string): AppLinkResult {
+    this.navigate({ name: 'search' });
+    this.log('info', `outcome=routed linkType=${discriminator}`);
+    return result('routed', discriminator, 0, '');
+  }
+
+  /**
+   * `t.me/new` —— 新建私聊（DEEPLINK-103）。
+   *
+   * 语义是「挑一个联系人开始私聊」，本端的现成落点就是联系人页
+   * （点联系人 → 资料/会话），不需要额外回调。
+   */
+  private openNewPrivateChat(discriminator: string): AppLinkResult {
+    this.navigate({ name: 'contacts' });
+    this.log('info', `outcome=routed linkType=${discriminator}`);
+    return result('routed', discriminator, 0, '');
+  }
+
+  /**
+   * `t.me/new/group`、`t.me/new/channel` —— 新建群组/频道（DEEPLINK-103）。
+   *
+   * 复用 GROUP-CREATE-101 的既有链路（抽屉「新建群组/频道」同一条路径）：
+   * 回调置 groupCreateMode + 待多选标记，再压 contacts 路由，由联系人页的多选
+   * 流程接手。未注入回调的装配路径退回普通联系人页，链接仍然有去处。
+   */
+  private openNewGroupOrChannel(discriminator: string, kind: 'group' | 'channel'): AppLinkResult {
+    if (this.onCreateChat !== undefined) {
+      this.onCreateChat(kind);
+      this.log('info', `outcome=routed linkType=${discriminator},kind=${kind}`);
+      return result('routed', discriminator, 0, kind);
+    }
+    this.navigate({ name: 'contacts' });
+    this.log('info', `outcome=routed linkType=${discriminator},kind=${kind},stage=contacts_fallback`);
+    return result('routed', discriminator, 0, kind);
+  }
+
+  /**
+   * `t.me/share/url?url=...&text=...` —— 分享草稿链接（DEEPLINK-103）。
+   *
+   * TDLib 把分享链接解析成 `internalLinkTypeMessageDraft`（text 为整理后的
+   * FormattedText）。本端 v1 不在会话内预填草稿，而是复用 SHARE-EXT-101 的
+   * 「目标选择器 → 发送」链路（与系统分享同一落点）。日志只记长度不记正文，
+   * 与全文件「日志里没有链接正文」的口径一致。
+   */
+  private openMessageDraft(
+    discriminator: string,
+    linkType: InternalLinkTypeMessageDraft
+  ): AppLinkResult {
+    const text: string = linkType.text === null ? '' : linkType.text.text;
+    if (text.trim().length === 0) {
+      return result('failed', discriminator, 0, 'empty_draft_text');
+    }
+    if (this.onShareDraft !== undefined) {
+      this.onShareDraft(text);
+      this.log('info', `outcome=routed linkType=${discriminator},textLength=${text.length}`);
+      return result('routed', discriminator, 0, '');
+    }
+    this.log('info', `outcome=notified linkType=${discriminator},textLength=${text.length}`);
+    return result('notified', discriminator, 0, '');
+  }
+
+  /**
+   * `t.me/setlanguage?lang=<id>` —— 语言包链接（DEEPLINK-103）。
+   *
+   * 本端没有「按链接安装语言包」的流程（应用默认简体中文，语言切换收在设置页
+   * 的语言卡里），所以落到完整设置页让用户在语言卡上自行操作，不冒充安装语义。
+   */
+  private openLanguageSettings(discriminator: string): AppLinkResult {
+    this.navigate({ name: 'settings' });
+    this.log('info', `outcome=routed linkType=${discriminator}`);
+    return result('routed', discriminator, 0, '');
+  }
+
+  /**
    * `searchPublicChat` 是 TDLib 侧「按用户名取会话」的唯一入口，它会顺手把这个公开会话
    * 建进本地库 —— 与 Android 点一条公开链接后的行为一致。失败（`chatNotPublic`、超时）
    * 一律回落成 `chat_unresolved`，不猜、不用用户名去拼 chatId。
@@ -740,6 +872,34 @@ export function instantViewUrlFromLink(url: string): string | null {
     return null;
   }
   return trimmed;
+}
+
+/**
+ * DEEPLINK-103：TDLib `SettingsSection` → 本端 `settingsSection` 路由的 section 串。
+ *
+ * 只映射本端**有真实落点**的四个：notifications / data_and_storage 走分区渲染，
+ * devices / privacy 走设置页里的整屏子页（SettingsReducer 对这两个原始串有专门分支）。
+ * 其余（language / appearance / premium …）本端没有独立子页，返回空串由调用方
+ * 落完整设置页 —— 设置页的卡片行就是它们的落点，不硬造一个半截分区。
+ */
+export function settingsSectionKeyOf(section: TdSettingsSection | null): string {
+  if (section === null) {
+    return '';
+  }
+  const kind: string = section.type;
+  if (kind === 'settingsSectionNotifications') {
+    return 'notifications';
+  }
+  if (kind === 'settingsSectionDataAndStorage') {
+    return 'data_and_storage';
+  }
+  if (kind === 'settingsSectionDevices') {
+    return 'devices';
+  }
+  if (kind === 'settingsSectionPrivacyAndSecurity') {
+    return 'privacy';
+  }
+  return '';
 }
 
 /**

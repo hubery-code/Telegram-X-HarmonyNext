@@ -682,6 +682,17 @@ struct Index {
             this.navController.navigateTo({ name: 'chat', chatId: chatId });
           }
         },
+        // DEEPLINK-103：t.me/new/group、t.me/new/channel → 复用 GROUP-CREATE-101
+        // 的抽屉链路（联系人多选 → 命名页），与 initChatList 里的 DrawerNavTarget 同一步骤。
+        onCreateChat: (kind: 'group' | 'channel'): void => {
+          this.groupCreateMode = kind;
+          this.pendingContactsMultiSelect = true;
+          this.navController.navigateTo({ name: 'contacts' });
+        },
+        // DEEPLINK-103：t.me/share/url 草稿 → 复用 SHARE-EXT-101 的目标选择器 → 发送。
+        onShareDraft: (text: string): void => {
+          this.deliverShare(new ReceivedShare(text, []));
+        },
         logger: this.logger
       }
     );

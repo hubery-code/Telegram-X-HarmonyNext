@@ -16,8 +16,10 @@ import {
   ContactsRoute,
   DeepLinkRule,
   InstantViewRoute,
+  SearchRoute,
   SelfProfileRoute,
   SettingsRoute,
+  SettingsSectionRoute,
   UserProfileRoute
 } from '@tgx/core-navigation';
 import { TdWireObject, TdWireValue } from '@tgx/td-gateway';
@@ -28,7 +30,8 @@ import {
   ChatTypePrivate,
   ChatTypeSupergroup,
   TdJsonRaw,
-  decodeChatInviteLinkInfo
+  decodeChatInviteLinkInfo,
+  decodeTdSettingsSection
 } from '@tgx/core-td-api-generated';
 import {
   AppLinkResult,
@@ -37,6 +40,7 @@ import {
   instantViewUrlFromLink,
   invitePromptOf,
   routeForChat,
+  settingsSectionKeyOf,
   stripAtSign
 } from '../../main/ets/deeplink/AppLinkRouter';
 import {
@@ -195,6 +199,48 @@ function instantViewWire(url: string, fallbackUrl: string): TdWireObject {
   return payload;
 }
 
+function searchWire(): TdWireObject {
+  const payload: TdWireObject = {};
+  payload['@type'] = 'internalLinkTypeSearch';
+  return payload;
+}
+
+function newChatWire(typeName: string): TdWireObject {
+  const payload: TdWireObject = {};
+  payload['@type'] = typeName;
+  return payload;
+}
+
+function messageDraftWire(text: string): TdWireObject {
+  const formatted: TdWireObject = {};
+  formatted['@type'] = 'formattedText';
+  formatted['text'] = text;
+  const payload: TdWireObject = {};
+  payload['@type'] = 'internalLinkTypeMessageDraft';
+  payload['text'] = formatted;
+  payload['contains_link'] = false;
+  return payload;
+}
+
+function languagePackWire(packId: string): TdWireObject {
+  const payload: TdWireObject = {};
+  payload['@type'] = 'internalLinkTypeLanguagePack';
+  payload['language_pack_id'] = packId;
+  return payload;
+}
+
+/** sectionType 为空串时省略 section 键（等价于 TDLib 回 null）。 */
+function settingsSectionWire(sectionType: string): TdWireObject {
+  const payload: TdWireObject = {};
+  payload['@type'] = 'internalLinkTypeSettings';
+  if (sectionType.length > 0) {
+    const section: TdWireObject = {};
+    section['@type'] = sectionType;
+    payload['section'] = section;
+  }
+  return payload;
+}
+
 function userWire(userId: number, isBot: boolean): TdWireObject {
   const type: TdWireObject = {};
   type['@type'] = isBot ? 'userTypeBot' : 'userTypeRegular';
@@ -342,7 +388,9 @@ function makeRouter(
   ready: boolean = true,
   prompt: AppLinkPromptPort | null = null,
   onOpenStickerSet?: (name: string, expectCustomEmoji: boolean) => void,
-  onBotStartInGroup?: (botUsername: string, startParameter: string, chatId: number) => void
+  onBotStartInGroup?: (botUsername: string, startParameter: string, chatId: number) => void,
+  onCreateChat?: (kind: 'group' | 'channel') => void,
+  onShareDraft?: (text: string) => void
 ): AppLinkRouter {
   return new AppLinkRouter(port, {
     navigate: (route: AppRoute): void => {
@@ -351,7 +399,9 @@ function makeRouter(
     isReady: (): boolean => ready,
     prompt: prompt !== null ? prompt : undefined,
     onOpenStickerSet: onOpenStickerSet,
-    onBotStartInGroup: onBotStartInGroup
+    onBotStartInGroup: onBotStartInGroup,
+    onCreateChat: onCreateChat,
+    onShareDraft: onShareDraft
   });
 }
 
@@ -488,14 +538,20 @@ export default function appLinkRouterTest() {
     });
 
     it('recognizedButUnimplemented_neverEscapesToBrowser', 0, async (): Promise<void> => {
-      // DEEPLINK-STICKER-101 之后仍没实现的类型（贴纸包/邀请/代理/消息/bot 都已经接上了）。
-      const cases: string[] = ['internalLinkTypeLanguagePack', 'internalLinkTypeGroupCall'];
+      // DEEPLINK-103 之后仍没实现的类型：语音聊天/游戏无落点；proxy 是用户红线（功能已整体
+      // 移除，严禁回归）；story 是用户红线（暂不做）。这些确实都是 Telegram 链接，
+      // 丢进浏览器只会得到登录墙 —— 必须由上层提示，不许外溢。
+      const cases: string[] = [
+        'internalLinkTypeGroupCall',
+        'internalLinkTypeGame',
+        'internalLinkTypeProxy',
+        'internalLinkTypeStory'
+      ];
       for (let i = 0; i < cases.length; i++) {
         const port: FakeAppLinkPort = new FakeAppLinkPort();
         port.linkTypeResult = ok(linkTypeWire(cases[i]));
         const nav: NavRecorder = new NavRecorder();
         const res: AppLinkResult = await makeRouter(port, nav).handle('https://t.me/anything');
-        // 这些确实是 Telegram 链接，丢进浏览器只会得到登录墙 —— 必须由上层提示。
         expect(res.outcome).assertEqual('unsupported');
         expect(res.linkType).assertEqual(cases[i]);
         expect(res.reason).assertEqual(cases[i]);
@@ -1177,6 +1233,200 @@ export default function appLinkRouterTest() {
 
       // 两种防御路径都不压栈、不外跳浏览器。
       expect(nav.routes.length).assertEqual(0);
+    });
+
+    // ---------- DEEPLINK-103：搜索 / 新建会话 / 分享草稿 / 语言包 / 设置分区 ----------
+
+    it('searchLink_routesToSearchRoute', 0, async (): Promise<void> => {
+      const port: FakeAppLinkPort = new FakeAppLinkPort();
+      port.linkTypeResult = ok(searchWire());
+      const nav: NavRecorder = new NavRecorder();
+      const res: AppLinkResult = await makeRouter(port, nav).handle('https://t.me/chats/search');
+      expect(res.outcome).assertEqual('routed');
+      expect(res.linkType).assertEqual('internalLinkTypeSearch');
+      expect(nav.routes.length).assertEqual(1);
+      const route: SearchRoute = nav.last() as SearchRoute;
+      expect(route.name).assertEqual('search');
+      // TDLib 的判别式不携带查询词（LinkManager InternalLinkSearch 无字段）：
+      // 本端不自己从原始链接里猜，落空查询搜索页。
+      expect(route.query === undefined).assertTrue();
+      expect(port.calls.join(',')).assertEqual('getInternalLinkType');
+    });
+
+    it('newPrivateChat_routesToContacts', 0, async (): Promise<void> => {
+      const port: FakeAppLinkPort = new FakeAppLinkPort();
+      port.linkTypeResult = ok(newChatWire('internalLinkTypeNewPrivateChat'));
+      const nav: NavRecorder = new NavRecorder();
+      const res: AppLinkResult = await makeRouter(port, nav).handle('https://t.me/new');
+      expect(res.outcome).assertEqual('routed');
+      expect(res.linkType).assertEqual('internalLinkTypeNewPrivateChat');
+      expect(nav.routes.length).assertEqual(1);
+      expect(nav.last()?.name).assertEqual('contacts');
+    });
+
+    it('newGroupChat_withCallback_triggersCreateFlow', 0, async (): Promise<void> => {
+      const port: FakeAppLinkPort = new FakeAppLinkPort();
+      port.linkTypeResult = ok(newChatWire('internalLinkTypeNewGroupChat'));
+      const nav: NavRecorder = new NavRecorder();
+      let kind: string = '';
+      const router: AppLinkRouter = makeRouter(port, nav, true, null, undefined, undefined,
+        (createKind: 'group' | 'channel'): void => {
+          kind = createKind;
+        });
+      const res: AppLinkResult = await router.handle('https://t.me/new/group');
+      expect(res.outcome).assertEqual('routed');
+      expect(res.linkType).assertEqual('internalLinkTypeNewGroupChat');
+      expect(kind).assertEqual('group');
+      // 导航由回调侧（Index 的建群链路）负责，路由层不再压栈。
+      expect(nav.routes.length).assertEqual(0);
+    });
+
+    it('newChannelChat_withCallback_triggersCreateFlow', 0, async (): Promise<void> => {
+      const port: FakeAppLinkPort = new FakeAppLinkPort();
+      port.linkTypeResult = ok(newChatWire('internalLinkTypeNewChannelChat'));
+      const nav: NavRecorder = new NavRecorder();
+      let kind: string = '';
+      const router: AppLinkRouter = makeRouter(port, nav, true, null, undefined, undefined,
+        (createKind: 'group' | 'channel'): void => {
+          kind = createKind;
+        });
+      const res: AppLinkResult = await router.handle('https://t.me/new/channel');
+      expect(res.outcome).assertEqual('routed');
+      expect(res.linkType).assertEqual('internalLinkTypeNewChannelChat');
+      expect(kind).assertEqual('channel');
+      expect(nav.routes.length).assertEqual(0);
+    });
+
+    it('newGroupChat_withoutCallback_fallsBackToContacts', 0, async (): Promise<void> => {
+      const port: FakeAppLinkPort = new FakeAppLinkPort();
+      port.linkTypeResult = ok(newChatWire('internalLinkTypeNewGroupChat'));
+      const nav: NavRecorder = new NavRecorder();
+      const res: AppLinkResult = await makeRouter(port, nav).handle('https://t.me/new/group');
+      // 未注入创建回调时退回联系人页，链接仍有去处、不外溢浏览器。
+      expect(res.outcome).assertEqual('routed');
+      expect(nav.routes.length).assertEqual(1);
+      expect(nav.last()?.name).assertEqual('contacts');
+    });
+
+    it('messageDraft_withCallback_handsTextToShareFlow', 0, async (): Promise<void> => {
+      const port: FakeAppLinkPort = new FakeAppLinkPort();
+      port.linkTypeResult = ok(messageDraftWire('check this https://t.me/x'));
+      const nav: NavRecorder = new NavRecorder();
+      const texts: string[] = [];
+      const router: AppLinkRouter = makeRouter(port, nav, true, null, undefined, undefined, undefined,
+        (text: string): void => {
+          texts.push(text);
+        });
+      const res: AppLinkResult = await router.handle('https://t.me/share/url?url=https://t.me/x');
+      expect(res.outcome).assertEqual('routed');
+      expect(res.linkType).assertEqual('internalLinkTypeMessageDraft');
+      expect(texts.length).assertEqual(1);
+      expect(texts[0]).assertEqual('check this https://t.me/x');
+      expect(nav.routes.length).assertEqual(0);
+    });
+
+    it('messageDraft_emptyText_fails', 0, async (): Promise<void> => {
+      const port: FakeAppLinkPort = new FakeAppLinkPort();
+      port.linkTypeResult = ok(messageDraftWire('   '));
+      const nav: NavRecorder = new NavRecorder();
+      let called: boolean = false;
+      const router: AppLinkRouter = makeRouter(port, nav, true, null, undefined, undefined, undefined,
+        (_text: string): void => {
+          called = true;
+        });
+      const res: AppLinkResult = await router.handle('https://t.me/share/url?url=');
+      expect(res.outcome).assertEqual('failed');
+      expect(res.reason).assertEqual('empty_draft_text');
+      expect(called).assertFalse();
+      expect(nav.routes.length).assertEqual(0);
+    });
+
+    it('messageDraft_withoutCallback_notified', 0, async (): Promise<void> => {
+      const port: FakeAppLinkPort = new FakeAppLinkPort();
+      port.linkTypeResult = ok(messageDraftWire('hello'));
+      const nav: NavRecorder = new NavRecorder();
+      const res: AppLinkResult = await makeRouter(port, nav).handle('https://t.me/share/url?url=x');
+      // 未接分享选择器的装配路径：不外溢浏览器、不压栈，按 notified 收口。
+      expect(res.outcome).assertEqual('notified');
+      expect(nav.routes.length).assertEqual(0);
+    });
+
+    it('languagePack_routesToSettings', 0, async (): Promise<void> => {
+      const port: FakeAppLinkPort = new FakeAppLinkPort();
+      port.linkTypeResult = ok(languagePackWire('ru'));
+      const nav: NavRecorder = new NavRecorder();
+      const res: AppLinkResult = await makeRouter(port, nav).handle('https://t.me/setlanguage?lang=ru');
+      expect(res.outcome).assertEqual('routed');
+      expect(res.linkType).assertEqual('internalLinkTypeLanguagePack');
+      expect(nav.routes.length).assertEqual(1);
+      expect(nav.last()?.name).assertEqual('settings');
+    });
+
+    it('settingsSection_knownSections_routeToSectionRoute', 0, async (): Promise<void> => {
+      const port: FakeAppLinkPort = new FakeAppLinkPort();
+      const nav: NavRecorder = new NavRecorder();
+      const router: AppLinkRouter = makeRouter(port, nav);
+
+      // 四个有真实落点的分区：notifications / data_and_storage 走分区渲染，
+      // devices / privacy 走设置页整屏子页（reducer 专门分支）。
+      port.linkTypeResult = ok(settingsSectionWire('settingsSectionNotifications'));
+      let res: AppLinkResult = await router.handle('https://t.me/settings/notifications');
+      expect(res.outcome).assertEqual('routed');
+      let route: SettingsSectionRoute = nav.last() as SettingsSectionRoute;
+      expect(route.name).assertEqual('settingsSection');
+      expect(route.section).assertEqual('notifications');
+
+      port.linkTypeResult = ok(settingsSectionWire('settingsSectionDataAndStorage'));
+      await router.handle('https://t.me/settings/data-and-storage');
+      route = nav.last() as SettingsSectionRoute;
+      expect(route.section).assertEqual('data_and_storage');
+
+      port.linkTypeResult = ok(settingsSectionWire('settingsSectionDevices'));
+      await router.handle('https://t.me/settings/devices');
+      route = nav.last() as SettingsSectionRoute;
+      expect(route.section).assertEqual('devices');
+
+      port.linkTypeResult = ok(settingsSectionWire('settingsSectionPrivacyAndSecurity'));
+      await router.handle('https://t.me/settings/privacy');
+      route = nav.last() as SettingsSectionRoute;
+      expect(route.section).assertEqual('privacy');
+    });
+
+    it('settingsSection_unknownOrNullSection_fallsBackToSettings', 0, async (): Promise<void> => {
+      const port: FakeAppLinkPort = new FakeAppLinkPort();
+      const nav: NavRecorder = new NavRecorder();
+      const router: AppLinkRouter = makeRouter(port, nav);
+
+      // 没有独立子页的分区（premium）落完整设置页，不硬造半截分区。
+      port.linkTypeResult = ok(settingsSectionWire('settingsSectionPremium'));
+      let res: AppLinkResult = await router.handle('https://t.me/settings/premium');
+      expect(res.outcome).assertEqual('routed');
+      expect(nav.last()?.name).assertEqual('settings');
+
+      // section 缺省（null）同样落完整设置页（既有行为不回归）。
+      port.linkTypeResult = ok(settingsSectionWire(''));
+      res = await router.handle('https://t.me/settings');
+      expect(res.outcome).assertEqual('routed');
+      expect(nav.last()?.name).assertEqual('settings');
+    });
+
+    it('settingsSectionKeyOf_mapsOnlyLandedSections', 0, (): void => {
+      // decode 出来的是 TdSettingsSection | null，直接喂给纯函数验证映射口径。
+      // 注意喂给 decodeTdSettingsSection 的是**裸 section 对象**（其 @type 就是
+      // settingsSectionXxx），不是 internalLinkTypeSettings 包装层。
+      const sectionWire: (sectionType: string) => TdWireObject =
+        (sectionType: string): TdWireObject => settingsSectionWire(sectionType)['section'] as TdWireObject;
+      expect(settingsSectionKeyOf(decodeTdSettingsSection(sectionWire('settingsSectionNotifications') as TdJsonRaw)))
+        .assertEqual('notifications');
+      expect(settingsSectionKeyOf(decodeTdSettingsSection(sectionWire('settingsSectionDataAndStorage') as TdJsonRaw)))
+        .assertEqual('data_and_storage');
+      expect(settingsSectionKeyOf(decodeTdSettingsSection(sectionWire('settingsSectionDevices') as TdJsonRaw)))
+        .assertEqual('devices');
+      expect(settingsSectionKeyOf(decodeTdSettingsSection(sectionWire('settingsSectionPrivacyAndSecurity') as TdJsonRaw)))
+        .assertEqual('privacy');
+      expect(settingsSectionKeyOf(decodeTdSettingsSection(sectionWire('settingsSectionPremium') as TdJsonRaw)))
+        .assertEqual('');
+      expect(settingsSectionKeyOf(null)).assertEqual('');
     });
   });
 }
