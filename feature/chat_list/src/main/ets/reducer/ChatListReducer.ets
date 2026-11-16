@@ -20,11 +20,22 @@
  * - drawerItemClicked → 按 key 分流：contacts/settings 纯导航，saved 走
  *   OpenSavedMessages（createPrivateChat 解析自己的私聊），未落地项不产 effect；
  * - drawerAccountClicked → DrawerNavigate('selfProfile')。
+ *
+ * GROUP-CREATE-101 新增建群/建频道命名段：
+ * - drawerItemClicked(newGroup/newChannel) → DrawerNavigate（成员多选与命名页
+ *   的接力由装配层完成）；
+ * - groupCreateStarted 初始化命名段状态；标题/简介输入只改状态；
+ * - groupCreateSubmitRequested 本地校验标题（空/超 128 字 → 内联错误 key，
+ *   不出请求；合法 → CreateBasicGroupChat / CreateSupergroupChat）；
+ * - onGroupChatCreated 清流程态并复用 NavigateToChat 进新会话；
+ * - onGroupCreateFailed 落通用错误 key 并复位 isSubmitting 允许重试。
  */
 
 import { Reducer, ReducerEnv, ReducerResult, reduced } from '@tgx/feature-template';
+import { GROUP_TITLE_MAX_LENGTH } from '@tgx/core-domain';
 import { ChatListUiState, ChatActionMenuState } from '../contract/ChatListUiState';
 import { DrawerItemKey, DrawerState, isDrawerAccountLoaded } from '../contract/DrawerState';
+import { GroupCreateState } from '../contract/GroupCreateState';
 import { ChatListItem } from '../model/ChatListItem';
 import {
   ChatListIntent,
@@ -37,7 +48,14 @@ import {
   DrawerItemClicked,
   OnDrawerAccountLoaded,
   OnDrawerAvatarLoaded,
-  DrawerNightModeSet
+  DrawerNightModeSet,
+  GroupCreateStarted,
+  GroupCreateTitleChanged,
+  GroupCreateDescriptionChanged,
+  GroupCreateSubmitRequested,
+  GroupCreateCancelled,
+  OnGroupChatCreated,
+  OnGroupCreateFailed
 } from '../contract/ChatListIntent';
 import {
   ChatListEffect,
@@ -49,10 +67,37 @@ import {
   SetChatReadState,
   FetchDrawerAccount,
   DrawerNavigate,
-  OpenSavedMessages
+  OpenSavedMessages,
+  CreateBasicGroupChat,
+  CreateSupergroupChat
 } from '../contract/ChatListEffect';
 
 export const CHAT_LIST_PAGE_SIZE: number = 20;
+
+// ---- GROUP-CREATE-101 内联错误文案 key（传 key 不传串；词条由装配侧词典提供）----
+
+/** 标题为空（提交被本地拦截）。 */
+export const GROUP_CREATE_TITLE_EMPTY_KEY: string = 'Title is required';
+/** 标题超 128 字（提交被本地拦截）。 */
+export const GROUP_CREATE_TITLE_TOO_LONG_KEY: string = 'Title is too long';
+/** 创建请求失败（TDLib 请求级/响应级错误，细节进日志）。 */
+export const GROUP_CREATE_FAILED_KEY: string = 'Failed to create group';
+
+/**
+ * 标题本地校验 → 内联错误 Lang key；合法返回 null。
+ * 上限取 core/domain 的 GROUP_TITLE_MAX_LENGTH（与 GroupChatCreator 的
+ * validateGroupTitle 同一条口径），页面经 this.t(key) 现取文案。
+ */
+export function groupCreateTitleErrorKey(title: string): string | null {
+  const trimmed: string = title.trim();
+  if (trimmed.length === 0) {
+    return GROUP_CREATE_TITLE_EMPTY_KEY;
+  }
+  if (trimmed.length > GROUP_TITLE_MAX_LENGTH) {
+    return GROUP_CREATE_TITLE_TOO_LONG_KEY;
+  }
+  return null;
+}
 
 /** 按 chatId 取当前行；不存在返回 null。 */
 function findItem(state: ChatListUiState, chatId: number): ChatListItem | null {
@@ -256,6 +301,13 @@ export const chatListReducer: Reducer<ChatListUiState, ChatListIntent, ChatListE
     case 'drawerItemClicked': {
       const clicked: DrawerItemClicked = intent as DrawerItemClicked;
       const item: DrawerItemKey = clicked.item;
+      if (item === 'newGroup') {
+        // GROUP-CREATE-101：入口只发导航意图——成员多选与命名段的接力由装配层完成。
+        return reduced(state, [new DrawerNavigate('newGroup')]);
+      }
+      if (item === 'newChannel') {
+        return reduced(state, [new DrawerNavigate('newChannel')]);
+      }
       if (item === 'contacts') {
         return reduced(state, [new DrawerNavigate('contacts')]);
       }
@@ -280,6 +332,91 @@ export const chatListReducer: Reducer<ChatListUiState, ChatListIntent, ChatListE
       }
       return reduced(state.copyWith({
         drawer: state.drawer.copyWith({ nightMode: set.on })
+      }));
+    }
+
+    // ---- GROUP-CREATE-101 建群/建频道命名段 ----
+
+    case 'groupCreateStarted': {
+      const started: GroupCreateStarted = intent as GroupCreateStarted;
+      // 重复进入（装配层重复派发）：以最新一次为准重开流程，不保留旧输入。
+      return reduced(state.copyWith({
+        groupCreate: new GroupCreateState(started.mode, started.memberUserIds)
+      }));
+    }
+
+    case 'groupCreateTitleChanged': {
+      const changed: GroupCreateTitleChanged = intent as GroupCreateTitleChanged;
+      if (state.groupCreate === null) {
+        return reduced(state);
+      }
+      // 输入即清错：错误条描述的是上一次提交，继续输入说明用户已在修正。
+      return reduced(state.copyWith({
+        groupCreate: state.groupCreate.copyWith({ title: changed.title, errorMessageKey: null })
+      }));
+    }
+
+    case 'groupCreateDescriptionChanged': {
+      const changed: GroupCreateDescriptionChanged = intent as GroupCreateDescriptionChanged;
+      if (state.groupCreate === null) {
+        return reduced(state);
+      }
+      return reduced(state.copyWith({
+        groupCreate: state.groupCreate.copyWith({ description: changed.description })
+      }));
+    }
+
+    case 'groupCreateSubmitRequested': {
+      const current: GroupCreateState | null = state.groupCreate;
+      if (current === null || current.isSubmitting) {
+        return reduced(state);
+      }
+      // 本地先拦（与 core/domain validateGroupTitle 同一条口径）：标题空 /
+      // 超 128 字只落内联错误 key，不出请求。
+      const titleErrorKey: string | null = groupCreateTitleErrorKey(current.title);
+      if (titleErrorKey !== null) {
+        return reduced(state.copyWith({
+          groupCreate: current.copyWith({ errorMessageKey: titleErrorKey })
+        }));
+      }
+      // effect 带的是 trim 后原文：请求投影侧还会再校验一次（双保险）。
+      const effects: ChatListEffect[] = current.mode === 'channel'
+        ? [new CreateSupergroupChat(current.title.trim(), true, current.description.trim())]
+        : [new CreateBasicGroupChat(current.title.trim(), current.memberUserIds)];
+      return reduced(state.copyWith({
+        groupCreate: current.copyWith({ isSubmitting: true, errorMessageKey: null })
+      }), effects);
+    }
+
+    case 'groupCreateCancelled': {
+      if (state.groupCreate === null) {
+        return reduced(state);
+      }
+      return reduced(state.copyWith({ groupCreate: null }));
+    }
+
+    case 'onGroupChatCreated': {
+      // 流程已不在途（用户在请求飞行中取消了命名页）→ 静默：群仍会建出来
+      // 进列表，但不把已离开的用户拽进新会话（与 no-op 规范一致）。
+      if (state.groupCreate === null) {
+        return reduced(state);
+      }
+      const created: OnGroupChatCreated = intent as OnGroupChatCreated;
+      // 成功即离场：清流程状态 + 进新会话（与列表点击同一条导航链路）。
+      const effects: ChatListEffect[] = [new NavigateToChat(created.chatId)];
+      return reduced(state.copyWith({ groupCreate: null }), effects);
+    }
+
+    case 'onGroupCreateFailed': {
+      if (state.groupCreate === null) {
+        return reduced(state);
+      }
+      // 通用错误 key（TDLib 细节进日志不进 UI）；isSubmitting 复位允许重试。
+      return reduced(state.copyWith({
+        groupCreate: state.groupCreate.copyWith({
+          isSubmitting: false,
+          errorMessageKey: GROUP_CREATE_FAILED_KEY
+        })
       }));
     }
   }

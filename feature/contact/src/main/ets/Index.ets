@@ -13,9 +13,13 @@ export {
   OnContactsLoaded,
   OnContactsFailed,
   ContactTapped,
+  MultiSelectEnabled,
+  MemberSelectionToggled,
+  MemberSelectionConfirmed,
+  MultiSelectReset,
   ContactsIntent
 } from './contract/ContactsIntent';
-export { FetchContacts, OpenUserProfile, ContactsEffect } from './contract/ContactsEffect';
+export { FetchContacts, OpenUserProfile, ConfirmMemberSelection, ContactsEffect } from './contract/ContactsEffect';
 export { contactsReducer, filterContactsItems } from './reducer/ContactsReducer';
 export {
   ContactsCoordinatorOptions,

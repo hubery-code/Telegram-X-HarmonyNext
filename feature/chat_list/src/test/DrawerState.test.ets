@@ -4,7 +4,8 @@
  * 覆盖：
  * 1. DrawerState.empty()：空账号 + 夜间模式关 + 未回灌的 accountUserId；
  * 2. 构造器全字段存取；
- * 3. DRAWER_ITEM_KEYS：六项 key 与 TGX DrawerController 菜单顺序一致；
+ * 3. DRAWER_ITEM_KEYS：八项 key 与 TGX DrawerController 菜单顺序一致
+ *    （GROUP-CREATE-101 起前两项为新建群组/新建频道）；
  * 4. copyWith：只改指定字段、显式 null 生效、原对象不被改动。
  */
 
@@ -36,16 +37,20 @@ export default function drawerStateTest(): void {
       expect(state.nightMode).assertTrue();
     });
 
-    it('drawerItemKeys_listsSixEntriesInTgxOrder', 0, () => {
-      expect(DRAWER_ITEM_KEYS.length).assertEqual(6);
-      expect(DRAWER_ITEM_KEYS[0]).assertEqual('contacts');
-      expect(DRAWER_ITEM_KEYS[1]).assertEqual('calls');
-      expect(DRAWER_ITEM_KEYS[2]).assertEqual('saved');
-      expect(DRAWER_ITEM_KEYS[3]).assertEqual('settings');
-      expect(DRAWER_ITEM_KEYS[4]).assertEqual('invite');
-      expect(DRAWER_ITEM_KEYS[5]).assertEqual('help');
+    it('drawerItemKeys_listsEntriesInTgxOrder', 0, () => {
+      // GROUP-CREATE-101：前两项为新建群组/新建频道（建群链路入口），其余保持
+      // TGX DrawerController 原顺序。
+      expect(DRAWER_ITEM_KEYS.length).assertEqual(8);
+      expect(DRAWER_ITEM_KEYS[0]).assertEqual('newGroup');
+      expect(DRAWER_ITEM_KEYS[1]).assertEqual('newChannel');
+      expect(DRAWER_ITEM_KEYS[2]).assertEqual('contacts');
+      expect(DRAWER_ITEM_KEYS[3]).assertEqual('calls');
+      expect(DRAWER_ITEM_KEYS[4]).assertEqual('saved');
+      expect(DRAWER_ITEM_KEYS[5]).assertEqual('settings');
+      expect(DRAWER_ITEM_KEYS[6]).assertEqual('invite');
+      expect(DRAWER_ITEM_KEYS[7]).assertEqual('help');
       const first: DrawerItemKey = DRAWER_ITEM_KEYS[0];
-      expect(first).assertEqual('contacts');
+      expect(first).assertEqual('newGroup');
     });
 
     it('empty_hasNoUserId_soAccountIsTreatedAsUnloaded', 0, () => {

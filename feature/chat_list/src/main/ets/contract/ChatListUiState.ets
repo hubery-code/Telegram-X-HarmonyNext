@@ -14,6 +14,7 @@
 import { UiState } from '@tgx/feature-template';
 import { ChatListItem } from '../model/ChatListItem';
 import { DrawerState } from './DrawerState';
+import { GroupCreateState } from './GroupCreateState';
 
 export type ChatListKind = 'main' | 'archive';
 
@@ -93,6 +94,7 @@ export interface ChatListUiStateOptions {
   readonly selectedFolderId?: string;
   readonly folders?: readonly ChatFolderTab[];
   readonly drawer?: DrawerState;
+  readonly groupCreate?: GroupCreateState | null;
 }
 
 export class ChatListUiState implements UiState {
@@ -107,6 +109,11 @@ export class ChatListUiState implements UiState {
   readonly folders: readonly ChatFolderTab[];
   /** DRAWER-101：抽屉账号头状态（getMe + 头像下载回灌）。 */
   readonly drawer: DrawerState;
+  /**
+   * GROUP-CREATE-101：建群/建频道命名段状态；null = 流程未激活。
+   * 位置构造新字段只许追加在末尾（既有调用方按位置传参）。
+   */
+  readonly groupCreate: GroupCreateState | null;
 
   constructor(
     items: readonly ChatListItem[],
@@ -118,7 +125,8 @@ export class ChatListUiState implements UiState {
     archiveChatCount: number = 0,
     selectedFolderId: string = 'all',
     folders: readonly ChatFolderTab[] = DEFAULT_CHAT_FOLDERS,
-    drawer: DrawerState = DrawerState.empty()
+    drawer: DrawerState = DrawerState.empty(),
+    groupCreate: GroupCreateState | null = null
   ) {
     this.items = items;
     this.isLoading = isLoading;
@@ -130,11 +138,12 @@ export class ChatListUiState implements UiState {
     this.selectedFolderId = selectedFolderId;
     this.folders = folders;
     this.drawer = drawer;
+    this.groupCreate = groupCreate;
   }
 
   static initial(): ChatListUiState {
     return new ChatListUiState([], false, null, null, 'main', 0, 0, 'all', DEFAULT_CHAT_FOLDERS,
-      DrawerState.empty());
+      DrawerState.empty(), null);
   }
 
   copyWith(options: ChatListUiStateOptions): ChatListUiState {
@@ -148,7 +157,8 @@ export class ChatListUiState implements UiState {
       options.archiveChatCount !== undefined ? options.archiveChatCount : this.archiveChatCount,
       options.selectedFolderId !== undefined ? options.selectedFolderId : this.selectedFolderId,
       options.folders !== undefined ? options.folders : this.folders,
-      options.drawer !== undefined ? options.drawer : this.drawer
+      options.drawer !== undefined ? options.drawer : this.drawer,
+      options.groupCreate !== undefined ? options.groupCreate : this.groupCreate
     );
   }
 }

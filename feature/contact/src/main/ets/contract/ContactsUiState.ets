@@ -89,6 +89,10 @@ export interface ContactsUiStateOptions {
   items?: ContactsItem[];
   /** items 的字母分段（索引条与分组列表都渲染本字段）。 */
   sections?: ContactsSection[];
+  /** GROUP-CREATE-101：多选模式（建群选成员）。false = 常规单选导航模式。 */
+  multiSelect?: boolean;
+  /** GROUP-CREATE-101：已选 userIds（保持点选顺序，尾部追加、重复点击移除）。 */
+  selectedUserIds?: number[];
 }
 
 export class ContactsUiState {
@@ -98,6 +102,10 @@ export class ContactsUiState {
   readonly allItems: ContactsItem[];
   readonly items: ContactsItem[];
   readonly sections: ContactsSection[];
+  /** GROUP-CREATE-101：多选模式。位置构造新字段只许追加在末尾。 */
+  readonly multiSelect: boolean;
+  /** GROUP-CREATE-101：已选成员（点选顺序）。 */
+  readonly selectedUserIds: number[];
 
   constructor(
     isLoading: boolean = true,
@@ -105,7 +113,9 @@ export class ContactsUiState {
     query: string = '',
     allItems: ContactsItem[] = [],
     items: ContactsItem[] = [],
-    sections: ContactsSection[] = []
+    sections: ContactsSection[] = [],
+    multiSelect: boolean = false,
+    selectedUserIds: number[] = []
   ) {
     this.isLoading = isLoading;
     this.errorMessage = errorMessage;
@@ -113,6 +123,8 @@ export class ContactsUiState {
     this.allItems = allItems;
     this.items = items;
     this.sections = sections;
+    this.multiSelect = multiSelect;
+    this.selectedUserIds = selectedUserIds;
   }
 
   static initial(): ContactsUiState {
@@ -126,7 +138,9 @@ export class ContactsUiState {
       options.query !== undefined ? options.query : this.query,
       options.allItems !== undefined ? options.allItems : this.allItems,
       options.items !== undefined ? options.items : this.items,
-      options.sections !== undefined ? options.sections : this.sections
+      options.sections !== undefined ? options.sections : this.sections,
+      options.multiSelect !== undefined ? options.multiSelect : this.multiSelect,
+      options.selectedUserIds !== undefined ? options.selectedUserIds : this.selectedUserIds
     );
   }
 }

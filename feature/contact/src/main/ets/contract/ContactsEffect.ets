@@ -22,4 +22,17 @@ export class OpenUserProfile implements Effect {
   }
 }
 
-export type ContactsEffect = FetchContacts | OpenUserProfile;
+/**
+ * GROUP-CREATE-101：多选确认效应——把已选成员名单（点选顺序）交给装配层，
+ * 由它接力进入命名段（GroupCreateStarted）。模式本身不动，装配层决定去留。
+ */
+export class ConfirmMemberSelection implements Effect {
+  readonly kind: 'confirmMemberSelection' = 'confirmMemberSelection';
+  readonly userIds: number[];
+
+  constructor(userIds: number[]) {
+    this.userIds = userIds;
+  }
+}
+
+export type ContactsEffect = FetchContacts | OpenUserProfile | ConfirmMemberSelection;

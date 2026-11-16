@@ -16,6 +16,10 @@
  * DRAWER-101 新增：抽屉账号头由本协调器负责（getMe + FileRegistry 头像下载），
  * 菜单项导航经 DrawerNavigate 回调交回装配层；"我的收藏"用
  * createPrivateChat(my_id) 解析成与自己的私聊后复用 ChatSelected 导航链路。
+ *
+ * GROUP-CREATE-101 新增：建群/建频道请求经 core/domain 的 GroupChatCreator
+ * 发送（createNewBasicGroupChat / createNewSupergroupChat），回包 Chat 解码后
+ * 写 registry 并经 OnGroupChatCreated 复用 NavigateToChat 导航链路。
  */
 
 import { Logger } from '@tgx/observability';
@@ -49,6 +53,7 @@ import {
   ChatListState,
   ChatRegistry,
   FileRegistry,
+  GroupChatCreator,
   formatFullName,
   getAvatarLetters,
   isChatPinnedInList,
@@ -69,7 +74,9 @@ import {
   OnChatsLoadFailed,
   OnChatActionFailed,
   OnDrawerAccountLoaded,
-  OnDrawerAvatarLoaded
+  OnDrawerAvatarLoaded,
+  OnGroupChatCreated,
+  OnGroupCreateFailed
 } from '../contract/ChatListIntent';
 import {
   ChatListEffect,
@@ -81,7 +88,9 @@ import {
   SetChatArchived,
   FetchDrawerAccount,
   DrawerNavigate,
-  OpenSavedMessages
+  OpenSavedMessages,
+  CreateBasicGroupChat,
+  CreateSupergroupChat
 } from '../contract/ChatListEffect';
 import { chatListReducer } from '../reducer/ChatListReducer';
 
@@ -156,6 +165,8 @@ export class ChatListCoordinator {
   private readonly mainProjection: ChatListProjection;
   private readonly archiveProjection: ChatListProjection;
   private readonly fileRegistry: FileRegistry;
+  /** GROUP-CREATE-101：建群/建频道请求发送器（core/domain 投影，含标题本地校验）。 */
+  private readonly groupCreator: GroupChatCreator;
   private readonly scope: AccountScope;
   private readonly env: ReducerEnv;
   private readonly onNavigateToChat: (chatId: number, chatTitle: string) => void;
@@ -198,6 +209,7 @@ export class ChatListCoordinator {
     this.mainProjection = new ChatListProjection(this.mainList, this.registry, scope);
     this.archiveProjection = new ChatListProjection(this.archiveList, this.registry, scope);
     this.fileRegistry = new FileRegistry(scope);
+    this.groupCreator = new GroupChatCreator(scope);
     // MSG-108：置顶/标未读是"改现状"的操作，请求级失败要回灌到操作菜单调用方，
     // 所以这里保留 scope 引用（投影只暴露状态，不暴露请求能力）。
     this.scope = scope;
@@ -616,8 +628,63 @@ export class ChatListCoordinator {
         break;
       }
 
+      case 'createBasicGroupChat': {
+        const create: CreateBasicGroupChat = effect as CreateBasicGroupChat;
+        this.logger.info(TAG, 'create_basic_group', `members=${create.memberUserIds.length}`);
+        this.settleGroupCreate(this.groupCreator.createBasicGroup(create.title, create.memberUserIds));
+        break;
+      }
+
+      case 'createSupergroupChat': {
+        const createSuper: CreateSupergroupChat = effect as CreateSupergroupChat;
+        this.logger.info(TAG, 'create_supergroup', `isChannel=${createSuper.isChannel}`);
+        this.settleGroupCreate(
+          this.groupCreator.createSupergroup(createSuper.title, createSuper.isChannel, createSuper.description)
+        );
+        break;
+      }
+
       default:
         break;
+    }
+  }
+
+  /**
+   * GROUP-CREATE-101：建群/建频道请求的收尾统一回灌。
+   * 请求级拒绝与响应级失败都走 OnGroupCreateFailed（reducer 落通用错误 key、
+   * 复位 isSubmitting）；成功回包 Chat 解码后写进 registry（导航时标题能同步
+   * 命中本地缓存，不必等 updateNewChat），再经 OnGroupChatCreated →
+   * NavigateToChat 进新会话。
+   */
+  private settleGroupCreate(result: Result<TdPendingRequest, AppError>): void {
+    if (result.err) {
+      this.logger.logError(TAG, result.error);
+      this.dispatch(new OnGroupCreateFailed(result.error));
+      return;
+    }
+    if (result.ok) {
+      result.value.promise.then((res: Result<TdWireObject, AppError>): void => {
+        if (this.destroyed) {
+          return;
+        }
+        if (res.err) {
+          this.logger.logError(TAG, res.error);
+          this.dispatch(new OnGroupCreateFailed(res.error));
+        }
+        if (res.ok) {
+          const chat: Chat | null = decodeChat(res.value as TdJsonRaw);
+          if (chat !== null && chat.id > 0) {
+            this.registry.putChat(chat);
+            this.logger.info(TAG, 'group_created', `chatId=${chat.id}`);
+            this.dispatch(new OnGroupChatCreated(chat.id));
+          } else {
+            this.dispatch(new OnGroupCreateFailed(
+              AppErrors.parameter('invalid', 'chat', 'create group returned an unexpected payload')
+            ));
+          }
+        }
+      }).catch((): void => {
+      });
     }
   }
 

@@ -88,13 +88,20 @@ export struct DrawerMenu {
   /** 点击账号头（头像/姓名区）→ 我的资料，对齐 TGX 点头像进自己资料页。 */
   onAccountClicked: () => void = () => {};
 
-  /** 菜单项与顺序对齐 TGX DrawerController（enabled=false 先按 disabled 色展示）。 */
+  /** 菜单项文案：key 在渲染点现取，切语言随重渲染生效（见类头注释）。 */
   private t(key: string, ...args: (string | number)[]): string {
     const langCode: SupportedLanguage = this.effectiveLanguage === 'zh' ? 'zh' : 'en';
     return Lang.getInstance().formatByKey(key, langCode, args);
   }
 
+  /**
+   * 菜单项与顺序对齐 TGX DrawerController（enabled=false 先按 disabled 色展示）。
+   * GROUP-CREATE-101：前两项是新建群组/新建频道（建群链路的入口，密聊仍从
+   * 资料页走，不在抽屉重复）。
+   */
   private menuRows: DrawerMenuRow[] = [
+    new DrawerMenuRow('newGroup', $r('app.media.ic_group'), 'New Group', true),
+    new DrawerMenuRow('newChannel', $r('app.media.ic_comments'), 'New Channel', true),
     new DrawerMenuRow('contacts', $r('app.media.ic_contacts'), 'Contacts', true),
     new DrawerMenuRow('calls', $r('app.media.ic_call'), 'Calls', false),
     new DrawerMenuRow('saved', $r('app.media.ic_bookmark'), 'Saved Messages', true),

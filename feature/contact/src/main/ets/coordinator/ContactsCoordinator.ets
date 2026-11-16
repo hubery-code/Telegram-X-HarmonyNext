@@ -44,7 +44,7 @@ import {
   OnContactsLoaded,
   OnContactsFailed
 } from '../contract/ContactsIntent';
-import { ContactsEffect, FetchContacts, OpenUserProfile } from '../contract/ContactsEffect';
+import { ContactsEffect, FetchContacts, OpenUserProfile, ConfirmMemberSelection } from '../contract/ContactsEffect';
 import { contactsReducer } from '../reducer/ContactsReducer';
 import { compareContacts } from '../model/ContactsSections';
 import { formatContactPhone } from '../model/ContactPhone';
@@ -57,6 +57,11 @@ const AVATAR_DOWNLOAD_PRIORITY: number = 2;
 export interface ContactsCoordinatorOptions {
   /** 行点击后交给装配层打开用户资料页（缺省 no-op）。 */
   readonly onOpenUserProfile?: (userId: number) => void;
+  /**
+   * GROUP-CREATE-101：多选确认后交给装配层接力（进入命名段等）。
+   * 缺省 no-op——装配层未接线时多选确认不产生任何跳转。
+   */
+  readonly onMemberSelectionConfirmed?: (userIds: number[]) => void;
   readonly logger?: Logger;
 }
 
@@ -132,6 +137,8 @@ export class ContactsCoordinator {
   private readonly userRegistry: UserRegistry;
   private readonly fileRegistry: FileRegistry;
   private readonly onOpenUserProfile: (userId: number) => void;
+  /** GROUP-CREATE-101：多选确认回调（装配层接力进命名段）。 */
+  private readonly onMemberSelectionConfirmed: (userIds: number[]) => void;
   private readonly logger: Logger;
   private readonly env: ReducerEnv;
   private currentState: ContactsUiState;
@@ -156,6 +163,9 @@ export class ContactsCoordinator {
     this.onOpenUserProfile = options !== undefined && options.onOpenUserProfile !== undefined
       ? options.onOpenUserProfile
       : (userId: number): void => {};
+    this.onMemberSelectionConfirmed = options !== undefined && options.onMemberSelectionConfirmed !== undefined
+      ? options.onMemberSelectionConfirmed
+      : (userIds: number[]): void => {};
     this.logger = options !== undefined && options.logger !== undefined
       ? options.logger
       : new Logger();
@@ -367,6 +377,12 @@ export class ContactsCoordinator {
         const open: OpenUserProfile = effect as OpenUserProfile;
         this.logger.info(TAG, 'open_user_profile', `userId=${open.userId}`);
         this.onOpenUserProfile(open.userId);
+        break;
+      }
+      case 'confirmMemberSelection': {
+        const confirm: ConfirmMemberSelection = effect as ConfirmMemberSelection;
+        this.logger.info(TAG, 'confirm_member_selection', `count=${confirm.userIds.length}`);
+        this.onMemberSelectionConfirmed(confirm.userIds);
         break;
       }
       default:

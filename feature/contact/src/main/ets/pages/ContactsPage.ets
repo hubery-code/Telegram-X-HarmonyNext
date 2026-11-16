@@ -12,6 +12,12 @@
  *   并在左侧浮出当前段字母气泡，当前段随滚动/拖拽高亮；只有一个分组时不出现；
  * - 行 onClick → dispatch ContactTapped(item.userId)。
  *
+ * GROUP-CREATE-101 多选模式（建群选成员）：uiState.multiSelect 打开时行点击
+ * 改为切换选中（勾标 + 底部「下一步 (N)」确认栏），确认出 ConfirmMemberSelection
+ * 效应交给装配层接力命名段；模式与选中集都在 reducer 状态里（可单测），
+ * 由装配层派发 MultiSelectEnabled / MultiSelectReset 控制。
+ * 多选标题由装配层经 multiSelectTitleKey 传入（传 key 不传串）。
+ *
  * 行点击双回调接线约定（对齐 SearchPage 的协调器/降级双路径，二者默认均为 no-op）：
  * - 推荐（装配层已建 coordinator）：只接 onDispatch（→ coordinator.dispatch →
  *   reducer 出 OpenUserProfile 效应 → coordinator.options.onOpenUserProfile 导航），
@@ -34,7 +40,14 @@ import {
   IndexScrubHit,
   sectionScrollOffsets
 } from '../model/ContactsSections';
-import { ContactsIntent, QueryChanged, ContactTapped } from '../contract/ContactsIntent';
+import {
+  ContactsIntent,
+  QueryChanged,
+  ContactTapped,
+  MemberSelectionToggled,
+  MemberSelectionConfirmed,
+  MultiSelectReset
+} from '../contract/ContactsIntent';
 
 
 const BACK_ARROW_SIZE: number = 44;
@@ -47,6 +60,8 @@ const INDEX_BAR_MARGIN: number = 4;
 const INDEX_LETTER_HEIGHT: number = 16;
 /** 拖拽时跟随手指的当前段气泡边长。 */
 const SCRUB_BUBBLE_SIZE: number = 56;
+/** GROUP-CREATE-101：多选确认栏高度（vp）。 */
+const CONFIRM_BAR_HEIGHT: number = 56;
 
 /** 本地沙箱绝对路径 → 可渲染 uri（与 feature/profile 的同名助手一致）。 */
 function toSandboxUri(path: string | null): string {
@@ -97,6 +112,13 @@ export struct ContactsPage {
   onBack: () => void = (): void => {};
   onOpenUserProfile: (userId: number) => void = (): void => {};
   onAddContact: () => void = (): void => {};
+
+  /**
+   * GROUP-CREATE-101：多选模式下的标题 Lang key（装配层接线；空串回落
+   * 'Contacts'）。传 key 不传串：字段名以 Key 结尾，文案由 t() 现取，
+   * 切语言随重渲染生效。
+   */
+  multiSelectTitleKey: string = '';
 
   /**
    * 索引条当前高亮段。onDidScroll 每帧都会来，这里只在**真的换段**时写 @State，
@@ -232,10 +254,31 @@ export struct ContactsPage {
     this.onDispatch(new QueryChanged(value));
   }
 
-  /** 见文件头「行点击双回调接线约定」：onDispatch 与 onOpenUserProfile 二选一接线。 */
+  /**
+   * 见文件头「行点击双回调接线约定」：onDispatch 与 onOpenUserProfile 二选一接线。
+   * GROUP-CREATE-101：多选模式下点击是切换选中（不发资料页导航，也不产
+   * OpenUserProfile 效应）。
+   */
   private handleContactTapped(userId: number): void {
+    if (this.uiState.multiSelect) {
+      this.onDispatch(new MemberSelectionToggled(userId));
+      return;
+    }
     this.onDispatch(new ContactTapped(userId));
     this.onOpenUserProfile(userId);
+  }
+
+  /** 该行在多选模式下是否已选中（勾标渲染用）。 */
+  private isRowSelected(userId: number): boolean {
+    return this.uiState.selectedUserIds.indexOf(userId) >= 0;
+  }
+
+  /** 多选标题：装配层给了 key 就用，否则回落常规 'Contacts'。 */
+  private headerTitleKey(): string {
+    if (this.uiState.multiSelect && this.multiSelectTitleKey.length > 0) {
+      return this.multiSelectTitleKey;
+    }
+    return 'Contacts';
   }
 
   /**
@@ -268,6 +311,12 @@ export struct ContactsPage {
           .margin({ left: this.T.spacing.xs, right: this.T.spacing.md })
         .accessibilityText(a11y(A11y.BACK))
           .onClick(() => {
+            if (this.uiState.multiSelect) {
+              // 多选放弃：退出模式清选中集，再交给装配层回退路由。
+              this.onDispatch(new MultiSelectReset());
+              this.onBack();
+              return;
+            }
             if (this.uiState.query.length > 0) {
               this.handleQueryChange('');
             } else {
@@ -275,20 +324,23 @@ export struct ContactsPage {
             }
           })
 
-        Text(this.t('Contacts'))
+        Text(this.t(this.headerTitleKey()))
           .fontSize(this.T.typography.title.fontSize)
           .fontWeight(this.T.typography.title.fontWeight)
           .fontColor(this.T.colors.textPrimary)
           .layoutWeight(1)
 
-        Image($r('app.media.ic_person_add'))
-          .width(24)
-          .height(24)
-          .fillColor(this.T.colors.accent)
-        .accessibilityText(a11y(A11y.ADD_CONTACT))
-          .onClick(() => {
-            this.onAddContact();
-          })
+        // 多选模式（建群选成员）没有「添加联系人」场景，隐藏入口。
+        if (!this.uiState.multiSelect) {
+          Image($r('app.media.ic_person_add'))
+            .width(24)
+            .height(24)
+            .fillColor(this.T.colors.accent)
+          .accessibilityText(a11y(A11y.ADD_CONTACT))
+            .onClick(() => {
+              this.onAddContact();
+            })
+        }
       }
       .width('100%')
       .height(56)
@@ -457,6 +509,16 @@ export struct ContactsPage {
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)
       .margin({ left: this.T.spacing.md })
+
+      // GROUP-CREATE-101：多选模式的选中勾标（整行是读屏一站，勾标纯装饰）。
+      if (this.uiState.multiSelect && this.isRowSelected(item.userId)) {
+        Image($r('app.media.ic_check_single'))
+          .width(22)
+          .height(22)
+          .fillColor(this.T.colors.accent)
+          .margin({ left: this.T.spacing.sm })
+          .accessibilityLevel('no')
+      }
     }
     .width('100%')
     .height(ROW_HEIGHT)
@@ -465,6 +527,32 @@ export struct ContactsPage {
     .onClick(() => {
       this.handleContactTapped(item.userId);
     })
+  }
+
+  /**
+   * GROUP-CREATE-101：多选底部确认栏——「下一步 (N)」。
+   * N=0 时禁用（确认意图在 reducer 也挡一次）；确认经 reducer 出
+   * ConfirmMemberSelection 效应交给装配层接力命名段。
+   */
+  @Builder
+  SelectionConfirmBar() {
+    Row() {
+      Button(this.t('Next ({0})', this.uiState.selectedUserIds.length))
+        .width('60%')
+        .height(44)
+        .backgroundColor(this.T.colors.accent)
+        .borderRadius(this.T.radius.full)
+        .opacity(this.uiState.selectedUserIds.length > 0 ? 1 : 0.5)
+        .enabled(this.uiState.selectedUserIds.length > 0)
+        .onClick(() => {
+          this.onDispatch(new MemberSelectionConfirmed());
+        })
+    }
+    .width('100%')
+    .height(CONFIRM_BAR_HEIGHT)
+    .justifyContent(FlexAlign.Center)
+    .backgroundColor(this.T.colors.background)
+    .border({ width: { top: 1 }, color: this.T.colors.divider })
   }
 
   private t(key: string, ...args: (string | number)[]): string {
@@ -542,6 +630,11 @@ export struct ContactsPage {
         }
         .width('100%')
         .layoutWeight(1)
+
+        // GROUP-CREATE-101：多选模式底部确认栏（下一步 (N)）。
+        if (this.uiState.multiSelect) {
+          this.SelectionConfirmBar()
+        }
       }
     }
     .width('100%')

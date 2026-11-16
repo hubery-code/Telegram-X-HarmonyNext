@@ -1,5 +1,6 @@
 export * from './chatlist/ChatRegistry';
 export * from './chatlist/ChatListProjection';
+export * from './chatlist/GroupChatCreator';
 export * from './chat/MessageProjection';
 export * from './chat/ChatMute';
 export * from './chat/ChatSendRights';

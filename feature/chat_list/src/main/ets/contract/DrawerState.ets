@@ -10,11 +10,17 @@
 
 import { UiState } from '@tgx/feature-template';
 
-/** 抽屉菜单项 key（顺序即 TGX DrawerController 菜单顺序）。 */
-export type DrawerItemKey = 'contacts' | 'calls' | 'saved' | 'settings' | 'invite' | 'help';
+/**
+ * 抽屉菜单项 key（顺序即 TGX DrawerController 菜单顺序）。
+ * GROUP-CREATE-101：菜单前两项是「新建群组 / 新建频道」——入口只发导航意图，
+ * 成员选择（contact 多选）与命名（GroupNamingPage）由装配层接力。
+ */
+export type DrawerItemKey = 'newGroup' | 'newChannel' | 'contacts' | 'calls' | 'saved' | 'settings' | 'invite' | 'help';
 
 /** 抽屉菜单项全量列表，供 UI 遍历渲染。 */
 export const DRAWER_ITEM_KEYS: DrawerItemKey[] = [
+  'newGroup',
+  'newChannel',
   'contacts',
   'calls',
   'saved',
@@ -24,7 +30,7 @@ export const DRAWER_ITEM_KEYS: DrawerItemKey[] = [
 ];
 
 /** 抽屉可跳转目标（纯导航意图，路由由装配层实现）。 */
-export type DrawerNavTarget = 'contacts' | 'settings' | 'selfProfile';
+export type DrawerNavTarget = 'newGroup' | 'newChannel' | 'contacts' | 'settings' | 'selfProfile';
 
 /**
  * 账号头是否已拉到数据。

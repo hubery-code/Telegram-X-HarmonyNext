@@ -68,7 +68,11 @@ import {
   ChatListCoordinator,
   ChatListItem,
   DrawerNavTarget,
-  chatListOverlayCloseIntent
+  chatListOverlayCloseIntent,
+  GroupNamingPage,
+  GroupCreateStarted,
+  GroupCreateCancelled,
+  GroupCreateMode
 } from '@tgx/feature-chat-list';
 import {
   ChatPage,
@@ -123,7 +127,9 @@ import {
   ContactsUiState,
   ContactsIntent,
   ContactsCoordinator,
-  QueryChanged
+  QueryChanged,
+  MultiSelectEnabled,
+  MultiSelectReset
 } from '@tgx/feature-contact';
 import {
   SelfProfilePage,
@@ -203,6 +209,12 @@ struct Index {
   @State settingsUiState: SettingsUiState = SettingsUiState.initial();
   /** MSG-106：转发目标选择器是否覆盖显示 + 本次候选目标。 */
   @State showForwardPicker: boolean = false;
+  /** GROUP-CREATE-101：建群/建频道命名页显示开关（数据在 chatListUiState.groupCreate）。 */
+  @State showGroupNamingPage: boolean = false;
+  /** GROUP-CREATE-101：待进入的创建模式（抽屉 target 映射后的值）。 */
+  private groupCreateMode: GroupCreateMode = 'group';
+  /** GROUP-CREATE-101：contacts 协调器建好后的待派发多选开启标志。 */
+  private pendingContactsMultiSelect: boolean = false;
   @State forwardTargets: ForwardTarget[] = [];
   /** INTEG-002：搜索页可观察状态。 */
   @State searchUiState: SearchUiState = SearchUiState.initial();
@@ -562,6 +574,12 @@ struct Index {
       }
       return this.navController.pop();
     }
+    if (this.showGroupNamingPage && this.chatListUiState.groupCreate !== null) {
+      // GROUP-CREATE-101：命名页盖在联系人路由上，返回键先取消命名段
+      this.chatListDispatch(new GroupCreateCancelled());
+      this.showGroupNamingPage = false;
+      return true;
+    }
     if (this.currentRoute.name === 'contacts') {
       // CONTACT-BACK-101：若搜索栏有输入，返回键优先清空搜索并重置全量列表，再次返回才 pop 退出
       if (this.contactsUiState.query.length > 0) {
@@ -569,6 +587,11 @@ struct Index {
           this.contactsCoordinator.dispatch(new QueryChanged(''));
           return true;
         }
+      }
+      if (this.contactsUiState.multiSelect && this.contactsCoordinator !== null) {
+        // GROUP-CREATE-101：多选模式先退出多选，再按一次返回才离开联系人页
+        this.contactsCoordinator.dispatch(new MultiSelectReset());
+        return true;
       }
       return this.navController.pop();
     }
@@ -1377,6 +1400,11 @@ struct Index {
       logger: this.logger,
       onOpenUserProfile: (userId: number): void => {
         this.navController.navigateTo({ name: 'userProfile', userId: userId });
+      },
+      // GROUP-CREATE-101：多选确认 → 命名段（chatList reducer 持有命名状态）
+      onMemberSelectionConfirmed: (userIds: number[]): void => {
+        this.chatListDispatch(new GroupCreateStarted(this.groupCreateMode, userIds));
+        this.showGroupNamingPage = true;
       }
     });
     this.contactsCoordinator = coordinator;
@@ -1384,6 +1412,10 @@ struct Index {
       this.contactsUiState = uiState;
     });
     coordinator.start();
+    if (this.pendingContactsMultiSelect) {
+      this.pendingContactsMultiSelect = false;
+      coordinator.dispatch(new MultiSelectEnabled());
+    }
     hilog.info(DOMAIN, TAG, 'contacts coordinator started');
   }
 
@@ -1553,6 +1585,12 @@ struct Index {
           this.navController.navigateTo({ name: 'contacts' });
         } else if (target === 'settings') {
           this.navController.navigateTo({ name: 'settings' });
+        } else if (target === 'newGroup' || target === 'newChannel') {
+          // GROUP-CREATE-101：抽屉「新建群组/频道」→ 联系人多选 → 命名页。
+          // 多选开启要等 contacts 协调器随路由建好（openContacts），先记待办。
+          this.groupCreateMode = target === 'newGroup' ? 'group' : 'channel';
+          this.pendingContactsMultiSelect = true;
+          this.navController.navigateTo({ name: 'contacts' });
         } else {
           this.navController.navigateTo({ name: 'selfProfile' });
         }
@@ -1561,6 +1599,14 @@ struct Index {
     this.chatListCoordinator.start();
     this.unsubscribeChatListFn = this.chatListCoordinator.subscribe((uiState: ChatListUiState) => {
       this.chatListUiState = uiState;
+      // GROUP-CREATE-101：创建成功/失败/取消都会把 groupCreate 清回 null
+      // （成功时 NavigateToChat 已在导航链路上）→ 收命名页 + 复位多选。
+      if (this.showGroupNamingPage && uiState.groupCreate === null) {
+        this.showGroupNamingPage = false;
+        if (this.contactsUiState.multiSelect && this.contactsCoordinator !== null) {
+          this.contactsCoordinator.dispatch(new MultiSelectReset());
+        }
+      }
     });
     hilog.info(DOMAIN, TAG, 'chat list coordinator started for scope %{public}s', scope.accountKey);
   }
@@ -2102,6 +2148,7 @@ struct Index {
         } else if (this.currentRoute.name === 'contacts') {
           ContactsPage({
             uiState: this.contactsUiState,
+            multiSelectTitleKey: 'Add Members',
             onDispatch: (intent: ContactsIntent) => {
               if (this.contactsCoordinator !== null) {
                 this.contactsCoordinator.dispatch(intent);
@@ -2214,6 +2261,21 @@ struct Index {
           },
           onRetry: (setId: string) => {
             this.fetchGlobalStickerSet(setId);
+          }
+        })
+      }
+      // GROUP-CREATE-101：建群/建频道命名页（盖在联系人路由之上；数据与流程态
+      // 全在 chatList reducer 的 groupCreate 里，这里只托管渲染与返回）。
+      if (this.showGroupNamingPage && this.chatListUiState.groupCreate !== null) {
+        GroupNamingPage({
+          createState: this.chatListUiState.groupCreate,
+          onDispatch: (intent: ChatListIntent) => {
+            this.chatListDispatch(intent);
+          },
+          onBack: () => {
+            this.chatListDispatch(new GroupCreateCancelled());
+            this.showGroupNamingPage = false;
+            this.navController.pop();
           }
         })
       }

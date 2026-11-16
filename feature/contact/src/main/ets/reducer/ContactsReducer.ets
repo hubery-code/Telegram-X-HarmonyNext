@@ -4,6 +4,10 @@
  * 与 ProfileReducer 同约定：未知 kind 走尾部 default 原样返回。
  * 查询过滤在 reducer 内完成（双份缓冲：allItems 全量 + items 过滤视图），
  * 过滤纯函数 filterContactsItems 单独导出供单测覆盖。
+ *
+ * GROUP-CREATE-101 新增多选模式（建群选成员）：multiSelectEnabled/Reset 控制
+ * 模式与选中集；memberSelectionToggled 点选（保持点选顺序）；确认出
+ * ConfirmMemberSelection 效应交给装配层接力，模式本身不动。
  */
 
 import { Reducer, ReducerEnv, ReducerResult, reduced } from '@tgx/feature-template';
@@ -15,9 +19,13 @@ import {
   OnContactsLoaded,
   OnContactsFailed,
   ContactTapped,
+  MultiSelectEnabled,
+  MemberSelectionToggled,
+  MemberSelectionConfirmed,
+  MultiSelectReset,
   ContactsIntent
 } from '../contract/ContactsIntent';
-import { OpenUserProfile, ContactsEffect } from '../contract/ContactsEffect';
+import { OpenUserProfile, ConfirmMemberSelection, ContactsEffect } from '../contract/ContactsEffect';
 
 /**
  * 查询过滤：交给 `model/ContactsFilter.contactMatchesQuery` —— **词首前缀**匹配展示名，
@@ -86,6 +94,45 @@ export const contactsReducer: Reducer<ContactsUiState, ContactsIntent, ContactsE
       }
       const effect: OpenUserProfile = new OpenUserProfile(tapped.userId);
       return reduced(state, [effect]);
+    }
+
+    // ---- GROUP-CREATE-101 建群选成员（多选模式）----
+
+    case 'multiSelectEnabled': {
+      // 进入选成员场景：清旧选中集，模式置开。
+      return reduced(state.copyWith({ multiSelect: true, selectedUserIds: [] }));
+    }
+
+    case 'memberSelectionToggled': {
+      const toggled: MemberSelectionToggled = intent as MemberSelectionToggled;
+      if (!state.multiSelect || toggled.userId <= 0) {
+        return reduced(state);
+      }
+      // 点选顺序即成员顺序（TDLib user_ids 按此携带）；重复点击移除。
+      const next: number[] = state.selectedUserIds.slice();
+      const idx: number = next.indexOf(toggled.userId);
+      if (idx >= 0) {
+        next.splice(idx, 1);
+      } else {
+        next.push(toggled.userId);
+      }
+      return reduced(state.copyWith({ selectedUserIds: next }));
+    }
+
+    case 'memberSelectionConfirmed': {
+      // 空选不出效应（按钮在页面侧已禁用，reducer 再挡一次）。
+      if (!state.multiSelect || state.selectedUserIds.length === 0) {
+        return reduced(state);
+      }
+      const effect: ConfirmMemberSelection = new ConfirmMemberSelection(state.selectedUserIds.slice());
+      return reduced(state, [effect]);
+    }
+
+    case 'multiSelectReset': {
+      if (!state.multiSelect && state.selectedUserIds.length === 0) {
+        return reduced(state);
+      }
+      return reduced(state.copyWith({ multiSelect: false, selectedUserIds: [] }));
     }
 
     default:

@@ -2,6 +2,10 @@
  * feature/chat_list — 会话列表副作用描述（CHATLIST-002 + MSG-108）。
  *
  * Effect 是一次性副作用的描述，由 Coordinator / Handler 执行，reducer 严禁执行。
+ *
+ * GROUP-CREATE-101 新增：CreateBasicGroupChat / CreateSupergroupChat 两条
+ * 建群/建频道请求（经 core/domain GroupChatCreator 发送），回包 Chat 由
+ * 协调器解码后经 OnGroupChatCreated 回灌，导航复用 NavigateToChat。
  */
 
 import { Effect } from '@tgx/feature-template';
@@ -104,6 +108,38 @@ export class OpenSavedMessages implements Effect {
   readonly kind: 'openSavedMessages' = 'openSavedMessages';
 }
 
+/**
+ * GROUP-CREATE-101：建普通群组（createNewBasicGroupChat）。标题已由 reducer
+ * 本地校验（trim + 1-128），这里带 trim 后原文；userIds 可为空数组。
+ */
+export class CreateBasicGroupChat implements Effect {
+  readonly kind: 'createBasicGroupChat' = 'createBasicGroupChat';
+  readonly title: string;
+  readonly memberUserIds: number[];
+
+  constructor(title: string, memberUserIds: number[]) {
+    this.title = title;
+    this.memberUserIds = memberUserIds;
+  }
+}
+
+/**
+ * GROUP-CREATE-101：建超级群组/频道（createNewSupergroupChat，is_channel
+ * 由 isChannel 决定）。description 可选，trim 后发送。
+ */
+export class CreateSupergroupChat implements Effect {
+  readonly kind: 'createSupergroupChat' = 'createSupergroupChat';
+  readonly title: string;
+  readonly isChannel: boolean;
+  readonly description: string;
+
+  constructor(title: string, isChannel: boolean, description: string) {
+    this.title = title;
+    this.isChannel = isChannel;
+    this.description = description;
+  }
+}
+
 export type ChatListEffect =
   | FetchChatList
   | NavigateToChat
@@ -113,4 +149,6 @@ export type ChatListEffect =
   | SetChatArchived
   | FetchDrawerAccount
   | DrawerNavigate
-  | OpenSavedMessages;
+  | OpenSavedMessages
+  | CreateBasicGroupChat
+  | CreateSupergroupChat;

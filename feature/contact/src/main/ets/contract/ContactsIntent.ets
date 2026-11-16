@@ -46,8 +46,42 @@ export class ContactTapped implements Intent {
   }
 }
 
+// ---- GROUP-CREATE-101 建群选成员（多选模式）----
+
+/**
+ * 装配层进入「选成员」场景时派发：打开多选模式并清空旧选中集。
+ * 模式是导航上下文，所以由装配层在挂载页面前派发，而不是页面自持。
+ */
+export class MultiSelectEnabled implements Intent {
+  readonly kind: 'multiSelectEnabled' = 'multiSelectEnabled';
+}
+
+/** 点选/取消一个成员：选中集尾部追加、重复点击移除（保持点选顺序）。 */
+export class MemberSelectionToggled implements Intent {
+  readonly kind: 'memberSelectionToggled' = 'memberSelectionToggled';
+  readonly userId: number;
+
+  constructor(userId: number) {
+    this.userId = userId;
+  }
+}
+
+/** 点「下一步 (N)」：出 ConfirmMemberSelection 效应，成员名单交给装配层。 */
+export class MemberSelectionConfirmed implements Intent {
+  readonly kind: 'memberSelectionConfirmed' = 'memberSelectionConfirmed';
+}
+
+/** 放弃选择（返回/取消）：退出多选模式并清空选中集。 */
+export class MultiSelectReset implements Intent {
+  readonly kind: 'multiSelectReset' = 'multiSelectReset';
+}
+
 export type ContactsIntent =
   | QueryChanged
   | OnContactsLoaded
   | OnContactsFailed
-  | ContactTapped;
+  | ContactTapped
+  | MultiSelectEnabled
+  | MemberSelectionToggled
+  | MemberSelectionConfirmed
+  | MultiSelectReset;

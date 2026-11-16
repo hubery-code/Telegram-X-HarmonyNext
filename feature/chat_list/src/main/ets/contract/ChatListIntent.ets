@@ -14,12 +14,19 @@
  * DRAWER-101 新增抽屉流：DrawerAccountRequested（点 ≡ / 首屏预热）→ FetchDrawerAccount；
  * DrawerItemClicked / DrawerAccountClicked 把菜单项转成导航意图；
  * OnDrawerAccountLoaded / OnDrawerAvatarLoaded 回灌账号头。
+ *
+ * GROUP-CREATE-101 新增建群/建频道流程：抽屉 newGroup/newChannel → 装配层接力
+ * 成员多选（feature/contact）→ GroupCreateStarted 进入命名段；标题/简介经
+ * GroupCreateTitleChanged / GroupCreateDescriptionChanged 进状态，提交经
+ * GroupCreateSubmitRequested 本地校验后产出创建 effect；OnGroupChatCreated /
+ * OnGroupCreateFailed 回灌结果（成功即 NavigateToChat 进新会话）。
  */
 
 import { Intent } from '@tgx/feature-template';
 import { AppError } from '@tgx/core-common';
 import { ChatListItem } from '../model/ChatListItem';
 import { DrawerItemKey } from './DrawerState';
+import { GroupCreateMode } from './GroupCreateState';
 import { ChatFolderTab, DEFAULT_CHAT_FOLDERS } from './ChatListUiState';
 
 export class LoadChats implements Intent {
@@ -187,6 +194,79 @@ export class DrawerNightModeSet implements Intent {
   }
 }
 
+// ---- GROUP-CREATE-101 建群/建频道流程 ----
+
+/**
+ * GROUP-CREATE-101：进入命名段。装配层在成员多选确认后派发（频道创建无
+ * 成员段，userIds 传空数组），reducer 用它初始化 ChatListUiState.groupCreate。
+ */
+export class GroupCreateStarted implements Intent {
+  readonly kind: 'groupCreateStarted' = 'groupCreateStarted';
+  readonly mode: GroupCreateMode;
+  readonly memberUserIds: number[];
+
+  constructor(mode: GroupCreateMode, memberUserIds: number[]) {
+    this.mode = mode;
+    this.memberUserIds = memberUserIds;
+  }
+}
+
+/** GROUP-CREATE-101：标题输入变化（原文存入，校验推迟到提交）。 */
+export class GroupCreateTitleChanged implements Intent {
+  readonly kind: 'groupCreateTitleChanged' = 'groupCreateTitleChanged';
+  readonly title: string;
+
+  constructor(title: string) {
+    this.title = title;
+  }
+}
+
+/** GROUP-CREATE-101：频道简介输入变化。 */
+export class GroupCreateDescriptionChanged implements Intent {
+  readonly kind: 'groupCreateDescriptionChanged' = 'groupCreateDescriptionChanged';
+  readonly description: string;
+
+  constructor(description: string) {
+    this.description = description;
+  }
+}
+
+/**
+ * GROUP-CREATE-101：点「创建」。reducer 本地先拦标题（空/超 128 字 →
+ * errorMessageKey 内联提示、不发请求），合法才产出创建 effect。
+ */
+export class GroupCreateSubmitRequested implements Intent {
+  readonly kind: 'groupCreateSubmitRequested' = 'groupCreateSubmitRequested';
+}
+
+/** GROUP-CREATE-101：用户放弃命名段（返回键 / 关闭），流程状态整体清空。 */
+export class GroupCreateCancelled implements Intent {
+  readonly kind: 'groupCreateCancelled' = 'groupCreateCancelled';
+}
+
+/**
+ * GROUP-CREATE-101：TDLib 回包（Chat）解码后回灌。reducer 清掉流程状态并
+ * 产出 NavigateToChat——进会话与列表点击走同一条导航链路。
+ */
+export class OnGroupChatCreated implements Intent {
+  readonly kind: 'onGroupChatCreated' = 'onGroupChatCreated';
+  readonly chatId: number;
+
+  constructor(chatId: number) {
+    this.chatId = chatId;
+  }
+}
+
+/** GROUP-CREATE-101：请求级/响应级失败统一回灌；reducer 落通用错误 key。 */
+export class OnGroupCreateFailed implements Intent {
+  readonly kind: 'onGroupCreateFailed' = 'onGroupCreateFailed';
+  readonly error: AppError;
+
+  constructor(error: AppError) {
+    this.error = error;
+  }
+}
+
 export type ChatListIntent =
   | LoadChats
   | RefreshChats
@@ -207,4 +287,11 @@ export type ChatListIntent =
   | DrawerAccountClicked
   | OnDrawerAccountLoaded
   | OnDrawerAvatarLoaded
-  | DrawerNightModeSet;
+  | DrawerNightModeSet
+  | GroupCreateStarted
+  | GroupCreateTitleChanged
+  | GroupCreateDescriptionChanged
+  | GroupCreateSubmitRequested
+  | GroupCreateCancelled
+  | OnGroupChatCreated
+  | OnGroupCreateFailed;

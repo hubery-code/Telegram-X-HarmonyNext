@@ -1,5 +1,6 @@
 import chatRegistryTest from './chatlist/ChatRegistry.test';
 import chatListProjectionTest from './chatlist/ChatListProjection.test';
+import groupChatCreatorTest from './chatlist/GroupChatCreator.test';
 import messageProjectionTest from './chat/MessageProjection.test';
 import chatMuteTest from './chat/ChatMute.test';
 import chatSendRightsTest from './chat/ChatSendRights.test';
@@ -19,6 +20,7 @@ import instantViewModelTest from './webpage/InstantViewModel.test';
 export default function testsuite() {
   chatRegistryTest();
   chatListProjectionTest();
+  groupChatCreatorTest();
   messageProjectionTest();
   chatMuteTest();
   chatSendRightsTest();
