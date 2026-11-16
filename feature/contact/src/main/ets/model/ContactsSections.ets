@@ -197,3 +197,15 @@ export function indexScrubAt(
   }
   return new IndexScrubHit(index, topPad + index * letterHeight + letterHeight / 2);
 }
+
+/**
+ * CONTACT-103：索引条拖拽换段的触感边沿判定（纯函数，可单测）。
+ *
+ * 当且仅当本次落点段字母与上一段不同才需要触感——同一段内逐帧拖动不重复震
+ * （每帧都震是错误实现）。`lastLetter` 是本次拖拽里上一次落点的段字母；空串
+ * 表示「尚未落过段」，起手第一帧视为换段（给一次落下确认）。调用方在拖拽
+ * 结束（onActionEnd/Cancel）时把它复位为空串，让每次拖拽从零判定。
+ */
+export function scrubHapticShouldFire(lastLetter: string, currentLetter: string): boolean {
+  return currentLetter.length > 0 && currentLetter !== lastLetter;
+}

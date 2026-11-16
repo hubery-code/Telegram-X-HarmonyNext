@@ -17,7 +17,8 @@ import {
   activeSectionIndex,
   indexBarVisible,
   indexScrubAt,
-  IndexScrubHit
+  IndexScrubHit,
+  scrubHapticShouldFire
 } from '../main/ets/model/ContactsSections';
 
 function item(userId: number, displayName: string): ContactsItem {
@@ -176,6 +177,19 @@ export default function contactsSectionsTest(): void {
       expect(indexScrubAt(0, 3, 10, 16).index).assertEqual(-1);
       expect(indexScrubAt(100, 0, 10, 16).index).assertEqual(-1);
       expect(indexScrubAt(100, 3, 10, 0).index).assertEqual(-1);
+    });
+
+    // CONTACT-103：拖拽换段触感边沿判定 —— 当且仅当落点段字母与上一段不同才震。
+    it('scrubHaptic_firesOnlyWhenSectionLetterChanges', 0, () => {
+      // 起手第一帧（上一段为空串）：视为换段，给一次落下确认。
+      expect(scrubHapticShouldFire('', 'A')).assertTrue();
+      // 同段连拖（逐帧同字母）：不震——每帧都震是错误实现。
+      expect(scrubHapticShouldFire('A', 'A')).assertFalse();
+      // 划过新分段 / 折返：都算换段，各震一次。
+      expect(scrubHapticShouldFire('A', 'B')).assertTrue();
+      expect(scrubHapticShouldFire('C', 'B')).assertTrue();
+      // 落点段字母异常为空：不震。
+      expect(scrubHapticShouldFire('A', '')).assertFalse();
     });
   });
 }

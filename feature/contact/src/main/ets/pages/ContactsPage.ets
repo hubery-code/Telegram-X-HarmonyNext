@@ -10,6 +10,9 @@
  *   （reducer 里由 model/ContactsSections 算出，与排序同一套规则）；
  * - 右侧 A–Z 索引条：字母来自真实存在的分组，点一个字母滚到该段，按住上下拖连续换段
  *   并在左侧浮出当前段字母气泡，当前段随滚动/拖拽高亮；只有一个分组时不出现；
+ *   拖拽划过新分段时给一次短触感（CONTACT-103）：边沿判定用纯函数
+ *   scrubHapticShouldFire，触发经 onScrubTick 回调接到协调器注入的触感端口，
+ *   页面不直接依赖振动 Kit；
  * - 行 onClick → dispatch ContactTapped(item.userId)。
  *
  * GROUP-CREATE-101 多选模式（建群选成员）：uiState.multiSelect 打开时行点击
@@ -31,13 +34,13 @@
 import { LightTheme, Theme } from '@tgx/core-design-system';
 import { A11y, a11y, Lang, SupportedLanguage } from '@tgx/core-common';
 import { fileUri } from '@kit.CoreFileKit';
-import { vibrator } from '@kit.SensorServiceKit';
 import { ContactsItem, ContactsSection, ContactsUiState } from '../contract/ContactsUiState';
 import {
   activeSectionIndex,
   indexBarVisible,
   indexScrubAt,
   IndexScrubHit,
+  scrubHapticShouldFire,
   sectionScrollOffsets
 } from '../model/ContactsSections';
 import {
@@ -112,6 +115,12 @@ export struct ContactsPage {
   onBack: () => void = (): void => {};
   onOpenUserProfile: (userId: number) => void = (): void => {};
   onAddContact: () => void = (): void => {};
+  /**
+   * CONTACT-103：索引拖拽换段短触感。装配层把它接到协调器的触感端口
+   * （scrubHapticTick → HapticFeedbackPort.vibrateShort）；页面不直接
+   * import 振动 Kit，未接线时为 no-op（静默无感，不影响拖动）。
+   */
+  onScrubTick: () => void = (): void => {};
 
   /**
    * GROUP-CREATE-101：多选模式下的标题 Lang key（装配层接线；空串回落
@@ -132,6 +141,11 @@ export struct ContactsPage {
   @State private scrubIndex: number = -1;
   /** 气泡中心在索引条自身坐标系里的位移（vp）。 */
   @State private scrubCenterY: number = 0;
+  /**
+   * CONTACT-103：上一次落点段字母（触感边沿触发状态）。只参与「该不该震」
+   * 判定、不驱动渲染，所以是普通私有字段而非 @State。
+   */
+  private lastScrubLetter: string = '';
   private scroller: Scroller = new Scroller();
 
   /**
@@ -214,33 +228,31 @@ export struct ContactsPage {
     }
     this.scrubIndex = hit.index;
     this.scrubCenterY = hit.centerY;
+    // CONTACT-103：当且仅当落点段与上一段不同才震一次（边沿触发，同段连拖不震）。
+    const letter: string = this.uiState.sections[hit.index].letter;
+    if (scrubHapticShouldFire(this.lastScrubLetter, letter)) {
+      this.triggerScrubHaptic();
+    }
+    this.lastScrubLetter = letter;
     if (hit.index !== this.activeIndex) {
       this.scrollToSection(hit.index, false);
-      this.triggerScrubHaptic();
     }
   }
 
-  /** 索引拖拽换段触感反馈（对齐 Android HapticFeedbackConstants.CLOCK_TICK）。 */
+  /**
+   * 索引拖拽换段触感反馈（CONTACT-103，对齐 Android CLOCK_TICK）。
+   * 经装配层接线到协调器的触感端口；是否触发的边沿判定已在 handleScrub
+   * 用 scrubHapticShouldFire 完成，这里只负责触发。
+   */
   private triggerScrubHaptic(): void {
-    try {
-      vibrator.startVibration({
-        type: 'preset',
-        effectId: 'haptic.clock.timer',
-        count: 1
-      }, {
-        id: 0,
-        usage: 'physicalFeedback'
-      }, (_err) => {
-        // 模拟器/未搭载器件忽略错误
-      });
-    } catch (_e) {
-      // 降级容错
-    }
+    this.onScrubTick();
   }
 
   private endScrub(): void {
     this.scrubIndex = -1;
     this.scrubCenterY = 0;
+    // 复位边沿状态：下次拖拽从「未落段」重新判定（起手第一帧给一次落下确认）。
+    this.lastScrubLetter = '';
   }
 
   private avatarColor(index: number): string {

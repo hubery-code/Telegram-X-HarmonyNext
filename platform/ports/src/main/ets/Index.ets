@@ -29,6 +29,7 @@ export { SecureRandomPort } from './SecureRandomPort';
 export { PasscodeStorePort } from './PasscodeStorePort';
 export { ClipboardPort } from './ClipboardPort';
 export { ToastPort } from './ToastPort';
+export { HapticFeedbackPort } from './HapticFeedbackPort';
 export { MediaPickerPort, PickedMedia } from './MediaPickerPort';
 export {
   AudioPlayerPort,
@@ -53,6 +54,7 @@ export { FakeAppFiles } from './fakes/FakeAppFiles';
 export { FakeMonotonicClock } from './fakes/FakeMonotonicClock';
 export { FakeClipboard } from './fakes/FakeClipboard';
 export { FakeToast } from './fakes/FakeToast';
+export { FakeHapticFeedback } from './fakes/FakeHapticFeedback';
 export type { RecordedToast } from './fakes/FakeToast';
 export { FakeMediaPicker } from './fakes/FakeMediaPicker';
 export { FakeAudioPlayer } from './fakes/FakeAudioPlayer';

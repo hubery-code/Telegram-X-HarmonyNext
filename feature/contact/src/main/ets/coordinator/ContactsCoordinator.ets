@@ -36,7 +36,7 @@ import {
 } from '@tgx/core-td-api-generated';
 import { TdPendingRequest, TdWireObject } from '@tgx/td-gateway';
 import { Logger } from '@tgx/observability';
-import { Subscription } from '@tgx/platform-ports';
+import { FakeHapticFeedback, HapticFeedbackPort, Subscription } from '@tgx/platform-ports';
 import { ReducerEnv, ReducerResult } from '@tgx/feature-template';
 import { ContactsItem, ContactsUiState } from '../contract/ContactsUiState';
 import {
@@ -62,6 +62,12 @@ export interface ContactsCoordinatorOptions {
    * 缺省 no-op——装配层未接线时多选确认不产生任何跳转。
    */
   readonly onMemberSelectionConfirmed?: (userIds: number[]) => void;
+  /**
+   * CONTACT-103：索引条拖拽换段的短触感端口。缺省 FakeHapticFeedback（无马达
+   * 环境 no-op，与 ChatCoordinator 的端口兜底同一套约定）；真实 vibrator
+   * 由 entry 装配层注入（HarmonyHapticFeedbackAdapter）。
+   */
+  readonly haptics?: HapticFeedbackPort;
   readonly logger?: Logger;
 }
 
@@ -139,6 +145,8 @@ export class ContactsCoordinator {
   private readonly onOpenUserProfile: (userId: number) => void;
   /** GROUP-CREATE-101：多选确认回调（装配层接力进命名段）。 */
   private readonly onMemberSelectionConfirmed: (userIds: number[]) => void;
+  /** CONTACT-103：索引拖拽换段短触感端口（缺省 Fake no-op）。 */
+  private readonly haptics: HapticFeedbackPort;
   private readonly logger: Logger;
   private readonly env: ReducerEnv;
   private currentState: ContactsUiState;
@@ -166,6 +174,9 @@ export class ContactsCoordinator {
     this.onMemberSelectionConfirmed = options !== undefined && options.onMemberSelectionConfirmed !== undefined
       ? options.onMemberSelectionConfirmed
       : (userIds: number[]): void => {};
+    this.haptics = options !== undefined && options.haptics !== undefined
+      ? options.haptics
+      : new FakeHapticFeedback();
     this.logger = options !== undefined && options.logger !== undefined
       ? options.logger
       : new Logger();
@@ -224,6 +235,15 @@ export class ContactsCoordinator {
         this.listeners.splice(index, 1);
       }
     };
+  }
+
+  /**
+   * CONTACT-103：索引拖拽换段短触感。边沿判定（该不该震）在页面用纯函数
+   * scrubHapticShouldFire 完成，这里只把已判定的触发透传给平台端口；
+   * 端口内部自兜底（无马达/无权限静默降级），本方法不感知失败。
+   */
+  scrubHapticTick(): void {
+    this.haptics.vibrateShort();
   }
 
   destroy(): void {
