@@ -83,8 +83,10 @@ import {
   BackToChatList,
   MessageItem,
   ComposerReplyMode,
+  ComposerTextChanged,
   ForwardPickerPage,
   ForwardSelectedToChat,
+  SendCurrentMessage,
   CommentsPage,
   CommentsUiState,
   CommentsCoordinator,
@@ -94,6 +96,8 @@ import {
   StickerSetPreviewState,
   StickerSetItem
 } from '@tgx/feature-chat';
+import { ReceivedShare, appShareQueue } from '../share/ShareIntake';
+import { ShareTargetPickerPage } from '../share/ShareTargetPickerPage';
 import {
   SettingsPage,
   SettingsUiState,
@@ -173,6 +177,7 @@ import { HarmonyAudioPlayerAdapter } from '../platform/HarmonyAudioPlayerAdapter
 import { HarmonyAudioRecorderAdapter } from '../platform/HarmonyAudioRecorderAdapter';
 import { HarmonyAVSessionAdapter } from '../platform/HarmonyAVSessionAdapter';
 import { HarmonyContinuousTaskAdapter } from '../platform/HarmonyContinuousTaskAdapter';
+import { HarmonyHapticFeedbackAdapter } from '../platform/HarmonyHapticFeedbackAdapter';
 import { createHarmonyLogger } from '../platform/HarmonyLogSink';
 
 const DOMAIN: number = 0x0000;
@@ -216,6 +221,18 @@ struct Index {
   /** GROUP-CREATE-101：contacts 协调器建好后的待派发多选开启标志。 */
   private pendingContactsMultiSelect: boolean = false;
   @State forwardTargets: ForwardTarget[] = [];
+  /** SHARE-EXT-101：分享目标选择器是否覆盖显示 + 本次候选目标 + 待分享内容。 */
+  @State showSharePicker: boolean = false;
+  @State shareTargets: ForwardTarget[] = [];
+  @State pendingShare: ReceivedShare | null = null;
+  /**
+   * SHARE-EXT-101：已选定目标、等会话协调器就绪后发送的文本。
+   * 渲染态放 @State，这个「发送待办」是流程态，进私有字段（与 pendingInvite 同理）。
+   */
+  private pendingShareText: string | null = null;
+  private pendingShareTargetChatId: number = 0;
+  /** SHARE-EXT-101：分享队列的消费者只在进过 home 后挂一次。 */
+  private shareAttached: boolean = false;
   /** INTEG-002：搜索页可观察状态。 */
   @State searchUiState: SearchUiState = SearchUiState.initial();
   @State bootstrapError: string | null = null;
@@ -231,6 +248,8 @@ struct Index {
    */
   private readonly avSessionAdapter: HarmonyAVSessionAdapter = new HarmonyAVSessionAdapter();
   private readonly continuousTaskAdapter: HarmonyContinuousTaskAdapter = new HarmonyContinuousTaskAdapter();
+  /** CONTACT-103：索引拖拽换段触感端口的真实实现（无状态，全局一份）。 */
+  private readonly hapticFeedbackAdapter: HarmonyHapticFeedbackAdapter = new HarmonyHapticFeedbackAdapter();
   private cacheDir: string = '/data/storage/el2/base/cache';
   private readonly logger: Logger = createHarmonyLogger();
   private readonly navController: EntryNavigationController = new EntryNavigationController({ name: 'auth' });
@@ -436,6 +455,8 @@ struct Index {
     this.updateAvailableAccounts();
     // DEEPLINK-101：状态恢复可能直接落在 home（没走过 onRouteChanged），补一次挂载判定。
     this.syncAppLinkHandler();
+    // SHARE-EXT-101：同上——分享队列的消费者也跟着「是否已进过 home」走。
+    this.syncShareHandler();
   }
 
   /**
@@ -479,6 +500,9 @@ struct Index {
     // DEEPLINK-101：页面要销毁了，别让队列继续往已销毁的协调器里投链接。
     this.appLinkAttached = false;
     appDeepLinkQueue.detach();
+    // SHARE-EXT-101：分享队列同理。
+    this.shareAttached = false;
+    appShareQueue.detach();
     if (this.unsubscribeNavFn !== null) {
       this.unsubscribeNavFn();
       this.unsubscribeNavFn = null;
@@ -524,6 +548,12 @@ struct Index {
     // STICKER-PREVIEW-102：全局贴纸包预览弹窗打开时优先关闭预览，不退出当前页面
     if (this.globalStickerPreview !== null) {
       this.closeGlobalStickerPreview();
+      return true;
+    }
+    // SHARE-EXT-101：分享目标选择器盖在任何路由之上，返回键只取消分享，
+    // 不退出分享前所在的页面（取消路径不能崩，也不能误触发返回栈 pop）。
+    if (this.showSharePicker) {
+      this.cancelShare();
       return true;
     }
     if (this.currentRoute.name === 'chat') {
@@ -1102,6 +1132,132 @@ struct Index {
     }
   }
 
+  /**
+   * SHARE-EXT-101：分享队列消费者与深链同一条挂载规则——进过 home（有可用会话库）
+   * 才挂，挂上即补投积压；登出清栈时卸下，之后进来的分享重新排队。
+   */
+  private syncShareHandler(): void {
+    const ready: boolean = this.navController.hasRoute('home');
+    if (ready && !this.shareAttached) {
+      this.shareAttached = true;
+      const flushed: number = appShareQueue.attach((share: ReceivedShare): void => {
+        this.deliverShare(share);
+      });
+      if (flushed > 0) {
+        hilog.info(DOMAIN, TAG, 'share handler attached, flushed %{public}d queued share(s)', flushed);
+      }
+    } else if (!ready && this.shareAttached) {
+      this.shareAttached = false;
+      appShareQueue.detach();
+    }
+  }
+
+  /**
+   * SHARE-EXT-101：交付一次分享——弹目标选择器。
+   * v1 只接文本：空文本/纯文件分享如实提示，不弹一个空选择器。
+   */
+  private deliverShare(share: ReceivedShare): void {
+    const text: string = share.text.trim();
+    if (text.length === 0) {
+      this.toastAdapter.showToast(Lang.getInstance().getString('Nothing to share'));
+      return;
+    }
+    if (!this.navController.hasRoute('home')) {
+      // 与深链同一条去路：只有队列没有消费者时才回队（否则自喂死循环）。
+      if (!appShareQueue.isAttached()) {
+        appShareQueue.enqueue(share);
+      }
+      return;
+    }
+    this.shareTargets = this.mapShareTargets();
+    this.pendingShare = share;
+    this.showSharePicker = true;
+    hilog.info(DOMAIN, TAG, 'share picker opened: textLength=%{public}d, targets=%{public}d',
+      text.length, this.shareTargets.length);
+  }
+
+  /** SHARE-EXT-101：会话列表 → 选择器目标行（与 openForwardPicker 同一套映射，无来源会话标记）。 */
+  private mapShareTargets(): ForwardTarget[] {
+    const items: readonly ChatListItem[] = this.chatListUiState.items;
+    const targets: ForwardTarget[] = [];
+    for (let i = 0; i < items.length; i++) {
+      const item: ChatListItem = items[i];
+      targets.push(new ForwardTarget(
+        item.chatId,
+        item.title,
+        item.avatarColor,
+        item.avatarLetter,
+        false,
+        item.avatarPath
+      ));
+    }
+    return targets;
+  }
+
+  /** SHARE-EXT-101：取消分享——只关选择器并清掉待分享内容，回到分享前的页面。 */
+  private cancelShare(): void {
+    this.showSharePicker = false;
+    this.shareTargets = [];
+    this.pendingShare = null;
+    hilog.info(DOMAIN, TAG, 'share cancelled by user');
+  }
+
+  /**
+   * SHARE-EXT-101：选定目标会话 → 立即发送分享文本（对齐 TGX Android 的
+   * 「分享 → 选会话 → 发送」）。
+   *
+   * 目标会话已打开时直接派发；否则把文本挂到 pendingShareText，压栈 chat 路由，
+   * 等 onRouteChanged → openChat 建好协调器后在 flushPendingShareIfNeeded 里发送。
+   */
+  private onSharePick(chatId: number): void {
+    const share: ReceivedShare | null = this.pendingShare;
+    this.showSharePicker = false;
+    this.shareTargets = [];
+    this.pendingShare = null;
+    if (share === null) {
+      return;
+    }
+    const text: string = share.text.trim();
+    if (text.length === 0) {
+      return;
+    }
+    hilog.info(DOMAIN, TAG, 'share target picked chatId=%{public}s textLength=%{public}d', `${chatId}`, text.length);
+    if (this.chatCoordinator !== null && this.activeChatId === chatId) {
+      this.sendSharedText(text);
+      return;
+    }
+    this.pendingShareText = text;
+    this.pendingShareTargetChatId = chatId;
+    this.navController.navigateTo({ name: 'chat', chatId: chatId });
+  }
+
+  /**
+   * SHARE-EXT-101：把分享文本灌进既有发送链路（ComposerTextChanged → SendCurrentMessage）。
+   * coordinator 的 dispatch 是同步 reduce，两条按序派发即等价于用户输入后点发送；
+   * 发送失败由 OnMessageSendFailed 回灌到会话页错误位，不在本层重复提示。
+   */
+  private sendSharedText(text: string): void {
+    const coordinator: ChatCoordinator | null = this.chatCoordinator;
+    if (coordinator === null) {
+      this.toastAdapter.showToast(Lang.getInstance().getString('Failed to send shared content'));
+      return;
+    }
+    coordinator.dispatch(new ComposerTextChanged(text));
+    coordinator.dispatch(new SendCurrentMessage());
+    hilog.info(DOMAIN, TAG, 'shared text dispatched, length=%{public}d', text.length);
+  }
+
+  /** SHARE-EXT-101：目标会话协调器就绪后补发挂起的分享文本（chatId 不符则不动）。 */
+  private flushPendingShareIfNeeded(chatId: number): void {
+    if (this.pendingShareText === null || this.pendingShareTargetChatId !== chatId) {
+      return;
+    }
+    const text: string = this.pendingShareText;
+    this.pendingShareText = null;
+    this.pendingShareTargetChatId = 0;
+    this.sendSharedText(text);
+  }
+
   private onRouteChanged(route: AppRoute, _prev: AppRoute | null): void {
     // NAV-BACK-101：路由切换时确保抽屉关闭，特别是从 contacts/settings/selfProfile 等页面 pop 回 home 时抽屉保持关闭
     this.showChatListDrawer = false;
@@ -1184,6 +1340,8 @@ struct Index {
 
     // 3. DEEPLINK-101：链接处理器跟着「是否已进过 home」走。
     this.syncAppLinkHandler();
+    // 4. SHARE-EXT-101：分享队列消费者同一条挂载规则。
+    this.syncShareHandler();
   }
 
   private dispatch(intent: AuthIntent): void {
@@ -1405,7 +1563,9 @@ struct Index {
       onMemberSelectionConfirmed: (userIds: number[]): void => {
         this.chatListDispatch(new GroupCreateStarted(this.groupCreateMode, userIds));
         this.showGroupNamingPage = true;
-      }
+      },
+      // CONTACT-103：索引拖拽换段短触感（真实 vibrator 适配器）
+      haptics: this.hapticFeedbackAdapter
     });
     this.contactsCoordinator = coordinator;
     this.unsubscribeContactsFn = coordinator.subscribe((uiState: ContactsUiState): void => {
@@ -1981,6 +2141,8 @@ struct Index {
     // SEARCH-102：从搜索结果进入且带目标消息时，等协调器就绪后请求定位
     // （目标未在首屏缓存时，协调器会排队到首屏加载完成再拉围绕历史）。
     this.requestChatJump(chatId, jumpToMessageId);
+    // SHARE-EXT-101：分享选定本会话而来时，协调器就绪即补发分享文本。
+    this.flushPendingShareIfNeeded(chatId);
   }
 
   private closeChat(): void {
@@ -2154,6 +2316,12 @@ struct Index {
                 this.contactsCoordinator.dispatch(intent);
               }
             },
+            // CONTACT-103：拖拽换段短触感，经协调器透传到触感端口。
+            onScrubTick: (): void => {
+              if (this.contactsCoordinator !== null) {
+                this.contactsCoordinator.scrubHapticTick();
+              }
+            },
             onBack: () => {
               this.navController.pop();
             },
@@ -2241,6 +2409,20 @@ struct Index {
           },
           onCancel: (): void => {
             this.onPromptCancel();
+          }
+        })
+      }
+      // SHARE-EXT-101：系统分享目标选择器，盖在当前页面之上（与链接确认弹窗同一层，
+      // 由 entry 持有——它是唯一同时握有会话列表数据与发送协调器的装配层）。
+      if (this.showSharePicker) {
+        ShareTargetPickerPage({
+          targets: this.shareTargets,
+          sharedText: this.pendingShare !== null ? this.pendingShare.text : '',
+          onPick: (chatId: number): void => {
+            this.onSharePick(chatId);
+          },
+          onCancel: (): void => {
+            this.cancelShare();
           }
         })
       }

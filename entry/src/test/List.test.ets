@@ -8,6 +8,7 @@ import audioSessionOrchestratorTest from './platform/AudioSessionOrchestrator.te
 import appLinkRouterTest from './deeplink/AppLinkRouter.test';
 import appLinkPromptTest from './deeplink/AppLinkPrompt.test';
 import deepLinkQueueTest from './deeplink/DeepLinkQueue.test';
+import shareIntakeTest from './share/ShareIntake.test';
 import appLockGateTest from './applock/AppLockGate.test';
 import tdLibLogSinkTest from './tdlog/TdLibLogSink.test';
 import settingsStoreLanguageTest from './store/SettingsStoreLanguage.test';
@@ -35,6 +36,7 @@ export default function listTest() {
   appLinkRouterTest();
   appLinkPromptTest();
   deepLinkQueueTest();
+  shareIntakeTest();
   appLockGateTest();
   tdLibLogSinkTest();
   settingsStoreLanguageTest();

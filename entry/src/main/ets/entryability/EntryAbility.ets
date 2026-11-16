@@ -2,6 +2,7 @@ import { AbilityConstant, bundleManager, Configuration, UIAbility, Want } from '
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { window } from '@kit.ArkUI';
 import { i18n } from '@kit.LocalizationKit';
+import { systemShare } from '@kit.ShareKit';
 import {
   HourClock,
   LanguagePreference,
@@ -19,6 +20,15 @@ import {
 } from '@tgx/core-design-system';
 import { bootstrap, BootstrapResult } from '../Bootstrap';
 import { appDeepLinkQueue } from '../deeplink/DeepLinkQueue';
+import {
+  ReceivedShare,
+  ShareRecordLike,
+  appShareQueue,
+  isShareAction,
+  shareFileUrisFromParams,
+  shareTextFromRecords,
+  shareTextFromWantParts
+} from '../share/ShareIntake';
 import { TdlibParametersConfig } from '@tgx/feature-auth';
 import { TELEGRAM_CREDENTIALS } from '../config/AppCredentials';
 import {
@@ -48,6 +58,8 @@ export default class EntryAbility extends UIAbility {
     // DEEPLINK-101：冷启动的链接比页面早到（loadContent 还没跑），先入队，
     // 等 pages/Index 进过 home 再补投。这里只记长度——uri 可携带邀请哈希。
     this.captureWantUri(want, 'onCreate');
+    // SHARE-EXT-101：系统分享与深链同一条时序——先入队，等页面 ready 再弹目标选择器。
+    this.captureSharedContent(want, 'onCreate');
 
     const filesDir: string = this.context.filesDir;
     const cacheDir: string = this.context.cacheDir;
@@ -151,6 +163,8 @@ export default class EntryAbility extends UIAbility {
     // DEEPLINK-101：热启动（应用已在后台，从别处点 Telegram 链接进来）。
     hilog.info(DOMAIN, TAG, 'onNewWant');
     this.captureWantUri(want, 'onNewWant');
+    // SHARE-EXT-101：应用在后台时被系统分享面板再次拉起。
+    this.captureSharedContent(want, 'onNewWant');
   }
 
   /**
@@ -166,6 +180,59 @@ export default class EntryAbility extends UIAbility {
     }
     hilog.info(DOMAIN, TAG, 'want uri from %{public}s, length=%{public}d', source, uri.trim().length);
     appDeepLinkQueue.enqueue(uri);
+  }
+
+  /**
+   * SHARE-EXT-101：把系统分享 want 里的内容取出来入队。
+   *
+   * 取文层次（都失败才算「没有可分享文本」）：
+   * 1. `systemShare.getSharedData(want)` —— Share Kit 分享面板构造的 want 的
+   *    官方还原口，记录组里的 `content` 是文本/链接正文；
+   * 2. `want.uri` / 已知参数键（shareAbstract / contentTitle / content / text）
+   *    —— 朴素 sendData 的同步兜底（见 ShareIntake.shareTextFromWantParts）；
+   * 3. `ability.params.stream` 只取文件 uri 列表留档，v1 不消费文件。
+   *
+   * 日志只记来源与长度，不记分享正文（正文可能含用户隐私，与深链不记 uri 同一口径）。
+   */
+  private captureSharedContent(want: Want, source: string): void {
+    if (!isShareAction(want.action)) {
+      return;
+    }
+    // want.uri / want.parameters 都是可选字段，先收成非空形状再进纯函数。
+    const wantUri: string = want.uri !== undefined && want.uri !== null ? want.uri : '';
+    const fallbackText: string = shareTextFromWantParts(wantUri, want.parameters);
+    const fileUris: string[] = shareFileUrisFromParams(want.parameters);
+    systemShare.getSharedData(want).then((data: systemShare.SharedData): void => {
+      const records: systemShare.SharedRecord[] = data.getRecords();
+      const like: ShareRecordLike[] = [];
+      for (let i: number = 0; i < records.length; i++) {
+        const record: systemShare.SharedRecord = records[i];
+        like.push({
+          utd: record.utd,
+          title: record.title !== undefined && record.title !== null ? record.title : '',
+          content: record.content !== undefined && record.content !== null ? record.content : '',
+          uri: record.uri !== undefined && record.uri !== null ? record.uri : ''
+        });
+      }
+      const recordText: string = shareTextFromRecords(like);
+      const text: string = recordText.length > 0 ? recordText : fallbackText;
+      this.enqueueSharedContent(new ReceivedShare(text, fileUris), source);
+    }).catch((e: Object): void => {
+      // 非 Share Kit 编码的 want（朴素 sendData）走这里：用同步兜底形状。
+      hilog.info(DOMAIN, TAG, 'share parse fell back to raw want parts from %{public}s', source);
+      this.enqueueSharedContent(new ReceivedShare(fallbackText, fileUris), source);
+    });
+  }
+
+  /** 分享内容入队（页面 ready 后由 pages/Index 弹目标选择器）。 */
+  private enqueueSharedContent(share: ReceivedShare, source: string): void {
+    if (share.text.trim().length === 0 && share.fileUris.length === 0) {
+      hilog.info(DOMAIN, TAG, 'share from %{public}s carried nothing usable', source);
+      return;
+    }
+    hilog.info(DOMAIN, TAG, 'share received from %{public}s, textLength=%{public}d, files=%{public}d',
+      source, share.text.length, share.fileUris.length);
+    appShareQueue.enqueue(share);
   }
 
   onWindowStageCreate(windowStage: window.WindowStage): void {

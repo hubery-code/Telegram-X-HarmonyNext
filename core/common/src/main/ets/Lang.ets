@@ -372,6 +372,11 @@ const EN_DICTIONARY: Record<string, string> = {
   'Title is required': 'Title is required',
   'Title is too long': 'Title is too long',
   'Add Members': 'Add Members',
+  // SHARE-EXT-101：系统分享接收
+  'Share to…': 'Share to…',
+  'Shared content': 'Shared content',
+  'Nothing to share': 'Nothing to share',
+  'Failed to send shared content': 'Failed to send shared content',
   'Confirm': 'Confirm',
   'Leave': 'Leave',
   'Report': 'Report',
@@ -1026,6 +1031,11 @@ const ZH_DICTIONARY: Record<string, string> = {
   'Title is required': '请输入名称',
   'Title is too long': '名称过长（最多 128 字）',
   'Add Members': '添加成员',
+  // SHARE-EXT-101：系统分享接收
+  'Share to…': '分享到…',
+  'Shared content': '分享内容',
+  'Nothing to share': '没有可分享的内容',
+  'Failed to send shared content': '分享内容发送失败',
   'Confirm': '确认',
   'Leave': '退出',
   'Report': '举报',

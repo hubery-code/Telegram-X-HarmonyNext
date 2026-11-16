@@ -60,6 +60,19 @@
               }
             ],
             "domainVerify": false
+          },
+          {
+            // SHARE-EXT-101 / FEAT-P2-010：系统分享接收入口。其它应用经系统分享
+            // 面板（或直接 startAbility）以 ohos.want.action.sendData 唤起本应用；
+            // 文本经 systemShare.getSharedData(want) 还原，兜底取 want.uri 与已知
+            // 参数键，文件 uri 列表在 ability.params.stream（v1 只接文本，见报告）。
+            "entities": [
+              "entity.system.default"
+            ],
+            "actions": [
+              "ohos.want.action.sendData",
+              "ohos.want.action.sendMultipleData"
+            ]
           }
         ],
         "startWindowIcon": "$media:icon",
