@@ -80,7 +80,9 @@ def main():
 
     print("\n==================== [test_all_modules] 2/3 Executing Tests ====================")
     module_arg = ",".join(f"{name}@default" for name, _ in testable)
-    hvigorw_path = os.path.join(ROOT, "hvigorw")
+    # PATH-PORTABLE-104（2026-11-21，Windows 首跑实测）：Windows 上仓库里的 `hvigorw`
+    # 是 bash 脚本，CreateProcess 直接报 WinError 193；必须走 `hvigorw.bat`。
+    hvigorw_path = os.path.join(ROOT, "hvigorw.bat" if os.name == "nt" else "hvigorw")
 
     cmd = [
         hvigorw_path,

@@ -152,17 +152,21 @@ export default function chatProfileReducerTest(): void {
       });
       // Lang 是进程级单例：用例内改过系统语言必须原样还原，否则同批跑的
       // SharedDateSections / SharedAudioRows（开头钉成 zh）会拿到 en 词典而全线失败。
-      const previous: SupportedLanguage = Lang.getInstance().getLanguage();
+      // 2026-11-21（Windows 全量门禁首跑修复）：与 GroupRegistry/StorageSize 同因——
+      // 原来用 setSystemLanguage 翻语言，但那只对 preference='system' 生效；
+      // 同模块其它测试类把 preference 钉成 zh 后，这里的 en 档就翻不动了。
+      // 改为 reset + setLanguage（显式偏好层，notify 必发）+ reset 还原。
       let zh: ReducerResult<ChatProfileUiState, ChatProfileEffect> =
         chatProfileReducer(seeded, new LanguageChanged(), makeEnv());
       let en: ReducerResult<ChatProfileUiState, ChatProfileEffect> = zh;
       try {
-        Lang.getInstance().setSystemLanguage('zh');
+        Lang.getInstance().reset();
+        Lang.getInstance().setLanguage('zh');
         zh = chatProfileReducer(seeded, new LanguageChanged(), makeEnv());
-        Lang.getInstance().setSystemLanguage('en');
+        Lang.getInstance().setLanguage('en');
         en = chatProfileReducer(zh.state, new LanguageChanged(), makeEnv());
       } finally {
-        Lang.getInstance().setSystemLanguage(previous);
+        Lang.getInstance().reset();
       }
 
       expect(zh.state.memberCountText).assertEqual('7 位成员');
@@ -185,11 +189,12 @@ export default function chatProfileReducerTest(): void {
 
       // 成员数文案自 I18N-HOTSWITCH-101 起经 Lang 取词典，而 Lang 是进程级单例：
       // 用例内钉成 en 并还原，避免和同批文件（开头钉成 zh）互相污染全局语言位。
-      const previous: SupportedLanguage = Lang.getInstance().getLanguage();
-      Lang.getInstance().setSystemLanguage('en');
+      // 同上：reset + setLanguage 显式钉 en，不再依赖 preference='system' 的前提。
+      Lang.getInstance().reset();
+      Lang.getInstance().setLanguage('en');
       const res: ReducerResult<ChatProfileUiState, ChatProfileEffect> =
         chatProfileReducer(state, new OnSupergroupFullInfoLoaded(info), makeEnv());
-      Lang.getInstance().setSystemLanguage(previous);
+      Lang.getInstance().reset();
 
       expect(res.state.description).assertEqual('Supergroup info');
       expect(res.state.memberCount).assertEqual(150);
