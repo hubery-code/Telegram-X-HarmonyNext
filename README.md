@@ -165,6 +165,13 @@ pages/（ArkUI 声明式渲染，只读 UiState）
 | <img src="docs/images/preview_chats.png" width="228" alt="会话列表" /> | <img src="docs/images/preview_chat_detail.png" width="228" alt="消息气泡与链接渲染" /> | <img src="docs/images/preview_sticker_preview.png" width="228" alt="贴纸包详情" /> | <img src="docs/images/preview_sticker_board.png" width="228" alt="贴纸面板" /> |
 | **搜索、页签计数、置顶与未读徽标** | **链接实体、网页预览卡与贴纸气泡** | **半模态弹窗与五列网格** | **最近使用行与 TDLib 真实装包入口** |
 
+#### 建群建频道与输入面板
+
+| 新建频道命名页 | 联系人多选（建群选成员） | 表情面板 |
+| :---: | :---: | :---: |
+| <img src="docs/images/preview_group_naming.png" width="228" alt="新建频道命名页" /> | <img src="docs/images/preview_contacts_multiselect.png" width="228" alt="联系人多选" /> | <img src="docs/images/preview_emoji_board.png" width="228" alt="表情面板" /> |
+| **标题/简介输入与创建入口（标题 1-128 字本地校验）** | **点选顺序即成员顺序与 Next (N) 确认栏** | **最近使用行与表情/贴纸/GIF 三页签** |
+
 #### 深色模式与中文界面
 
 | 深色 · 会话内 | 深色 · 设置中心 | 简体中文 · 设置中心 |
@@ -177,7 +184,7 @@ pages/（ArkUI 声明式渲染，只读 UiState）
 | 设置首页 | 侧边栏抽屉导航 | 存储与外观分区 | 屏幕锁定 | 活跃设备与会话 |
 | :---: | :---: | :---: | :---: | :---: |
 | <img src="docs/images/preview_settings.png" width="228" alt="设置中心" /> | <img src="docs/images/preview_drawer.png" width="228" alt="侧边栏抽屉" /> | <img src="docs/images/preview_storage_appearance.png" width="228" alt="存储与外观" /> | <img src="docs/images/preview_screen_lock.png" width="228" alt="屏幕锁定" /> | <img src="docs/images/preview_devices.png" width="228" alt="活跃设备与会话" /> |
-| **通知、设备、隐私与缓存清理** | **账号头（身份字段已遮罩）与功能入口** | **缓存用量、贴纸循环、主题与字号** | **访问码开关与自动锁定档位** | **会话列表与一键注销入口** |
+| **通知、设备、隐私与缓存清理** | **账号头（身份字段已遮罩）与建群/建频道入口** | **缓存用量、贴纸循环、主题与字号** | **访问码开关与自动锁定档位** | **会话列表与一键注销入口** |
 
 #### 隐私与安全
 
@@ -193,7 +200,7 @@ pages/（ArkUI 声明式渲染，只读 UiState）
 | <img src="docs/images/preview_auto_download.png" width="228" alt="自动媒体下载" /> |
 | **省流量门与按网络类型的限制档位** |
 
-> 🛡️ **脱敏口径**：截图由 `uitest dumpLayout` 的节点边界驱动遮罩——只有「渲染串命中 `core/common` 词典（EN/ZH 两份）的 key 或 value」「纯计数 / 时刻 / 缓存用量」「公开目录内容（贴纸包名与缩略图）」三类保留，其余文本节点与头像、图片节点一律重高斯模糊（半径 15、5 次）。设置子页以覆盖层渲染，遮罩会先做前/后台页面切分，再用覆盖层边界裁剪后台区域，避免把模糊糊到弹层上。会话列表与抽屉、设备页因此只剩界面骨架；消息气泡与贴纸面板一栏用自建会话（Saved Messages）里自己写入的演示内容，避免用真实会话换取可读性。
+> 🛡️ **脱敏口径**：截图由 `uitest dumpLayout` 的节点边界驱动遮罩（2026-11-21 起新图为按节点边界马赛克，历史图为高斯模糊）——只有「渲染串命中 `core/common` 词典（EN/ZH 两份）的 key 或 value」「纯计数 / 时刻 / 缓存用量」「公开目录内容（贴纸包名与缩略图）」三类保留，其余文本节点与头像、图片节点一律重高斯模糊（半径 15、5 次）。设置子页以覆盖层渲染，遮罩会先做前/后台页面切分，再用覆盖层边界裁剪后台区域，避免把模糊糊到弹层上。会话列表与抽屉、设备页因此只剩界面骨架；消息气泡与贴纸面板一栏用自建会话（Saved Messages）里自己写入的演示内容，避免用真实会话换取可读性。
 
 ---
 
